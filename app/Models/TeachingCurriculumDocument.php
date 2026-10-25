@@ -12,6 +12,7 @@ class TeachingCurriculumDocument extends Model
         'topic_id',
         'unit_id',
         'source_type',
+        'explanation_key',
         'name',
         'file_path',
         'storage_disk',

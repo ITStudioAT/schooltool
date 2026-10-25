@@ -25,6 +25,61 @@ use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
 
+test('submission collection exports the selected work without collecting sending grading or modifying it', function (string $mode): void {
+    Http::preventStrayRequests();
+    Mail::fake();
+    $before = $this->work->fresh()->getAttributes();
+    $data = $this->getJson($this->url.'?purpose=submission_collection&collection_mode='.$mode.'&date=2026-10-20')
+        ->assertOk()->json('data');
+    expect($data['context']['purpose'])->toBe('collect-exercise-submissions')
+        ->and($data['context']['mode'])->toBe($mode)
+        ->and($data['context']['work_id'])->toBe($this->work->id)
+        ->and($data['context']['course_id'])->toBe($this->course->id)
+        ->and($data['context']['work']['scheduled_date'])->toBe('2026-10-20')
+        ->and($data['context']['operation'])->toBe(['collect_submissions' => true, 'preserve_existing' => true, 'grade' => false, 'send' => false, 'schooltool_import' => false])
+        ->and($data['context']['exercise_folder'])->toBeNull()
+        ->and($data['context']['collection_receipt_contract']['completion'])->toMatchArray([
+            'kind' => 'schooltool.collection-run-completion', 'exercise_id' => 'schooltool-work:'.$this->work->id, 'course_id' => $this->course->id])
+        ->and($data['context']['collection_receipt_contract']['storage']['verified_file_fields'])->toBe(['id', 'revision', 'dropbox_path', 'sha256'])
+        ->and($data['text'])->toContain('changed_versions', 'new_first_submissions', 'keine Abgabenänderung', 'verified_files')
+        ->and($data['text'])->toContain('download-exercise-submissions-from-email', 'guenther.kron@cdgym.at', 'guenther.kron@bildung.gv.at', 'Keine fachliche Bewertung', 'kein Schooltool-Import')
+        ->and($this->work->fresh()->getAttributes())->toBe($before);
+    Http::assertNothingSent();
+    Mail::assertNothingSent();
+})->with(['collect', 'repeat']);
+
+test('submission collection rejects invalid mode and changed dates', function (string $query): void {
+    Http::preventStrayRequests();
+    $this->getJson($this->url.'?purpose=submission_collection'.$query)->assertUnprocessable();
+    Http::assertNothingSent();
+})->with(['', '&collection_mode=invalid', '&collection_mode=collect&date=2026-10-21']);
+
+test('submission collection reuses the confirmed folder without a new Dropbox scan', function (): void {
+    Http::preventStrayRequests();
+    $connection = DropboxConnection::factory()->create(['user_id' => $this->teacher->id]);
+    TeachingWorkModuleLink::query()->create(['teaching_course_work_id' => $this->work->id, 'dropbox_connection_id' => $connection->id,
+        'account_id' => $connection->account_id, 'module_id' => 'a263b873-4f27-4167-90f0-7d94ea0f67fa', 'schema_version' => 1,
+        'handshake_file_id' => 'id:handshake', 'handshake_revision' => 'rev1', 'folder_id' => 'id:module', 'folder_name' => 'Modul', 'folder_path' => '/Materialien/Modul']);
+    $this->partialMock(DropboxModuleLinks::class)->shouldReceive('exercise')->once()->withArgs(fn (...$arguments): bool => $arguments[4] === false && $arguments[5] === false)
+        ->andReturn(['status' => 'found', 'folder' => ['id' => 'id:exercise', 'name' => 'Vorhandene Arbeit'],
+            'email_dispatch' => ['status' => 'sent', 'transport' => 'mailpit']]);
+    $this->getJson($this->url.'?purpose=submission_collection&collection_mode=collect')->assertOk()
+        ->assertJsonPath('data.context.exercise_folder.id', 'id:exercise')->assertJsonPath('data.context.task_delivery.transport', 'mailpit');
+    Http::assertNothingSent();
+});
+
+test('submission collection preserves course access and manual mode boundaries', function (): void {
+    Http::preventStrayRequests();
+    $url = $this->url.'?purpose=submission_collection&collection_mode=repeat';
+    $this->work->update(['status' => ['automation_enabled' => false]]);
+    $this->getJson($url)->assertUnprocessable();
+    $this->work->update(['status' => []]);
+    $foreign = User::factory()->create(['school_id' => School::factory()->create()->id]);
+    $foreign->assignRole('teacher');
+    $this->actingAs($foreign, 'sanctum')->getJson($url)->assertForbidden();
+    Http::assertNothingSent();
+});
+
 test('email preparation exports a confirmed exercise with the chosen form and a preparation-only instruction', function (string $addressForm): void {
     Http::preventStrayRequests();
     $connection = DropboxConnection::factory()->create(['user_id' => $this->teacher->id]);
@@ -47,7 +102,9 @@ test('email preparation exports a confirmed exercise with the chosen form and a 
     Http::assertNothingSent();
 })->with(['du', 'sie']);
 
-test('email dispatch references the confirmed preparation with the explicitly selected delivery mode', function (string $deliveryMode): void {
+test('email dispatch references the confirmed preparation with the explicitly selected delivery mode', function (string $deliveryMode, bool $local): void {
+    $this->app['env'] = $local ? 'local' : 'production';
+    config(['mail.default' => 'smtp', 'mail.mailers.smtp.host' => 'localhost', 'mail.mailers.smtp.port' => 1025, 'mail.mailers.smtp.url' => null]);
     Http::preventStrayRequests();
     Mail::fake();
     $this->teacher->update(['email' => 'admin@example.test']);
@@ -66,7 +123,7 @@ test('email dispatch references the confirmed preparation with the explicitly se
 
     expect($data['context']['purpose'])->toBe('send-exercise-emails')
         ->and($data['context']['delivery']['selection'])->toBe($deliveryMode)
-        ->and($data['context']['delivery']['mode'])->toBe($deliveryMode === 'test' ? 'test_office_outlook' : 'live_office_outlook')
+        ->and($data['context']['delivery']['mode'])->toBe(($deliveryMode === 'test' ? 'test_' : 'live_').($local ? 'mailpit' : 'office_outlook'))
         ->and($data['context']['delivery']['send_authorized'])->toBeTrue()
         ->and($data['context']['delivery']['requires_explicit_send_confirmation'])->toBeFalse()
         ->and($data['context']['delivery']['record_dispatch'])->toBe($deliveryMode === 'live')
@@ -89,7 +146,31 @@ test('email dispatch references the confirmed preparation with the explicitly se
     }
     Http::assertNothingSent();
     Mail::assertNothingOutgoing();
-})->with(['live', 'test']);
+    if ($local) {
+        expect($data['context']['delivery']['smtp_host'])->toBe('127.0.0.1')
+            ->and($data['context']['delivery']['smtp_port'])->toBe(1025)
+            ->and($data['context']['delivery']['local_only'])->toBeTrue()
+            ->and($data['text'])->toContain('Testversand über Mailpit', 'Niemals Office/Outlook', 'Schnellversand', 'keine neue Erstellung')
+            ->and($data['text'])->not->toContain('ausschließlich das vorhandene Office-/Outlook-Konto');
+    }
+})->with([['live', false], ['test', false], ['live', true], ['test', true]]);
+
+test('local dispatch refuses external or ambiguous transports before reading preparations', function (array $mail): void {
+    $this->app['env'] = 'local';
+    config(['mail.default' => 'smtp', 'mail.mailers.smtp.host' => 'localhost', 'mail.mailers.smtp.port' => 1025, 'mail.mailers.smtp.url' => null]);
+    config($mail);
+    Http::preventStrayRequests();
+    Mail::fake();
+    $this->getJson($this->url.'?purpose=email_dispatch&delivery_mode=live')->assertUnprocessable()
+        ->assertJsonPath('message', 'Lokaler Versand gesperrt – Mailpit nicht konfiguriert');
+    Http::assertNothingSent();
+    Mail::assertNothingOutgoing();
+})->with([
+    [['mail.default' => 'postmark']],
+    [['mail.mailers.smtp.host' => 'smtp.example.test']],
+    [['mail.mailers.smtp.port' => 587]],
+    [['mail.mailers.smtp.url' => 'smtp://external.example.test:587']],
+]);
 
 test('email dispatch with no cached check asks for an explicit recheck without calling Dropbox', function (): void {
     Http::preventStrayRequests();

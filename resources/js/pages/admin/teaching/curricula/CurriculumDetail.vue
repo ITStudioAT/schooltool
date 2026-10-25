@@ -718,6 +718,7 @@
 
             <CurriculumUnitFilesDialog
                 v-model="unitFilesDialogOpen"
+                :explanation-mode="unitFilesExplanationMode"
                 :curriculum-id="curriculum.id"
                 :topic-id="selectedTopic?.id"
                 :unit-id="selectedUnit?.id"
@@ -1285,7 +1286,7 @@
                         </div>
 
                         <div class="curriculum-detail__unit-files-heading">
-                            <span>Materialdateien</span>
+                            <span>Lernmaterialien</span>
                             <v-chip
                                 v-if="selectedUnitFiles.length"
                                 size="x-small"
@@ -1350,6 +1351,7 @@
                                         :href="unitFilePreviewUrl(file)"
                                         target="_blank" />
                                     <v-btn
+                                        v-if="file.download_url"
                                         icon="mdi-download-outline"
                                         variant="text"
                                         size="x-small"
@@ -1382,7 +1384,7 @@
                         </v-list>
 
                         <div v-else class="curriculum-detail__unit-files-empty mb-3">
-                            Noch keine Materialdateien hochgeladen.
+                            Noch keine Lernmaterialien zugeordnet.
                         </div>
 
                         <v-divider class="mb-3" />
@@ -1406,6 +1408,13 @@
                                 class="curriculum-detail__unit-action-material"
                                 :disabled="topicSaving || isPageActionLocked"
                                 @click="openSelectedUnitMaterialDialog" />
+                            <v-list-item
+                                prepend-icon="mdi-presentation-play"
+                                title="Erklärung hinzufügen"
+                                class="curriculum-detail__unit-action-explanation"
+                                rounded="lg"
+                                :disabled="topicSaving || isPageActionLocked"
+                                @click="openSelectedUnitMaterialDialog(true)" />
                             <v-list-item
                                 prepend-icon="mdi-delete-outline"
                                 title="Einheit löschen"
@@ -1826,6 +1835,7 @@ export default {
             selectedUnitTopicId: null,
             selectedUnitId: null,
             unitFilesDialogOpen: false,
+            unitFilesExplanationMode: false,
             unitFileCounts: {},
             selectedUnitFiles: [],
             selectedUnitFilesLoading: false,
@@ -5329,10 +5339,11 @@ export default {
             this.openUnitForm(this.selectedTopic.id, this.selectedUnit)
         },
 
-        openSelectedUnitMaterialDialog() {
+        openSelectedUnitMaterialDialog(explanationMode = false) {
             if (this.topicSaving || this.isPageActionLocked) return
             if (!this.selectedTopic || !this.selectedUnit) return
 
+            this.unitFilesExplanationMode = explanationMode === true
             this.unitFilesDialogOpen = true
         },
 
@@ -5527,6 +5538,7 @@ export default {
         },
 
         unitFileIcon(file) {
+            if (file.explanation_key) return 'mdi-presentation-play'
             const mimeType = String(file?.mime_type || '').toLowerCase()
 
             if (mimeType === 'application/pdf') return 'mdi-file-pdf-box'
@@ -5536,6 +5548,7 @@ export default {
         },
 
         unitFileMeta(file) {
+            if (file.explanation_key) return 'Interaktive Erklärung'
             const size = this.formatBytes(file?.size_bytes)
 
             return size || 'Datei'

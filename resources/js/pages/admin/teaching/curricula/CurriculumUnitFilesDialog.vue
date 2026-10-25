@@ -7,16 +7,16 @@
         <v-card rounded="xl" class="curriculum-unit-files-dialog">
             <v-card-title class="text-subtitle-1 d-flex align-center ga-2 pt-4 px-4">
                 <v-icon color="primary" size="21">mdi-file-plus-outline</v-icon>
-                Material hinzufügen
+                {{ explanationMode ? 'Erklärung hinzufügen' : 'Material hinzufügen' }}
             </v-card-title>
 
             <v-card-text class="px-4 pt-2 pb-2">
                 <div class="text-body-2 mb-4">
-                    Dateien für <strong>{{ unitTitle }}</strong>
+                    Lernmaterial für <strong>{{ unitTitle }}</strong>
                 </div>
 
                 <file-pond
-                    v-if="modelValue"
+                    v-if="modelValue && !explanationMode"
                     ref="pond"
                     :key="pondKey"
                     name="files[]"
@@ -28,9 +28,15 @@
                     :label-idle="'<strong>Dateien hierher ziehen oder <i>klicken</i></strong>'"
                     @updatefiles="handleFilesUpdate" />
 
-                <div class="text-caption text-medium-emphasis mt-2">
+                <div v-if="!explanationMode" class="text-caption text-medium-emphasis mt-2">
                     Maximal 20 Dateien, je Datei höchstens 100 MB.
                 </div>
+
+                <template v-if="explanationMode">
+                    <v-select v-model="selectedCategory" :items="explanationCategories" label="Kategorie" :disabled="isBusy" @update:model-value="selectedExplanation = null" />
+                    <v-select v-model="selectedExplanation" :items="categoryExplanations" item-title="title" item-value="key" label="Erklärung" :disabled="isBusy || !selectedCategory" />
+                    <p class="text-caption text-medium-emphasis">Im Unterricht wird die Erklärung mit dem vorhandenen Schalter sichtbar oder verborgen. Der separat teilbare Link bleibt davon unabhängig.</p>
+                </template>
 
                 <v-alert
                     v-if="errorMessage"
@@ -44,7 +50,7 @@
                 <v-divider class="my-4" />
 
                 <div class="d-flex align-center mb-2">
-                    <div class="text-subtitle-2">Gespeicherte Dateien</div>
+                    <div class="text-subtitle-2">Zugeordnete Lernmaterialien</div>
                     <v-spacer />
                     <v-progress-circular v-if="isLoading" indeterminate color="primary" size="20" />
                 </div>
@@ -73,6 +79,7 @@
                                 :href="file.preview_url"
                                 target="_blank" />
                             <v-btn
+                                v-if="file.download_url"
                                 icon="mdi-download-outline"
                                 variant="text"
                                 size="small"
@@ -93,7 +100,7 @@
                 </v-list>
 
                 <div v-else-if="!isLoading" class="text-center text-caption text-medium-emphasis py-4">
-                    Noch keine Dateien gespeichert.
+                    Noch keine Lernmaterialien zugeordnet.
                 </div>
             </v-card-text>
 
@@ -103,6 +110,7 @@
                     Schließen
                 </v-btn>
                 <v-btn
+                    v-if="!explanationMode"
                     variant="flat"
                     color="primary"
                     prepend-icon="mdi-content-save-outline"
@@ -111,6 +119,7 @@
                     @click="saveFiles">
                     Dateien speichern
                 </v-btn>
+                <v-btn v-else color="primary" variant="flat" prepend-icon="mdi-plus" :loading="isUploading" :disabled="!selectedExplanation || isBusy" @click="saveExplanation">Erklärung hinzufügen</v-btn>
             </v-card-actions>
         </v-card>
     </v-dialog>
@@ -135,6 +144,7 @@
 <script>
 import vueFilePond from 'vue-filepond/dist/vue-filepond.js'
 import 'filepond/dist/filepond.min.css'
+import { storeExplanation } from '@/actions/App/Http/Controllers/Admin/Teaching/CurriculumUnitFileController'
 
 const FilePond = vueFilePond()
 
@@ -147,11 +157,15 @@ export default {
         topicId: { type: [Number, String], default: null },
         unitId: { type: [Number, String], default: null },
         unitTitle: { type: String, default: '' },
+        explanationMode: { type: Boolean, default: false },
     },
     emits: ['update:modelValue', 'changed'],
     data() {
         return {
             files: [],
+            explanations: [],
+            selectedCategory: null,
+            selectedExplanation: null,
             pendingFiles: [],
             isLoading: false,
             isUploading: false,
@@ -162,6 +176,12 @@ export default {
         }
     },
     computed: {
+        explanationCategories() {
+            return [...new Set(this.explanations.map((item) => item.category))]
+        },
+        categoryExplanations() {
+            return this.explanations.filter((item) => item.category === this.selectedCategory)
+        },
         isBusy() {
             return this.isLoading || this.isUploading || this.isDeleting
         },
@@ -177,6 +197,8 @@ export default {
             immediate: true,
             handler(isOpen) {
                 if (isOpen) {
+                    this.selectedCategory = null
+                    this.selectedExplanation = null
                     this.resetSelection()
                     this.loadFiles()
                 }
@@ -213,11 +235,28 @@ export default {
             try {
                 const response = await axios.get(this.endpoint)
                 this.files = Array.isArray(response?.data?.data) ? response.data.data : []
+                this.explanations = response?.data?.explanations || []
             } catch (error) {
                 this.files = []
                 this.errorMessage = this.requestError(error, 'Die Dateien konnten nicht geladen werden.')
             } finally {
                 this.isLoading = false
+            }
+        },
+        async saveExplanation() {
+            if (!this.selectedExplanation || this.isBusy) return
+
+            this.isUploading = true
+            this.errorMessage = ''
+            try {
+                await axios.post(storeExplanation.url({ curriculum: this.curriculumId, topicId: this.topicId, unitId: this.unitId }), { explanation_key: this.selectedExplanation })
+                await this.loadFiles()
+                this.$emit('changed', this.files)
+                this.selectedExplanation = null
+            } catch (error) {
+                this.errorMessage = this.requestError(error, 'Die Erklärung konnte nicht hinzugefügt werden.')
+            } finally {
+                this.isUploading = false
             }
         },
         async saveFiles() {
@@ -258,6 +297,7 @@ export default {
             }
         },
         fileMeta(file) {
+            if (file.explanation_key) return 'Interaktive Erklärung'
             return file?.size_bytes ? this.formatBytes(file.size_bytes) : 'Datei'
         },
         formatBytes(value) {

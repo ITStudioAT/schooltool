@@ -123,7 +123,7 @@ describe('CourseStudent date handling', () => {
 })
 
 describe('CourseStudent next and previous navigation order', () => {
-    it('matches the overview order for class and name sorting', () => {
+    it('uses surname and first name even with a previously selected class sorting', () => {
         const computed = (CourseStudent as any).computed
         const methods = (CourseStudent as any).methods
         const ctx: Record<string, any> = {
@@ -144,8 +144,8 @@ describe('CourseStudent next and previous navigation order', () => {
 
         const sorted = computed.courseStudentsList.call(ctx)
 
-        expect(sorted.map((student: { id: number }) => student.id)).toEqual([3, 2, 1, 4])
-        expect(computed.currentStudentIndex.call({ ...ctx, courseStudentsList: sorted })).toBe(1)
+        expect(sorted.map((student: { id: number }) => student.id)).toEqual([3, 1, 2, 4])
+        expect(computed.currentStudentIndex.call({ ...ctx, courseStudentsList: sorted })).toBe(2)
     })
 
     it('skips canceled students when navigating with the arrow buttons', () => {

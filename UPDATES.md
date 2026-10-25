@@ -1,5 +1,15 @@
 # UPDATES
 
+## 3.53.2
+
+### Unterricht
+
+- Arbeiten weiterentwickelt
+
+### Erklärungen
+
+- Umrechnen von Dezimal auf Dual
+
 ## 3.53.1
 
 ### Zahlensystem-Spiel

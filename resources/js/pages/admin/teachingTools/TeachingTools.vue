@@ -24,21 +24,47 @@
                         <span class="teaching-nav__button-title">Spiele</span>
                     </span>
                 </v-btn>
+                <v-btn
+                    value="explanations"
+                    to="/admin/teaching-tools/explanations"
+                    prepend-icon="mdi-lightbulb-outline"
+                    :aria-pressed="section === 'explanations'"
+                    class="teaching-nav__button">
+                    <span class="teaching-nav__button-copy">
+                        <span class="teaching-nav__button-title">Erklärungen</span>
+                    </span>
+                </v-btn>
+                <v-btn v-if="simulatorAvailable" value="simulator" to="/admin/teaching-tools/simulator" prepend-icon="mdi-flask-outline"
+                    :aria-pressed="section === 'simulator'" class="teaching-nav__button">Aufgaben-Simulator</v-btn>
             </v-btn-toggle>
         </v-sheet>
         <TeachingGames v-if="section === 'games'" :game="game" />
+        <TeachingExplanations v-else-if="section === 'explanations'" :category="category" :explanation="explanation" />
+        <template v-else-if="section === 'simulator'">
+            <TeachingSimulation v-if="simulatorAvailable" />
+            <v-alert v-else type="info" variant="tonal">Der Aufgaben-Simulator ist nur in der lokalen Testumgebung verfügbar.</v-alert>
+        </template>
         <MultipleChoiceWorkspace v-else />
     </v-container>
 </template>
 
 <script setup>
+import { computed } from 'vue'
+import { useAdminStore } from '@/stores/admin/AdminStore'
 import AdminPageHeader from '@/pages/admin/components/AdminPageHeader.vue'
 import MultipleChoiceWorkspace from './MultipleChoiceWorkspace.vue'
 import TeachingGames from './TeachingGames.vue'
+import TeachingExplanations from './TeachingExplanations.vue'
+import TeachingSimulation from './TeachingSimulation.vue'
+
+const admin = useAdminStore()
+const simulatorAvailable = computed(() => admin.config?.teaching_email_delivery?.mode === 'mailpit')
 
 defineProps({
     section: { type: String, default: 'multiple-choice' },
     game: { type: String, default: null },
+    category: { type: String, default: null },
+    explanation: { type: String, default: null },
 })
 </script>
 

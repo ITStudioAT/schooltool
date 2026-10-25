@@ -1,17 +1,21 @@
 <template>
-    <v-dialog v-model="opened" max-width="680" :persistent="busy">
+    <v-dialog v-model="opened" max-width="680" :persistent="busy || folderBusy">
         <v-card>
             <v-card-title>Verknüpfen · {{ work?.title }}</v-card-title>
             <v-card-text>
-                <p class="mb-4">Ziehen Sie die handshake.json des Lernmoduls hierher oder wählen Sie die Datei mit einem Klick aus.</p>
-                <file-pond v-if="opened" :key="pondKey" name="handshake" :allow-multiple="false" :max-files="1"
+                <template v-if="legacyLink && state">
+                    <p class="mb-4">Wählen Sie den vorhandenen Leistungsfeststellungsordner in Dropbox. Die Zuordnung verändert keine Bewertungen, Abgaben oder Versandbelege.</p>
+                    <WorkDropboxSource v-if="opened" :work="work" :active="opened" selection-only @changed="folderLinked" @busy="folderBusy = $event" />
+                </template>
+                <p v-if="!legacyLink" class="mb-4">Ziehen Sie die handshake.json des Lernmoduls hierher oder wählen Sie die Datei mit einem Klick aus.</p>
+                <file-pond v-if="opened && !legacyLink" :key="pondKey" name="handshake" :allow-multiple="false" :max-files="1"
                     :instant-upload="false" :allow-process="false" :allow-revert="false" :credits="false"
                     :disabled="busy || !state?.connected" :before-add-file="acceptFile"
                     :accepted-file-types="['application/json']" :file-validate-type-detect-type="detectType"
                     label-file-type-not-allowed="Zulässig ist ausschließlich die Datei handshake.json."
                     label-idle='handshake.json hierher ziehen oder <span class="filepond--label-action">Datei auswählen</span>'
                     @updatefiles="selectFiles" />
-                <p class="text-caption text-medium-emphasis">Nur die kleine Handshake-Datei wird gelesen. Schooltool prüft das Modul im verbundenen Dropbox-Konto.</p>
+                <p v-if="!legacyLink" class="text-caption text-medium-emphasis">Nur die kleine Handshake-Datei wird gelesen. Schooltool prüft das Modul im verbundenen Dropbox-Konto.</p>
                 <v-alert v-if="error" type="error" variant="tonal" class="mt-3">{{ error }}</v-alert>
                 <v-alert v-if="state && !state.connected" type="info" variant="tonal" class="mt-3">
                     {{ state.message }}
@@ -35,8 +39,8 @@
             </v-card-text>
             <v-card-actions>
                 <v-spacer />
-                <v-btn :disabled="busy" @click="opened = false">Abbrechen</v-btn>
-                <v-btn color="primary" variant="flat" :disabled="busy || !resolved?.can_link || !resolved?.proof || resolved?.conflict" @click="link">Verknüpfen</v-btn>
+                <v-btn :disabled="busy || folderBusy" @click="opened = false">Abbrechen</v-btn>
+                <v-btn v-if="!legacyLink" color="primary" variant="flat" :disabled="busy || !resolved?.can_link || !resolved?.proof || resolved?.conflict" @click="link">Verknüpfen</v-btn>
             </v-card-actions>
         </v-card>
     </v-dialog>
@@ -52,6 +56,8 @@ import { useAdminStore } from '@/stores/admin/AdminStore'
 import { loadWorkDropbox, workDropboxKey, workDropboxStates } from '@/helpers/workDropbox'
 import { workAutomationEnabled } from '@/helpers/workAutomation'
 import { readModuleHandshake } from '@/helpers/moduleHandshake'
+import { workNeedsPreparation } from '@/helpers/workOverview'
+import WorkDropboxSource from './WorkDropboxSource.vue'
 
 const FilePond = vueFilePond(FilePondPluginFileValidateType)
 const props = defineProps({ courseId: [Number, String] })
@@ -64,8 +70,10 @@ const contents = ref('')
 const filename = ref('')
 const resolved = ref(null)
 const busy = ref(false)
+const folderBusy = ref(false)
 const pondKey = ref(0)
 const key = computed(() => workDropboxKey(admin.config?.user?.id, work.value))
+const legacyLink = computed(() => Boolean(work.value) && !workNeedsPreparation(work.value, state.value))
 let operation = 0
 let controller = null
 
@@ -74,6 +82,11 @@ function resetRequest() {
     controller?.abort()
     controller = new AbortController()
     busy.value = false
+    folderBusy.value = false
+}
+
+function folderLinked() {
+    if (workDropboxStates.get(key.value)?.folder?.id) opened.value = false
 }
 
 function message(exception) {

@@ -2,7 +2,7 @@
     <slot :open="open" />
     <v-dialog v-if="opened" v-model="opened" persistent scrollable max-width="780">
         <v-card>
-            <v-card-title class="text-wrap">{{ section || 'Arbeitsordner' }} · {{ work?.title }}</v-card-title>
+            <v-card-title class="text-wrap">{{ section || (module ? 'Lernmodulordner' : exercise ? 'Leistungsfeststellungsordner' : 'Arbeitsordner') }} · {{ work?.title }}</v-card-title>
             <v-card-text>
                 <div v-if="current" class="folder-browser-path text-caption mb-3" aria-label="Dropbox-Ordnerpfad">{{ current.path }}</div>
                 <nav v-if="breadcrumbs.length" class="d-flex flex-wrap align-center mb-2" aria-label="Ordnernavigation">
@@ -38,7 +38,7 @@ import { workDropboxKey, workDropboxStates } from '@/helpers/workDropbox'
 import { workAutomationEnabled } from '@/helpers/workAutomation'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 
-const props = defineProps({ work: Object, disabled: Boolean, exercise: Boolean, date: { type: String, default: '' }, section: { type: String, default: '' } })
+const props = defineProps({ work: Object, disabled: Boolean, module: Boolean, exercise: Boolean, date: { type: String, default: '' }, section: { type: String, default: '' } })
 const admin = useAdminStore()
 const key = computed(() => workDropboxKey(admin.config?.user?.id, props.work))
 const opened = ref(false)
@@ -92,7 +92,8 @@ async function open() {
     controller = new AbortController()
     loading.value = true
     try {
-        const { data } = await axios.get(show.url(props.work.id), { signal: controller.signal, timeout: 45000 })
+        const { data } = await axios.get(show.url(props.work.id), { signal: controller.signal, timeout: 45000,
+            ...(props.module || props.exercise ? { params: { include_folder_path: 1 } } : {}) })
         if (request !== operation || key.value !== currentKey) return
         if (!data.connected || !(data.module_link?.folder?.id || data.folder?.id)) throw new Error('Kein Arbeitsordner verknüpft.')
         const previous = workDropboxStates.get(currentKey)
@@ -115,6 +116,7 @@ async function read(folderId = null, append = false) {
     try {
         const { data } = await axios.get(folders.url(props.work.id), { signal: controller.signal, timeout: 120000,
             params: { contents: 1, ...(props.exercise ? { exercise: 1 } : {}), ...(props.date ? { date: props.date } : {}),
+                ...(props.module ? { module: 1 } : {}),
                 ...(props.section ? { section: props.section } : {}),
                 ...(folderId ? { folder_id: folderId } : {}), ...(append && cursor.value ? { cursor: cursor.value } : {}) } })
         if (request !== operation || key.value !== currentKey) return false
@@ -171,7 +173,7 @@ function fileSize(size) {
     return Number.isFinite(size) ? `${new Intl.NumberFormat('de-AT').format(size)} Bytes` : 'Datei'
 }
 
-watch(() => [key.value, props.exercise, props.date, props.section, workAutomationEnabled(props.work)], close)
+watch(() => [key.value, props.module, props.exercise, props.date, props.section, workAutomationEnabled(props.work)], close)
 watch(() => workDropboxStates.get(key.value)?.link_version, value => {
     if (opened.value && linkVersion.value && value !== linkVersion.value) close()
 })

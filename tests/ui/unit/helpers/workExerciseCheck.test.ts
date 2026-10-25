@@ -27,8 +27,9 @@ it('shares one first check between overview, folder status and details', async (
 })
 
 it('restores the timestamped last check after reload and contacts Dropbox only on explicit refresh', async () => {
-    const get = vi.fn().mockResolvedValueOnce({ data: found }).mockResolvedValueOnce({ data: { ...found, exercise: { status: 'missing', folder: null } } })
-    vi.stubGlobal('axios', { get })
+    const get = vi.fn().mockResolvedValue({ data: found })
+    const post = vi.fn().mockResolvedValue({ data: { ...found, exercise: { status: 'missing', folder: null } } })
+    vi.stubGlobal('axios', { get, post })
     await loadWorkExercise(key, work, work.date_for_all_groups)
     const checkedAt = workExerciseCheck(key, work, work.date_for_all_groups)?.checkedAt
     clearWorkDropboxStates(false)
@@ -38,8 +39,10 @@ it('restores the timestamped last check after reload and contacts Dropbox only o
     expect(get).toHaveBeenCalledTimes(1)
     await loadWorkExercise(key, work, work.date_for_all_groups, true)
     expect(workExerciseCheck(key, work, work.date_for_all_groups)?.status).toBe('missing')
-    expect(get).toHaveBeenCalledTimes(2)
-    expect(get.mock.calls[1][1].params.refresh).toBe(1)
+    expect(get).toHaveBeenCalledTimes(1)
+    expect(post).toHaveBeenCalledExactlyOnceWith('/api/admin/teaching/course_works/65/dropbox/refresh', {
+        date: '2026-10-23', finish_until_date: null, finish_until_time: null, expected: { date: null, time: null },
+    }, { timeout: 120000 })
 })
 
 it('keeps the server timestamp when reading a previously verified status', async () => {
@@ -80,8 +83,9 @@ it('does not let a late response restore another module or a cleared connection'
 })
 
 it('keeps a failed check unknown and reuses that result until explicitly retried', async () => {
-    const get = vi.fn().mockRejectedValueOnce(new Error('Offline')).mockResolvedValueOnce({ data: found })
-    vi.stubGlobal('axios', { get })
+    const get = vi.fn().mockRejectedValue(new Error('Offline'))
+    const post = vi.fn().mockResolvedValue({ data: found })
+    vi.stubGlobal('axios', { get, post })
     await expect(loadWorkExercise(key, work, work.date_for_all_groups)).rejects.toThrow('Offline')
     expect(workExerciseCheck(key, work, work.date_for_all_groups)?.status).toBe('unknown')
     await loadWorkExercise(key, work, work.date_for_all_groups)

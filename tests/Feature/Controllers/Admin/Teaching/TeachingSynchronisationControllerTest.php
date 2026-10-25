@@ -15,6 +15,7 @@ use App\Models\Schoolyear;
 use App\Models\Teacher;
 use App\Models\TeachingCourse;
 use App\Models\TeachingCourseWork;
+use App\Models\TeachingExplanationShare;
 use App\Models\TeachingPersonalAppointment;
 use App\Models\TeachingWorkDropboxFolder;
 use App\Models\TeachingWorkModuleLink;
@@ -593,6 +594,36 @@ test('invalid personal appointment scope or references block synchronisation wit
     'missing schoolyear' => ['schoolyear_id', 'Beziehung zu schoolyears'],
     'foreign school' => ['school_id', 'Fremde Schule'],
 ]);
+
+test('synchronisation preserves installation explanation links without exporting access or changing other schools', function () {
+    $share = TeachingExplanationShare::factory()->create([
+        'school_id' => $this->school->id, 'user_id' => $this->actor->id,
+        'access_mode' => 'authenticated', 'is_active' => true,
+    ]);
+    $foreignSchool = School::factory()->create();
+    $foreignTeacher = User::factory()->create(['school_id' => $foreignSchool->id]);
+    $foreignShare = TeachingExplanationShare::factory()->create([
+        'school_id' => $foreignSchool->id, 'user_id' => $foreignTeacher->id,
+        'access_mode' => 'public', 'is_active' => true,
+    ]);
+    $before = $share->fresh()->getAttributes();
+    $foreignBefore = $foreignShare->fresh()->getAttributes();
+    $captured = app(TeachingSynchronisationGraph::class)->capture(DB::connection(), $this->school->id);
+
+    expect($captured['tables'])->not->toHaveKey('teaching_explanation_shares');
+    expect(json_encode($captured))->not->toContain($share->token, $foreignShare->token);
+
+    $this->snapshot['tables']['teaching_courses'][0]['title'] = 'Updated cloud course';
+    $this->actingAs($this->actor, 'sanctum');
+    $preview = $this->postJson('/api/admin/teaching/synchronisation/preview')->assertSuccessful();
+    expect($preview->json('data.conflicts'))->toBe([]);
+    $this->postJson('/api/admin/teaching/synchronisation/apply', teachingSyncApplyPayload($preview->json('data.token')))
+        ->assertSuccessful();
+
+    expect($this->course->fresh()->title)->toBe('Updated cloud course')
+        ->and($share->fresh()->getAttributes())->toBe($before)
+        ->and($foreignShare->fresh()->getAttributes())->toBe($foreignBefore);
+});
 
 test('synchronisation preserves local Dropbox folder choices and credentials without exporting them or changing foreign choices', function () {
     $work = TeachingCourseWork::factory()->create(['teaching_course_id' => $this->course->id]);

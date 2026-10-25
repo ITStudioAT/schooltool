@@ -11,7 +11,7 @@
             mdi-link-variant
         </v-icon>
         <v-tooltip activator="parent" location="top" :text="tooltip" :open-delay="200" :max-width="420" />
-        <WorkFolderBrowser ref="browser" :work="work" :date="date" />
+        <WorkFolderBrowser ref="browser" :work="work" :date="date" module />
     </span>
 </template>
 
@@ -30,11 +30,12 @@ const browser = ref(null)
 const key = computed(() => workDropboxKey(admin.config?.user?.id, props.work))
 const state = computed(() => workDropboxStates.get(key.value))
 const needsPreparation = computed(() => workNeedsPreparation(props.work, state.value))
-const linkedFolder = computed(() => state.value?.module_link?.folder || state.value?.folder)
+const linkedFolder = computed(() => state.value?.module_link?.folder || state.value?.legacy_folders?.module || state.value?.folder)
 const linked = computed(() => Boolean(linkedFolder.value?.id))
 const color = computed(() => state.value ? (linked.value ? 'success' : 'error') : 'grey')
 const tooltip = computed(() => {
-    if (linked.value) return `Ordner verknüpft: ${linkedFolder.value.path || linkedFolder.value.name}`
+    if (linked.value) return state.value?.module_link || state.value?.legacy_folders?.module
+        ? `Ordner verknüpft: ${linkedFolder.value.path || linkedFolder.value.name}` : 'Ordner verknüpft · Lernmodulordner öffnen'
     if (state.value) return 'Kein Ordner mit dieser Arbeit verknüpft'
     return loadError.value ? 'Ordnerverknüpfung konnte nicht geprüft werden' : 'Ordnerverknüpfung wird geprüft …'
 })

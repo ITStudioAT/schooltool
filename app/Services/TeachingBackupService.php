@@ -1366,7 +1366,7 @@ class TeachingBackupService
             ->where('id', $sourceId)
             ->where('teaching_curriculum_id', $document['teaching_curriculum_id']);
 
-        foreach (['topic_id', 'unit_id', 'source_type', 'name', 'file_path'] as $column) {
+        foreach (['topic_id', 'unit_id', 'source_type', 'name', 'file_path', 'explanation_key'] as $column) {
             $query->where($column, $document[$column] ?? null);
         }
 

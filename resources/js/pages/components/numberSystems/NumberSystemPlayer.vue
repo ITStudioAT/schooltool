@@ -49,8 +49,8 @@
                     <section class="ns-mission ns-panel" :aria-label="run.mission.title">
                         <p class="ns-small ns-muted">{{ run.mission.chapter_title }} · Aufgabe {{ run.position + 1 }} von {{ run.total }}</p>
                         <h2 ref="missionTitle" tabindex="-1" style="margin-top:8px">{{ run.mission.title }}</h2>
-                        <p class="ns-prompt">{{ run.mission.prompt }}</p>
-                        <ol v-if="run.mission.instructions?.length" class="ns-instructions"><li v-for="instruction in run.mission.instructions" :key="instruction">{{ instruction }}</li></ol>
+                        <p class="ns-prompt">{{ formatNumberSystemText(run.mission.prompt) }}</p>
+                        <ol v-if="run.mission.instructions?.length" class="ns-instructions"><li v-for="instruction in run.mission.instructions" :key="instruction">{{ formatNumberSystemText(instruction) }}</li></ol>
                         <form @submit.prevent="submitAnswer">
                             <NumberSystemPuzzle :mission="run.mission" :model-value="draft" :disabled="!canPlay || busy || conflict" @update:model-value="edit" />
                             <div class="ns-toolbar" style="margin-top:24px">
@@ -61,13 +61,13 @@
                                 <span class="ns-saving" role="status">{{ saving ? 'Deine Eingabe wird gespeichert …' : dirty ? 'Eingabe noch nicht gespeichert' : 'Spielstand gespeichert' }}</span>
                             </div>
                         </form>
-                        <div v-if="run.feedback" class="ns-alert ns-feedback" :class="{ 'ns-success': run.solved }" role="status">{{ run.feedback.message }}</div>
+                        <div v-if="run.feedback" class="ns-alert ns-feedback" :class="{ 'ns-success': run.solved }" role="status">{{ formatNumberSystemText(run.feedback.message) }}</div>
                     </section>
                     <aside class="ns-player-aside ns-stack">
                         <div class="ns-panel">
                             <h3>{{ run.history.length }} / {{ run.total }} Aufgaben gelöst</h3>
                             <progress class="ns-progress" :value="run.history.length" :max="run.total" aria-label="Gelöste Aufgaben" />
-                            <p class="ns-small ns-muted">{{ run.mission.story }}</p>
+                            <p class="ns-small ns-muted">{{ formatNumberSystemText(run.mission.story) }}</p>
                             <p v-if="storageUnavailable" class="ns-small ns-gold">Lokale Sicherung ist gesperrt. Warte vor dem Schließen auf „Spielstand gespeichert“.</p>
                         </div>
                         <div class="ns-panel ns-stack">
@@ -79,10 +79,10 @@
                             <details><summary>Rechenhilfe: Dual, Dezimal &amp; Hex</summary>
                                 <p>Dual und binär bedeuten dasselbe: Eine Zahl besteht nur aus 0 und 1. Die Stellenwerte sind von rechts nach links 1, 2, 4, 8, 16, … . Addiere die Stellenwerte, bei denen eine 1 steht.</p>
                                 <p>Dezimal sind die gewohnten Zahlen mit 0–9. Hexadezimal (kurz: Hex) verwendet zusätzlich A–F: A = 10, B = 11, C = 12, D = 13, E = 14, F = 15. Das Zeichen # kennzeichnet hier eine Hexzahl.</p>
-                                <p>Vier Bits entsprechen einer Hexziffer. Von rechts gruppieren; nur links mit Nullen ergänzen. #20F enthält die innere Null weiterhin: 0010 0000 1111 (dual).</p>
+                                <p>Vier Bits entsprechen einer Hexziffer. Von rechts gruppieren; nur links mit Nullen ergänzen. #20F enthält die innere Null weiterhin: 0010 0000 1111<sub>2</sub>.</p>
                                 <p>Von Dezimal nach Binär: Teile durch 2 und notiere den Rest. Teile das ganzzahlige Ergebnis erneut durch 2. Wiederhole das, bis das Ergebnis 0 ist. Lies die Reste von unten nach oben. Für Hexzahlen teilst du stattdessen durch 16.</p>
                                 <p>Der Zahlenwert 256 benötigt neun Bits. Er passt nicht in ein Byte mit acht Bits.</p>
-                                <table><thead><tr><th>Hex</th><th>Vier Bits</th><th>Dezimal</th></tr></thead><tbody><tr v-for="value in 16" :key="value"><td>#{{ (value - 1).toString(16).toUpperCase() }}</td><td>{{ (value - 1).toString(2).padStart(4, '0') }}</td><td>{{ value - 1 }}</td></tr></tbody></table>
+                                <table><thead><tr><th>Hex</th><th>Vier Bits</th><th>Dezimal</th></tr></thead><tbody><tr v-for="value in 16" :key="value"><td>#{{ (value - 1).toString(16).toUpperCase() }}</td><td>{{ (value - 1).toString(2).padStart(4, '0') }}<sub>2</sub></td><td>{{ value - 1 }}</td></tr></tbody></table>
                             </details>
                             <details v-if="run.mission.ascii"><summary>ASCII-Zeichentabelle</summary>
                                 <p>Zeichen → Nummer → Zahlendarstellung. ASCII ist keine Verschlüsselung. Hier stehen nur Großbuchstaben und Leerzeichen.</p>
@@ -92,7 +92,7 @@
                         <div class="ns-panel ns-stack">
                             <h3>Brauchst du einen Tipp?</h3><p class="ns-small ns-muted">1: So fängst du an. 2: Weitere Hilfe. 3: Lösung mit Rechenweg. Ohne Punkteabzug.</p>
                             <button class="ns-button ns-button-secondary" :disabled="run.hints >= 3 || busy || saving || !canPlay || conflict" @click="act('hint')">{{ run.hints < 3 ? `Tipp ${run.hints + 1} anzeigen` : 'Alle Tipps angezeigt' }}</button>
-                            <p v-for="(hint, index) in run.hint_texts" :key="index" class="ns-small">{{ hint }}</p>
+                            <p v-for="(hint, index) in run.hint_texts" :key="index" class="ns-small">{{ formatNumberSystemText(hint) }}</p>
                         </div>
                     </aside>
                 </div>
@@ -111,6 +111,7 @@ import NumberSystemRanking from './NumberSystemRanking.vue'
 import NumberSystemReward from './NumberSystemReward.vue'
 import { useNumberSystemPlayer } from './useNumberSystemPlayer'
 import { createNumberSystemSound } from './numberSystemSound'
+import { formatNumberSystemText } from '@/helpers/numberSystemNotation'
 import './game.css'
 const props = defineProps({ runId: { type: [Number, String], required: true }, probeId: String, participant: Number })
 defineEmits(['back'])

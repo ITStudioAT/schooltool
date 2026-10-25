@@ -1,6 +1,6 @@
 <template>
-    <span v-if="work?.id && needsPreparation" class="d-inline-flex" :class="{ 'cursor-pointer': status === 'found' }"
-        :tabindex="status === 'found' ? 0 : undefined" :role="status === 'found' ? 'button' : undefined"
+    <span v-if="work?.id && (needsPreparation || historical)" class="d-inline-flex" :class="{ 'cursor-pointer': accessible }"
+        :tabindex="accessible ? 0 : undefined" :role="accessible ? 'button' : undefined"
         :aria-label="tooltip" :title="tooltip" @click.stop="openDialog"
         @keydown.enter.stop.prevent="openDialog" @keydown.space.stop.prevent="openDialog">
         <v-icon :size="size" :color="color" :aria-label="tooltip" :aria-hidden="false" role="img">
@@ -8,11 +8,11 @@
         </v-icon>
         <v-tooltip activator="parent" location="top" :text="tooltip" :open-delay="200" :max-width="420" />
     </span>
-    <v-dialog v-if="opened && status === 'found'" v-model="opened" persistent scrollable max-width="720">
+    <v-dialog v-if="opened && accessible" v-model="opened" persistent scrollable max-width="720">
         <v-card>
             <v-card-title class="text-wrap">Leistungsfeststellung · {{ work.title || 'Ohne Titel' }}</v-card-title>
             <v-card-text>
-                <v-alert type="success" variant="tonal" class="mb-4">Leistungsfeststellung erstellt – Prüfungsordner bestätigt.</v-alert>
+                <v-alert type="success" variant="tonal" class="mb-4">{{ historical ? 'Bestehende Leistungsfeststellung – gespeicherte Originalnachweise vorhanden.' : 'Leistungsfeststellung erstellt – Prüfungsordner bestätigt.' }}</v-alert>
                 <p v-if="checkTime" class="text-caption mb-3">Letzter Check: {{ checkTime }}</p>
                 <dl class="exercise-info">
                     <template v-for="item in details" :key="item.label">
@@ -24,8 +24,11 @@
                     <p class="exercise-info-description text-body-2">{{ work.description }}</p>
                 </template>
                 <h3 class="text-subtitle-2 mt-4 mb-1">Prüfungsordner</h3>
-                <p class="exercise-info-path text-body-2">{{ state.folder?.path || state.folder?.name }}</p>
-                <div v-if="state.folder?.id" class="d-flex flex-wrap ga-2 mt-4" aria-label="Prüfungsunterlagen">
+                <p class="exercise-info-path text-body-2">{{ folder?.path || folder?.name || 'Noch kein Dropbox-Ordner zugeordnet. Die vorhandenen Ergebnisse bleiben gespeichert.' }}</p>
+                <WorkFolderBrowser v-if="folder?.id" :work="work" :date="date" exercise>
+                    <template #default="{ open }"><v-btn class="mt-3" variant="tonal" prepend-icon="mdi-folder-open-outline" @click="open">Leistungsfeststellungsordner öffnen</v-btn></template>
+                </WorkFolderBrowser>
+                <div v-if="!historical && folder?.id" class="d-flex flex-wrap ga-2 mt-4" aria-label="Prüfungsunterlagen">
                     <WorkExercisePdf v-for="section in ['Angaben', 'Bewertungskriterien']" :key="section" :work="work" :date="date" :section="section" />
                     <WorkEvaluationPdf :work="work" />
                 </div>
@@ -45,13 +48,19 @@ import { workAutomationEnabled } from '@/helpers/workAutomation'
 import { workNeedsPreparation } from '@/helpers/workOverview'
 import { workDropboxKey, workDropboxStates } from '@/helpers/workDropbox'
 import { workParticipantIds } from '@/helpers/workCellStatus'
+import { workHasProgress } from '@/helpers/workProgress'
 import WorkExercisePdf from './WorkExercisePdf.vue'
 import WorkEvaluationPdf from './WorkEvaluationPdf.vue'
+import WorkFolderBrowser from './WorkFolderBrowser.vue'
 
 const props = defineProps({ work: Object, course: Object, date: { type: String, default: '' }, state: Object, size: { type: [Number, String], default: 30 } })
 const admin = useAdminStore()
+const binding = computed(() => workDropboxStates.get(workDropboxKey(admin.config?.user?.id, props.work)))
+const historical = computed(() => workAutomationEnabled(props.work) && workHasProgress(props.work) && !needsPreparation.value)
 const needsPreparation = computed(() => workNeedsPreparation(props.work,
-    workDropboxStates.get(workDropboxKey(admin.config?.user?.id, props.work))))
+    binding.value))
+const folder = computed(() => historical.value ? binding.value?.legacy_folders?.exercise || binding.value?.folder : props.state?.folder)
+const accessible = computed(() => historical.value || status.value === 'found')
 const opened = ref(false)
 const checkTime = computed(() => props.state?.checkedAt ? new Intl.DateTimeFormat('de-AT', {
     timeZone: 'Europe/Vienna', dateStyle: 'short', timeStyle: 'short',
@@ -62,8 +71,10 @@ const status = computed(() => {
         || String(state.courseId) !== String(props.work?.teaching_course_id) || state.date !== props.date) return 'checking'
     return state.status
 })
-const color = computed(() => status.value === 'found' ? 'success' : status.value === 'missing' ? 'error' : 'grey')
+const color = computed(() => historical.value || status.value === 'found' ? 'success' : status.value === 'missing' ? 'error' : 'grey')
 const tooltip = computed(() => {
+    if (historical.value) return folder.value?.id ? `Leistungsfeststellung erstellt: ${folder.value.name}`
+        : 'Bestehende Leistungsfeststellung – gespeicherte Nachweise ansehen'
     if (status.value === 'found') return `Leistungsfeststellung erstellt: ${props.state.folder?.name || ''}`
     if (status.value === 'missing') return 'Leistungsfeststellung noch nicht erstellt'
     if (status.value === 'unknown') return 'Leistungsfeststellung konnte nicht geprüft werden'
@@ -116,7 +127,7 @@ function deadline(date, time, empty = 'Nicht festgelegt') {
 }
 
 function openDialog() {
-    if (status.value === 'found') opened.value = true
+    if (accessible.value) opened.value = true
 }
 
 watch(() => [admin.config?.user?.id, props.work?.id, props.work?.teaching_course_id, props.date, status.value, props.state?.folder?.id],

@@ -1,7 +1,7 @@
 <template>
     <v-btn v-if="available && !ready && !statusOnly" size="small" variant="tonal" prepend-icon="mdi-email-edit-outline"
         :disabled="disabled" @click.stop="openDialog('prepare')">E-Mails vorbereiten</v-btn>
-    <v-btn v-if="available && ready && !statusOnly" size="small" color="primary" variant="tonal" prepend-icon="mdi-send-outline"
+    <v-btn v-if="available && ready && !sent && !statusOnly" size="small" color="primary" variant="tonal" prepend-icon="mdi-send-outline"
         :disabled="disabled" @click.stop="openDialog('send')">E-Mails versenden</v-btn>
     <span v-if="available && statusOnly" class="d-inline-flex" :class="{ 'cursor-pointer': ready }"
         :tabindex="ready ? 0 : undefined" :role="ready ? 'button' : undefined"
@@ -15,7 +15,7 @@
         <v-card>
             <v-card-title class="text-wrap">Versandbereitschaft · {{ work.title || 'Ohne Titel' }}</v-card-title>
             <v-card-text>
-                <v-alert type="success" variant="tonal" class="mb-4">Versandbereit – noch nicht versandt.</v-alert>
+                <v-alert type="success" variant="tonal" class="mb-4">{{ sent ? 'Vorbereitung abgeschlossen – E-Mails versandt.' : 'Versandbereit – noch nicht versandt.' }}</v-alert>
                 <dl class="preparation-info">
                     <dt>Versandbereit seit</dt><dd>{{ preparedTime || 'Nicht angegeben' }}</dd>
                     <dt>Vorbereitete E-Mails</dt><dd>{{ recipientsCount }}</dd>
@@ -41,6 +41,7 @@
                         <v-btn value="live">Tatsächlich versenden</v-btn>
                         <v-btn value="test">Test an mich</v-btn>
                     </v-btn-toggle>
+                    <p v-if="localMailpit" class="text-caption text-orange-darken-3 mt-2 font-weight-bold" role="status">{{ deliveryTransport.label }} · Keine Zustellung an externe Postfächer.</p>
                     <p v-if="deliveryMode === 'test'" class="text-caption mt-2">Genau eine vorbereitete E-Mail an {{ result?.context?.delivery?.recipient || admin.config?.user?.email }}. Ohne Versandaufzeichnung.</p>
                     <p class="text-caption mt-2">Der Auftrag gibt die gewählte Versandart frei. Das Kopieren allein sendet nichts.</p>
                 </template>
@@ -66,7 +67,8 @@
                 <v-spacer />
                 <v-btn :disabled="loading" @click="opened = false">Schließen</v-btn>
                 <v-btn v-if="error && !result" :disabled="loading" @click="loadPreparation">Erneut laden</v-btn>
-                <v-btn color="primary" :loading="loading || copying" :disabled="disabled || loading || copying || !result" @click="copyPreparation">Auftrag kopieren</v-btn>
+                <v-btn :color="copied ? 'success' : 'primary'" :prepend-icon="copied ? 'mdi-check' : 'mdi-content-copy'"
+                    :loading="loading || copying" :disabled="disabled || loading || copying || !result" @click="copyPreparation">{{ copied ? 'Kopiert' : 'Auftrag kopieren' }}</v-btn>
             </v-card-actions>
         </v-card>
     </v-dialog>
@@ -78,6 +80,7 @@ import { aiExport } from '@/actions/App/Http/Controllers/Admin/Teaching/CourseWo
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { workAutomationEnabled } from '@/helpers/workAutomation'
 import { workNeedsPreparation } from '@/helpers/workOverview'
+import { workDropboxKey, workDropboxStates, workExerciseCheck } from '@/helpers/workDropbox'
 
 const props = defineProps({ work: Object, state: Object, date: { type: String, default: '' }, disabled: Boolean, statusOnly: Boolean, size: { type: [Number, String], default: 30 } })
 const admin = useAdminStore()
@@ -88,6 +91,7 @@ const addressForm = ref(null)
 const deliveryMode = ref(null)
 const loading = ref(false)
 const copying = ref(false)
+const copied = ref(false)
 const result = ref(null)
 const error = ref('')
 const message = ref('')
@@ -101,10 +105,17 @@ const available = computed(() => workAutomationEnabled(props.work) && workNeedsP
     && Boolean(props.state.folder?.id))
 const preparation = computed(() => props.state?.emailPreparation)
 const ready = computed(() => preparation.value?.status === 'ready')
+const sent = computed(() => {
+    const key = workDropboxKey(admin.config?.user?.id, props.work)
+    return (props.state?.emailDispatch || workExerciseCheck(key, props.work, props.date)?.data?.exercise?.email_dispatch
+        || workDropboxStates.get(key)?.exercise?.email_dispatch)?.status === 'sent'
+})
 const sending = computed(() => mode.value === 'send')
+const deliveryTransport = computed(() => admin.config?.teaching_email_delivery || { mode: 'office_outlook', available: true })
+const localMailpit = computed(() => deliveryTransport.value.mode === 'mailpit')
 const requestLabel = computed(() => sending.value ? 'Versandauftrag' : 'Vorbereitungsauftrag')
 const color = computed(() => ready.value ? 'success' : preparation.value?.status === 'unknown' ? 'grey' : 'error')
-const tooltip = computed(() => ready.value ? 'Versandbereit – noch nicht versandt'
+const tooltip = computed(() => ready.value ? (sent.value ? 'E-Mail-Vorbereitung abgeschlossen' : 'Versandbereit – noch nicht versandt')
     : preparation.value?.status === 'unknown' ? 'E-Mail-Vorbereitung konnte nicht bestätigt werden' : 'E-Mails vorbereiten')
 const preparedTime = computed(() => formatTime(preparation.value?.prepared_at))
 const checkTime = computed(() => formatTime(props.state?.checkedAt))
@@ -126,6 +137,7 @@ function clear() {
     controller?.abort()
     loading.value = false
     copying.value = false
+    copied.value = false
     result.value = null
     error.value = ''
     message.value = ''
@@ -163,7 +175,9 @@ async function loadPreparation() {
             || data.context?.exercise_folder?.id !== folderId || data.context?.delivery?.send_authorized !== dispatch
             || (dispatch ? data.context?.email_preparation?.status !== 'ready'
                 || data.context?.delivery?.selection !== selectedDeliveryMode
-                || data.context?.delivery?.mode !== (selectedDeliveryMode === 'test' ? 'test_office_outlook' : 'live_office_outlook')
+                || data.context?.delivery?.mode !== `${selectedDeliveryMode === 'test' ? 'test_' : 'live_'}${deliveryTransport.value.mode}`
+                || (localMailpit.value && (data.context?.delivery?.local_only !== true
+                    || data.context?.delivery?.smtp_host !== '127.0.0.1' || data.context?.delivery?.smtp_port !== 1025))
                 || data.context?.delivery?.requires_explicit_send_confirmation !== false
                 || data.context?.delivery?.record_dispatch !== (selectedDeliveryMode === 'live')
                 || (selectedDeliveryMode === 'test' && (data.context?.delivery?.messages_count !== 1
@@ -183,6 +197,7 @@ async function copyPreparation() {
     if (!opened.value || !available.value || props.disabled || loading.value || copying.value || !result.value || (sending.value && !ready.value)) return
     const operation = sequence
     copying.value = true
+    copied.value = false
     error.value = ''
     message.value = ''
     try {
@@ -196,7 +211,10 @@ async function copyPreparation() {
             copyText.value?.select()
             if (document.execCommand?.('copy') !== true) throw new Error('Der Browser hat das Kopieren blockiert. Bitte erneut auf „Auftrag kopieren“ klicken.')
         }
-        if (operation === sequence) message.value = `${requestLabel.value} kopiert. Jetzt an die KI übergeben.`
+        if (operation === sequence) {
+            copied.value = true
+            message.value = `${requestLabel.value} kopiert. Jetzt an die KI übergeben.`
+        }
     } catch (exception) {
         if (operation === sequence) error.value = exception.message
     } finally {

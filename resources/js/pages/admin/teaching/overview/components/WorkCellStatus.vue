@@ -1,5 +1,5 @@
 <template>
-    <span class="d-inline-flex align-center ga-1">
+    <span v-if="statuses.length" class="d-inline-flex align-center ga-1">
         <v-icon v-for="item in statuses" :key="item.purpose" :icon="item.icon" size="16"
             :color="item.color" :aria-label="item.label" role="img" aria-hidden="false"
             :title="nativeTitle ? item.label : undefined"
@@ -11,7 +11,7 @@
 
 <script setup>
 import { computed } from 'vue'
-import { workAggregateStatuses, workCellDeviationStatuses, workCellStatuses } from '@/helpers/workCellStatus'
+import { workAggregateStatuses, workCellDeviationStatuses, workCellPendingStatuses, workCellStatuses } from '@/helpers/workCellStatus'
 
 const props = defineProps({
     work: { type: Object, default: null },
@@ -20,9 +20,11 @@ const props = defineProps({
     students: { type: Array, default: () => [] },
     aggregate: { type: Boolean, default: false },
     deviationsOnly: { type: Boolean, default: false },
+    pendingOnly: { type: Boolean, default: false },
     nativeTitle: { type: Boolean, default: false },
 })
 const statuses = computed(() => props.aggregate ? workAggregateStatuses(props.work, props.students, props.now)
+    : props.pendingOnly ? workCellPendingStatuses(props.work, props.studentId, props.now)
     : props.deviationsOnly ? workCellDeviationStatuses(props.work, props.studentId, props.students, props.now)
         : workCellStatuses(props.work, props.studentId, props.now))
 </script>

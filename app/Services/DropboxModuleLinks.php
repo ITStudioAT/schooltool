@@ -74,7 +74,8 @@ class DropboxModuleLinks
 
         return ($matches === [] ? ['status' => 'missing', 'folder' => null]
             : ['status' => 'found', 'folder' => $matches[0]['folder'],
-                'email_preparation' => $matches[0]['email_preparation'] ?? ['status' => 'unknown']]) + $checked;
+                'email_preparation' => $matches[0]['email_preparation'] ?? ['status' => 'unknown'],
+                'email_dispatch' => $matches[0]['email_dispatch'] ?? ['status' => 'unknown']]) + $checked;
     }
 
     /** @return array<string, mixed> */
@@ -140,7 +141,8 @@ class DropboxModuleLinks
                 abort_unless(dirname($confirmed['path_lower']) === $root['path_lower'], 409, 'Die Leistungsfeststellung wurde inzwischen verschoben.');
                 $matches[] = ['date' => $scheduled, 'folder' => ['id' => $confirmed['id'], 'name' => $confirmed['name'],
                     'path' => $confirmed['path_display'] ?? $confirmed['path_lower']],
-                    'email_preparation' => $this->emailPreparation($connection, $work, $confirmed, $children, $scheduled)];
+                    'email_preparation' => $this->emailPreparation($connection, $work, $confirmed, $children, $scheduled),
+                    'email_dispatch' => $this->emailDispatch($connection, $work, $children)];
             }
             abort_unless($this->current($work)?->getAttributes() === $link->getAttributes()
                 && $connection->fresh()?->account_id === $link->account_id && ! $connection->fresh()?->revoked_at,
@@ -204,6 +206,8 @@ class DropboxModuleLinks
             abort_unless(in_array('Anlage_und_Quellen.json', $verifiedSources, true)
                 && collect($verifiedSources)->contains(fn (string $path): bool => str_starts_with($path, 'Schülerlisten/')),
                 422, 'Quellenmetadaten und Schülerliste müssen belegt sein.');
+            abort_unless(app(TeachingWorkDeadlineSync::class)->matchesStudentDeadline($work, $metadata), 409,
+                'Die Schülerfrist wurde seit der E-Mail-Vorbereitung geändert. Bitte Schülerunterlagen und E-Mails neu vorbereiten.');
             foreach (['Abgabeschluss' => $work->finish_until_date && $work->finish_until_time
                 ? $work->finish_until_date->format('Y-m-d').' '.$work->finish_until_time : null,
                 'MitgeteilteAbgabefrist' => ($work->communicatedDeadline()['at'] ?? null)] as $field => $expected) {
@@ -285,6 +289,60 @@ class DropboxModuleLinks
         abort_unless(is_array($data), 422, 'Ungültige LF-Metadaten.');
 
         return $data;
+    }
+
+    /** @param list<array<string, mixed>> $children
+     * @return array<string, mixed>
+     */
+    private function emailDispatch(DropboxConnection $connection, TeachingCourseWork $work, array $children): array
+    {
+        try {
+            foreach (['Versand', 'Aufgaben'] as $name) {
+                $folder = collect($children)->first(fn (array $entry): bool => ($entry['.tag'] ?? null) === 'folder' && ($entry['name'] ?? null) === $name);
+                if (! $folder) {
+                    return ['status' => 'missing', 'confirmed_count' => 0];
+                }
+                $children = $this->exerciseChildren($connection, $folder['id']);
+            }
+            $runs = collect($children)->filter(fn (array $entry): bool => ($entry['.tag'] ?? null) === 'folder'
+                && str_starts_with($entry['name'] ?? '', 'Versand_'))->sortByDesc('name')->take(30);
+            $confirmed = [];
+            $last = null;
+            $mode = null;
+            $expected = array_unique(array_merge([], ...array_column(app(TeachingCourseWorkEntrySyncService::class)->groupsForWork($work), 'student_ids')));
+            foreach ($runs as $run) {
+                $text = $this->exerciseFile($connection, $this->exerciseChildren($connection, $run['id']), 'Versandprotokoll.txt');
+                if ($text === null) {
+                    continue;
+                }
+                $import = app(TeachingWorkDispatchImport::class);
+                $preview = $import->preview($work, $import->parse($text), hash('sha256', $text), requireMatchingTitle: false);
+                if (! $preview['can_import'] || $preview['purpose'] !== 'tasks') {
+                    continue;
+                }
+                foreach ($preview['rows'] as $row) {
+                    if (! $row['student_id'] || (! $row['accepted'] && $row['mode'] !== 'mailpit')) {
+                        continue;
+                    }
+                    $confirmed[$row['student_id']] ??= ['at' => $row['sent_at'] ?? $row['observed_at'], 'mode' => $row['mode']];
+                }
+                if ($confirmed !== [] && $last === null) {
+                    $last = ['run' => $run['name'], 'protocol_sha256' => hash('sha256', $text)];
+                    $mode = collect($confirmed)->contains('mode', 'mailpit') ? 'mailpit' : 'office_outlook';
+                }
+                if ($expected !== [] && count($confirmed) === count($expected)) {
+                    break;
+                }
+            }
+
+            return ['status' => $expected !== [] && count($confirmed) === count($expected) ? 'sent' : ($confirmed !== [] ? 'partial' : 'missing'),
+                'confirmed_count' => count($confirmed), 'expected_count' => count($expected), 'transport' => $mode,
+                'sent_at' => collect($confirmed)->pluck('at')->filter()->sort()->last(), 'last_protocol' => $last];
+        } catch (\Throwable $exception) {
+            report($exception);
+
+            return ['status' => 'unknown', 'confirmed_count' => 0];
+        }
     }
 
     /** @param list<array<string, mixed>> $entries */

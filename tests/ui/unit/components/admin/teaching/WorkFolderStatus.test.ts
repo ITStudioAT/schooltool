@@ -26,7 +26,7 @@ it('shows the assigned folder even before the first import and updates when the 
     const wrapper = mountStatus()
 
     expect(wrapper.get('[role="img"]').attributes('color')).toBe('success')
-    expect(wrapper.attributes('title')).toBe('Ordner verknüpft: Dateimanagement')
+    expect(wrapper.attributes('title')).toBe('Ordner verknüpft · Lernmodulordner öffnen')
 
     workDropboxStates.set('7:2:65', { folder: null })
     await flushPromises()
@@ -65,7 +65,7 @@ it('loads the saved assignment and keeps another user or work separate', async (
 
     expect(wrapper.get('[role="img"]').attributes('color')).toBe('grey')
     await flushPromises()
-    expect(wrapper.attributes('title')).toBe('Ordner verknüpft: Gespeicherter Ordner')
+    expect(wrapper.attributes('title')).toBe('Ordner verknüpft · Lernmodulordner öffnen')
 
     useAdminStore().config.user.id = 8
     await flushPromises()

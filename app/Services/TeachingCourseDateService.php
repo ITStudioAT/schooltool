@@ -10,6 +10,7 @@ use App\Models\TeachingCourseDateMaterial;
 use App\Models\TeachingCourseDateMaterialAttachment;
 use App\Models\TeachingCurriculumDocument;
 use App\Services\Teaching\CurriculumUnitFileService;
+use App\Services\Teaching\TeachingExplanationCatalog;
 use Carbon\Carbon;
 use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Database\Eloquent\Collection;
@@ -73,7 +74,7 @@ class TeachingCourseDateService
             ->with([
                 'teachingCurriculum:id,school_id,user_id,topics',
                 'teachingCurriculum.documents' => fn ($query) => $query
-                    ->where('source_type', 'unit_file')
+                    ->whereIn('source_type', ['unit_file', 'explanation'])
                     ->select(['id', 'teaching_curriculum_id', 'topic_id', 'unit_id']),
             ])
             ->get()
@@ -810,7 +811,7 @@ class TeachingCourseDateService
                     && (int) $course->teaching_curriculum_id === (int) $curriculum->id
                     && (int) $course->school_id === (int) $curriculum->school_id
                     && (int) $course->user_id === (int) $curriculum->user_id
-                    && $file->source_type === 'unit_file',
+                    && in_array($file->source_type, ['unit_file', 'explanation'], true),
                     404,
                 );
 
@@ -845,6 +846,18 @@ class TeachingCourseDateService
                     return;
                 }
                 if (! $studentVisible) {
+                    return;
+                }
+
+                if ($file->source_type === 'explanation') {
+                    abort_unless(TeachingExplanationCatalog::find($file->explanation_key), 404);
+                    $material->attachments()->create([
+                        'source_teaching_curriculum_document_id' => $file->id,
+                        'explanation_key' => $file->explanation_key,
+                        'name' => $file->name,
+                        'student_visible' => true,
+                    ]);
+
                     return;
                 }
 

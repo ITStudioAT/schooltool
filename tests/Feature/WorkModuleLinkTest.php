@@ -71,7 +71,7 @@ function fakeModuleDropbox(object $context): void
                     'path_lower' => $request['path'], 'path_display' => '/schule2020_2027/Materialien/Lerninhalte']);
             }
             foreach ($context->online as $entry) {
-                if ($entry['id'] === $request['path']) {
+                if ($entry['id'] === $request['path'] || $entry['path_lower'] === $request['path']) {
                     if (($context->changedExerciseRevision ?? false) && $entry['name'] === 'Anlage_und_Quellen.json') {
                         $entry['rev'] = 'changed-revision';
                     }
@@ -189,6 +189,24 @@ function addEmailPreparationFixture(object $context): string
     return $root;
 }
 
+test('exercise checks keep creation confirmed when an independent dispatch journal is invalid', function (): void {
+    linkExerciseFixture($this);
+    addExerciseFixture($this);
+    $root = addEmailPreparationFixture($this);
+    foreach (['Versand', 'Versand/Aufgaben', 'Versand/Aufgaben/Versand_2026-10-24_00-00-00'] as $relative) {
+        $path = $root.'/'.$relative;
+        $this->online[] = ['.tag' => 'folder', 'id' => 'id:'.hash('sha256', $path), 'name' => basename($path),
+            'path_lower' => strtolower($path), 'path_display' => $path];
+    }
+    addEmailPreparationFile($this, $root.'/Versand/Aufgaben/Versand_2026-10-24_00-00-00/Versandprotokoll.txt', 'Unvollständiger Versandbeleg');
+    $before = $this->work->fresh()->getAttributes();
+    $this->getJson($this->url.'?include_exercise=1')->assertOk()
+        ->assertJsonPath('exercise.status', 'found')->assertJsonPath('exercise.email_preparation.status', 'ready')
+        ->assertJsonPath('exercise.email_dispatch.status', 'unknown');
+    expect($this->work->fresh()->getAttributes())->toEqual($before);
+    Http::assertNotSent(fn (Request $request): bool => preg_match('#/files/(upload|delete|move|create)#', $request->url()) === 1);
+});
+
 test('exercise checks include complete email preparation without sending or importing', function (): void {
     linkExerciseFixture($this);
     addExerciseFixture($this);
@@ -293,6 +311,19 @@ test('linked folder contents hide other exercises before this exercise exists an
     }
 });
 
+test('linked module icon opens the learning module even after its exercise exists', function (): void {
+    linkExerciseFixture($this);
+    addContentsRootFixture($this);
+    addExerciseFixture($this);
+    $before = $this->work->fresh()->getAttributes();
+    $this->getJson($this->url.'?include_exercise=1')->assertOk();
+    $this->getJson($this->url.'/folders?contents=1&module=1')->assertOk()
+        ->assertJsonPath('root.name', 'emails - kopie')->assertJsonFragment(['name' => 'handshake.json', 'type' => 'file'])
+        ->assertJsonMissing(['name' => 'Leistungsfeststellung']);
+    $this->getJson($this->url.'/folders?contents=1&module=1&exercise=1')->assertUnprocessable();
+    expect($this->work->fresh()->getAttributes())->toEqual($before);
+});
+
 test('linked folder contents select the requested group date and stop on an uncertain exercise', function (): void {
     linkExerciseFixture($this);
     addContentsRootFixture($this);
@@ -365,6 +396,34 @@ test('linked folder contents require a saved connection and support a legacy wor
         'teaching_course_work_id' => $this->work->id, 'folder_id' => 'id:legacy', 'folder_name' => 'Altordner']);
 
     $this->getJson($this->url.'/folders?contents=1')->assertOk()->assertJsonPath('root.id', 'id:legacy');
+});
+
+test('legacy folder icons distinguish the learning module from the concrete group exercise without changing results', function (): void {
+    fakeModuleDropbox($this);
+    $this->online = [
+        ['.tag' => 'folder', 'id' => 'id:module', 'name' => 'E-Mails', 'path_lower' => '/materialien/emails', 'path_display' => '/Materialien/E-Mails'],
+        ['.tag' => 'folder', 'id' => 'id:collection', 'name' => 'Leistungsfeststellung', 'path_lower' => '/materialien/emails/leistungsfeststellung',
+            'path_display' => '/Materialien/E-Mails/Leistungsfeststellung'],
+        ['.tag' => 'folder', 'id' => 'id:legacy', 'name' => '2026-10-04_E-Mail_DGB-3B-1_Tag',
+            'path_lower' => '/materialien/emails/leistungsfeststellung/2026-10-04_e-mail_dgb-3b-1_tag',
+            'path_display' => '/Materialien/E-Mails/Leistungsfeststellung/2026-10-04_E-Mail_DGB-3B-1_Tag'],
+        ['.tag' => 'folder', 'id' => 'id:submissions', 'name' => 'Abgaben',
+            'path_lower' => '/materialien/emails/leistungsfeststellung/2026-10-04_e-mail_dgb-3b-1_tag/abgaben',
+            'path_display' => '/Materialien/E-Mails/Leistungsfeststellung/2026-10-04_E-Mail_DGB-3B-1_Tag/Abgaben'],
+    ];
+    TeachingWorkDropboxFolder::query()->create(['dropbox_connection_id' => $this->connection->id,
+        'teaching_course_work_id' => $this->work->id, 'folder_id' => 'id:legacy', 'folder_name' => $this->online[2]['name']]);
+    $before = $this->work->fresh()->getAttributes();
+    $this->getJson($this->url.'?include_folder_path=1')->assertOk()->assertJsonPath('folder.id', 'id:legacy')
+        ->assertJsonPath('legacy_folders.module.id', 'id:module')->assertJsonPath('legacy_folders.exercise.id', 'id:legacy');
+    $this->getJson($this->url.'/folders?contents=1&module=1')->assertOk()->assertJsonPath('root.id', 'id:module')
+        ->assertJsonMissing(['name' => 'Leistungsfeststellung']);
+    $this->getJson($this->url.'/folders?contents=1&exercise=1')->assertOk()->assertJsonPath('root.id', 'id:legacy')
+        ->assertJsonFragment(['id' => 'id:submissions', 'name' => 'Abgaben']);
+    $this->getJson($this->url.'/folders?contents=1&exercise=1&folder_id=id:module')->assertForbidden();
+    $this->getJson($this->url.'/folders?contents=1&module=1&folder_id=id:legacy')->assertForbidden();
+    expect($this->work->fresh()->getAttributes())->toEqual($before);
+    Http::assertNotSent(fn (Request $request): bool => preg_match('#/files/(upload|delete|move|create)#', $request->url()) === 1);
 });
 
 test('linked folder contents never initiate a full LF check themselves', function (): void {

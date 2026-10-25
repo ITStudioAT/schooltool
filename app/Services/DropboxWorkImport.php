@@ -433,6 +433,32 @@ class DropboxWorkImport
         return $this->checkFolderContext($this->workFolderContext($work), $name);
     }
 
+    public function isTemporaryFolderPath(string $path): bool
+    {
+        return preg_match('#/(?:tmp|temp|inventory)(?:/|\z)#ui', $path) === 1;
+    }
+
+    /** @return array{module: array, exercise: ?array} */
+    public function legacyFolderContext(DropboxConnection $connection, string $folderId): array
+    {
+        $folder = $this->metadata($connection, $folderId);
+        abort_if($this->isTemporaryFolderPath($folder['path_lower']), 409,
+            'Die gespeicherte Zuordnung zeigt auf eine temporäre Arbeitskopie. Bitte den Originalordner verknüpfen.');
+        $present = fn (array $entry): array => ['id' => $entry['id'], 'name' => $entry['name'],
+            'path' => $entry['path_display'] ?? $entry['path_lower']];
+        if (basename(dirname($folder['path_lower'])) !== 'leistungsfeststellung') {
+            return ['module' => $present($folder), 'exercise' => null];
+        }
+        $modulePath = dirname(dirname($folder['path_lower']));
+        abort_unless($modulePath !== '/' && $modulePath !== '.', 422, 'Der Lernmodulordner konnte nicht bestimmt werden.');
+        $module = $this->metadata($connection, $modulePath);
+        abort_unless($module['path_lower'] === $modulePath
+            && $this->metadata($connection, $folderId)['path_lower'] === $folder['path_lower'],
+            409, 'Der Leistungsfeststellungsordner wurde während des Lesens verschoben. Bitte erneut öffnen.');
+
+        return ['module' => $present($module), 'exercise' => $present($folder)];
+    }
+
     public function testFolderPlausibility(McTest $test, string $name): array
     {
         return $this->checkFolderContext($this->testFolderContext($test), $name);
@@ -556,7 +582,8 @@ class DropboxWorkImport
 
             return array_values(array_filter(array_map(fn (array $match): array => $match['metadata']['metadata'] ?? [], $matches),
                 fn (array $entry): bool => ($entry['.tag'] ?? null) === 'folder' && is_string($entry['id'] ?? null)
-                    && is_string($entry['name'] ?? null) && is_string($entry['path_lower'] ?? null)));
+                    && is_string($entry['name'] ?? null) && is_string($entry['path_lower'] ?? null)
+                    && ! $this->isTemporaryFolderPath($entry['path_lower'])));
         };
         $list = function (string $id) use ($read, &$partial, &$budget): array {
             $data = $read('files/list_folder', ['path' => $id, 'recursive' => false, 'limit' => 200]);
@@ -772,6 +799,42 @@ class DropboxWorkImport
         return $this->api($connection, $endpoint, $parameters, $endpoint === 'files/download');
     }
 
+    /**
+     * @param  array<string, array{endpoint: string, parameters: array<string, mixed>}>  $requests
+     * @return array<string, Response>
+     */
+    public function readModuleBatch(DropboxConnection $connection, array $requests): array
+    {
+        foreach ($requests as $request) {
+            abort_unless(in_array($request['endpoint'], ['files/download', 'files/get_metadata'], true), 422);
+        }
+        if ($requests === []) {
+            return [];
+        }
+        $token = $this->accessToken($connection);
+        $responses = Http::pool(function (Pool $pool) use ($requests, $token): void {
+            foreach ($requests as $key => $request) {
+                $client = $pool->as($key)->withToken($token)->connectTimeout(5)->timeout(20)
+                    ->withOptions(['allow_redirects' => false]);
+                if ($request['endpoint'] === 'files/download') {
+                    $client->withHeaders(['Dropbox-API-Arg' => json_encode($request['parameters'], JSON_THROW_ON_ERROR), 'Content-Type' => ''])
+                        ->withBody('', '')->post('https://content.dropboxapi.com/2/files/download');
+                } else {
+                    $client->post('https://api.dropboxapi.com/2/files/get_metadata', $request['parameters']);
+                }
+            }
+        }, concurrency: 4);
+        foreach ($requests as $key => $request) {
+            $response = $responses[$key] ?? null;
+            if (! $response instanceof Response) {
+                $this->fail('Dropbox ist momentan nicht erreichbar. Bitte später erneut versuchen.');
+            }
+            $this->checkResponse($connection, $response);
+        }
+
+        return $responses;
+    }
+
     private function api(DropboxConnection $connection, string $endpoint, array $parameters, bool $download = false): Response
     {
         try {
@@ -850,15 +913,35 @@ class DropboxWorkImport
     }
 
     /** @param Closure(array<string, mixed>, array<string, mixed>): mixed $consume */
-    public function withImportFiles(User $user, TeachingCourseWork $work, Closure $consume): mixed
+    public function resultsFolder(DropboxConnection $connection, TeachingCourseWork $work, ?string $date): array
     {
-        $connection = $this->connection($user);
+        $modules = app(DropboxModuleLinks::class);
+        if ($link = $modules->current($work)) {
+            $exercise = $modules->exercise($connection, $work, $link, $date, refresh: true);
+            if (($exercise['status'] ?? null) !== 'found') {
+                $this->fail($exercise['message'] ?? 'Der verknüpfte Arbeitsordner ist nicht eindeutig bestätigt. Bitte den Termin der Arbeit prüfen.');
+            }
+
+            return $this->metadata($connection, $exercise['folder']['id']);
+        }
         $mapping = TeachingWorkDropboxFolder::query()->where('dropbox_connection_id', $connection->id)
             ->where('teaching_course_work_id', $work->id)->first();
         if (! $mapping) {
+            $this->fail('Für diese Arbeit ist noch kein Dropbox-Ordner verknüpft.');
+        }
+
+        return $this->metadata($connection, $mapping->folder_id);
+    }
+
+    public function withImportFiles(User $user, TeachingCourseWork $work, Closure $consume, bool $resultsOnly = false, ?string $date = null): mixed
+    {
+        $connection = $this->connection($user);
+        $mapping = $resultsOnly ? null : TeachingWorkDropboxFolder::query()->where('dropbox_connection_id', $connection->id)
+            ->where('teaching_course_work_id', $work->id)->first();
+        if (! $resultsOnly && ! $mapping) {
             $this->fail('Für diese Arbeit ist noch kein Dropbox-Ordner zugeordnet.');
         }
-        $root = $this->metadata($connection, $mapping->folder_id);
+        $root = $resultsOnly ? $this->resultsFolder($connection, $work, $date) : $this->metadata($connection, $mapping->folder_id);
         $plausibility = $this->folderPlausibility($work, $root['name']);
         if ($plausibility['status'] === 'mismatch') {
             $this->fail($plausibility['message']);
@@ -894,6 +977,9 @@ class DropboxWorkImport
         $packages = array_intersect_key($files, array_flip(['schooltool-bewertungen.json', 'beurteilungen/schooltool-bewertungen.json']));
         if (count($packages) > 1) {
             $this->fail('Der Dropbox-Ordner darf nur eine Schooltool-Bewertungen.json direkt oder unter Beurteilungen enthalten.');
+        }
+        if ($resultsOnly && $packages === []) {
+            $this->fail('Im verknüpften Arbeitsordner liegen noch keine übernehmbaren Bewertungen vor.');
         }
         $temporaryPaths = [];
         $total = 0;
@@ -955,6 +1041,9 @@ class DropboxWorkImport
             }
             $protocolCount = 0;
             foreach ($files as $relative => $entry) {
+                if ($resultsOnly) {
+                    continue;
+                }
                 if (in_array($relative, ['anlage_und_quellen.json', 'schooltool-vorbereitung.json', 'schooltool-versandvorbereitung.json', 'schooltool-bereitstellung.json'], true)) {
                     $name = match ($relative) {
                         'anlage_und_quellen.json' => 'Anlage_und_Quellen.json',
@@ -995,7 +1084,7 @@ class DropboxWorkImport
                 $this->fail('Der Dropbox-Ordner enthält weder Bewertungen noch Bereitstellungsbelege, eine Vorbereitung oder Versandprotokolle.');
             }
 
-            return $consume(['folder' => $root['name'], 'documents' => json_encode($documents, JSON_THROW_ON_ERROR)],
+            return $consume($resultsOnly ? [] : ['folder' => $root['name'], 'documents' => json_encode($documents, JSON_THROW_ON_ERROR)],
                 array_filter(['package' => $package, 'pdfs' => $pdfs, 'identity_export' => $identityExport]));
         } finally {
             foreach ($temporaryPaths as $path) {

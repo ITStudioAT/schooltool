@@ -486,6 +486,13 @@ class TeachingWorkDispatchImport
             if ($row['mode'] === 'test' || str_contains(mb_strtolower($this->value($recipient, 'Modus')), 'mailpit')) {
                 $row['mode'] = 'test';
                 $row['status'] = 'Lokaler Mailpit-Test – kein Live-Versand';
+                if (app()->isLocal() && $this->value($report['metadata'], 'Modus') === 'Mailpit-Test'
+                    && $this->value($recipient, 'Modus') === 'Mailpit-Test'
+                    && $this->value($recipient, 'Status') === 'lokaler Eingang in Mailpit bestätigt'
+                    && $row['provider_id'] !== '' && $sentAt !== null && new DateTimeImmutable($sentAt) <= now()) {
+                    $row['mode'] = 'mailpit';
+                    $row['status'] = 'Versandt · Testversand über Mailpit';
+                }
             }
             if ($accepted) {
                 $notification = ['student_id' => $row['student_id'], 'sent_at' => $sentAt, 'provider_id' => $row['provider_id']];
@@ -525,7 +532,7 @@ class TeachingWorkDispatchImport
                     ?? $this->providerTime($this->value($report['metadata'], 'VorbereitungAm')),
                 'planned_at' => collect($rows)->pluck('planned_at')->filter()->sortBy($this->providerTimeSortKey(...))->last(),
                 'mode' => collect($rows)->contains('accepted', true) ? 'live'
-                    : (collect($rows)->contains('mode', 'scheduled') ? 'scheduled' : (collect($rows)->contains('mode', 'prepared') ? 'prepared' : $report['mode'])),
+                    : (collect($rows)->contains('mode', 'mailpit') ? 'mailpit' : (collect($rows)->contains('mode', 'scheduled') ? 'scheduled' : (collect($rows)->contains('mode', 'prepared') ? 'prepared' : $report['mode']))),
                 'recipient_scope' => collect($report['recipients'])->every(fn (array $recipient): bool => $this->value($recipient, 'Rolle') === 'Lehrperson') ? 'teacher' : 'students',
             ],
             'title' => $work->title, 'date' => $report['date'], 'rows' => $rows, 'already_imported' => $alreadyImported,
@@ -686,6 +693,9 @@ class TeachingWorkDispatchImport
                 $parsedAttempt = ['student_id' => $row['student_id'], 'sent_at' => $row['observed_at'], 'mode' => $row['mode'],
                     'planned_at' => $row['planned_at'] ?? null, 'prepared_at' => $row['prepared_at'] ?? null,
                     'purpose' => $preview['purpose'], 'log_sha256' => $sha256, 'origin' => 'dispatch_import'];
+                if ($row['mode'] === 'mailpit') {
+                    $parsedAttempt['provider_id'] = $row['provider_id'];
+                }
                 $index = collect($attempts)->search(fn (array $attempt): bool => $attempt['log_sha256'] === $sha256 && (int) $attempt['student_id'] === $row['student_id']);
                 if ($index === false) {
                     $attempts[] = $parsedAttempt;

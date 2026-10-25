@@ -13,6 +13,7 @@ use App\Models\TeachingEntryDefinition;
 use App\Models\TeachingSchema;
 use App\Models\User;
 use App\Services\TeachingCourseWorkEntrySyncService;
+use App\Services\TeachingWorkFolderImport;
 use App\Support\SchooltoolAssessmentJson;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -26,6 +27,20 @@ use Tests\Support\TeachingWorkEvaluationFixture;
 use Tests\Support\TeachingWorkJsonFixture;
 
 uses(RefreshDatabase::class);
+
+test('the work progress check reads fresh historical evidence without importing or modifying a work', function (): void {
+    $work = prepareWorkDispatchImport($this);
+    $before = $work->fresh()->getAttributes();
+    Http::preventStrayRequests();
+    $url = "/api/admin/teaching/course_works/{$work->id}";
+    $this->getJson($url)->assertOk()->assertJsonPath('data.id', $work->id);
+    expect($work->fresh()->getAttributes())->toBe($before);
+    $foreign = User::factory()->create(['school_id' => School::factory()->create()->id]);
+    $foreign->assignRole('teacher');
+    $this->actingAs($foreign, 'sanctum')->getJson($url)->assertForbidden();
+    expect($work->fresh()->getAttributes())->toBe($before);
+    Http::assertNothingSent();
+});
 
 function jsonAssessmentForWork(object $context, TeachingCourseWork $work): array
 {
@@ -2085,6 +2100,38 @@ test('tasks and results remain separate across previews reimports and normal wor
     expect($work->fresh()->status['dispatch_attempts'])->toBe($combined['dispatch_attempts'])
         ->and($work->fresh()->status['dispatch_notifications'])->toBe($combined['dispatch_notifications']);
 })->with(['historical Mailpit' => true, 'structured live tasks' => false]);
+
+test('confirmed Mailpit sends advance the local workflow without becoming real student dispatches', function (bool $local, bool $confirmed) {
+    $work = prepareWorkDispatchImport($this);
+    $work->update(['date_for_all_groups' => '2026-10-04']);
+    $this->app['env'] = $local ? 'local' : 'production';
+    Mail::fake();
+    Notification::fake();
+    $text = TeachingWorkDispatchFixture::mailpitTasksText();
+    if (! $confirmed) {
+        $text = str_replace('lokaler Eingang in Mailpit bestätigt', 'vorbereitet', $text);
+    }
+    $payload = workFolderPayload([], ['Versand/Aufgaben/Versand_2026-10-04_16-27-31/Versandprotokoll.txt' => $text], false);
+    $payload['folder'] = str_replace('2026-10-02', '2026-10-04', $payload['folder']);
+    $payload['documents'] = str_replace('2026-10-02_IT-Grundlagen_Test', '2026-10-04_IT-Grundlagen_Test', $payload['documents']);
+    $url = "/api/admin/teaching/course_works/{$work->id}/import-folder";
+    $this->postJson($url, $payload)->assertOk();
+    $work->refresh();
+    expect($work->status['dispatch_notifications'] ?? [])->toBe([]);
+    $localRecords = collect($work->status['dispatch_attempts'] ?? [])->where('mode', 'mailpit');
+    expect($localRecords->isNotEmpty())->toBe($local && $confirmed);
+    $sources = app(TeachingWorkFolderImport::class)->availabilitySources($work, [], []);
+    expect(count($sources))->toBe($local && $confirmed ? $localRecords->count() : 0);
+    if ($local && $confirmed) {
+        expect($sources[0]['test_transport'])->toBe('mailpit');
+        $this->postJson($url, $payload)->assertOk();
+        expect($work->fresh()->status['dispatch_attempts'])->toBe($work->status['dispatch_attempts']);
+        $this->app['env'] = 'production';
+        expect(app(TeachingWorkFolderImport::class)->availabilitySources($work, [], []))->toBe([]);
+    }
+    Mail::assertNothingSent();
+    Notification::assertNothingSent();
+})->with([[true, true], [true, false], [false, true]]);
 
 test('JSON folder excludes Mailpit tasks while preserving assessments and confirmed Office dispatches', function (bool $withOffice) {
     $work = prepareWorkDispatchImport($this);

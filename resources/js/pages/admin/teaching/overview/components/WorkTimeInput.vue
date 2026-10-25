@@ -13,7 +13,7 @@
         hide-details="auto"
         class="work-time-input"
         :disabled="disabled"
-        @update:model-value="$emit('update:modelValue', $event)">
+        @update:model-value="updateTime">
         <template #append-inner>
             <v-btn icon="mdi-clock-outline" variant="text" size="small"
                 aria-label="Uhrzeit auswählen" title="Uhrzeit auswählen" :disabled="disabled" @click.stop="openPicker" />
@@ -33,7 +33,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { VTimePicker } from 'vuetify/components/VTimePicker'
 
 const props = defineProps({
@@ -44,11 +44,16 @@ const emit = defineEmits(['update:modelValue'])
 const pickerOpen = ref(false)
 const draft = ref(null)
 const timeRules = [value => !value || /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value) || 'Uhrzeit im Format HH:MM eingeben.']
+watch(() => props.disabled, disabled => { if (disabled) pickerOpen.value = false })
 
 function openPicker() {
     if (props.disabled) return
     draft.value = props.modelValue || null
     pickerOpen.value = true
+}
+
+function updateTime(value) {
+    if (!props.disabled) emit('update:modelValue', value)
 }
 
 function applyTime() {

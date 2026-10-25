@@ -1,18 +1,18 @@
 <template>
     <div class="ns-stack">
         <div v-if="mission.evidence" class="ns-evidence">
-            <p v-for="line in mission.evidence" :key="line" class="ns-number">{{ line }}</p>
+            <p v-for="line in mission.evidence" :key="line" class="ns-number">{{ formatNumberSystemText(line) }}</p>
         </div>
         <div v-if="mission.role_cards" class="ns-panel ns-private">
             <h3>Deine persönliche Hinweiskarte</h3>
-            <p v-for="clue in mission.role_cards" :key="clue">{{ clue }}</p>
+            <p v-for="clue in mission.role_cards" :key="clue">{{ formatNumberSystemText(clue) }}</p>
             <p v-if="!mission.role_cards.length">Du hast bei dieser Aufgabe keinen eigenen Zahlenhinweis. Frage dein Team nach den Zahlen und rechne mit.</p>
             <p class="ns-small ns-muted" style="margin-top:10px">Dein Team sieht andere Zahlenhinweise. Lest sie euch vor und erklärt, wie ihr die Zahlen umrechnet.</p>
         </div>
         <div v-if="mission.tokens?.length" class="ns-token-row" aria-label="Empfangene Zeichencodes">
-            <span v-for="(token, index) in mission.tokens" :key="index" class="ns-token">{{ token }}</span>
+            <span v-for="(token, index) in mission.tokens" :key="index" class="ns-token">{{ formatNumberSystemText(token) }}</span>
         </div>
-        <p v-if="mission.note" class="ns-small ns-muted">{{ mission.note }}</p>
+        <p v-if="mission.note" class="ns-small ns-muted">{{ formatNumberSystemText(mission.note) }}</p>
         <template v-for="field in mission.fields" :key="field.name">
             <fieldset v-if="field.widget === 'bits'" :disabled="disabled" :aria-describedby="field.help ? `${mission.id}-${field.name}-help` : undefined">
                 <legend>{{ field.label }} · {{ field.width }} Schalter</legend>
@@ -25,7 +25,7 @@
                     </button>
                 </div>
                 <p class="ns-small ns-muted" aria-live="polite">Summe der eingeschalteten Schalter: {{ bitSum(field) }}</p>
-                <p class="ns-number">{{ bits(field).join('') }} (dual)</p>
+                <p class="ns-number">{{ bits(field).join('') }}<sub>2</sub></p>
             </fieldset>
             <fieldset v-else-if="field.widget === 'nibbles'" :disabled="disabled" :aria-describedby="field.help ? `${mission.id}-${field.name}-help` : undefined">
                 <legend>{{ field.label }}</legend>
@@ -55,7 +55,7 @@
                 <label v-for="option in field.options" :key="option.id" class="ns-choice">
                     <input type="radio" :name="`${mission.id}-${field.name}`" :value="option.id"
                         :checked="modelValue[field.name] === option.id" :disabled="disabled" @change="set(field.name, option.id)" />
-                    <span>{{ option.label }}</span>
+                    <span>{{ formatNumberSystemText(option.label) }}</span>
                 </label>
             </fieldset>
             <label v-else class="ns-field">
@@ -65,12 +65,13 @@
                     :aria-describedby="field.help ? `${mission.id}-${field.name}-help` : undefined"
                     autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="500" @input="set(field.name, $event.target.value)" />
             </label>
-            <p v-if="field.help" :id="`${mission.id}-${field.name}-help`" class="ns-small ns-field-help">{{ field.help }}</p>
+            <p v-if="field.help" :id="`${mission.id}-${field.name}-help`" class="ns-small ns-field-help">{{ formatNumberSystemText(field.help) }}</p>
         </template>
     </div>
 </template>
 
 <script setup>
+import { formatNumberSystemText } from '@/helpers/numberSystemNotation'
 const props = defineProps({ mission: { type: Object, required: true }, modelValue: { type: Object, required: true }, disabled: Boolean })
 const emit = defineEmits(['update:modelValue'])
 const hexDigits = '0123456789ABCDEF'.split('')

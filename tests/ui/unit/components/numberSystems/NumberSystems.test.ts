@@ -21,6 +21,17 @@ beforeEach(() => { vi.useFakeTimers(); vi.resetAllMocks(); localStorage.clear() 
 afterEach(() => { wrappers.splice(0).forEach(wrapper => wrapper.unmount()); vi.useRealTimers() })
 
 describe('Number systems interaction and persistence', () => {
+    it('formats displayed legacy binary notation without changing answer values', async () => {
+        const wrapper = mount(NumberSystemPuzzle, { props: {
+            mission: { id: 'notation', evidence: ['65 = #41 = 01000001 (dual)'], fields: [{ name: 'answer', label: 'Antwort', base: 2 }] },
+            modelValue: { answer: '01000001' },
+        } })
+        wrappers.push(wrapper)
+        expect(wrapper.get('.ns-evidence').text()).toBe('65 = #41 = 01000001₂')
+        expect(wrapper.get('input').element.value).toBe('01000001')
+        await wrapper.get('input').setValue('101')
+        expect(wrapper.emitted('update:modelValue')?.[0]).toEqual([{ answer: '101' }])
+    })
     it('signals connection even in a background tab without changing or overwriting a draft', async () => {
         const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(true)
         vi.mocked(axios.get).mockResolvedValue(reply(state({ revision: 5, draft: { answer: 'saved' } })))

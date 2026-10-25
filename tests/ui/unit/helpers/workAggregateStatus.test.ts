@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createTestingPinia } from '@pinia/testing'
-import { workAggregateStatuses, workCellDeviationStatuses, workFullyComplete, workMarkedComplete, workParticipantIds } from '@/helpers/workCellStatus'
+import { workAggregateStatuses, workCellDeviationStatuses, workCellPendingStatuses, workFullyComplete, workMarkedComplete, workParticipantIds } from '@/helpers/workCellStatus'
 import WorkCellStatus from '@/pages/admin/teaching/overview/components/WorkCellStatus.vue'
 import CourseWorks from '@/pages/admin/teaching/overview/components/CourseWorks.vue'
 import CourseTable from '@/pages/admin/teaching/overview/components/CourseTable.vue'
@@ -34,6 +34,49 @@ function fixture(absent = []) {
 }
 
 describe('Shared work status and personal deviations', () => {
+    it('shows only a personal pending evaluation or result transfer and suppresses completed and general icons', () => {
+        const work = fixture()
+        work.status.evaluation_pdfs = [{ origin: 'evaluation_import', student_id: 12, sha256: 'e'.repeat(64), file_path: 'private/12.pdf' }]
+        work.status.assessment_json_imports[1].record.evaluation_state = 'partial'
+        work.status.assessment_json_imports[1].record.evaluation_completed_at = null
+        expect(workCellPendingStatuses(work, 12, now)).toEqual([])
+        expect(workCellPendingStatuses(work, 13, now).map(item => [item.purpose, item.state])).toEqual([['evaluation', 'partial']])
+        expect(workCellPendingStatuses(work, 14, now).map(item => item.purpose)).toEqual(['publication'])
+        expect(workCellPendingStatuses({ ...work, status: {} }, 12, now)).toEqual([])
+        expect(workCellPendingStatuses(work, 99, now)).toEqual([])
+        const wrapper = mount(WorkCellStatus, { props: { work, studentId: 12, now, pendingOnly: true } })
+        try { expect(wrapper.find('[role="img"]').exists()).toBe(false) } finally { wrapper.unmount() }
+    })
+
+    it('keeps a completed simulator assessment pending until that exact result has been transferred', () => {
+        const work = fixture()
+        const run = 'test-run'
+        work.simulation_collection = { origin: 'mailpit_simulation', simulation: true, run_id: run,
+            work_id: work.id, course_id: work.teaching_course_id, student_ids: [12, 13, 14], collected_count: 3, non_submission_count: 0,
+            processed_count: 3, complete: true, completed_at: '2026-10-24T15:00:00Z', evaluation: {
+                simulation: true, run_id: run, completed_count: 1, partial_count: 1, open_count: 1, rows: [
+                    { student_id: 12, state: 'complete', result: '4,5 von 5 Punkten', evaluation_completed_at: '2026-10-24T16:00:00Z', pdf_sha256: 'f'.repeat(64) },
+                    { student_id: 13, state: 'partial', result: '2,5 von 5 Punkten (vorläufig)' },
+                    { student_id: 14, state: 'open', result: 'Noch offen' },
+                ],
+            } }
+        expect(workCellPendingStatuses(work, 12, now)[0].purpose).toBe('publication')
+        const receipt = work.status.assessment_json_imports[0]
+        receipt.exercise_id = `simulation:${run}:work:${work.id}`
+        receipt.record.evaluation_completed_at = '2026-10-24T16:00:00Z'
+        work.status.evaluation_pdfs = [{ origin: 'evaluation_import', student_id: 12, sha256: 'f'.repeat(64), file_path: 'private/test.pdf' }]
+        expect(workCellPendingStatuses(work, 12, now)).toEqual([])
+        receipt.record.evaluation_completed_at = '2026-10-24T16:00:00.79244Z'
+        work.simulation_collection.evaluation.rows[0].evaluation_completed_at = '2026-10-24T16:00:00.792440Z'
+        expect(workCellPendingStatuses(work, 12, now)).toEqual([])
+        receipt.record.evaluation_completed_at = '2026-10-24T16:00:01.79244Z'
+        expect(workCellPendingStatuses(work, 12, now)[0].purpose).toBe('publication')
+        receipt.record.evaluation_completed_at = '2026-10-24T16:00:00.79244Z'
+        expect(workCellPendingStatuses(work, 13, now)[0].label).toContain('2,5 von 5 Punkten')
+        expect(workCellPendingStatuses(work, 14, now)[0].purpose).toBe('evaluation')
+        work.simulation_collection.evaluation.rows[0].pdf_sha256 = 'a'.repeat(64)
+        expect(workCellPendingStatuses(work, 12, now)[0].purpose).toBe('publication')
+    })
     it.each([true, false])('uses an explicit manual completion of %s without altering four evidence states', override => {
         const work = fixture()
         if (override) work.status.dispatch_notifications = []
@@ -172,22 +215,21 @@ describe('Work card status placement', () => {
         return { wrapper, pinia }
     }
 
-    it('places four summaries in a final separate header row below all preserved Arbeiten card information', async () => {
+    it('keeps automatic overview cards compact with the title, date and next pending action', async () => {
         const { wrapper } = mountCards(CourseWorks, fixture([13, 14]))
         try {
             await flushPromises()
-            const header = wrapper.get('.work-list-item .work-card-header')
+            const header = wrapper.get('.work-list-item .work-row')
             expect(header.get('.work-title-second-line').text()).toBe('Dateimanagement')
-            expect(header.findAll('[data-work-status], [data-submission-state]')).toHaveLength(4)
-            expect(header.get('[data-submission-state]').attributes('title')).toContain('1 von 3 Abgaben vorhanden')
-            expect(header.get('.work-meta-row').text()).toContain('06.10.2026')
-            expect(header.element.lastElementChild).toBe(header.get('.work-card-status-row').element)
+            expect(header.findAll('[data-work-status], [data-submission-state]')).toHaveLength(0)
+            expect(header.text()).toContain('06.10.2026').toContain('Ergebnisse bereitstellen')
             expect(header.get('.work-title-second-line').findAll('[data-work-status], [data-submission-state]')).toHaveLength(0)
         } finally { wrapper.unmount() }
     })
 
-    it.each([['works', CourseWorks], ['table', CourseTable]])('always renders both independent deadline rows before the final icons in %s cards', async (_, component) => {
+    it.each([['works', CourseWorks], ['table', CourseTable]])('retains both independent deadline rows in existing manual %s cards', async (_, component) => {
         const work = fixture()
+        work.automation_enabled = false
         work.communicated_deadline = null
         const { wrapper, pinia } = mountCards(component, work)
         const selector = component === CourseTable ? '.course-table-work-summary' : '.work-card-header'
@@ -212,7 +254,7 @@ describe('Work card status placement', () => {
             expect(header.get('[data-work-deadline="first"]').text()).toContain('1.').toContain('06.10.').toContain('11:45')
             expect(header.get('[data-work-deadline="second"]').text()).toContain('07.10.').toContain('12:00')
             expect(header.text()).not.toContain('abgelaufen').not.toContain('Beurteilung abgeschlossen').not.toContain('Fertig bis')
-            expect(header.element.lastElementChild?.querySelectorAll('[data-work-status], [data-submission-state]')).toHaveLength(4)
+            expect(header.findAll('[data-work-status], [data-submission-state]')).toHaveLength(0)
             work.communicated_deadline = null
             work.finish_until_date = null
             work.finish_until_time = null
@@ -221,7 +263,7 @@ describe('Work card status placement', () => {
         } finally { wrapper.unmount() }
     })
 
-    it('shows the same four states and green existing brain in the table card header while cells show only exceptions', async () => {
+    it('shows the next action on the table card while personal cells show only unfinished evaluations or transfers', async () => {
         const work = fixture([13, 14])
         const { wrapper, pinia } = mountCards(CourseTable, work)
         try {
@@ -231,29 +273,30 @@ describe('Work card status placement', () => {
                 user_id: student.user_id, date: '2026-10-06', type: 'A5', source: 'course_work', teaching_course_work_id: 65, grade: '0' })) as never
             await flushPromises()
             const header = wrapper.get('.course-table-work-summary')
-            expect(header.findAll('[data-work-status], [data-submission-state]')).toHaveLength(4)
-            expect(header.element.lastElementChild).toBe(header.get('.course-table-work-summary-status').element)
+            expect(header.findAll('[data-work-status], [data-submission-state]')).toHaveLength(0)
+            expect(header.get('.course-table-work-summary-next-action').text()).toContain('Ergebnisse bereitstellen')
             expect(header.get('.course-table-work-summary-meta').findAll('[data-work-status], [data-submission-state]')).toHaveLength(0)
-            expect(header.findAll('v-icon').find(icon => icon.text() === 'mdi-brain')?.attributes('color')).toBe('success')
+            expect(header.find('[aria-label="Automatische Beurteilung"]').exists()).toBe(true)
             const cells = wrapper.findAll('.course-table-entry-cell-performance')
             expect(cells).toHaveLength(3)
-            expect(cells.flatMap(cell => cell.findAll('[data-submission-state="not_received"]'))).toHaveLength(2)
-            expect(cells.flatMap(cell => cell.findAll('[data-work-status]'))).toHaveLength(0)
+            expect(cells.flatMap(cell => cell.findAll('[data-submission-state]'))).toHaveLength(0)
+            expect(cells.flatMap(cell => cell.findAll('[data-work-status="publication"]'))).toHaveLength(3)
             expect(cells.every(cell => cell.text().includes('0'))).toBe(true)
             work.status.assessment_json_imports.forEach(receipt => { receipt.record.submission_state = 'received' })
             work.status.assessment_json_packages = []
             useCourseWorkStore(pinia).courseWorks = [{ ...work }] as never
             await flushPromises()
-            expect(wrapper.get('.course-table-work-summary-meta').findAll('v-icon').find(icon => icon.text() === 'mdi-brain')?.attributes('color')).toBe('success')
+            expect(wrapper.get('.course-table-work-summary-next-action').text()).toContain('Ergebnisse bereitstellen')
             work.status.dispatch_notifications = work.status.dispatch_notifications.filter(item => item.purpose !== 'results' || item.student_id !== 14)
             useCourseWorkStore(pinia).courseWorks = [{ ...work }] as never
             await flushPromises()
-            expect(wrapper.get('.course-table-work-summary-meta').findAll('v-icon').find(icon => icon.text() === 'mdi-brain')?.attributes('color')).not.toBe('success')
+            expect(wrapper.get('.course-table-work-summary-next-action').text()).toContain('Ergebnisse bereitstellen')
         } finally { wrapper.unmount() }
     })
 
     it.each([0, 1, 3])('shows %s completed people in the first header row independently of the manual brain', async completed => {
         const work = fixture()
+        work.automation_enabled = false
         work.groups[0].grade = null
         work.groups[0].use_individual_grades = true
         work.groups[0].grades = students.slice(0, completed).map(student => ({ student_id: student.user_id, grade: '0' }))
@@ -272,7 +315,7 @@ describe('Work card status placement', () => {
     })
 
     it('keeps a zero-person header red rather than claiming completion', async () => {
-        const work = { ...fixture(), groups: [] }
+        const work = { ...fixture(), groups: [], automation_enabled: false }
         const { wrapper } = mountCards(CourseTable, work)
         try {
             await flushPromises()

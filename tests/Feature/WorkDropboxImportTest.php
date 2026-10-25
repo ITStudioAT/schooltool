@@ -8,7 +8,9 @@ use App\Models\TeachingCourseWork;
 use App\Models\TeachingEntryArea;
 use App\Models\TeachingEntryDefinition;
 use App\Models\TeachingWorkDropboxFolder;
+use App\Models\TeachingWorkModuleLink;
 use App\Models\User;
+use App\Services\DropboxModuleLinks;
 use App\Services\DropboxWorkImport;
 use App\Services\TeachingCourseWorkEntrySyncService;
 use App\Support\SchooltoolAssessmentJson;
@@ -125,6 +127,37 @@ function dropboxAssessmentPackage(object $context): array
 
     return TeachingWorkJsonFixture::sign(TeachingWorkJsonFixture::package());
 }
+
+test('results-only transfer uses the existing binding and excludes unrelated metadata and dispatches', function (bool $module): void {
+    $package = dropboxAssessmentPackage($this);
+    $connection = dropboxConnectionForWork($this);
+    if ($module) {
+        TeachingWorkDropboxFolder::query()->delete();
+        $link = new TeachingWorkModuleLink;
+        $modules = Mockery::mock(DropboxModuleLinks::class);
+        $modules->shouldReceive('current')->andReturn($link);
+        $modules->shouldReceive('exercise')->withArgs(fn ($c, $w, $l, $date, $refresh): bool => $c->id === $connection->id
+            && $w->id === $this->work->id && $l === $link && $date === '2026-10-06' && $refresh)->andReturn([
+                'status' => 'found', 'folder' => ['id' => 'id:workfolder'],
+            ]);
+        $this->app->instance(DropboxModuleLinks::class, $modules);
+    }
+    fakeDropboxWorkFiles(['Schooltool-Bewertungen.json' => json_encode($package),
+        'Anlage_und_Quellen.json' => '{invalid unrelated metadata',
+        'Versand/Ergebnisse/Versand_2026-10-07_10-00-00/Versandprotokoll.txt' => 'invalid unrelated dispatch']);
+    $before = $this->work->fresh()->getAttributes();
+    $payload = ['results_only' => true, 'date' => '2026-10-06'];
+    $preview = $this->postJson($this->url.'/import', $payload)->assertOk()->assertJsonPath('preview.can_import', true)
+        ->assertJsonPath('preview.dispatches', [])->assertJsonPath('preview.deadline_update', null)->json('preview');
+    expect($this->work->fresh()->getAttributes())->toBe($before);
+    $this->postJson($this->url.'/import', $payload + ['apply' => true, 'hash' => str_repeat('f', 64)])->assertConflict();
+    expect($this->work->fresh()->getAttributes())->toBe($before);
+    $this->postJson($this->url.'/import', $payload + ['apply' => true, 'hash' => $preview['hash']])->assertOk();
+    expect($this->work->fresh()->status['assessment_json_imports'][0]['record']['total_minor'])->toBe(475);
+    Http::assertNotSent(fn (Request $request): bool => str_ends_with($request->url(), '/files/download')
+        && ! str_contains($request->header('Dropbox-API-Arg')[0], hash('sha256', 'Schooltool-Bewertungen.json')));
+    expect(TeachingWorkDropboxFolder::query()->count())->toBe($module ? 0 : 1);
+})->with([false, true]);
 
 test('deadline metadata is previewed and automatically imported without changing assessments', function (string $source, string $deadline): void {
     dropboxConnectionForWork($this);
@@ -514,8 +547,13 @@ function fakeDropboxSuggestions(array $candidates, string $topic = 'dateimanagem
             }
             $entry = $request['query'] === 'Lerninhalte' ? $folder('id:learning', 'Lerninhalte', $root)
                 : $folder('id:topic', $topic, $root.'/it_grundlagen/'.$topic);
+            $entries = [$entry];
+            if ($request['query'] === 'Lerninhalte' && $discovery === 'temporary copies') {
+                array_unshift($entries, $folder('id:temporary-learning', 'Lerninhalte', '/ai/tmp/arbeit84/inventory'.$root),
+                    $folder('id:inventory-learning', 'Lerninhalte', '/ai/inventory'.$root));
+            }
 
-            return Http::response(['has_more' => false, 'matches' => [['metadata' => ['.tag' => 'metadata', 'metadata' => $entry]]]]);
+            return Http::response(['has_more' => false, 'matches' => array_map(fn (array $item): array => ['metadata' => ['.tag' => 'metadata', 'metadata' => $item]], $entries)]);
         }
         if (str_ends_with($request->url(), '/files/search/continue_v2')) {
             return Http::response(['has_more' => false, 'matches' => [['metadata' => ['.tag' => 'metadata',
@@ -577,6 +615,18 @@ test('folder suggestions find the topic and rank this course classes group and s
     Http::assertSent(fn (Request $request): bool => str_ends_with($request->url(), '/files/search_v2')
         && $request['query'] === 'dateimanagement' && $request['options']['path'] === '/schule2020_2027/materialien/lerninhalte'
         && $request['options']['filename_only'] === true && $request['options']['file_categories'] === ['folder']);
+});
+
+test('folder suggestions exclude temporary inventory trees before the exploration budget is spent', function (): void {
+    DropboxConnection::factory()->create(['user_id' => $this->user->id]);
+    $this->course->update(['title' => 'DGB - 3B - 1', 'classes' => ['3B']]);
+    $this->work->update(['title' => 'E-Mails', 'date_for_all_groups' => '2026-10-04']);
+    fakeDropboxSuggestions([['id' => 'id:original', 'name' => '2026-10-04_E-Mail_DGB-3B-1_Tag']], 'emails', discovery: 'temporary copies');
+    $this->getJson($this->url.'/folders?suggest=1')->assertOk()->assertJsonPath('start_folder.id', 'id:learning')
+        ->assertJsonPath('suggested_folder.id', 'id:original')->assertJsonCount(1, 'suggestions');
+    Http::assertNotSent(fn (Request $request): bool => str_ends_with($request->url(), '/files/search_v2')
+        && isset($request['options']['path']) && str_contains($request['options']['path'], '/ai/'));
+    $this->assertDatabaseCount('teaching_work_dropbox_folders', 0);
 });
 
 test('folder suggestions reach the real nested Dateimanagement work through subject folders and search pages', function (string $discovery): void {
@@ -698,6 +748,10 @@ test('foreign teachers schools and students cannot access Dropbox work endpoints
     $this->postJson($this->url.'/connect')->assertForbidden();
     $this->postJson($this->url.'/folder', ['folder_id' => 'id:folder'])->assertForbidden();
     $this->postJson($this->url.'/import')->assertForbidden();
+    $notificationUrl = '/api/admin/teaching/course_works/'.$this->work->id.'/result-notifications';
+    $this->postJson($notificationUrl.'/preview')->assertForbidden();
+    $this->postJson($notificationUrl.'/send')->assertForbidden();
+    $this->postJson($notificationUrl.'/office-order')->assertForbidden();
     $this->deleteJson($this->url.'/connection')->assertForbidden();
     Http::assertNothingSent();
 })->with(['teacher', 'school', 'student']);
@@ -962,3 +1016,298 @@ test('combined file size is rejected before any parallel download begins', funct
     Http::assertSentCount(4);
     expect(Storage::disk('local')->allFiles())->toBe([]);
 });
+
+function historicalFolderFixture(object $context): void
+{
+    DropboxConnection::factory()->create(['user_id' => $context->user->id]);
+    $context->evidence = 'Unveränderter ursprünglicher Versandnachweis';
+    $context->onlineRevision = 'original-revision';
+    $context->onlineContent = $context->evidence;
+    $context->missingEvidence = false;
+    $context->onlinePath = '/materialien/alte-arbeit';
+    $context->work->update(['groups' => [['student_ids' => [], 'grade' => '2', 'comment' => 'Bestätigte alte Bewertung']],
+        'status' => ['folder_imported_at' => '2026-10-13T12:00:00Z',
+            'folder_import_sources' => ['versand/aufgaben/versand_2026-10-13_08-00-00/versandprotokoll.txt' => hash('sha256', $context->evidence)]]]);
+    Http::fake(function (Request $request) use ($context) {
+        $entry = ['.tag' => 'file', 'id' => 'id:source', 'name' => 'Versandprotokoll.txt', 'rev' => $context->onlineRevision,
+            'size' => strlen($context->onlineContent), 'path_lower' => $context->onlinePath.'/versand/aufgaben/versand_2026-10-13_08-00-00/versandprotokoll.txt'];
+        if (str_ends_with($request->url(), '/oauth2/token')) {
+            return Http::response(['access_token' => 'test-access']);
+        }
+        if (str_ends_with($request->url(), '/files/get_metadata')) {
+            return Http::response($request['path'] === 'id:source' ? $entry : ['.tag' => 'folder', 'id' => 'id:existing',
+                'name' => 'Alte Arbeit', 'path_lower' => $context->onlinePath, 'path_display' => $context->onlinePath]);
+        }
+        if (str_ends_with($request->url(), '/files/list_folder')) {
+            return Http::response(['has_more' => false, 'entries' => $context->missingEvidence ? [] : [$entry]]);
+        }
+        if (str_ends_with($request->url(), '/files/download')) {
+            return Http::response($context->onlineContent);
+        }
+        throw new RuntimeException('Unexpected Dropbox write or other request');
+    });
+}
+
+test('historical folder verification checks independent original files concurrently and preserves their hashes and work data', function (): void {
+    historicalFolderFixture($this);
+    $entries = [];
+    $contents = [];
+    $sources = [];
+    foreach (range(1, 12) as $index) {
+        $path = 'beurteilungen/person_'.$index.'.md';
+        $contents['rev:revision-'.$index] = 'Originalbeleg '.$index;
+        $sources[$path] = hash('sha256', $contents['rev:revision-'.$index]);
+        $entries['id:source'.$index] = ['.tag' => 'file', 'id' => 'id:source'.$index, 'rev' => 'revision-'.$index,
+            'size' => strlen($contents['rev:revision-'.$index]), 'path_lower' => $this->onlinePath.'/'.$path];
+    }
+    $this->work->update(['status' => array_replace($this->work->status, ['folder_import_sources' => $sources])]);
+    $before = $this->work->fresh()->getAttributes();
+    $factory = new class extends Factory
+    {
+        public function fake($callback = null): static
+        {
+            $this->record();
+            $this->stubCallbacks = collect([$callback]);
+
+            return $this;
+        }
+    };
+    Http::swap($factory);
+    Http::preventStrayRequests();
+    $pending = [];
+    $active = 0;
+    $maximum = 0;
+    Http::fake(function (Request $request) use ($entries, $contents, &$pending, &$active, &$maximum) {
+        if (str_ends_with($request->url(), '/oauth2/token')) {
+            return Http::response(['access_token' => 'test-access']);
+        }
+        if (str_ends_with($request->url(), '/files/get_metadata')) {
+            return Http::response($entries[$request['path']] ?? ['.tag' => 'folder', 'id' => 'id:existing',
+                'name' => 'Alte Arbeit', 'path_lower' => $this->onlinePath, 'path_display' => $this->onlinePath]);
+        }
+        if (str_ends_with($request->url(), '/files/list_folder')) {
+            return Http::response(['has_more' => false, 'entries' => array_values($entries)]);
+        }
+        if (str_ends_with($request->url(), '/files/download')) {
+            $arguments = json_decode($request->header('Dropbox-API-Arg')[0], true, flags: JSON_THROW_ON_ERROR);
+            $promise = new Promise(fn () => Utils::queue()->run());
+            $pending[] = [$promise, $contents[$arguments['path']]];
+            $maximum = max($maximum, ++$active);
+            Utils::queue()->add(function () use (&$pending, &$active): void {
+                [$promise, $content] = array_pop($pending);
+                $active--;
+                $promise->resolve(new Response(200, [], $content));
+            });
+
+            return $promise;
+        }
+        throw new RuntimeException('Unexpected Dropbox request');
+    });
+
+    $this->postJson($this->url.'/folder', ['folder_id' => 'id:existing', 'verify' => true])->assertOk()
+        ->assertJsonCount(12, 'checked_files')->assertJsonCount(0, 'differences');
+
+    expect($maximum)->toBeGreaterThan(1)->toBeLessThanOrEqual(4)
+        ->and($this->work->fresh()->getAttributes())->toBe($before)
+        ->and(Storage::disk('local')->allFiles())->toBe([]);
+    $this->assertDatabaseCount('teaching_work_dropbox_folders', 0);
+});
+
+test('historical folder verification refuses incomplete or changed parallel evidence before linking', function (string $failure): void {
+    historicalFolderFixture($this);
+    $before = $this->work->fresh()->getAttributes();
+    $entry = ['.tag' => 'file', 'id' => 'id:source', 'rev' => $this->onlineRevision,
+        'size' => strlen($this->evidence), 'path_lower' => $this->onlinePath.'/'.array_key_first($this->work->status['folder_import_sources'])];
+    Http::swap(new Factory);
+    Http::preventStrayRequests();
+    Http::fake(function (Request $request) use ($failure, $entry) {
+        if (str_ends_with($request->url(), '/oauth2/token')) {
+            return Http::response(['access_token' => 'test-access']);
+        }
+        if (str_ends_with($request->url(), '/files/get_metadata')) {
+            return Http::response($request['path'] === 'id:source' ? array_replace($entry, ['rev' => 'changed-revision'])
+                : ['.tag' => 'folder', 'id' => 'id:existing', 'name' => 'Alte Arbeit', 'path_lower' => $this->onlinePath]);
+        }
+        if (str_ends_with($request->url(), '/files/list_folder')) {
+            return Http::response(['has_more' => false, 'entries' => [$entry]]);
+        }
+        if (str_ends_with($request->url(), '/files/download')) {
+            return Http::response($failure === 'truncated' ? 'Unvollständig' : $this->evidence, $failure === 'rate limit' ? 429 : 200);
+        }
+        throw new RuntimeException('Unexpected Dropbox request');
+    });
+
+    $response = $this->postJson($this->url.'/folder', ['folder_id' => 'id:existing', 'verify' => true]);
+    if ($failure === 'revision') {
+        $response->assertConflict();
+    } else {
+        $response->assertUnprocessable();
+    }
+    expect($this->work->fresh()->getAttributes())->toBe($before);
+    $this->assertDatabaseCount('teaching_work_dropbox_folders', 0);
+})->with(['truncated', 'revision', 'rate limit']);
+
+test('historical folder verification saves only the confirmed association and preserves every original work field', function (): void {
+    historicalFolderFixture($this);
+    $before = $this->work->fresh()->getAttributes();
+    $preview = $this->postJson($this->url.'/folder', ['folder_id' => 'id:existing', 'verify' => true])->assertOk()
+        ->assertJsonPath('candidate.path', '/materialien/alte-arbeit')->json();
+    $this->assertDatabaseCount('teaching_work_dropbox_folders', 0);
+    expect($this->work->fresh()->getAttributes())->toBe($before);
+    $downloadsBeforeConfirm = Http::recorded(fn (Request $request): bool => str_ends_with($request->url(), '/files/download'))->count();
+    $this->postJson($this->url.'/folder', ['folder_id' => 'id:existing', 'folder_proof' => $preview['proof']])->assertOk()
+        ->assertJsonPath('folder.id', 'id:existing');
+    expect($this->work->fresh()->getAttributes())->toBe($before);
+    expect(Storage::disk('local')->allFiles())->toBe([]);
+    $this->assertDatabaseCount('teaching_work_dropbox_folders', 1);
+    expect(Http::recorded(fn (Request $request): bool => str_ends_with($request->url(), '/files/download'))->count())->toBe($downloadsBeforeConfirm);
+});
+
+test('historical folder verification refuses a missing preview and incomplete inventory copy', function (): void {
+    historicalFolderFixture($this);
+    $this->postJson($this->url.'/folder', ['folder_id' => 'id:existing'])->assertConflict();
+    Http::assertNothingSent();
+    $this->missingEvidence = true;
+    $this->onlinePath = '/ai/tmp/inventory/alte-arbeit';
+    $this->postJson($this->url.'/folder', ['folder_id' => 'id:existing', 'verify' => true])->assertUnprocessable();
+    $this->assertDatabaseCount('teaching_work_dropbox_folders', 0);
+});
+
+test('historical folder verification refuses changed bytes before any association is saved', function (): void {
+    historicalFolderFixture($this);
+    $this->onlineContent = 'Anderer Originalbeleg';
+    $this->postJson($this->url.'/folder', ['folder_id' => 'id:existing', 'verify' => true])->assertConflict();
+    $this->assertDatabaseCount('teaching_work_dropbox_folders', 0);
+});
+
+test('historical folder verification binds confirmation to the original state and rejects later changes', function (string $change): void {
+    historicalFolderFixture($this);
+    $preview = $this->postJson($this->url.'/folder', ['folder_id' => 'id:existing', 'verify' => true])->assertOk()->json();
+    match ($change) {
+        'revision' => $this->onlineRevision = 'later-revision',
+        'path' => $this->onlinePath = '/materialien/verschoben',
+        'work' => $this->work->update(['description' => 'Inzwischen geändert']),
+        'mapping' => TeachingWorkDropboxFolder::factory()->create(['dropbox_connection_id' => DropboxConnection::where('user_id', $this->user->id)->first()->id,
+            'teaching_course_work_id' => $this->work->id, 'folder_id' => 'id:another']),
+        'expired' => $this->travel(11)->minutes(),
+        'proof' => $preview['proof'] = 'manipuliert',
+    };
+    $this->postJson($this->url.'/folder', ['folder_id' => 'id:existing', 'folder_proof' => $preview['proof']])->assertConflict();
+    $this->assertDatabaseMissing('teaching_work_dropbox_folders', ['folder_id' => 'id:existing']);
+})->with(['revision', 'path', 'work', 'mapping', 'expired', 'proof']);
+
+test('historical folder verification keeps authorization enforced for another teacher', function (): void {
+    historicalFolderFixture($this);
+    $teacher = User::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id])->assignRole('teacher');
+    $this->actingAs($teacher, 'sanctum')->postJson($this->url.'/folder', ['folder_id' => 'id:existing', 'verify' => true])->assertForbidden();
+    Http::assertNothingSent();
+    $this->assertDatabaseCount('teaching_work_dropbox_folders', 0);
+});
+
+function historicalPackageFolderFixture(object $context): void
+{
+    historicalFolderFixture($context);
+    $context->package = TeachingWorkJsonFixture::sign(TeachingWorkJsonFixture::package());
+    $context->onlinePackage = $context->package;
+    $context->packageMissing = false;
+    $context->reportOriginal = 'Ursprünglicher persönlicher Bericht';
+    $context->onlineReport = 'Späterer persönlicher Bericht';
+    $status = $context->work->status;
+    $status['assessment_json_packages'] = [['package_checksum' => $context->package['package_checksum']]];
+    $status['folder_import_sources']['beurteilungen/person.md'] = hash('sha256', $context->reportOriginal);
+    $status['folder_import_sources']['beurteilungen/schooltool-bewertungen.json'] = hash('sha256', json_encode($context->package));
+    $context->work->update(['status' => $status]);
+    Http::swap(new Factory);
+    Http::preventStrayRequests();
+    Http::fake(function (Request $request) use ($context) {
+        $contents = ['versand/aufgaben/versand_2026-10-13_08-00-00/versandprotokoll.txt' => $context->onlineContent,
+            'beurteilungen/schooltool-bewertungen.json' => $context->packageMissing ? null : json_encode($context->onlinePackage),
+            'beurteilungen/person.md' => $context->onlineReport];
+        $entries = [];
+        $downloads = [];
+        foreach ($contents as $path => $bytes) {
+            if ($bytes === null) {
+                continue;
+            }
+            $id = 'id:'.hash('sha256', $path);
+            $rev = hash('sha256', $bytes);
+            $entries[$id] = ['.tag' => 'file', 'id' => $id, 'name' => basename($path), 'rev' => $rev,
+                'size' => strlen($bytes), 'path_lower' => $context->onlinePath.'/'.$path];
+            $downloads['rev:'.$rev] = $bytes;
+        }
+        if (str_ends_with($request->url(), '/oauth2/token')) {
+            return Http::response(['access_token' => 'test-access']);
+        }
+        if (str_ends_with($request->url(), '/files/get_metadata')) {
+            return Http::response($entries[$request['path']] ?? ['.tag' => 'folder', 'id' => 'id:existing',
+                'name' => 'Alte Arbeit', 'path_lower' => $context->onlinePath, 'path_display' => $context->onlinePath]);
+        }
+        if (str_ends_with($request->url(), '/files/list_folder')) {
+            return Http::response(['has_more' => false, 'entries' => array_values($entries)]);
+        }
+        if (str_ends_with($request->url(), '/files/download')) {
+            $arguments = json_decode($request->header('Dropbox-API-Arg')[0], true, flags: JSON_THROW_ON_ERROR);
+
+            return Http::response($downloads[$arguments['path']]);
+        }
+        throw new RuntimeException('Unexpected Dropbox write or other request');
+    });
+}
+
+test('historical folder verification allows explicit linking with file warnings when the imported package confirms identity', function (string $difference): void {
+    historicalPackageFolderFixture($this);
+    if ($difference === 'missing') {
+        $this->onlineReport = null;
+    } elseif ($difference === 'dispatch') {
+        $this->onlineReport = $this->reportOriginal;
+        $this->onlineContent = 'Späterer Versandnachweis';
+    }
+    $before = $this->work->fresh()->getAttributes();
+    $preview = $this->postJson($this->url.'/folder', ['folder_id' => 'id:existing', 'verify' => true])->assertOk()
+        ->assertJsonPath('identity', 'assessment_package')->assertJsonCount(1, 'differences')
+        ->assertJsonPath('differences.0.state', $difference === 'missing' ? 'missing' : 'changed')->json();
+    $this->assertDatabaseCount('teaching_work_dropbox_folders', 0);
+    $this->postJson($this->url.'/folder', ['folder_id' => 'id:existing', 'folder_proof' => $preview['proof']])->assertOk()
+        ->assertJsonPath('folder.id', 'id:existing');
+    expect($this->work->fresh()->getAttributes())->toBe($before)
+        ->and(Storage::disk('local')->allFiles())->toBe([]);
+})->with(['changed', 'missing', 'dispatch']);
+
+test('historical folder verification still rejects an unknown assessment package despite plausible files', function (): void {
+    historicalPackageFolderFixture($this);
+    $this->onlineReport = $this->reportOriginal;
+    $this->onlinePackage['exercise_id'] = 'OTHER-EXERCISE';
+    $this->onlinePackage = TeachingWorkJsonFixture::sign($this->onlinePackage);
+    $this->postJson($this->url.'/folder', ['folder_id' => 'id:existing', 'verify' => true])->assertConflict();
+    $this->assertDatabaseCount('teaching_work_dropbox_folders', 0);
+});
+
+test('historical folder verification explains that a selected dispatch subfolder is not the exercise root', function (): void {
+    historicalPackageFolderFixture($this);
+    $this->packageMissing = true;
+    $this->onlinePath .= '/versand';
+    $this->postJson($this->url.'/folder', ['folder_id' => 'id:existing', 'verify' => true])->assertUnprocessable()
+        ->assertJsonPath('message', fn (string $message): bool => str_contains($message, 'vollständigen Leistungsfeststellungsordner'));
+    $this->assertDatabaseCount('teaching_work_dropbox_folders', 0);
+});
+
+test('historical folder verification refuses a temporary copy even with the known imported package', function (): void {
+    historicalPackageFolderFixture($this);
+    $this->onlinePath = '/ai/tmp/arbeit84/inventory/materialien/alte-arbeit';
+    $this->postJson($this->url.'/folder', ['folder_id' => 'id:existing', 'verify' => true])->assertUnprocessable()
+        ->assertJsonPath('message', fn (string $message): bool => str_contains($message, 'Originalordner im Materialien-Bestand'));
+    $this->assertDatabaseCount('teaching_work_dropbox_folders', 0);
+});
+
+test('historical folder verification requires a new preview when a warned file changes or reappears', function (bool $missing): void {
+    historicalPackageFolderFixture($this);
+    if ($missing) {
+        $this->onlineReport = null;
+    }
+    $before = $this->work->fresh()->getAttributes();
+    $preview = $this->postJson($this->url.'/folder', ['folder_id' => 'id:existing', 'verify' => true])->assertOk()->json();
+    $this->onlineReport = $this->reportOriginal;
+    $this->postJson($this->url.'/folder', ['folder_id' => 'id:existing', 'folder_proof' => $preview['proof']])->assertConflict();
+    expect($this->work->fresh()->getAttributes())->toBe($before);
+    $this->assertDatabaseCount('teaching_work_dropbox_folders', 0);
+})->with([false, true]);

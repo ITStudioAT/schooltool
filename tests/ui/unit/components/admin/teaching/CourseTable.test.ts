@@ -38,7 +38,7 @@ describe('CourseTable manual work completion', () => {
         clearWorkDropboxStates()
         let finish: (value: unknown) => void = () => {}
         const status = vi.fn().mockImplementation(() => new Promise(resolve => { finish = resolve }))
-        vi.stubGlobal('axios', { get: status })
+        vi.stubGlobal('axios', { get: status, post: status })
         const { wrapper, works, first } = mountCompletionTable()
         try {
             useAdminStore().config = { user: { id: 7 } } as never
@@ -262,11 +262,8 @@ describe('CourseTable manual work completion', () => {
             const card = wrapper.get('.course-table-work-summary')
             expect(card.text()).toContain('Erste Arbeit')
             expect(card.text()).not.toContain('Noch kein Ordner verbunden.').not.toContain(label)
-            expect(card.get('.course-table-work-summary-meta').findAll('v-icon')).toHaveLength(enabled ? 3 : 2)
-            if (enabled) {
-                expect(card.getComponent({ name: 'WorkFolderStatus' }).get('v-icon').attributes('color')).toBe('error')
-                expect(card.getComponent({ name: 'WorkFolderStatus' }).props('date')).toBe('2026-10-12')
-            }
+            expect(card.get('.course-table-work-summary-meta').findAll('v-icon')).toHaveLength(2)
+            expect(card.findComponent({ name: 'WorkFolderStatus' }).exists()).toBe(false)
             expect(card.get('v-icon').attributes('icon')).toBe(icon)
             expect(card.get('v-icon').attributes('aria-label')).toBe(label)
             expect(card.findAll('[data-work-status], [data-submission-state]')).toHaveLength(0)
@@ -276,8 +273,8 @@ describe('CourseTable manual work completion', () => {
             expect(card.get('v-icon').attributes('icon')).toBe(nextIcon)
             expect(card.get('v-icon').attributes('title')).toBe(nextLabel)
             expect(card.text()).not.toContain(nextLabel)
-            expect(card.get('.course-table-work-summary-meta').findAll('v-icon')).toHaveLength(enabled ? 2 : 3)
-            expect(card.findComponent({ name: 'WorkFolderStatus' }).exists()).toBe(!enabled)
+            expect(card.get('.course-table-work-summary-meta').findAll('v-icon')).toHaveLength(2)
+            expect(card.findComponent({ name: 'WorkFolderStatus' }).exists()).toBe(false)
 
             await card.get('v-icon').trigger('click')
             expect((wrapper.vm as any).workDialogForm.id).toBe(first.id)
@@ -287,8 +284,7 @@ describe('CourseTable manual work completion', () => {
             await flushPromises()
             expect(card.text()).not.toContain('Noch kein Ordner verbunden.')
             expect(card.findAll('[data-work-status]')).toHaveLength(0)
-            expect(card.findComponent({ name: 'WorkFolderStatus' }).exists()).toBe(!enabled)
-            if (!enabled) expect(card.getComponent({ name: 'WorkFolderStatus' }).get('v-icon').attributes('color')).toBe('success')
+            expect(card.findComponent({ name: 'WorkFolderStatus' }).exists()).toBe(false)
         } finally { wrapper.unmount(); clearWorkDropboxStates() }
     })
 
@@ -541,7 +537,7 @@ describe('CourseTable hourly cancellation dialog', () => {
 })
 
 describe('CourseTable evaluation PDF links', () => {
-    it('shows differing personal submission states and moves shared dispatch states into the work header', async () => {
+    it('shows only pending personal evaluations and suppresses shared submission and dispatch icons', async () => {
         const pinia = createTestingPinia({ createSpy: vi.fn })
         const date = { id: 1, date: '2026-10-06' }
         useCourseStore(pinia).selected_course = { id: 18,
@@ -571,14 +567,14 @@ describe('CourseTable evaluation PDF links', () => {
             await flushPromises()
             const cells = wrapper.findAll('.course-table-entry-cell')
             expect(cells).toHaveLength(2)
-            const received = cells.find(cell => cell.find('[data-submission-state="received"]').exists())!
-            expect(received.get('[data-submission-state]').attributes('color')).toBe('success')
-            expect(received.text()).toContain('Abgabe liegt vor')
+            const received = cells.find(cell => cell.find('[data-work-status="evaluation"]').exists())!
+            expect(received.get('[data-work-status="evaluation"]').attributes('color')).toBe('orange-darken-2')
+            expect(received.text()).toContain('Bewertung noch offen')
             expect(received.findAll('[icon="mdi-file-send-outline"]')).toHaveLength(0)
             expect(received.findAll('[data-work-status], [data-submission-state]').map(icon =>
-                icon.attributes('data-work-status') || 'download')).toEqual(['download'])
-            expect(cells.filter(cell => cell.find('[data-submission-state="unknown"]').exists())).toHaveLength(1)
-            expect(wrapper.find('.course-table-work-summary [data-submission-state]').exists()).toBe(true)
+                icon.attributes('data-work-status') || 'download')).toEqual(['evaluation'])
+            expect(cells.flatMap(cell => cell.findAll('[data-submission-state]'))).toHaveLength(0)
+            expect(wrapper.find('.course-table-work-summary [data-workflow-stage="collection"]').exists()).toBe(false)
             expect(received.findAll('v-tooltip')).toHaveLength(1)
             expect(received.findAll('[aria-label][title]')).toHaveLength(0)
             useCourseWorkStore(pinia).courseWorks = [{ ...work, status: { ...work.status, assessment_json_imports: [] } }] as never
@@ -784,10 +780,10 @@ describe('CourseTable evaluation PDF links', () => {
             await flushPromises()
             for (const card of wrapper.findAll('.course-table-work-summary')) {
                 const header = card.get('.course-table-work-summary-meta')
-                expect(header.get('.course-table-work-summary-count').attributes('aria-label')).toBe('0 von 1 Leistungen erledigt; 1 offen.')
-                expect(header.findComponent({ name: 'WorkFolderStatus' }).exists()).toBe(true)
+                expect(header.get('.course-table-work-summary-count').attributes('aria-label')).toMatch(/^(1 Schüler:innen|0 von 1 Leistungen erledigt; 1 offen\.)$/)
+                expect(header.findComponent({ name: 'WorkFolderStatus' }).exists()).toBe(false)
                 expect(header.findComponent(WorkDispatchStatus).exists()).toBe(false)
-                expect(card.get('.course-table-work-summary-status').findAll('[data-work-status], [data-submission-state]')).toHaveLength(4)
+                expect(card.findAll('[data-workflow-stage], [data-work-status], [data-submission-state]')).toHaveLength(0)
             }
             expect(wrapper.findAll('.course-table-work-summary')).toHaveLength(6)
             const studentStatuses = wrapper.findAll('.course-table-entry-cell-performance [data-work-status="tasks"]')
@@ -904,7 +900,14 @@ describe('CourseTable evaluation PDF links', () => {
             expect(form.get('[data-testid="work-detail-progress"]').text()).toContain('0 von 1 beurteilt')
             expect(form.findAll('v-btn').filter(button => button.text() === 'Verknüpfen')).toHaveLength(0)
             const actions = form.get('[aria-label="Weitere Aktionen"]')
-            expect(actions.findAll('v-btn').map(button => button.text())).toEqual(['Kontext kopieren'])
+            expect(actions.findAll('v-btn').map(button => button.text())).toEqual(['Ordner verknüpfen', 'Kontext kopieren', 'Abgaben einsammeln', 'Erneut prüfen'])
+            vm.workSaving = true
+            await flushPromises()
+            expect(form.get('.work-dialog-status-icons').attributes('inert')).toBeDefined()
+            expect(form.get('.work-dialog-status-icons').attributes('aria-disabled')).toBe('true')
+            vm.workSaving = false
+            await flushPromises()
+            expect(form.get('.work-dialog-status-icons').attributes('inert')).toBeUndefined()
             expect(actions.findAll('[href]')).toHaveLength(0)
             expect(form.findAll('[href]').some(link => link.attributes('href').includes(foreign.sha256))).toBe(false)
 
@@ -1599,6 +1602,19 @@ describe('CourseTable', () => {
         } finally {
             wrapper.unmount()
             vi.unstubAllGlobals()
+        }
+    })
+
+    it('opens an explanation through the current dated curriculum assignment', async () => {
+        const open = vi.spyOn(window, 'open').mockImplementation(() => null)
+        const file = { id: 6, explanation_key: 'decimal-to-hexadecimal', preview_url: '/learning-materials/curriculum/6' }
+        const context = { curriculumFilePending: null, curriculumDialog: { courseDate: { adopted_materials: [{ attachments: [{ source_teaching_curriculum_document_id: 6, preview_url: '/learning-materials/teaching/81' }] }] } } }
+        try {
+            await (CourseTable as any).methods.openCurriculumFile.call(context, file, true)
+            expect(open).toHaveBeenCalledWith('/learning-materials/teaching/81', '_blank', 'noopener')
+            expect(axios.get).not.toHaveBeenCalled()
+        } finally {
+            open.mockRestore()
         }
     })
 
@@ -2862,7 +2878,7 @@ describe('CourseTable', () => {
         expect(source).toContain(".course-table-entry-type-row[data-category='Verhalten']")
         expect(source).toContain(".course-table-entry-type-row[data-category='Weitere']")
         expect(source).toContain('background: rgba(var(--v-theme-error), 0.065);')
-        expect(source).toContain('border-color: rgba(var(--v-theme-error), 0.3);\n    color: rgb(var(--v-theme-error));')
+        expect(source.replace(/\r\n/g, '\n')).toContain('border-color: rgba(var(--v-theme-error), 0.3);\n    color: rgb(var(--v-theme-error));')
         expect(source).toContain('color: rgb(var(--v-theme-error));')
         expect(source).toContain('border-left-width: 4px;')
         expect(source).toContain('border-radius: 10px;')
@@ -4761,9 +4777,9 @@ describe('CourseTable', () => {
     })
 
     it('makes the complete entry card interactive without propagating editor clicks', async () => {
-        const source = await import('node:fs/promises').then((fs) =>
+        const source = (await import('node:fs/promises').then((fs) =>
             fs.readFile('resources/js/pages/admin/teaching/overview/components/CourseTable.vue', 'utf8')
-        )
+        )).replace(/\r\n/g, '\n')
 
         expect(source).toContain(':data-testid="`course-table-cell-entry-card-${entry.uid}`"\n                                :aria-expanded="isCellEntryExpanded(entry)"')
         expect(source).toContain('v-for="entry in visibleCellEntries"')
@@ -5565,7 +5581,7 @@ describe('CourseTable', () => {
 
         expect(source).toContain('data-testid="course-table-overview-pdf-button"')
         expect(source).toContain('title="Kursübersicht als PDF öffnen"')
-        expect(source).toContain('class="ml-auto"\n                    color="error"')
+        expect(source.replace(/\r\n/g, '\n')).toContain('class="ml-auto"\n                    color="error"')
         expect(source.indexOf('data-testid="course-table-overview-pdf-button"'))
             .toBeGreaterThan(source.indexOf('<v-btn-toggle v-model="selectedSemester"'))
         expect(source).toContain("import { courseOverviewPdf }")
@@ -5857,7 +5873,7 @@ describe('CourseTable', () => {
         expect(source).toContain('font-size: 1.24rem;')
         expect(source).toContain('letter-spacing: 0.08em;')
         expect(source).toContain('opacity: 0.42;')
-        expect(source).toContain('.course-table-entry-cell--free-reason {\n    overflow: hidden;')
+        expect(source.replace(/\r\n/g, '\n')).toContain('.course-table-entry-cell--free-reason {\n    overflow: hidden;')
         expect(source).toContain('width: 88px;')
         expect(source).toContain('position: absolute;')
         expect(source).toContain('max-height: calc(100% - 16px);')

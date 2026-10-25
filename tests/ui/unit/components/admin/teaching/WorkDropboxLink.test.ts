@@ -18,7 +18,7 @@ function mountLink(post = vi.fn()) {
     return mount(WorkDropboxLink, {
         props: { courseId: 2 },
         global: { plugins: [createTestingPinia({ createSpy: vi.fn, initialState: { AdminAdminStore: { config: { user: { id: 7 } } } } })],
-            stubs: { 'v-dialog': { template: '<div><slot /></div>' }, 'v-btn': { props: ['disabled'], template: '<button :disabled="disabled"><slot /></button>' } },
+            stubs: { 'v-dialog': { props: ['persistent'], template: '<div><slot /></div>' }, 'v-btn': { props: ['disabled'], template: '<button :disabled="disabled"><slot /></button>' } },
         },
     })
 }
@@ -108,4 +108,34 @@ it('clears a stale confirmation after a rejected save and offers a new online ch
     expect(wrapper.text()).toContain('Erneut prüfen')
     expect(wrapper.findAll('button').find(button => button.text() === 'Verknüpfen')!.attributes('disabled')).toBeDefined()
     wrapper.unmount()
+})
+
+it('opens the online folder picker for historical imports without asking for a new module handshake', async () => {
+    const wrapper = mountLink()
+    const oldWork = { ...work, status: { folder_imported_at: '2026-10-13T12:54:00Z' } }
+    try {
+        await (wrapper.vm as any).openLink(oldWork)
+        await flushPromises()
+        const source = wrapper.findComponent({ name: 'WorkDropboxSource' })
+        expect(source.exists()).toBe(true)
+        expect(source.props('selectionOnly')).toBe(true)
+        expect(wrapper.find('[data-testid="filepond"]').exists()).toBe(false)
+        expect(wrapper.text()).toContain('verändert keine Bewertungen')
+        expect((globalThis as any).axios.post).not.toHaveBeenCalled()
+    } finally { wrapper.unmount() }
+})
+
+it('prevents closing a historical link dialog during the final folder operation', async () => {
+    const wrapper = mountLink()
+    try {
+        await (wrapper.vm as any).openLink({ ...work, status: { folder_imported_at: '2026-10-13T12:54:00Z' } })
+        await flushPromises()
+        const source = wrapper.findComponent({ name: 'WorkDropboxSource' })
+        source.vm.$emit('busy', true)
+        await flushPromises()
+        expect(wrapper.findAll('button').at(-1)!.attributes('disabled')).toBeDefined()
+        source.vm.$emit('busy', false)
+        await flushPromises()
+        expect(wrapper.findAll('button').at(-1)!.attributes('disabled')).toBeUndefined()
+    } finally { wrapper.unmount() }
 })

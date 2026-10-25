@@ -49,16 +49,16 @@
                     <v-list-item v-for="work in filteredCourseWorks" :key="work.id" class="work-list-item cursor-pointer" @click="editWork(work)">
                         <div class="work-row w-100" :class="workEntryBackgroundClass(work)">
                             <template v-if="workIsInitial(work)">
-                                <div class="d-flex align-center ga-2">
+                                <div class="d-flex flex-wrap align-center ga-2">
                                     <v-icon :icon="workAutomationEnabled(work) ? 'mdi-brain' : 'mdi-account-check-outline'" color="#1e3a8a" size="18"
                                         :title="workAutomationEnabled(work) ? 'Automatische Beurteilung' : 'Manuelle Beurteilung'"
                                         :aria-label="workAutomationEnabled(work) ? 'Automatische Beurteilung' : 'Manuelle Beurteilung'"
                                         role="img" :aria-hidden="false" />
                                     <span class="work-initial-type text-primary">{{ workTypeModeLabel(work) }}</span>
+                                    <WorkSimulationBadge :work="work" />
                                     <span class="d-inline-flex align-center ga-1 ml-auto work-initial-type" :class="workHasAllGrades(work) ? 'text-success' : 'text-error'" :aria-label="`${totalCourseStudentsCount} Schüler:innen`">
                                         <v-icon icon="mdi-account-multiple" size="18" aria-hidden="true" />{{ totalCourseStudentsCount }}
                                     </span>
-                                    <WorkFolderStatus v-if="workAutomationEnabled(work)" :work="work" />
                                 </div>
                                 <div class="text-body-2 work-title-second-line text-primary">{{ work.title || '—' }}</div>
                                 <div v-if="workListDate(work)" class="text-caption text-medium-emphasis">{{ formatDate(workListDate(work)) }}</div>
@@ -67,8 +67,8 @@
                                     {{ formatDateShort(work.finish_until_date) }}<template v-if="work.finish_until_time"> · {{ work.finish_until_time }}</template>
                                 </div>
                                 <div v-if="workEmailPreparationLabel(work)" class="text-caption font-weight-bold"
-                                    :class="workEmailPreparationLabel(work) === 'Versandbereit' ? 'text-success' : 'text-orange-darken-2'">
-                                    {{ workEmailPreparationLabel(work) }}
+                                    :class="['Versandbereit', 'Abgeschlossen'].includes(workEmailPreparationLabel(work)) ? 'text-success' : 'text-orange-darken-2'">
+                                    {{ workEmailPreparationLabel(work) === 'Abgeschlossen' ? 'ABGESCHLOSSEN' : workEmailPreparationLabel(work) }}
                                 </div>
                                 <div class="d-flex justify-end mt-auto">
                                     <v-btn v-if="delete_work_id !== work.id" size="x-small" variant="text" @click.stop="delete_work_id = work.id">Löschen</v-btn>
@@ -84,6 +84,7 @@
                                     <div class="text-caption text-medium-emphasis work-type-first-line">
                                         {{ workTypeModeLabel(work) }}
                                     </div>
+                                    <WorkSimulationBadge :work="work" />
                                     <div class="work-meta-actions">
                                         <v-chip
                                             v-if="workHasUnassignedStudents(work)"
@@ -117,13 +118,9 @@
                                 </div>
                                 <div v-if="workEmailPreparationLabel(work)" class="text-caption font-weight-bold"
                                     :class="workEmailPreparationLabel(work) === 'Versandbereit' ? 'text-success' : 'text-orange-darken-2'">
-                                    {{ workEmailPreparationLabel(work) }}
-                                </div>
-                                <div v-if="workAutomationEnabled(work)" class="work-card-status-row d-flex align-center ga-2 mt-1">
-                                    <WorkCellStatus class="w-100" :work="work" :students="activeCourseStudents" aggregate native-title />
+                                    {{ workEmailPreparationLabel(work) === 'Abgeschlossen' ? 'ABGESCHLOSSEN' : workEmailPreparationLabel(work) }}
                                 </div>
                             </div>
-                            <div class="d-flex flex-wrap align-center ga-2 mt-2"><WorkDispatchStatus :work="work" aggregate /></div>
                             <div class="work-bottom-row">
                                 <div v-if="workGradeDistribution(work).length" class="work-grade-distribution d-flex flex-wrap ga-1">
                                     <v-chip
@@ -168,10 +165,16 @@
                 <div v-if="work_form.id" class="work-import-actions d-flex align-center flex-wrap ga-2 mt-3">
                     <WorkContextCopy v-if="courseWorks.find(work => work.id === work_form.id)" :work="courseWorks.find(work => work.id === work_form.id)"
                         :course="selected_course" :date="work_form.date_for_all_groups || ''" />
+                    <WorkSubmissionCollection v-if="workEmailPreparationLabel(courseWorks.find(work => work.id === work_form.id)) === 'Abgaben einsammeln'" :work="courseWorks.find(work => work.id === work_form.id)" :date="work_form.date_for_all_groups || ''" />
                     <WorkImportActions :work="courseWorks.find(work => work.id === work_form.id)" link-only @open="openImport" @link="openLink" />
-                    <WorkExerciseExport :work="courseWorks.find(work => work.id === work_form.id)" :course="selected_course" :date="work_form.date_for_all_groups || ''" />
+                    <WorkExerciseExport :work="courseWorks.find(work => work.id === work_form.id)" :course="selected_course" :date="work_form.date_for_all_groups || ''"
+                        :check-progress="workHasProgress(courseWorks.find(work => work.id === work_form.id))" :disabled="workChecking || is_saving"
+                        @check-busy="workChecking = $event" @deadline-saved="refreshWorks" />
                 </div>
                 <div v-if="work_form.id" class="mt-2"><WorkDispatchStatus :work="work_form" aggregate /></div>
+                <span v-if="work_form.id" :inert="workChecking" :aria-disabled="workChecking" :class="{ 'opacity-50': workChecking }">
+                    <WorkDeliveryStatus :work="courseWorks.find(work => work.id === work_form.id) || work_form" :size="24" @import="openImport" @saved="refreshWorks" />
+                </span>
                 <div v-if="work_form.id" class="text-caption mt-2" data-testid="work-assessment-total">
                     {{ workAssessedCount(courseWorks.find(work => work.id === work_form.id)) }} von {{ totalCourseStudentsCount }} beurteilt
                 </div>
@@ -650,10 +653,7 @@
                         <div v-else>
                             <div class="d-flex flex-wrap align-center ga-2 mt-2 mb-2">
                                 <div class="text-caption text-medium-emphasis">Sortierung Schüler:innen</div>
-                                <v-btn-toggle v-model="students_sort_mode" mandatory density="compact" color="primary">
-                                    <v-btn size="small" value="class_last_name">Klasse, Name</v-btn>
-                                    <v-btn size="small" value="last_name_first_name">Name</v-btn>
-                                </v-btn-toggle>
+                                <span class="text-caption">Nachname, Vorname</span>
                             </div>
                             <div class="d-flex align-center justify-space-between ga-2">
                                 <div class="d-flex align-center ga-2">
@@ -892,6 +892,7 @@
 </template>
 
 <script>
+import { comparePersonNames } from '@/helpers/personNames'
 import { teachingSemesterCount } from '@/helpers/teachingSemester'
 import { mapWritableState } from 'pinia'
 import { parseLocalDate, formatViennaDateTime, workDeadlineColor } from '@/helpers/date'
@@ -914,12 +915,16 @@ import WorkAiExport from './WorkAiExport.vue'
 import WorkTimeInput from './WorkTimeInput.vue'
 import WorkContextCopy from './WorkContextCopy.vue'
 import WorkFolderStatus from './WorkFolderStatus.vue'
+import WorkDeliveryStatus from './WorkDeliveryStatus.vue'
+import WorkSimulationBadge from './WorkSimulationBadge.vue'
+import WorkSubmissionCollection from './WorkSubmissionCollection.vue'
+import { workHasProgress, workProgressNextAction } from '@/helpers/workProgress'
 import { workAutomationEnabled } from '@/helpers/workAutomation'
 import { loadWorkDropbox, loadWorkExercise, workDropboxKey, workDropboxStates, workExerciseCheck } from '@/helpers/workDropbox'
 import { isInitialWork, workConnectionLabel, workNeedsPreparation, workPreparationLabel } from '@/helpers/workOverview'
 
 export default {
-    components: { ItsGridBox, WorkAiExport, WorkEvaluationImport, WorkImportActions, WorkExerciseExport, WorkDropboxLink, WorkEvaluationPdf, WorkDispatchLog, WorkDispatchStatus, WorkCellStatus, WorkTimeInput, WorkContextCopy, WorkFolderStatus },
+    components: { WorkSubmissionCollection, ItsGridBox, WorkAiExport, WorkEvaluationImport, WorkImportActions, WorkExerciseExport, WorkDropboxLink, WorkEvaluationPdf, WorkDispatchLog, WorkDispatchStatus, WorkCellStatus, WorkTimeInput, WorkContextCopy, WorkFolderStatus, WorkDeliveryStatus, WorkSimulationBadge },
 
     async beforeMount() {
         this.adminStore = useAdminStore()
@@ -977,6 +982,7 @@ export default {
             comment_dialog_student_id: null,
             comment_dialog_value: '',
             is_saving: false,
+            workChecking: false,
             is_changing_group_work_mode: false,
             work_folder_errors: {},
             deadlineNow: Date.now(),
@@ -1289,6 +1295,7 @@ export default {
     },
 
     methods: {
+        workHasProgress,
         workAutomationEnabled,
         formatImportDate: formatViennaDateTime,
         openLink(work) {
@@ -1296,9 +1303,10 @@ export default {
             if (!savedWork || String(savedWork.teaching_course_id) !== String(this.selected_course?.id)) return
             this.$refs.moduleLink.openLink(savedWork)
         },
-        openImport(work, quick = false) {
+        openImport(work, quick = false, results = null) {
             if (!workAutomationEnabled(work)) return
-            if (quick) this.$refs.evaluationImport.openImport(work, true)
+            if (results) this.$refs.evaluationImport.openImport(work, false, results)
+            else if (quick) this.$refs.evaluationImport.openImport(work, true)
             else this.$refs.evaluationImport.openImport(work)
         },
         async evaluationImported(work) {
@@ -2132,26 +2140,7 @@ export default {
             return (student?.schoolclass || student?.class || '').toString()
         },
         compareStudentsBySelectedSort(a, b) {
-            const lastA = (a?.last_name ?? a?._last ?? '').toString()
-            const lastB = (b?.last_name ?? b?._last ?? '').toString()
-            const firstA = (a?.first_name ?? a?._first ?? '').toString()
-            const firstB = (b?.first_name ?? b?._first ?? '').toString()
-            const classA = (a?._class ?? this.studentClassValue(a)).toString()
-            const classB = (b?._class ?? this.studentClassValue(b)).toString()
-
-            if (this.students_sort_mode === 'last_name_first_name') {
-                const lastCmp = lastA.localeCompare(lastB, 'de', { sensitivity: 'base' })
-                if (lastCmp !== 0) return lastCmp
-                const firstCmp = firstA.localeCompare(firstB, 'de', { sensitivity: 'base' })
-                if (firstCmp !== 0) return firstCmp
-                return classA.localeCompare(classB, 'de', { numeric: true, sensitivity: 'base' })
-            }
-
-            const classCmp = classA.localeCompare(classB, 'de', { numeric: true, sensitivity: 'base' })
-            if (classCmp !== 0) return classCmp
-            const lastCmp = lastA.localeCompare(lastB, 'de', { sensitivity: 'base' })
-            if (lastCmp !== 0) return lastCmp
-            return firstA.localeCompare(firstB, 'de', { sensitivity: 'base' })
+            return comparePersonNames(a, b)
         },
         availableStudentItems(groupIndex) {
             const groups = this.work_form.groups || []
@@ -2516,13 +2505,14 @@ export default {
             return workDropboxStates.get(workDropboxKey(this.config?.user?.id, work))
         },
         workEmailPreparationLabel(work) {
+            if (workHasProgress(work)) return workProgressNextAction(work, this.deadlineNow)
             if (!workAutomationEnabled(work) || !workNeedsPreparation(work, this.workFolderState(work))) return ''
             const checked = workExerciseCheck(workDropboxKey(this.config?.user?.id, work), work, work.date_for_all_groups || '')
             return checked?.status === 'found' ? workPreparationLabel(checked) : ''
         },
         workDeadlineColor,
         workIsInitial(work) {
-            return isInitialWork(work, this.workFolderState(work))
+            return isInitialWork(work, this.workFolderState(work)) || (workAutomationEnabled(work) && workHasProgress(work))
         },
         workConnectionLabel(work) {
             const key = workDropboxKey(this.config?.user?.id, work)

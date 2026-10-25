@@ -1,6 +1,17 @@
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { dispatchNotificationText, workDispatchNotification, workDispatchRecord, workDispatchReady, workProvisionRecords } from '@/helpers/workDispatch'
+
+it('uses a confirmed Mailpit dispatch ahead of preparation while keeping real delivery evidence separate', () => {
+    const log = { origin: 'dispatch_import', purpose: 'tasks', sha256: 'mailpit-proof' }
+    const delivered = { origin: 'dispatch_import', purpose: 'tasks', student_id: 12, log_sha256: log.sha256,
+        mode: 'mailpit', provider_id: 'mailpit-id', sent_at: '2026-10-24T00:00:00Z' }
+    const work = { id: 78, status: { dispatch_logs: [log], dispatch_attempts: [delivered, { ...delivered, mode: 'prepared' }] } }
+    expect(workDispatchRecord(work, 12, 'tasks')).toBe(delivered)
+    expect(workDispatchNotification(work, 12, 'tasks')).toBeNull()
+    expect(workDispatchReady(work, 12)).toBe(false)
+    expect(dispatchNotificationText(delivered.sent_at, 'tasks', 'mailpit')).toContain('versandt · Testversand über Mailpit')
+})
 import WorkDispatchStatus from '@/pages/admin/teaching/overview/components/WorkDispatchStatus.vue'
 
 describe('Imported work dispatch notifications', () => {

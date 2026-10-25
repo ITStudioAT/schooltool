@@ -3,13 +3,16 @@
 namespace App\Http\Controllers\Admin\Teaching;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Admin\Teaching\StoreCurriculumExplanationRequest;
 use App\Http\Requests\Admin\Teaching\StoreCurriculumUnitFilesRequest;
 use App\Http\Requests\Admin\Teaching\UpdateCurriculumUnitFileRequest;
 use App\Models\TeachingCurriculum;
 use App\Models\TeachingCurriculumDocument;
 use App\Services\Materials\MaterialAttachmentPreviewService;
 use App\Services\Teaching\CurriculumUnitFileService;
+use App\Services\Teaching\TeachingExplanationCatalog;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Storage;
 use Symfony\Component\HttpFoundation\HeaderUtils;
@@ -28,13 +31,14 @@ class CurriculumUnitFileController extends Controller
         $this->assertUnitExists($service, $curriculum, $topicId, $unitId);
 
         $files = $curriculum->documents()
-            ->where('source_type', 'unit_file')
+            ->whereIn('source_type', ['unit_file', 'explanation'])
             ->where('topic_id', $topicId)
             ->where('unit_id', $unitId)
             ->latest('id')
             ->get();
 
         return response()->json([
+            'explanations' => array_values(TeachingExplanationCatalog::all()),
             'data' => $files
                 ->map(fn (TeachingCurriculumDocument $file): array => $service->payload($curriculum, $topicId, $unitId, $file))
                 ->all(),
@@ -60,6 +64,39 @@ class CurriculumUnitFileController extends Controller
         ], 201);
     }
 
+    public function storeExplanation(
+        StoreCurriculumExplanationRequest $request,
+        TeachingCurriculum $curriculum,
+        string $topicId,
+        string $unitId,
+        CurriculumUnitFileService $service
+    ): JsonResponse {
+        $this->authorizeCurriculum($curriculum);
+        $this->assertUnitExists($service, $curriculum, $topicId, $unitId);
+        $explanation = TeachingExplanationCatalog::find($request->validated('explanation_key'));
+        $file = $curriculum->documents()->create([
+            'source_type' => 'explanation',
+            'topic_id' => $topicId,
+            'unit_id' => $unitId,
+            'explanation_key' => $explanation['key'],
+            'name' => $explanation['title'],
+        ]);
+
+        return response()->json(['data' => $service->payload($curriculum, $topicId, $unitId, $file)], 201);
+    }
+
+    public function explanation(Request $request, TeachingCurriculumDocument $file, CurriculumUnitFileService $service): JsonResponse|Response
+    {
+        $curriculum = $file->curriculum;
+        abort_unless($curriculum, 404);
+        $this->authorizeFile($service, $curriculum, (string) $file->topic_id, (string) $file->unit_id, $file);
+        abort_unless($file->source_type === 'explanation' && TeachingExplanationCatalog::find($file->explanation_key), 404);
+
+        return ($request->expectsJson()
+            ? response()->json(['explanation' => $file->explanation_key, 'return_url' => '/admin/teaching/curricula?curriculum='.$curriculum->id])
+            : response()->view('homepage'))->header('Cache-Control', 'private, no-store');
+    }
+
     public function preview(
         TeachingCurriculum $curriculum,
         string $topicId,
@@ -70,6 +107,7 @@ class CurriculumUnitFileController extends Controller
     ): SymfonyResponse {
         $this->authorizeFile($service, $curriculum, $topicId, $unitId, $file);
 
+        abort_unless($file->source_type === 'unit_file', 404);
         $downloadUrl = $service->payload($curriculum, $topicId, $unitId, $file)['download_url'];
 
         return $previewService->preview(
@@ -132,7 +170,7 @@ class CurriculumUnitFileController extends Controller
 
         if (
             $file->teaching_curriculum_id !== $curriculum->id
-            || $file->source_type !== 'unit_file'
+            || ! in_array($file->source_type, ['unit_file', 'explanation'], true)
             || $file->topic_id !== $topicId
             || $file->unit_id !== $unitId
         ) {

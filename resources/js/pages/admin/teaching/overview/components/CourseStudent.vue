@@ -892,6 +892,7 @@
 </template>
 
 <script>
+import { comparePersonNames } from '@/helpers/personNames'
 import { teachingSemesterCount } from '@/helpers/teachingSemester'
 import CourseStudentNotes from './CourseStudentNotes.vue'
 import CourseStudentIndicators from './CourseStudentIndicators.vue'
@@ -1635,30 +1636,7 @@ export default {
             return (student?.schoolclass || student?.class || '').toString()
         },
         compareStudentsBySelectedSort(a, b) {
-            const lastA = (a?.last_name || '').toString()
-            const lastB = (b?.last_name || '').toString()
-            const firstA = (a?.first_name || '').toString()
-            const firstB = (b?.first_name || '').toString()
-            const classA = this.studentClassValue(a)
-            const classB = this.studentClassValue(b)
-
-            if (this.students_sort_mode === 'last_name_first_name') {
-                const lastCmp = lastA.localeCompare(lastB, 'de', { sensitivity: 'base' })
-                if (lastCmp !== 0) return lastCmp
-
-                const firstCmp = firstA.localeCompare(firstB, 'de', { sensitivity: 'base' })
-                if (firstCmp !== 0) return firstCmp
-
-                return classA.localeCompare(classB, 'de', { numeric: true, sensitivity: 'base' })
-            }
-
-            const classCmp = classA.localeCompare(classB, 'de', { numeric: true, sensitivity: 'base' })
-            if (classCmp !== 0) return classCmp
-
-            const lastCmp = lastA.localeCompare(lastB, 'de', { sensitivity: 'base' })
-            if (lastCmp !== 0) return lastCmp
-
-            return firstA.localeCompare(firstB, 'de', { sensitivity: 'base' })
+            return comparePersonNames(a, b)
         },
         goToPreviousStudent() {
             if (!this.hasPreviousStudent) return

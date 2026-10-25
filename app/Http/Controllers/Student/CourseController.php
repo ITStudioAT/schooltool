@@ -12,9 +12,13 @@ use App\Models\TeachingCourseDateMaterialAttachment;
 use App\Models\TeachingSchoolHour;
 use App\Models\User;
 use App\Services\ParentStudentAccessService;
+use App\Services\Teaching\TeachingExplanationCatalog;
 use App\Services\TeachingCourseDateService;
 use App\Services\TeachingHolidaySyncService;
 use App\Services\TeachingService;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Storage;
 use RuntimeException;
@@ -308,11 +312,14 @@ class CourseController extends Controller
                     'type' => $m->type,
                     'attachments' => $m->attachments->filter(fn ($a) => $a->student_visible)->map(fn ($a) => [
                         'id' => $a->id,
+                        'explanation_key' => $a->explanation_key,
                         'name' => $this->attachmentNameWithStorageExtension($a->name, $a->file_path),
                         'mime_type' => $a->mime_type,
                         'size_bytes' => $a->size_bytes,
-                        'preview_url' => '/api/homepage/student/course-date-materials/attachments/'.$a->id.'/preview',
-                        'download_url' => '/api/homepage/student/course-date-materials/attachments/'.$a->id.'/download',
+                        'preview_url' => $a->explanation_key
+                            ? route('student-material-explanations.show', $a, false)
+                            : '/api/homepage/student/course-date-materials/attachments/'.$a->id.'/preview',
+                        'download_url' => $a->explanation_key ? null : '/api/homepage/student/course-date-materials/attachments/'.$a->id.'/download',
                     ])->values(),
                 ]);
 
@@ -406,6 +413,18 @@ class CourseController extends Controller
             ?? $courseDateService->attendanceCheckedFromStatus($status);
 
         return $attendanceChecked ? 'present' : null;
+    }
+
+    public function explanation(Request $request, TeachingCourseDateMaterialAttachment $attachment, ParentStudentAccessService $parentAccess): JsonResponse|Response
+    {
+        $student = $parentAccess->currentStudent();
+        abort_unless($student, 403, 'Sie haben keine Berechtigung');
+        $this->authorizeStudentAttachmentAccess($attachment, $student);
+        abort_unless(TeachingExplanationCatalog::find($attachment->explanation_key), 404);
+
+        return ($request->expectsJson()
+            ? response()->json(['explanation' => $attachment->explanation_key, 'return_url' => '/student/course/'.$attachment->material->courseDate->teaching_course_id])
+            : response()->view('homepage'))->header('Cache-Control', 'private, no-store');
     }
 
     public function previewAdoptedAttachment(

@@ -11,6 +11,17 @@ function mountTime(props = {}) {
 }
 
 describe('Work deadline time selection', () => {
+    it('closes an open time picker and rejects late keyboard updates when a check starts', async () => {
+        const wrapper = mountTime({ modelValue: '16:00' })
+        try {
+            await wrapper.get('[aria-label="Uhrzeit auswählen"]').trigger('click')
+            expect(wrapper.findComponent({ name: 'VTimePicker' }).exists()).toBe(true)
+            await wrapper.setProps({ disabled: true })
+            expect(wrapper.findComponent({ name: 'VTimePicker' }).exists()).toBe(false)
+            wrapper.getComponent({ name: 'VTextField' }).vm.$emit('update:modelValue', '08:15')
+            expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+        } finally { wrapper.unmount() }
+    })
     it('keeps the saved time on cancel and applies only the explicitly selected time', async () => {
         const wrapper = mountTime({ modelValue: '16:00' })
         try {

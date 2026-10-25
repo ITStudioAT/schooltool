@@ -3,7 +3,11 @@ import router, { resolveAdminRouteAccess, routes } from '../../../../resources/r
 
 describe('admin routes', () => {
     it.each([
+        ['/admin/teaching-tools/simulator', { section: 'simulator' }],
         ['/admin/teaching-tools/games', { section: 'games' }],
+        ['/admin/teaching-tools/explanations', { section: 'explanations' }],
+        ['/admin/teaching-tools/explanations/number-systems', { section: 'explanations', category: 'number-systems' }],
+        ['/admin/teaching-tools/explanations/decimal-to-binary', { section: 'explanations', explanation: 'decimal-to-binary' }],
         ['/admin/teaching-tools/games/number-systems', { section: 'games', game: 'number-systems' }],
     ])('opens %s with the existing teaching capability', (path, props) => {
         const resolvedRoute = router.resolve(path)

@@ -1,6 +1,6 @@
 <template>
-    <span v-if="workAutomationEnabled(work) && needsPreparation && !hasLink" class="work-import-action flex-column align-start" @click.stop>
-        <v-btn size="small" variant="tonal" prepend-icon="mdi-link-variant" :disabled="disabled || statusLoading" @click.stop="$emit('link', work)">Verknüpfen</v-btn>
+    <span v-if="workAutomationEnabled(work) && !hasLink" class="work-import-action flex-column align-start" @click.stop>
+        <v-btn size="small" variant="tonal" prepend-icon="mdi-link-variant" :disabled="disabled || statusLoading || !confirmedKey" @click.stop="$emit('link', work)">{{ needsPreparation ? 'Verknüpfen' : 'Ordner verknüpfen' }}</v-btn>
     </span>
     <span v-if="!linkOnly && workAutomationEnabled(work) && canQuickImport" class="work-import-action work-quick-import-action" :title="quickImportHint" @click.stop>
         <v-btn class="work-quick-import" size="small" variant="flat" prepend-icon="mdi-folder-refresh-outline" :disabled="disabled"

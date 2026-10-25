@@ -10,7 +10,8 @@ const work = { id: 65, teaching_course_id: 2, title: 'E-Mails' }
 const course = { id: 2, title: 'INF' }
 
 function mountExport(get = vi.fn(), writeText = vi.fn().mockResolvedValue(undefined), status = vi.fn().mockResolvedValue({ data: { connected: true, module_link: { folder: { id: 'id:module' } }, exercise: { status: 'missing' } } }), currentWork: any = work) {
-    vi.stubGlobal('axios', { get: vi.fn((url, options) => url.endsWith('/dropbox') ? status(url, options) : get(url, options)) })
+    vi.stubGlobal('axios', { get: vi.fn((url, options) => url.endsWith('/dropbox') ? status(url, options) : get(url, options)),
+        post: vi.fn((url, payload, options) => status(url, payload, options)) })
     vi.stubGlobal('navigator', { clipboard: { writeText }, userAgent: 'Test' })
     return mount(WorkExerciseExport, { attachTo: document.body, props: { work: currentWork, course, date: '2026-10-20' }, global: {
         plugins: [createTestingPinia({ createSpy: vi.fn, initialState: { AdminAdminStore: { config: { user: { id: 7 } } } } }), createVuetify({ components: { VBtn } })],
@@ -23,10 +24,67 @@ function mountExport(get = vi.fn(), writeText = vi.fn().mockResolvedValue(undefi
 }
 
 function button(wrapper: ReturnType<typeof mountExport>, text: string) {
-    return wrapper.findAll('button').find(item => item.text() === text)!
+    return wrapper.findAll('button').find(item => item.text() === text || (text === 'Erneut prüfen' && item.text().startsWith(text)))!
 }
 
 afterEach(() => { clearWorkDropboxStates(); vi.restoreAllMocks(); vi.unstubAllGlobals(); document.body.innerHTML = '' })
+
+it('uses one explicit recheck for both folder and workflow status without refreshing status on mount', async () => {
+    const saved = { ...work, simulation_collection: { simulation: true, complete: true } }
+    const get = vi.fn().mockResolvedValue({ data: { data: saved } })
+    const status = vi.fn().mockResolvedValue({ data: linkedExercise })
+    const wrapper = mountExport(get, undefined, status)
+    try {
+        await wrapper.setProps({ checkProgress: true })
+        await flushPromises()
+        expect(get).not.toHaveBeenCalled()
+        expect(wrapper.findAll('button').filter(button => button.text().startsWith('Erneut prüfen'))).toHaveLength(1)
+        await button(wrapper, 'Erneut prüfen').trigger('click')
+        await flushPromises()
+        expect(axios.post).toHaveBeenCalledWith(expect.stringContaining('/dropbox/refresh'), expect.objectContaining({ date: '2026-10-20' }), expect.any(Object))
+        expect(get).toHaveBeenCalledWith(expect.stringContaining('/course_works/65'), { params: { refresh_collection: true } })
+        expect(wrapper.emitted('deadline-saved')).toEqual([[{ data: saved }]])
+        expect(wrapper.emitted('check-busy')).toEqual([[true], [false]])
+        expect(wrapper.findAll('button').filter(button => button.text().startsWith('Erneut prüfen'))).toHaveLength(1)
+    } finally { wrapper.unmount() }
+})
+
+it('retains one status recheck for historical work without reopening its folder preparation', async () => {
+    const saved = { ...work, status: { folder_imported_at: '2026-10-13T12:54:00Z' } }
+    const get = vi.fn().mockResolvedValue({ data: { data: saved } })
+    const status = vi.fn()
+    vi.stubGlobal('axios', { get })
+    const wrapper = mount(WorkExerciseExport, { props: { work: saved, course, checkProgress: true }, global: {
+        plugins: [createTestingPinia({ createSpy: vi.fn })], stubs: { 'v-checkbox': true, 'v-btn': { template: '<button><slot /></button>' } },
+    } })
+    try {
+        await wrapper.setProps({ checkProgress: true })
+        await flushPromises()
+        expect(wrapper.findAll('button').filter(button => button.text().startsWith('Erneut prüfen'))).toHaveLength(1)
+        await button(wrapper, 'Erneut prüfen').trigger('click'); await flushPromises()
+        expect(get).toHaveBeenCalledWith(expect.stringContaining('/course_works/65'), { params: { refresh_collection: true } })
+        expect(wrapper.emitted('deadline-saved')).toEqual([[{ data: saved }]])
+        expect(status).not.toHaveBeenCalled()
+    } finally { wrapper.unmount() }
+})
+
+it('retains the last confirmed icon state while a fresh check is pending', async () => {
+    let finish
+    const preparation = { status: 'ready', prepared_at: '2026-10-24T16:00:00Z' }
+    const confirmed = { ...linkedExercise, exercise: { ...linkedExercise.exercise, email_preparation: preparation } }
+    const status = vi.fn().mockResolvedValueOnce({ data: confirmed })
+        .mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    const wrapper = mountExport(undefined, undefined, status)
+    try {
+        await flushPromises()
+        await button(wrapper, 'Erneut prüfen').trigger('click')
+        expect(wrapper.emitted('exercise-status').at(-1)[0]).toMatchObject({ status: 'found', folder: confirmed.exercise.folder,
+            emailPreparation: preparation, checking: true })
+        expect(wrapper.emitted('check-busy').at(-1)).toEqual([true])
+        finish({ data: confirmed }); await flushPromises()
+        expect(wrapper.emitted('check-busy').at(-1)).toEqual([false])
+    } finally { wrapper.unmount() }
+})
 
 it('does not restart exercise preparation for an existing imported work', async () => {
     const status = vi.fn()
@@ -72,7 +130,13 @@ it.each([false, true])('loads a fresh candidate export and copies only the chose
         })
         expect(writeText).toHaveBeenCalledExactlyOnceWith(text)
         expect(wrapper.get('[role="status"]').text()).toContain('Übergabetext kopiert')
+        expect(wrapper.findAllComponents(VBtn).find(item => item.text() === 'Kopiert')?.props()).toMatchObject({ prependIcon: 'mdi-check', color: 'success' })
+        expect(button(wrapper, 'Schließen')).toBeDefined()
+        expect(button(wrapper, 'Abbrechen')).toBeUndefined()
         expect(wrapper.text()).toContain('3 bestätigte Prüfungskandidaten')
+        await wrapper.get('input[type="checkbox"]').setValue(!mc)
+        expect(button(wrapper, 'Übergabetext kopieren')).toBeDefined()
+        expect(button(wrapper, 'Kopiert')).toBeUndefined()
     } finally { wrapper.unmount() }
 })
 
@@ -90,6 +154,8 @@ it('provides fully selected plain text when clipboard access fails', async () =>
         expect(field.closest('details')?.open).toBe(true)
         expect(field.selectionStart).toBe(0)
         expect(field.selectionEnd).toBe(field.value.length)
+        expect(button(wrapper, 'Kopiert')).toBeUndefined()
+        expect(button(wrapper, 'Übergabetext kopieren')).toBeDefined()
     } finally { wrapper.unmount() }
 })
 
@@ -173,11 +239,53 @@ it('reuses the last check on reopening, refreshes explicitly and clears it immed
         await button(wrapper, 'Erneut prüfen').trigger('click')
         await flushPromises()
         expect(status).toHaveBeenCalledTimes(2)
+        expect(axios.post).toHaveBeenCalledExactlyOnceWith('/api/admin/teaching/course_works/65/dropbox/refresh', {
+            date: '2026-10-20', finish_until_date: null, finish_until_time: null, expected: { date: null, time: null },
+        }, { timeout: 120000 })
         status.mockResolvedValue({ data: { connected: true, module_link: null, exercise: { status: 'missing', folder: null } } })
         workDropboxStates.set('7:2:65', { connected: true, module_link: null, link_version: 'unlinked' })
         await flushPromises()
         expect(wrapper.find('[aria-label="Leistungsfeststellungsordner"]').exists()).toBe(false)
         expect(button(wrapper, 'Leistungsfeststellung erstellen')).toBeUndefined()
+    } finally { wrapper.unmount() }
+})
+
+it('saves the edited internal deadline when checking and leaves other form changes out', async () => {
+    const saved = { ...work, finish_until_date: '2026-10-24', finish_until_time: '12:30' }
+    const dispatch = { status: 'sent', confirmed_count: 15, expected_count: 15, transport: 'mailpit' }
+    const status = vi.fn().mockResolvedValueOnce({ data: linkedExercise }).mockResolvedValueOnce({
+        data: { ...linkedExercise, exercise: { ...linkedExercise.exercise, email_dispatch: dispatch }, saved_work: saved, deadline_sync: { message: 'Interne Endfrist übernommen.' } },
+    })
+    const wrapper = mountExport(undefined, undefined, status, { ...work, finish_until_date: '2026-10-23', finish_until_time: null })
+    try {
+        await wrapper.setProps({ deadlineDraft: { date: '2026-10-24', time: '12:30' } })
+        await flushPromises()
+        await button(wrapper, 'Erneut prüfen').trigger('click')
+        await flushPromises()
+        expect(axios.post).toHaveBeenCalledExactlyOnceWith('/api/admin/teaching/course_works/65/dropbox/refresh', {
+            date: '2026-10-20', finish_until_date: '2026-10-24', finish_until_time: '12:30',
+            expected: { date: '2026-10-23', time: null },
+        }, { timeout: 120000 })
+        expect(wrapper.emitted('deadline-saved')).toEqual([[{ data: saved }]])
+        expect(wrapper.emitted('exercise-status')?.at(-1)?.[0]).toMatchObject({ status: 'found', emailDispatch: dispatch })
+        expect(wrapper.emitted('check-busy')).toEqual([[true], [false]])
+        expect(wrapper.text()).toContain('Interne Endfrist übernommen.')
+    } finally { wrapper.unmount() }
+})
+
+it('reports a synchronization conflict and never publishes it as a saved deadline', async () => {
+    const status = vi.fn().mockResolvedValueOnce({ data: linkedExercise }).mockRejectedValueOnce({
+        response: { data: { message: 'Die Frist wurde inzwischen geändert.' } },
+    })
+    const wrapper = mountExport(undefined, undefined, status)
+    try {
+        await flushPromises()
+        await button(wrapper, 'Erneut prüfen').trigger('click')
+        await flushPromises()
+        expect(wrapper.emitted('deadline-saved')).toBeUndefined()
+        expect(wrapper.text()).toContain('Die Frist wurde inzwischen geändert.')
+        expect(workDropboxStates.get('7:2:65')?.exercise?.status).toBe('unknown')
+        expect(wrapper.emitted('check-busy')).toEqual([[true], [false]])
     } finally { wrapper.unmount() }
 })
 

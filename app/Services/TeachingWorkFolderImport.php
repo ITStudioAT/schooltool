@@ -64,7 +64,7 @@ class TeachingWorkFolderImport
                 if ($report['purpose'] !== $file['kind']) {
                     $this->reject($document['path'].': Ordnerbereich und Versandzweck widersprechen einander.');
                 }
-                if ($report['mode'] === 'test') {
+                if ($report['mode'] === 'test' && (! app()->isLocal() || ($report['metadata']['Modus'] ?? null) !== 'Mailpit-Test')) {
                     continue;
                 }
                 $protocols[] = $file + ['path' => $document['path'], 'report' => $report, 'text' => $document['text'], 'sha256' => hash('sha256', $document['text'])];
@@ -241,6 +241,17 @@ class TeachingWorkFolderImport
                 $sources[] = ['student_id' => $notice['student_id'], 'method' => 'email_dispatch', 'available_at' => $notice['sent_at'], 'log_sha256' => $notice['log_sha256']];
             }
         }
+        if (app()->isLocal()) {
+            foreach ($work->status['dispatch_attempts'] ?? [] as $attempt) {
+                if (($attempt['mode'] ?? null) === 'mailpit' && ($attempt['purpose'] ?? null) === 'tasks'
+                    && ($attempt['origin'] ?? null) === 'dispatch_import' && ! empty($attempt['provider_id'])
+                    && ! empty($attempt['sent_at']) && collect($logs)->contains(fn (array $log): bool => ($log['origin'] ?? null) === 'dispatch_import'
+                        && ($log['purpose'] ?? null) === 'tasks' && $log['sha256'] === $attempt['log_sha256'])) {
+                    $sources[] = ['student_id' => $attempt['student_id'], 'method' => 'email_dispatch',
+                        'available_at' => $attempt['sent_at'], 'log_sha256' => $attempt['log_sha256'], 'test_transport' => 'mailpit'];
+                }
+            }
+        }
         foreach ($provisions as $preview) {
             if ($preview['can_import']) {
                 $sources = array_merge($sources, $preview['records']);
@@ -256,6 +267,9 @@ class TeachingWorkFolderImport
             foreach ($preview['rows'] as $row) {
                 if ($row['accepted']) {
                     $sources[] = ['student_id' => $row['student_id'], 'method' => 'email_dispatch', 'available_at' => $row['sent_at'], 'log_sha256' => $preview['source_sha256']];
+                } elseif (app()->isLocal() && $row['mode'] === 'mailpit') {
+                    $sources[] = ['student_id' => $row['student_id'], 'method' => 'email_dispatch', 'available_at' => $row['observed_at'],
+                        'log_sha256' => $preview['source_sha256'], 'test_transport' => 'mailpit'];
                 }
             }
         }
@@ -356,7 +370,7 @@ class TeachingWorkFolderImport
                 foreach ($preview['rows'] as $row) {
                     if ($row['accepted']) {
                         $live[$row['student_id']] = true;
-                    } elseif ($row['student_id'] && $row['mode'] === 'test') {
+                    } elseif ($row['student_id'] && in_array($row['mode'], ['test', 'mailpit'], true)) {
                         $tests[$row['student_id']] = true;
                     }
                 }

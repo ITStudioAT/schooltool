@@ -56,6 +56,22 @@ function mountDialog() {
 }
 
 describe('CurriculumUnitFilesDialog', () => {
+    it('selects a category and adds a stable explanation reference without a sharing token', async () => {
+        const saved = { id: 7, name: 'Dezimal auf Hexadezimal', explanation_key: 'decimal-to-hexadecimal', preview_url: '/learning-materials/curriculum/7', download_url: null }
+        const explanations = [{ key: 'decimal-to-hexadecimal', title: saved.name, category: 'Zahlensysteme' }]
+        const post = vi.fn().mockResolvedValue({ data: { data: saved } })
+        ;(globalThis as any).axios = { get: vi.fn().mockResolvedValueOnce({ data: { data: [], explanations } }).mockResolvedValue({ data: { data: [saved], explanations } }), post }
+        const wrapper = mountDialog()
+        await wrapper.setProps({ explanationMode: true })
+        await vi.waitFor(() => expect((wrapper.vm as any).explanationCategories).toEqual(['Zahlensysteme']))
+        expect(wrapper.find('.file-pond-stub').exists()).toBe(false)
+        await wrapper.setData({ selectedCategory: 'Zahlensysteme', selectedExplanation: 'decimal-to-hexadecimal' })
+        expect((wrapper.vm as any).categoryExplanations).toEqual(explanations)
+        await (wrapper.vm as any).saveExplanation()
+        expect(post).toHaveBeenCalledWith('/api/admin/teaching/curricula/15/topics/topic-1/units/unit-1/explanations', { explanation_key: 'decimal-to-hexadecimal' })
+        expect(wrapper.emitted('changed')).toEqual([[[saved]]])
+        expect(wrapper.find('[title="Herunterladen"]').exists()).toBe(false)
+    })
     afterEach(() => {
         vi.restoreAllMocks()
         delete (globalThis as any).axios

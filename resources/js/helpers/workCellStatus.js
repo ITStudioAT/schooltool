@@ -2,6 +2,7 @@ import { assessmentTimeText } from '@/helpers/workAssessmentTimes'
 import { workAutomationEnabled } from '@/helpers/workAutomation'
 import { dispatchNotificationText, workDispatchRecord, provisionNotificationText } from '@/helpers/workDispatch'
 import { personalWorkAssessment, personalWorkProvision, workCollectionEvidence, workSubmissionStatus } from '@/helpers/workSubmission'
+import { workSimulationEvaluation } from '@/helpers/workSimulation'
 
 function notificationLabel(record, purpose) {
     if (!record) return `${purpose === 'tasks' ? 'Aufgabenversand' : 'Ergebnisbenachrichtigung'}: kein bestätigter E-Mail-Versand.`
@@ -117,6 +118,33 @@ export function workCellDeviationStatuses(work, studentId, students, now = Date.
         const common = aggregate.find(status => status.purpose === item.purpose)
         return !common || statusCategory(item) !== statusCategory(common)
     })
+}
+
+export function workCellPendingStatuses(work, studentId, now = Date.now()) {
+    if (!workAutomationEnabled(work) || !studentId) return []
+    const ids = (work.groups || []).flatMap(group => group.student_ids || []).map(String)
+    if (!ids.includes(String(studentId))) return []
+    const simulation = workSimulationEvaluation(work)
+    const simulated = simulation?.rows.find(row => String(row.student_id) === String(studentId))
+    const record = personalWorkAssessment(work, studentId)
+    if (!simulation && !(work.status?.assessment_json_imports || []).length) return []
+    const evaluation = simulated || workEvaluationStatus(work, studentId, now)
+    if (evaluation.state !== 'complete') return [{ purpose: 'evaluation', icon: 'mdi-file-check-outline',
+        state: evaluation.state, color: 'orange-darken-2',
+        label: simulated ? `Bewertung ${simulated.state === 'partial' ? 'teilweise erfolgt' : 'noch offen'} · Simulation. ${simulated.result}`
+            : record ? evaluation.label : 'Bewertung noch offen.' }]
+    const receipt = (work.status?.assessment_json_imports || []).findLast(item => String(item.student_id) === String(studentId))
+    const completedAt = Date.parse(record?.evaluation_completed_at)
+    const simulatedCompletedAt = Date.parse(simulated?.evaluation_completed_at)
+    const current = !simulated || (receipt?.exercise_id === `simulation:${simulation.run_id}:work:${work.id}`
+        && record?.evaluation_state === 'complete' && Number.isFinite(completedAt) && completedAt === simulatedCompletedAt)
+    const pdf = (work.status?.evaluation_pdfs || []).find(item => item.origin === 'evaluation_import' && String(item.student_id) === String(studentId)
+        && item.file_path && /^[a-f0-9]{64}$/.test(item.sha256 || '')
+        && (!record?.pdf?.sha256 || record.pdf.sha256 === item.sha256)
+        && (!simulated?.pdf_sha256 || simulated.pdf_sha256 === item.sha256))
+    if (record?.evaluation_state === 'complete' && current && pdf) return []
+    return [{ purpose: 'publication', state: 'pending', color: 'orange-darken-2', icon: 'mdi-file-import-outline',
+        label: `Bewertung abgeschlossen; Ergebnis noch nicht übernommen${simulated ? ' · Simulation' : ''}.` }]
 }
 
 export function workFullyComplete(work, students, now = Date.now()) {

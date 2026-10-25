@@ -205,6 +205,7 @@ describe('Quick-Import reuses only a proven per-work directory and always previe
         directories.workImportDirectories.set('7:2:66', directory('Other work'))
         directories.workImportDirectories.set('8:2:65', directory('Other user'))
         directories.workImportDirectories.set('7:2:65', null)
+        workDropboxStates.set('7:2:65', { folder: null, can_quick_import: false })
         const wrapper = mountImport()
         const actions = mountImport(WorkImportActions, { work })
         try {

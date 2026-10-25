@@ -3,11 +3,12 @@
         <v-btn
             size="small"
             variant="tonal"
-            prepend-icon="mdi-content-copy"
+            :prepend-icon="copied ? 'mdi-check' : 'mdi-content-copy'"
+            :color="copied ? 'success' : undefined"
             :disabled="!contextText || copying"
             :loading="loading || copying"
             @click.stop="copyContext">
-            Kontext kopieren
+            {{ copied ? 'Kopiert' : 'Kontext kopieren' }}
         </v-btn>
         <span v-if="message" role="status" class="text-caption">{{ message }}</span>
         <template v-if="loadError">
@@ -39,6 +40,7 @@ const props = defineProps({
 const admin = useAdminStore()
 const loading = ref(false)
 const copying = ref(false)
+const copied = ref(false)
 const loadError = ref(false)
 const message = ref('')
 const manualCopy = ref(false)
@@ -77,6 +79,7 @@ async function loadFolder() {
     message.value = ''
     manualCopy.value = false
     copying.value = false
+    copied.value = false
     loading.value = isCurrentWork.value
     if (!isCurrentWork.value) return
     try {
@@ -104,11 +107,15 @@ async function copyContext() {
     if (!contextText.value || copying.value) return
     const current = sequence
     copying.value = true
+    copied.value = false
     message.value = ''
     manualCopy.value = false
     try {
         await navigator.clipboard.writeText(contextText.value)
-        if (sequence === current) message.value = 'Arbeitskontext kopiert.'
+        if (sequence === current) {
+            copied.value = true
+            message.value = 'Arbeitskontext kopiert.'
+        }
     } catch {
         if (sequence !== current) return
         manualCopy.value = true

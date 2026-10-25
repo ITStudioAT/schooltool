@@ -24,11 +24,13 @@ export function workConnectionLabel(folderState, failed = false) {
 export function workNeedsPreparation(work, folderState) {
     const status = { ...work?.status }
     delete status.communicated_deadline_at
+    delete status.communicated_deadline_date
     return isInitialWork({ ...work, status }) && folderState?.has_import !== true
 }
 
 export function workPreparationLabel(checked) {
     if (checked.status === 'found') {
+        if (checked.data?.exercise?.email_dispatch?.status === 'sent') return 'Abgaben einsammeln'
         const preparation = checked.data?.exercise?.email_preparation
         return preparation?.status === 'ready' ? 'Versandbereit'
             : preparation?.status === 'unknown' ? 'Vorbereitung prüfen' : 'E-Mails vorbereiten'

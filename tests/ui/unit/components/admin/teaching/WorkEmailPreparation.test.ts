@@ -53,6 +53,24 @@ afterEach(() => {
     else delete (document as any).execCommand
 })
 
+it.each(['live', 'test'])('shows the configured local Mailpit route and copies its authorized instruction: %s', async selection => {
+    const response = dispatchExported(selection)
+    Object.assign(response.data.data.context.delivery, { mode: `${selection === 'test' ? 'test_' : 'live_'}mailpit`,
+        transport: 'mailpit', local_only: true, smtp_host: '127.0.0.1', smtp_port: 1025 })
+    const { wrapper, writeText } = render({ state: { ...state, emailPreparation: { status: 'ready' } } }, vi.fn().mockResolvedValue(response))
+    useAdminStore().config.teaching_email_delivery = { mode: 'mailpit', available: true, label: 'Testversand über Mailpit' }
+    try {
+        await button(wrapper, 'E-Mails versenden').trigger('click')
+        expect(wrapper.text()).toContain('Testversand über Mailpit')
+        await button(wrapper, selection === 'live' ? 'Tatsächlich versenden' : 'Test an mich').trigger('click')
+        await flushPromises()
+        await button(wrapper, 'Auftrag kopieren').trigger('click')
+        expect(writeText).toHaveBeenCalledWith(response.data.data.text)
+        expect(button(wrapper, 'Kopiert').exists()).toBe(true)
+        expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    } finally { wrapper.unmount() }
+})
+
 it.each(['missing', 'unknown', 'ready'])('offers the separate send button only for confirmed readiness: %s', status => {
     const { wrapper, get } = render({ state: { ...state, emailPreparation: { status } } })
     try {

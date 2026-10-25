@@ -35,6 +35,182 @@ function mountImportFlow() {
 afterEach(() => { clearWorkDropboxStates(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
 describe('Dropbox Quick-Import', () => {
+    it('identifies simulation results explicitly and requests the dedicated local source', async () => {
+        const simulated = { ...work, groups: [{ student_ids: [1] }], simulation_collection: {
+            origin: 'mailpit_simulation', simulation: true, run_id: 'simulator-run', work_id: work.id, course_id: work.teaching_course_id,
+            student_ids: [1], collected_count: 1, non_submission_count: 0, processed_count: 1, complete: true,
+            completed_at: '2026-10-24T15:35:00Z', last_collected_at: '2026-10-24T15:35:00Z',
+        } }
+        const post = vi.fn().mockResolvedValue({ data: { preview } })
+        vi.stubGlobal('axios', { post })
+        const wrapper = mountImportFlow()
+        try {
+            await (wrapper.vm as any).openImport(simulated, false, {})
+            expect(post.mock.calls[0][1]).toEqual({ results_only: true, simulation: true, date: null })
+            expect(wrapper.text()).toContain('Simulation:')
+            expect(wrapper.findAll('button').some(button => button.text() === 'Testbewertungen übernehmen')).toBe(true)
+            expect(wrapper.emitted('imported')).toBeUndefined()
+        } finally { wrapper.unmount() }
+    })
+    it('loads linked results directly without folder selection and applies only after confirmation', async () => {
+        const get = vi.fn()
+        const row = { participant_id: 'user:1', student_id: 1, identity: { first_name: 'Ada', last_name: 'Alpha', class_name: '3B' },
+            previous: { points: '1' }, total_minor: 450, evaluation_state: 'complete', will_replace: true, criteria: [] }
+        const post = vi.fn().mockResolvedValueOnce({ data: { preview: { ...preview, rows: [row] } } })
+            .mockResolvedValueOnce({ data: { data: work } })
+        vi.stubGlobal('axios', { get, post })
+        const wrapper = mountImportFlow()
+        try {
+            await (wrapper.vm as any).openImport(work, false, { date: '2026-10-16' })
+            await flushPromises()
+            expect(get).not.toHaveBeenCalled()
+            expect(post).toHaveBeenCalledTimes(1)
+            expect(post.mock.calls[0][1]).toEqual({ results_only: true, simulation: false, date: '2026-10-16' })
+            expect(wrapper.findComponent(WorkDropboxSource).exists()).toBe(false)
+            expect(wrapper.text()).not.toContain('Ordner auswählen')
+            expect(wrapper.get('[aria-label="Schülerergebnisse"]').text()).toContain('Alpha, Ada')
+            expect(wrapper.text()).toContain('4,50 / 5,00')
+            await wrapper.findAll('button').find(button => button.text() === 'Ergebnisse übernehmen')!.trigger('click')
+            await flushPromises()
+            expect(post.mock.calls[1][1]).toEqual({ results_only: true, simulation: false, date: '2026-10-16', apply: true, hash: preview.hash })
+            expect(wrapper.emitted('imported')).toEqual([[work]])
+        } finally { wrapper.unmount() }
+    })
+
+    it('keeps partial points visible in results mode without presenting them as a final result', async () => {
+        vi.stubGlobal('axios', { post: vi.fn().mockResolvedValue({ data: { preview: { ...preview, rows: [{
+            participant_id: 'user:1', student_id: 1, identity: { first_name: 'Ada', last_name: 'Alpha' }, previous: { points: '3' },
+            evaluation_state: 'partial', total_minor: null, will_replace: false, criteria: [{ earned_minor: 200 }, { earned_minor: 50 }, { earned_minor: null }],
+        }] } } }) })
+        const wrapper = mountImportFlow()
+        try {
+            await (wrapper.vm as any).openImport(work, false, {})
+            expect(wrapper.get('[aria-label="Schülerergebnisse"]').text()).toContain('2,50 / 5,00 (vorläufig)')
+            expect(wrapper.get('[aria-label="Schülerergebnisse"]').text()).toContain('Bestehende Bewertung bleibt')
+        } finally { wrapper.unmount() }
+    })
+    it('reports an incomplete historical verification response instead of silently leaving the selection blocked', async () => {
+        const candidate = { id: 'id:matching', name: 'Bestätigter Gruppenordner', path: '/Materialien/Bestätigter Gruppenordner' }
+        const get = vi.fn().mockImplementation((url: string) => Promise.resolve({ data: url.includes('/folders')
+            ? { suggested_folder: candidate, suggestions: [candidate] }
+            : { ...connected, folder: null, has_import: true } }))
+        vi.stubGlobal('axios', { get, post: vi.fn().mockResolvedValue({ data: { candidate: { ...candidate, path: 'Beleg.txt' }, proof: 'proof', checked_files: ['Beleg.txt'] } }) })
+        const wrapper = mountComponent(WorkDropboxSource, { work, active: true, selectionOnly: true })
+        try {
+            await flushPromises()
+            await wrapper.findAll('button').find(button => button.text() === 'Diesen Ordner prüfen')!.trigger('click')
+            await flushPromises()
+            expect(wrapper.text()).toContain('keinen vollständigen bestätigbaren Nachweis')
+            expect(wrapper.find('[aria-label="Geprüfte Ordnerzuordnung"]').exists()).toBe(false)
+            expect(wrapper.emitted('changed')).toBeUndefined()
+        } finally { wrapper.unmount() }
+    })
+    it('selects a suggested historical folder without opening its subfolders', async () => {
+        const candidate = { id: 'id:matching', name: 'Bestätigter Gruppenordner', path: '/Materialien/Bestätigter Gruppenordner' }
+        const other = { id: 'id:other', name: 'Weitere Gruppe', path: '/Materialien/Weitere Gruppe' }
+        const get = vi.fn().mockImplementation((url: string) => Promise.resolve({ data: url.includes('/folders')
+            ? { suggested_folder: candidate, suggestions: [candidate, other] }
+            : { ...connected, folder: null, has_import: true } }))
+        vi.stubGlobal('axios', { get, post: vi.fn() })
+        const wrapper = mountComponent(WorkDropboxSource, { work, active: true, selectionOnly: true })
+        try {
+            await flushPromises()
+            await wrapper.findAll('button').find(button => button.text() === candidate.name)!.trigger('click')
+            await flushPromises()
+            expect(get).toHaveBeenCalledTimes(2)
+            expect(wrapper.findAll('button').map(button => button.text())).not.toContain('Übergeordneter Ordner')
+            expect(wrapper.text()).toContain(candidate.path)
+            expect(wrapper.findAll('button').map(button => button.text())).toContain('Diesen Ordner prüfen')
+        } finally { wrapper.unmount() }
+    })
+    it('keeps a verified folder available after a temporary confirmation error and reports busy until completion', async () => {
+        const candidate = { id: 'id:matching', name: 'Bestätigter Gruppenordner', path: '/Materialien/Bestätigter Gruppenordner' }
+        const get = vi.fn().mockImplementation((url: string) => Promise.resolve({ data: url.includes('/folders')
+            ? { suggested_folder: candidate, suggestions: [candidate] }
+            : { ...connected, folder: null, has_import: true } }))
+        let rejectSave: (error: unknown) => void = () => {}
+        const post = vi.fn().mockResolvedValueOnce({ data: { candidate, checked_files: ['Beleg.txt'], proof: 'bound-proof' } })
+            .mockImplementationOnce(() => new Promise((resolve, reject) => { rejectSave = reject }))
+            .mockResolvedValueOnce({ data: { ...connected, folder: candidate } })
+        vi.stubGlobal('axios', { get, post })
+        const wrapper = mountComponent(WorkDropboxSource, { work, active: true, selectionOnly: true })
+        try {
+            await flushPromises()
+            await wrapper.findAll('button').find(button => button.text() === 'Diesen Ordner prüfen')!.trigger('click')
+            await flushPromises()
+            const confirm = () => wrapper.findAll('button').find(button => button.text() === 'Verknüpfung bestätigen')!
+            await confirm().trigger('click')
+            expect(wrapper.text()).toContain('Ordnerverknüpfung bestätigen und speichern')
+            expect(confirm().attributes('disabled')).toBeDefined()
+            expect(wrapper.emitted('busy')?.at(-1)).toEqual([true])
+            rejectSave({ response: { data: { message: 'Vorübergehend nicht erreichbar.' } } })
+            await flushPromises()
+            expect(wrapper.text()).toContain('Vorübergehend nicht erreichbar.')
+            expect(confirm().attributes('disabled')).toBeUndefined()
+            expect(wrapper.emitted('changed')).toBeUndefined()
+            await confirm().trigger('click')
+            await flushPromises()
+            expect(workDropboxStates.get('7:2:65')?.folder).toEqual(candidate)
+            expect(wrapper.emitted('changed')).toHaveLength(1)
+            expect(wrapper.emitted('busy')?.at(-1)).toEqual([false])
+        } finally { wrapper.unmount() }
+    })
+    it('shows missing and changed original files as warnings while allowing a package-verified folder confirmation', async () => {
+        const candidate = { id: 'id:matching', name: 'Bestätigter Gruppenordner', path: '/Materialien/Bestätigter Gruppenordner' }
+        const oldWork = { ...work, status: { folder_imported_at: '2026-10-13T12:00:00Z' } }
+        const get = vi.fn().mockImplementation((url: string) => Promise.resolve({ data: url.includes('/folders')
+            ? { suggested_folder: candidate, suggestions: [candidate] } : { ...connected, folder: null, has_import: true } }))
+        const post = vi.fn().mockResolvedValueOnce({ data: { candidate, checked_files: ['Schooltool-Bewertungen.json'],
+            identity: 'assessment_package', proof: 'warning-bound-proof', differences: [
+                { path: 'Beurteilungen/Person.md', state: 'missing', message: 'Datei fehlt im ausgewählten Ordner.' },
+                { path: 'Beurteilungen/Person.pdf', state: 'changed', message: 'Dateistand weicht vom gespeicherten Originalbeleg ab.' },
+            ] } }).mockResolvedValueOnce({ data: { ...connected, folder: candidate } })
+        vi.stubGlobal('axios', { get, post })
+        const wrapper = mountComponent(WorkDropboxSource, { work: oldWork, active: true, selectionOnly: true })
+        try {
+            await flushPromises()
+            await wrapper.findAll('button').find(button => button.text() === 'Diesen Ordner prüfen')!.trigger('click')
+            await flushPromises()
+            const preview = wrapper.get('[aria-label="Geprüfte Ordnerzuordnung"]')
+            const warnings = preview.get('[aria-label="Abweichende Originaldateien"]')
+            expect(warnings.text()).toContain('Beurteilungen/Person.md')
+            expect(warnings.text()).toContain('Beurteilungen/Person.pdf')
+            expect(preview.text()).toContain('Bewertungspaket stimmt mit dem bereits importierten Stand')
+            expect(preview.text()).toContain('Bestehende Bewertungen, Abgaben und Versandnachweise bleiben unverändert')
+            const confirm = preview.findAll('button').find(button => button.text() === 'Verknüpfung bestätigen')!
+            expect(confirm.attributes('disabled')).toBeUndefined()
+            await confirm.trigger('click')
+            await flushPromises()
+            expect(post.mock.calls[1][1]).toEqual({ folder_id: candidate.id, folder_proof: 'warning-bound-proof' })
+            expect(wrapper.emitted('preview')).toBeUndefined()
+            expect(wrapper.emitted('changed')).toHaveLength(1)
+        } finally { wrapper.unmount() }
+    })
+    it('requires an online evidence preview and explicit confirmation for a historical folder without importing', async () => {
+        const suggested = { id: 'id:matching', name: 'Passender Ordner', path: '/Materialien/Passender Ordner' }
+        const oldWork = { ...work, status: { folder_imported_at: '2026-10-13T12:00:00Z' } }
+        const get = vi.fn().mockImplementation((url: string) => Promise.resolve({ data: url.includes('/folders')
+            ? { suggested_folder: suggested, suggestions: [suggested], message: 'Vorschlag' }
+            : { ...connected, folder: null, has_import: true } }))
+        const post = vi.fn().mockResolvedValueOnce({ data: { candidate: suggested, checked_files: ['Versandprotokoll.txt'], proof: 'bound-proof' } })
+            .mockResolvedValueOnce({ data: { ...connected, folder: suggested } })
+        vi.stubGlobal('axios', { get, post })
+        const wrapper = mountComponent(WorkDropboxSource, { work: oldWork, active: true, selectionOnly: true })
+        try {
+            await flushPromises()
+            await wrapper.findAll('button').find(button => button.text() === 'Diesen Ordner prüfen')!.trigger('click')
+            await flushPromises()
+            expect(post).toHaveBeenCalledExactlyOnceWith(expect.stringContaining('/folder'), { folder_id: suggested.id, verify: true }, { timeout: 120000 })
+            expect(workDropboxStates.get('7:2:65')?.folder).toBeNull()
+            expect(wrapper.get('[aria-label="Geprüfte Ordnerzuordnung"]').text()).toContain(suggested.path)
+            await wrapper.findAll('button').find(button => button.text() === 'Verknüpfung bestätigen')!.trigger('click')
+            await flushPromises()
+            expect(post.mock.calls[1][1]).toEqual({ folder_id: suggested.id, folder_proof: 'bound-proof' })
+            expect(workDropboxStates.get('7:2:65')?.folder).toEqual(suggested)
+            expect(wrapper.emitted('preview')).toBeUndefined()
+            expect(wrapper.emitted('changed')).toHaveLength(1)
+        } finally { wrapper.unmount() }
+    })
     it.each([
         ['unavailable', { can_quick_import: false }],
         ['not configured', { configured: false, can_quick_import: false }],
@@ -893,7 +1069,7 @@ describe('Dropbox Quick-Import', () => {
             await flushPromises()
             const people = wrapper.findAll('.work-import-person')
             expect(people).toHaveLength(2)
-            expect(people[0].get('summary').text()).toContain('Ada Alpha / 1A')
+            expect(people[0].get('summary').text()).toContain('Alpha, Ada / 1A')
             expect(people[0].get('summary').text()).toContain('Aktualisierung')
             expect(people[0].get('summary').text()).toContain('Punkte 2 → 2,00')
             expect((people[0].element as HTMLDetailsElement).open).toBe(false)

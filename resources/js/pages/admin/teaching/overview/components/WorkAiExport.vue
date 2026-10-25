@@ -20,7 +20,8 @@
             <v-card-actions class="work-ai-export-actions">
                 <v-btn :disabled="loading" @click="loadExport">Erneut laden</v-btn>
                 <v-spacer />
-                <v-btn color="primary" :disabled="!result || loading || !isCurrentWork" prepend-icon="mdi-content-copy" @click="copyExport">Auftrag kopieren</v-btn>
+                <v-btn :color="copySucceeded ? 'success' : 'primary'" :disabled="!result || loading || !isCurrentWork"
+                    :prepend-icon="copySucceeded ? 'mdi-check' : 'mdi-content-copy'" @click="copyExport">{{ copySucceeded ? 'Kopiert' : 'Auftrag kopieren' }}</v-btn>
                 <v-btn @click="open = false">Schließen</v-btn>
             </v-card-actions>
         </v-card>

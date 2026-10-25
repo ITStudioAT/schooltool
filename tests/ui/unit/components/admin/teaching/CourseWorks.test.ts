@@ -21,7 +21,7 @@ describe('New work overview and assessment mode', () => {
         const status = { connected: true, module_link: { folder: { id: 'id:module' } },
             exercise: { status: 'found', folder: { id: 'id:exercise', name: 'LF' }, email_preparation: { status: 'missing' } } }
         const get = vi.fn().mockResolvedValue({ data: status })
-        vi.stubGlobal('axios', { get })
+        vi.stubGlobal('axios', { get, post: get })
         const wrapper = mountOverview(work)
         try {
             await flushPromises()
@@ -53,6 +53,20 @@ describe('New work overview and assessment mode', () => {
                 WorkAiExport: true, WorkDispatchLog: true },
         } })
     }
+
+    it('labels the overview card as a simulation as soon as a run is prepared', async () => {
+        const work = { id: 65, teaching_course_id: 2, type: 'A5', title: 'Testarbeit', groups: [{ student_ids: [12] }], status: {},
+            simulation_collection: { origin: 'mailpit_simulation', simulation: true, run_id: 'test-run', work_id: 65, course_id: 2,
+                student_ids: [12], collected_count: 0, non_submission_count: 0, processed_count: 0, complete: false, completed_at: null } }
+        const wrapper = mountOverview(work)
+        try {
+            await flushPromises()
+            expect(wrapper.get('.work-row [aria-label="Simulation – lokaler Testlauf"]').text()).toBe('Simulation')
+            delete (wrapper.vm as any).courseWorks[0].simulation_collection
+            await flushPromises()
+            expect(wrapper.find('.work-row [aria-label="Simulation – lokaler Testlauf"]').exists()).toBe(false)
+        } finally { wrapper.unmount() }
+    })
 
     it('confirms deletion of the saved work without losing an edited draft on cancellation', async () => {
         const work = { id: 65, teaching_course_id: 2, type: 'A5', title: 'Gespeicherte Arbeit', groups: [], status: {} }
@@ -126,8 +140,8 @@ describe('New work overview and assessment mode', () => {
             const card = wrapper.get('.work-row')
             expect(card.text()).toContain('Neue Arbeit')
             expect(card.text()).not.toContain('Noch kein Ordner verbunden.').not.toContain(label)
-            expect(card.findAll('v-icon')).toHaveLength(enabled ? 3 : 2)
-            if (enabled) expect(card.getComponent({ name: 'WorkFolderStatus' }).get('v-icon').attributes('color')).toBe('error')
+            expect(card.findAll('v-icon')).toHaveLength(2)
+            expect(card.findComponent({ name: 'WorkFolderStatus' }).exists()).toBe(false)
             expect(card.get('v-icon').attributes('icon')).toBe(icon)
             expect(card.get('v-icon').attributes('aria-label')).toBe(label)
             expect(card.findAll('[data-work-status], [data-submission-state]')).toHaveLength(0)
@@ -138,8 +152,8 @@ describe('New work overview and assessment mode', () => {
             expect(card.get('v-icon').attributes('icon')).toBe(nextIcon)
             expect(card.get('v-icon').attributes('title')).toBe(nextLabel)
             expect(card.text()).not.toContain(nextLabel)
-            expect(card.findAll('v-icon')).toHaveLength(enabled ? 2 : 3)
-            expect(card.findComponent({ name: 'WorkFolderStatus' }).exists()).toBe(!enabled)
+            expect(card.findAll('v-icon')).toHaveLength(2)
+            expect(card.findComponent({ name: 'WorkFolderStatus' }).exists()).toBe(false)
 
             await card.get('button').trigger('click')
             expect((wrapper.vm as any).action).toBe('')
@@ -180,11 +194,11 @@ describe('New work overview and assessment mode', () => {
         const wrapper = mountOverview(work, { folder: null, suggested_folder: { id: 'id:suggestion' } })
         try {
             await flushPromises()
-            expect(wrapper.getComponent({ name: 'WorkFolderStatus' }).get('v-icon').attributes('color')).toBe('error')
+            expect(wrapper.findComponent({ name: 'WorkFolderStatus' }).exists()).toBe(false)
 
             workDropboxStates.set('7:2:65', { folder: { id: 'id:saved', name: 'Ordner' } })
             await flushPromises()
-            expect(wrapper.getComponent({ name: 'WorkFolderStatus' }).get('v-icon').attributes('color')).toBe('success')
+            expect(wrapper.findComponent({ name: 'WorkFolderStatus' }).exists()).toBe(false)
             expect(wrapper.get('.work-row').findAll('[data-work-status]')).toHaveLength(0)
             ;(wrapper.vm as any).courseWorks[0].automation_enabled = false
             await flushPromises()
@@ -198,9 +212,9 @@ describe('New work overview and assessment mode', () => {
         const work = { id: 65, teaching_course_id: 2, type: 'A5', title: 'Neue Arbeit', groups: [], status: {} }
         const wrapper = mountOverview(work, null)
         try {
-            expect(wrapper.getComponent({ name: 'WorkFolderStatus' }).get('v-icon').attributes('color')).toBe('grey')
+            expect(wrapper.findComponent({ name: 'WorkFolderStatus' }).exists()).toBe(false)
             await flushPromises()
-            expect(wrapper.getComponent({ name: 'WorkFolderStatus' }).get('v-icon').attributes('color')).toBe('grey')
+            expect(wrapper.findComponent({ name: 'WorkFolderStatus' }).exists()).toBe(false)
             expect(wrapper.get('.work-row').text()).not.toContain('Noch kein Ordner verbunden.')
             expect(get).toHaveBeenCalledOnce()
         } finally { wrapper.unmount() }
@@ -213,9 +227,11 @@ describe('New work overview and assessment mode', () => {
         { groups: [{ student_ids: [12], grade: '1' }] },
         { groups: [{ student_ids: [12], points: [{ student_id: 12, points: 0 }] }] },
         { groups: [{ student_ids: [12], comments: [{ student_id: 12, comment: 'Rückmeldung' }] }] },
-    ])('retains existing work details when evidence or assessment exists: %j', saved => {
+    ])('retains historical evidence and grades when selecting the overview layout: %j', saved => {
         const methods = (CourseWorks as any).methods
+        const before = JSON.stringify(saved)
         expect(methods.workIsInitial.call({ workFolderState: () => ({ folder: null }) }, saved)).toBe(false)
+        expect(JSON.stringify(saved)).toBe(before)
     })
 
     it('selects exactly one existing boolean mode without changing title, points or saved evidence', async () => {
@@ -919,8 +935,8 @@ describe('CourseWorks title rendering', () => {
         const source = readFileSync(componentPath, 'utf8')
 
         expect(source).toContain('class="work-list-item cursor-pointer"')
-        expect(source).toContain('.work-list-item {\n    margin-bottom: 12px;\n}')
-        expect(source).toContain('.work-list-item:last-child {\n    margin-bottom: 0;\n}')
+        expect(source.replace(/\r\n/g, '\n')).toContain('.work-list-item {\n    margin-bottom: 12px;\n}')
+        expect(source.replace(/\r\n/g, '\n')).toContain('.work-list-item:last-child {\n    margin-bottom: 0;\n}')
     })
 
     it('renders the Arbeiten list as a responsive two-column grid', () => {
@@ -1097,7 +1113,7 @@ describe('CourseWorks title rendering', () => {
         const computed = (CourseWorks as any).computed
 
         expect(source).toContain('v-if="!canChangeGroupWorkMode"')
-        expect(source).toContain('<v-switch\n                                    v-else')
+        expect(source.replace(/\r\n/g, '\n')).toContain('<v-switch\n                                    v-else')
         expect(source).toContain('if (!this.canChangeGroupWorkMode) return')
         expect(computed.canChangeGroupWorkMode.call({
             action: 'new_course_work',

@@ -9,7 +9,7 @@
             <v-icon
                 :icon="item.purpose === 'provision' ? 'mdi-file-check-outline' : item.record.mode === 'scheduled' ? 'mdi-clock-outline' : item.purpose === 'tasks' ? 'mdi-file-send-outline' : item.record.mode === 'live' ? 'mdi-email-check-outline' : 'mdi-email-alert-outline'"
                 size="16"
-                :color="item.purpose === 'provision' || item.ready ? 'info' : item.record.mode === 'live' ? 'success' : 'grey-darken-1'"
+                :color="item.purpose === 'provision' || item.ready ? 'info' : item.record.mode === 'live' ? 'success' : item.record.mode === 'mailpit' ? 'warning' : 'grey-darken-1'"
                 :title="nativeTitle ? item.label : undefined"
                 :aria-label="item.label" />
             <v-chip v-if="item.ready && compact" size="x-small" color="info" variant="tonal">Versandbereit</v-chip>
@@ -43,6 +43,7 @@ function visibleText(item) {
     if (item.purpose === 'provision') return item.label
     if (item.record.mode === 'live' && item.purpose === 'results') return resultSentText(item.record.sent_at)
     if (item.record.mode === 'live') return dispatchNotificationText(item.record.sent_at, 'tasks').replace('Aufgaben per E-Mail versandt', 'Aufgabenversand')
+    if (item.record.mode === 'mailpit') return dispatchNotificationText(item.record.sent_at, item.purpose, 'mailpit')
     if (item.record.mode === 'test') return dispatchNotificationText(item.record.sent_at, item.purpose, 'test')
         .replace(': lokaler Mailpit-Test', ' · Test')
     if (['prepared', 'scheduled'].includes(item.record.mode)) return dispatchNotificationText(item.record.planned_at, item.purpose, item.record.mode)

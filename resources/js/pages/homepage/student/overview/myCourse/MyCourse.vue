@@ -472,7 +472,7 @@
                                                                 </div>
                                                                 <div v-if="mat.attachments && mat.attachments.length" class="date-adopted-attachments">
                                                                     <a v-for="att in mat.attachments" :key="att.id" :href="att.preview_url" target="_blank" class="date-adopted-attachment" :title="att.name">
-                                                                        <v-icon size="14">mdi-paperclip</v-icon>
+                                                                        <v-icon size="14">{{ att.explanation_key ? 'mdi-presentation-play' : 'mdi-paperclip' }}</v-icon>
                                                                         <span class="text-caption">{{ att.name }}</span>
                                                                     </a>
                                                                 </div>

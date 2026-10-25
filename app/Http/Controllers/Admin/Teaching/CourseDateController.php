@@ -10,9 +10,11 @@ use App\Models\TeachingCourseDateMaterial;
 use App\Models\TeachingCourseDateMaterialAttachment;
 use App\Models\TeachingCurriculumDocument;
 use App\Models\User;
+use App\Services\Teaching\TeachingExplanationCatalog;
 use App\Services\TeachingCourseDateService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 
@@ -283,6 +285,18 @@ class CourseDateController extends Controller
         $service->deleteAdoptedMaterial($material);
 
         return response()->json(null, 204);
+    }
+
+    public function explanation(Request $request, TeachingCourseDateMaterialAttachment $attachment): JsonResponse|Response
+    {
+        $authUser = $this->userHasRole(['admin', 'teaching_admin', 'teacher']);
+        abort_unless($authUser, 403, 'Sie haben keine Berechtigung');
+        $this->authorizeAdoptedAttachmentAccess($attachment, $authUser);
+        abort_unless(TeachingExplanationCatalog::find($attachment->explanation_key), 404);
+
+        return ($request->expectsJson()
+            ? response()->json(['explanation' => $attachment->explanation_key, 'return_url' => '/admin/teaching?course='.$attachment->material->courseDate->teaching_course_id.'&panel=table'])
+            : response()->view('homepage'))->header('Cache-Control', 'private, no-store');
     }
 
     public function previewAdoptedAttachment(TeachingCourseDateMaterialAttachment $attachment)

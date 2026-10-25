@@ -1,9 +1,13 @@
 <?php
 
+use App\Http\Controllers\Admin\Teaching\CourseDateController;
+use App\Http\Controllers\Admin\Teaching\CurriculumUnitFileController;
 use App\Http\Controllers\Admin\Teaching\WorkDropboxController;
 use App\Http\Controllers\Homepage\HomepageController;
 use App\Http\Controllers\MultipleChoiceParticipantController;
 use App\Http\Controllers\NumberSystemPlayerController;
+use App\Http\Controllers\SharedTeachingExplanationController;
+use App\Http\Controllers\Student\CourseController;
 use App\Http\Controllers\TeachingCourseStudentEntryNotificationConfirmationController;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Facades\Route;
@@ -12,6 +16,18 @@ use Illuminate\Support\Facades\Route;
 
 // Alles wird gethrottlet
 Route::middleware(['throttle:global', 'throttle:web'])->group(function () {
+
+    Route::get('/explanations/{token}', [SharedTeachingExplanationController::class, 'entry'])->where('token', '[A-Za-z0-9]{48}')->name('explanations.entry');
+    Route::get('/api/explanations/{token}', [SharedTeachingExplanationController::class, 'show'])->where('token', '[A-Za-z0-9]{48}')->name('explanations.show');
+
+    Route::middleware(['auth', 'students-timetables-impersonation', 'api-allowed:scope:teaching_access', 'tool-licensed:Lehrertool'])->group(function (): void {
+        Route::get('/learning-materials/curriculum/{file}', [CurriculumUnitFileController::class, 'explanation'])
+            ->whereNumber('file')->name('curriculum-explanations.show');
+        Route::get('/learning-materials/teaching/{attachment}', [CourseDateController::class, 'explanation'])
+            ->whereNumber('attachment')->name('teaching-material-explanations.show');
+    });
+    Route::get('/learning-materials/course/{attachment}', [CourseController::class, 'explanation'])
+        ->whereNumber('attachment')->middleware(['auth', 'students-timetables-impersonation', 'tool-licensed:Lehrertool'])->name('student-material-explanations.show');
 
     /***** ADMIN ROUTES *****/
     /* auth-routes */

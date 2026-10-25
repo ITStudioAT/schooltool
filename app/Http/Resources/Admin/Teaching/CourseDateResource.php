@@ -88,12 +88,15 @@ class CourseDateResource extends JsonResource
                     'id' => $a->id,
                     'source_material_card_attachment_id' => $a->source_material_card_attachment_id,
                     'source_teaching_curriculum_document_id' => $a->source_teaching_curriculum_document_id,
+                    'explanation_key' => $a->explanation_key,
                     'name' => $this->attachmentNameWithStorageExtension($a->name, $a->file_path),
                     'mime_type' => $a->mime_type,
                     'size_bytes' => $a->size_bytes,
                     'student_visible' => (bool) $a->student_visible,
-                    'preview_url' => '/api/admin/teaching/course_date_materials/attachments/'.$a->id.'/preview',
-                    'download_url' => '/api/admin/teaching/course_date_materials/attachments/'.$a->id.'/download',
+                    'preview_url' => $a->explanation_key
+                        ? route('teaching-material-explanations.show', $a, false)
+                        : '/api/admin/teaching/course_date_materials/attachments/'.$a->id.'/preview',
+                    'download_url' => $a->explanation_key ? null : '/api/admin/teaching/course_date_materials/attachments/'.$a->id.'/download',
                 ]),
             ]),
         ];

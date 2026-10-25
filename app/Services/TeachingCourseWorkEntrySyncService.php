@@ -7,6 +7,7 @@ use App\Models\TeachingCourseStudentEntry;
 use App\Models\TeachingCourseWork;
 use App\Models\TeachingCourseWorkGroupStudent;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 
 class TeachingCourseWorkEntrySyncService
@@ -82,6 +83,13 @@ class TeachingCourseWorkEntrySyncService
         $payload['communicated_deadline'] = $work->communicatedDeadline();
         $payload['groups'] = $this->groupsForWork($work);
         $payload['submission_check_status'] = app(TeachingWorkJsonImport::class)->submissionCheckStatus($work);
+        $payload['collection_run'] = app(TeachingWorkCollectionStatus::class)->cached($work);
+        $payload['simulation_collection'] = app()->isLocal() && Auth::id()
+            ? app(TeachingSimulation::class)->collectionStatus($work, (int) Auth::id(),
+                array_merge([], ...array_map(fn (array $group): array => $group['student_ids'] ?? [], $payload['groups'])))
+            : null;
+        $payload['simulation_notification'] = app()->isLocal() && Auth::id()
+            ? app(TeachingWorkResultNotification::class)->status($work, (int) Auth::id()) : null;
 
         return $payload;
     }

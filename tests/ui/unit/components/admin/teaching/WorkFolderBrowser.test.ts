@@ -101,6 +101,16 @@ it('requests the confirmed exercise folder when opened from the LF name', async 
     wrapper.unmount()
 })
 
+it('opens the learning module explicitly instead of following its exercise automatically', async () => {
+    const get = vi.fn().mockResolvedValueOnce({ data: saved }).mockResolvedValueOnce({ data: listing })
+    const wrapper = mountBrowser(get, undefined, { module: true })
+    await (wrapper.vm as any).open()
+    expect(get.mock.calls[0][1].params).toEqual({ include_folder_path: 1 })
+    expect(get.mock.calls[1][1].params).toEqual({ contents: 1, module: 1 })
+    expect(wrapper.text()).toContain('Lernmodulordner · E-Mails')
+    wrapper.unmount()
+})
+
 it('passes the displayed group date when opening the ordinary connection', async () => {
     const get = vi.fn().mockResolvedValueOnce({ data: saved }).mockResolvedValueOnce({ data: listing })
     const wrapper = mountBrowser(get, undefined, { date: '2026-10-23' })

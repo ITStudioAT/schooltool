@@ -36,7 +36,7 @@ class CurriculumUnitFileService
             ->select(['teaching_curriculum_id', 'topic_id', 'unit_id'])
             ->selectRaw('COUNT(*) AS file_count')
             ->whereIn('teaching_curriculum_id', $curriculumIds)
-            ->where('source_type', 'unit_file')
+            ->whereIn('source_type', ['unit_file', 'explanation'])
             ->groupBy(['teaching_curriculum_id', 'topic_id', 'unit_id'])
             ->get();
 
@@ -74,7 +74,7 @@ class CurriculumUnitFileService
     public function curriculumDetailPayload(TeachingCurriculum $curriculum): array
     {
         $files = $curriculum->documents()
-            ->where('source_type', 'unit_file')
+            ->whereIn('source_type', ['unit_file', 'explanation'])
             ->latest('id')
             ->get();
         $unitFiles = [];
@@ -200,7 +200,7 @@ class CurriculumUnitFileService
             ->flip();
 
         $curriculum->documents()
-            ->where('source_type', 'unit_file')
+            ->whereIn('source_type', ['unit_file', 'explanation'])
             ->get()
             ->reject(fn (TeachingCurriculumDocument $document): bool => $validScopes->has(
                 $this->scopeKey((string) $document->topic_id, (string) $document->unit_id)
@@ -211,7 +211,7 @@ class CurriculumUnitFileService
     public function deleteAll(TeachingCurriculum $curriculum): void
     {
         $curriculum->documents()
-            ->where('source_type', 'unit_file')
+            ->whereIn('source_type', ['unit_file', 'explanation'])
             ->get()
             ->each(fn (TeachingCurriculumDocument $document) => $this->delete($document));
     }
@@ -237,11 +237,14 @@ class CurriculumUnitFileService
 
         return [
             'id' => (int) $document->id,
+            'source_type' => $document->source_type,
+            'explanation_key' => $document->explanation_key,
             'name' => (string) $document->name,
             'mime_type' => $document->mime_type,
             'size_bytes' => $document->size_bytes !== null ? (int) $document->size_bytes : null,
-            'preview_url' => "{$baseUrl}/preview",
-            'download_url' => "{$baseUrl}/download",
+            'preview_url' => $document->source_type === 'explanation'
+                ? route('curriculum-explanations.show', $document, false) : "{$baseUrl}/preview",
+            'download_url' => $document->source_type === 'explanation' ? null : "{$baseUrl}/download",
             'created_at' => $document->created_at?->toDateTimeString(),
         ];
     }

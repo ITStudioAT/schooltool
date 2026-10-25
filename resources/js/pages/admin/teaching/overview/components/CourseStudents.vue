@@ -46,16 +46,7 @@
                 :loading="savingCalculatedGradePreference" :disabled="savingCalculatedGradePreference || !settings || !selected_course?.id"
                 @click="toggleCalculatedGrade">Note berechnen: {{ showCalculatedGrade ? 'Ein' : 'Aus' }}</v-btn>
             <v-spacer />
-            <v-btn-toggle
-                v-if="!isDayOverviewMode"
-                v-model="students_sort_mode"
-                mandatory
-                density="compact"
-                color="primary"
-                class="students-sort-toggle">
-                <v-btn size="small" value="class_last_name" class="students-sort-toggle-btn">Klasse, Name</v-btn>
-                <v-btn size="small" value="last_name_first_name" class="students-sort-toggle-btn">Name</v-btn>
-            </v-btn-toggle>
+            <span class="text-caption">Nachname, Vorname</span>
         </div>
         <v-card tile flat color="transparent" class="w-100">
             <v-card-text class="text-body-1 d-flex flex-column ga-2">
@@ -346,6 +337,7 @@
     </ItsGridBox>
 </template>
 <script>
+import { comparePersonNames } from '@/helpers/personNames'
 import axios from 'axios'
 import { show as showCourseEvaluation } from '@/actions/App/Http/Controllers/Admin/Teaching/CourseEvaluationController'
 import { useValidationRulesSetup } from '@/helpers/rules'
@@ -1157,26 +1149,7 @@ export default {
             return (student?.schoolclass || student?.class || '').toString()
         },
         compareStudentsBySelectedSort(a, b) {
-            const lastA = (a?.last_name || '').toString()
-            const lastB = (b?.last_name || '').toString()
-            const firstA = (a?.first_name || '').toString()
-            const firstB = (b?.first_name || '').toString()
-            const classA = this.studentClassValue(a)
-            const classB = this.studentClassValue(b)
-
-            if (this.students_sort_mode === 'last_name_first_name') {
-                const lastCmp = lastA.localeCompare(lastB, 'de', { sensitivity: 'base' })
-                if (lastCmp !== 0) return lastCmp
-                const firstCmp = firstA.localeCompare(firstB, 'de', { sensitivity: 'base' })
-                if (firstCmp !== 0) return firstCmp
-                return classA.localeCompare(classB, 'de', { numeric: true, sensitivity: 'base' })
-            }
-
-            const classCmp = classA.localeCompare(classB, 'de', { numeric: true, sensitivity: 'base' })
-            if (classCmp !== 0) return classCmp
-            const lastCmp = lastA.localeCompare(lastB, 'de', { sensitivity: 'base' })
-            if (lastCmp !== 0) return lastCmp
-            return firstA.localeCompare(firstB, 'de', { sensitivity: 'base' })
+            return comparePersonNames(a, b)
         },
         toDateString(date) {
             const d = parseLocalDate(date)

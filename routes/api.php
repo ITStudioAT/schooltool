@@ -111,6 +111,9 @@ use App\Http\Controllers\Admin\Teaching\TeachingEntryGradingPartEntryController;
 use App\Http\Controllers\Admin\Teaching\TeachingReminderController;
 use App\Http\Controllers\Admin\Teaching\TeachingSynchronisationController;
 use App\Http\Controllers\Admin\Teaching\WorkDropboxController;
+use App\Http\Controllers\Admin\Teaching\WorkResultNotificationController;
+use App\Http\Controllers\Admin\TeachingExplanationController;
+use App\Http\Controllers\Admin\TeachingSimulationController;
 use App\Http\Controllers\Admin\TwoFactorAuthenticationController;
 use App\Http\Controllers\Admin\TwoFactorChallengeController;
 use App\Http\Controllers\Admin\UserController;
@@ -225,6 +228,31 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
 
     /***** ADMIN ROUTES *****/
     Route::get('/admin/config', [AdminController::class, 'config']);
+
+    Route::prefix('/admin/teaching-simulator')->middleware([
+        'auth:sanctum', 'api-allowed:scope:teaching_access',
+        'tool-licensed:Lehrertool,auto,scope:teaching_access',
+    ])->name('admin.teaching-simulator.')->group(function (): void {
+        Route::post('/mailpit/start', [TeachingSimulationController::class, 'startMailpit'])->name('start-mailpit');
+        Route::get('/', [TeachingSimulationController::class, 'index'])->name('index');
+        Route::post('/works/{course_work}/runs', [TeachingSimulationController::class, 'store'])->name('store');
+        Route::get('/runs/{run}', [TeachingSimulationController::class, 'show'])->name('show');
+        Route::post('/runs/{run}/send', [TeachingSimulationController::class, 'send'])->name('send');
+        Route::post('/runs/{run}/collect', [TeachingSimulationController::class, 'collect'])->name('collect');
+        Route::post('/runs/{run}/revise', [TeachingSimulationController::class, 'revise'])->name('revise');
+        Route::get('/runs/{run}/file', [TeachingSimulationController::class, 'file'])->name('file');
+        Route::get('/runs/{run}/download', [TeachingSimulationController::class, 'download'])->name('download');
+    });
+
+    Route::prefix('/admin/teaching-explanations')->middleware([
+        'auth:sanctum', 'api-allowed:scope:teaching_access',
+        'tool-licensed:Lehrertool,auth,scope:teaching_access',
+    ])->name('admin.teaching-explanations.')->group(function (): void {
+        Route::get('/{explanation}', [TeachingExplanationController::class, 'show'])->name('show');
+        Route::post('/{explanation}/publication', [TeachingExplanationController::class, 'publish'])->name('publish');
+        Route::delete('/{explanation}/publication', [TeachingExplanationController::class, 'revoke'])->name('revoke');
+        Route::post('/{explanation}/email-preview', [TeachingExplanationController::class, 'emailPreview'])->name('emailPreview');
+    });
 
     Route::prefix('/admin/number-systems')->middleware([
         'auth:sanctum', 'api-allowed:scope:teaching_access',
@@ -721,6 +749,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::delete('/admin/teaching/curricula/{curriculum}/documents/{document}', [CurriculumDocumentController::class, 'destroy']);
         Route::get('/admin/teaching/curricula/{curriculum}/topics/{topicId}/units/{unitId}/files', [CurriculumUnitFileController::class, 'index']);
         Route::post('/admin/teaching/curricula/{curriculum}/topics/{topicId}/units/{unitId}/files', [CurriculumUnitFileController::class, 'store']);
+        Route::post('/admin/teaching/curricula/{curriculum}/topics/{topicId}/units/{unitId}/explanations', [CurriculumUnitFileController::class, 'storeExplanation']);
         Route::get('/admin/teaching/curricula/{curriculum}/topics/{topicId}/units/{unitId}/files/{file}/preview', [CurriculumUnitFileController::class, 'preview']);
         Route::get('/admin/teaching/curricula/{curriculum}/topics/{topicId}/units/{unitId}/files/{file}/download', [CurriculumUnitFileController::class, 'download']);
         Route::patch('/admin/teaching/curricula/{curriculum}/topics/{topicId}/units/{unitId}/files/{file}', [CurriculumUnitFileController::class, 'update']);
@@ -773,8 +802,15 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/admin/teaching/course_works/{course_work}/import-evaluations', [CourseWorkController::class, 'importEvaluations'])->name('teaching.course-works.import-evaluations');
         Route::post('/admin/teaching/course_works/{course_work}/import-folder', [CourseWorkController::class, 'importFolder'])->name('teaching.course-works.import-folder');
         Route::post('/admin/teaching/course_works/{course_work}/import-json', [CourseWorkController::class, 'importJson'])->name('teaching.course-works.import-json');
+        Route::post('/admin/teaching/course_works/{course_work}/student-deadline', [CourseWorkController::class, 'studentDeadline'])->name('teaching.work-student-deadline');
+        Route::prefix('/admin/teaching/course_works/{course_work}/result-notifications')->name('teaching.work-results.')->group(function (): void {
+            Route::post('/preview', [WorkResultNotificationController::class, 'preview'])->name('preview');
+            Route::post('/send', [WorkResultNotificationController::class, 'send'])->middleware('throttle:5,1')->name('send');
+            Route::post('/office-order', [WorkResultNotificationController::class, 'officeOrder'])->name('office-order');
+        });
         Route::prefix('/admin/teaching/course_works/{course_work}/dropbox')->name('teaching.work-dropbox.')->group(function (): void {
             Route::get('/', [WorkDropboxController::class, 'show'])->name('show');
+            Route::post('/refresh', [WorkDropboxController::class, 'refresh'])->name('refresh');
             Route::post('/connect', [WorkDropboxController::class, 'connect'])->middleware(StartSession::class)->name('connect');
             Route::get('/folders', [WorkDropboxController::class, 'folders'])->name('folders');
             Route::post('/folder', [WorkDropboxController::class, 'storeFolder'])->name('store-folder');

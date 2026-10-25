@@ -2,6 +2,7 @@ import { expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createTestingPinia } from '@pinia/testing'
 import WorkExerciseStatus from '@/pages/admin/teaching/overview/components/WorkExerciseStatus.vue'
+import WorkFolderBrowser from '@/pages/admin/teaching/overview/components/WorkFolderBrowser.vue'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { workDropboxStates } from '@/helpers/workDropbox'
 
@@ -30,6 +31,23 @@ it('does not show a missing exercise warning when only the server confirms an ol
     const wrapper = render('missing')
     try {
         expect(wrapper.find('[role="img"]').exists()).toBe(false)
+    } finally { wrapper.unmount(); workDropboxStates.delete('7:2:65') }
+})
+
+it('keeps the existing assignment accessible after importing results and linking its historical folder', async () => {
+    workDropboxStates.set('7:2:65', { has_import: true, folder: { id: 'id:old', name: 'Originalordner' } })
+    const wrapper = render('missing', { work: { ...work, title: 'Dateimanagement', status: {
+        assessment_json_packages: [{ exercise_id: 'old' }], assessment_json_imports: [{ student_id: 101 }],
+    } } })
+    try {
+        expect(wrapper.get('[role="img"]').attributes('color')).toBe('success')
+        await wrapper.get('[role="button"]').trigger('click')
+        expect(wrapper.get('[role="dialog"]').text()).toContain('Bestehende Leistungsfeststellung')
+        expect(wrapper.get('[role="dialog"]').text()).toContain('Originalordner')
+        expect(wrapper.get('[role="dialog"]').text()).not.toContain('Prüfungsordner bestätigt')
+        expect(wrapper.findAllComponents({ name: 'WorkExercisePdf' })).toHaveLength(0)
+        expect(wrapper.findAll('button').some(button => button.text() === 'Leistungsfeststellungsordner öffnen')).toBe(true)
+        expect(wrapper.getComponent(WorkFolderBrowser).props('exercise')).toBe(true)
     } finally { wrapper.unmount(); workDropboxStates.delete('7:2:65') }
 })
 

@@ -11,6 +11,7 @@ use App\Services\TeachingCourseStudentEntryService;
 use App\Services\TeachingCourseWorkEntrySyncService;
 use App\Services\TeachingCourseWorkService;
 use App\Services\TeachingWorkAiExport;
+use App\Services\TeachingWorkCollectionStatus;
 use App\Services\TeachingWorkDispatchImport;
 use App\Services\TeachingWorkFolderImport;
 use App\Services\TeachingWorkJsonImport;
@@ -28,14 +29,42 @@ use Throwable;
 
 class CourseWorkController extends Controller
 {
+    public function studentDeadline(Request $request, TeachingCourseWork $course_work, TeachingCourseWorkEntrySyncService $entries): JsonResponse
+    {
+        $actor = $this->userHasRole(['admin', 'teaching_admin', 'teacher']);
+        abort_unless($actor && $course_work->teachingCourse, 403);
+        $this->authorizeTeachingCourseAccess($course_work->teachingCourse, $actor);
+        $data = $request->validate([
+            'date' => ['present', 'nullable', 'date_format:Y-m-d'],
+            'time' => ['present', 'nullable', 'date_format:H:i'],
+            'expected' => ['required', 'array:date,time'],
+            'expected.date' => ['present', 'nullable', 'date_format:Y-m-d'],
+            'expected.time' => ['present', 'nullable', 'date_format:H:i'],
+        ]);
+
+        return DB::transaction(function () use ($course_work, $data, $entries, $actor): JsonResponse {
+            $work = TeachingCourseWork::query()->with('teachingCourse')->lockForUpdate()->findOrFail($course_work->id);
+            $this->authorizeTeachingCourseAccess($work->teachingCourse, $actor);
+            $current = $work->communicatedDeadline();
+            abort_unless(($current['date'] ?? null) === $data['expected']['date'] && ($current['time'] ?? null) === $data['expected']['time'],
+                409, 'Die Schülerfrist wurde inzwischen geändert. Bitte den Dialog neu öffnen.');
+            $work->setStudentDeadline($data['date'], $data['time']);
+            $work->save();
+
+            return response()->json(['data' => $entries->serializeWork($work->load('teachingCourseWorkGroupStudents'))]);
+        });
+    }
+
     public function aiExport(Request $request, TeachingCourseWork $course_work, TeachingWorkAiExport $export): JsonResponse
     {
         $actor = $this->userHasRole(['admin', 'teaching_admin', 'teacher']);
         abort_unless($actor, 403);
-        $data = $request->validate(['purpose' => ['sometimes', 'in:exercise,email_preparation,email_dispatch'],
+        $data = $request->validate(['purpose' => ['sometimes', 'in:exercise,email_preparation,email_dispatch,submission_collection,evaluation'],
             'include_mc' => ['required_if:purpose,exercise', 'nullable', 'boolean'],
             'address_form' => ['required_if:purpose,email_preparation', 'nullable', Rule::in(['du', 'sie'])],
             'delivery_mode' => ['required_if:purpose,email_dispatch', 'nullable', Rule::in(['live', 'test'])],
+            'collection_mode' => ['required_if:purpose,submission_collection', 'nullable', Rule::in(['collect', 'repeat'])],
+            'evaluation_mode' => ['required_if:purpose,evaluation', 'nullable', Rule::in(['grade', 'repeat'])],
             'date' => ['nullable', 'date_format:Y-m-d']]);
 
         return DB::transaction(function () use ($course_work, $actor, $export, $data): JsonResponse {
@@ -45,6 +74,16 @@ class CourseWorkController extends Controller
 
             $exercise = ($data['purpose'] ?? null) === 'exercise';
             abort_unless($exercise || $work->automationEnabled(), 422, 'Automatik ist für diese Arbeit ausgeschaltet.');
+
+            if (($data['purpose'] ?? null) === 'evaluation') {
+                return response()->json(['data' => $export->buildEvaluation($work, $actor, $data['evaluation_mode'] === 'repeat', $data['date'] ?? null)])
+                    ->header('Cache-Control', 'private, no-store');
+            }
+
+            if (($data['purpose'] ?? null) === 'submission_collection') {
+                return response()->json(['data' => $export->buildSubmissionCollection($work, $actor, $data['collection_mode'] === 'repeat', $data['date'] ?? null)])
+                    ->header('Cache-Control', 'private, no-store');
+            }
 
             if (($data['purpose'] ?? null) === 'email_preparation') {
                 return response()->json(['data' => $export->buildEmailPreparation($work, $actor, $data['address_form'], $data['date'] ?? null)])
@@ -381,6 +420,7 @@ class CourseWorkController extends Controller
         if (isset($validated['status'])) {
             unset($validated['status']['submission_checks']);
             unset($validated['status']['communicated_deadline_at']);
+            unset($validated['status']['communicated_deadline_date']);
             unset($validated['status']['completion_override']);
             unset($validated['status']['provision_events'], $validated['status']['provision_imports']);
             unset($validated['status']['evaluation_pdfs'], $validated['status']['dispatch_logs'], $validated['status']['dispatch_notifications'], $validated['status']['dispatch_attempts'], $validated['status']['folder_import_sources'], $validated['status']['folder_imported_at'], $validated['status']['assessment_json_imports'], $validated['status']['assessment_json_packages']);
@@ -410,6 +450,10 @@ class CourseWorkController extends Controller
         }
 
         $this->authorizeTeachingCourseAccess($course, $auth_user);
+
+        if (request()->boolean('refresh_collection')) {
+            app(TeachingWorkCollectionStatus::class)->refresh($course_work, $auth_user);
+        }
 
         return response()->json(['data' => $entrySyncService->serializeWork($course_work->load('teachingCourseWorkGroupStudents'))]);
     }
@@ -452,7 +496,7 @@ class CourseWorkController extends Controller
             $validated['status']['dispatch_notifications'] = $course_work->status['dispatch_notifications'] ?? [];
             $validated['status']['dispatch_attempts'] = $course_work->status['dispatch_attempts'] ?? [];
             $validated['status']['folder_import_sources'] = $course_work->status['folder_import_sources'] ?? [];
-            foreach (['assessment_json_imports', 'assessment_json_packages', 'submission_checks', 'provision_events', 'provision_imports', 'communicated_deadline_at', 'completion_override'] as $field) {
+            foreach (['assessment_json_imports', 'assessment_json_packages', 'submission_checks', 'provision_events', 'provision_imports', 'communicated_deadline_at', 'communicated_deadline_date', 'completion_override'] as $field) {
                 if (isset($course_work->status[$field])) {
                     $validated['status'][$field] = $course_work->status[$field];
                 } else {
@@ -489,6 +533,14 @@ class CourseWorkController extends Controller
 
         $validated = $workService->prepareWorkData($validated, $course, (int) $auth_user->school_id, $course_work->is_group_work);
 
+        $deadlineWork = clone $course_work;
+        foreach (['finish_until_date', 'finish_until_time'] as $field) {
+            if (array_key_exists($field, $validated)) {
+                $deadlineWork->{$field} = $validated[$field];
+            }
+        }
+        $studentDeadline = $course_work->communicatedDeadline();
+        $deadlineWork->setStudentDeadline($studentDeadline['date'] ?? null, $studentDeadline['time'] ?? null);
         $course_work->update($validated);
         $entrySyncService->syncWork($course_work->fresh());
 

@@ -47,7 +47,9 @@ export function workDispatchRecord(work, studentId, purpose, aggregate = false) 
             || Number(isDispatchReadyRecord(work, second)) - Number(isDispatchReadyRecord(work, first))
             || (Date.parse(second.prepared_at) || 0) - (Date.parse(first.prepared_at) || 0))
 
-    return planning[0] || attempts.at(-1) || null
+    const localDelivery = attempts.filter(attempt => attempt.mode === 'mailpit' && attempt.provider_id && Number.isFinite(Date.parse(attempt.sent_at)))
+        .sort((first, second) => Date.parse(second.sent_at) - Date.parse(first.sent_at))
+    return localDelivery[0] || planning[0] || attempts.at(-1) || null
 }
 
 export function workDispatchPlanningRecords(work, purpose) {
@@ -72,6 +74,7 @@ export function workDispatchReady(work, studentId = null, aggregate = false) {
 export function dispatchNotificationText(sentAt, purpose = 'results', mode = 'live') {
     const prefix = purpose === 'tasks' ? 'Aufgabenversand' : 'Ergebnisbenachrichtigung'
     const action = mode === 'live' ? (purpose === 'tasks' ? 'Aufgaben per E-Mail versandt' : 'Über die Korrektur per E-Mail verständigt')
+        : mode === 'mailpit' ? `${prefix}: versandt · Testversand über Mailpit`
         : mode === 'scheduled' ? `${prefix}: serverseitig geplant`
             : mode === 'prepared' ? `${prefix}: vorbereitet${sentAt ? ' · geplanter Versand' : ''}`
                 : `${prefix}: ${mode === 'test' ? 'lokaler Mailpit-Test' : 'kein bestätigter Live-Versand'}`

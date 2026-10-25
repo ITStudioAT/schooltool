@@ -55,11 +55,14 @@ it.each([
     { status: { folder_imported_at: '2026-10-13T12:54:00Z' } },
     { status: { dispatch_logs: [{ sha256: 'c'.repeat(64) }] } },
     { groups: [{ grades: { 101: 0 } }] },
-])('does not require a new link for existing work with progress: %j', async progress => {
+])('offers optional folder linking for existing work without changing completed progress: %j', async progress => {
     const { wrapper, status } = mountConnection(vi.fn(), unlinked, { ...work, ...progress })
     try {
         await flushPromises()
         expect(button(wrapper, 'Verknüpfen')).toBeUndefined()
+        expect(button(wrapper, 'Ordner verknüpfen')).toBeDefined()
+        await button(wrapper, 'Ordner verknüpfen').trigger('click')
+        expect(wrapper.emitted('link')).toEqual([[{ ...work, ...progress }]])
         expect(status.find('[role="img"]').exists()).toBe(false)
         workDropboxStates.set('7:2:65', saved)
         await flushPromises()
@@ -68,11 +71,12 @@ it.each([
     } finally { wrapper.unmount() }
 })
 
-it('does not require a new link when the server confirms an older import without local progress metadata', async () => {
+it('offers optional folder linking when the server confirms an older import without local progress metadata', async () => {
     const { wrapper, status } = mountConnection(vi.fn(), { ...unlinked, has_import: true })
     try {
         await flushPromises()
         expect(button(wrapper, 'Verknüpfen')).toBeUndefined()
+        expect(button(wrapper, 'Ordner verknüpfen')).toBeDefined()
         expect(status.find('[role="img"]').exists()).toBe(false)
     } finally { wrapper.unmount() }
 })
