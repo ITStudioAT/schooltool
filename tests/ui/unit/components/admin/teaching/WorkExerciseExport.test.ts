@@ -238,16 +238,38 @@ it('requires an explicit MC selection and creates a draft only on the handoff ac
         expect(button(wrapper, action).attributes('disabled')).toBeDefined()
         expect(axios.post).not.toHaveBeenCalled()
         await wrapper.get('select[aria-label="Fragenkatalog auswählen"]').setValue('3')
-        await wrapper.get('input[aria-label="MC-Anteil an den LF-Gesamtpunkten"]').setValue('6')
+        expect(wrapper.findAll('input[type="number"]')).toHaveLength(2)
+        expect(wrapper.find('input[aria-label="Maximale MC-Punkte"]').exists()).toBe(false)
+        await wrapper.get('input[aria-label="MC-Punkte"]').setValue('6')
         expect(button(wrapper, action).attributes('disabled')).toBeDefined()
-        await wrapper.get('input[aria-label="MC-Anteil an den LF-Gesamtpunkten"]').setValue('2')
+        await wrapper.get('input[aria-label="MC-Punkte"]').setValue('2')
         expect(wrapper.text()).toContain('2 Punkte MC + 3 Punkte übrige Aufgaben = 5 Punkte gesamt')
         expect(button(wrapper, action).attributes('disabled')).toBeUndefined()
         await button(wrapper, action).trigger('click'); await flushPromises()
         const payload = (axios.post as any).mock.calls[0][1]
-        expect(payload).toMatchObject({ mc_mode: 'new', catalog_id: 3, total_points: 10, mc_points: 2, expected_maximum_points: 5, duration_minutes: 20, expected_test_id: null, date: '2026-10-20' })
+        expect(payload).toMatchObject({ mc_mode: 'new', catalog_id: 3, total_points: 2, mc_points: 2, expected_maximum_points: 5, duration_minutes: 20, expected_test_id: null, date: '2026-10-20' })
         await button(wrapper, 'Kopiert').trigger('click'); await flushPromises()
         expect((axios.post as any).mock.calls[1][1]).toEqual(payload)
+    } finally { wrapper.unmount() }
+})
+
+it('uses the saved binding for a new test even when the previously linked test is no longer selectable', async () => {
+    const get = vi.fn().mockResolvedValue({ data: { data: { work_id: 65, course_id: 2, roster_complete: true, participants_count: 3,
+        text: 'Auftrag mit Ersatztest', context: { include_multiple_choice: true, multiple_choice_test: { test_id: 10 } } } } })
+    const wrapper = mountExport(get, undefined, undefined, work, { available: true, tests: [],
+        catalogs: [{ id: 3, title: 'Grundlagen' }], linked_test_id: null, expected_test_id: 6 })
+    try {
+        await flushPromises()
+        await button(wrapper, 'Leistungsfeststellung erstellen').trigger('click')
+        await wrapper.get('input[type="checkbox"]').setValue(true)
+        await flushPromises()
+        await wrapper.get('select[aria-label="Fragenkatalog auswählen"]').setValue('3')
+        await wrapper.get('input[aria-label="MC-Punkte"]').setValue('2')
+        await button(wrapper, 'MC-Test erstellen und Übergabetext kopieren').trigger('click')
+        await flushPromises()
+        expect(axios.post).toHaveBeenCalledWith(expect.stringContaining('/prepare-exercise'),
+            expect.objectContaining({ expected_test_id: 6, total_points: 2, mc_points: 2 }), expect.any(Object))
+        expect(wrapper.text()).toContain('Übergabetext kopiert')
     } finally { wrapper.unmount() }
 })
 

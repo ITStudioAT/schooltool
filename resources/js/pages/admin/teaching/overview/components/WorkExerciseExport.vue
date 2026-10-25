@@ -45,15 +45,14 @@
                             <v-select v-model="mcCatalogId" :items="mcOptions.catalogs" item-title="title" item-value="id"
                                 label="Fragenkatalog auswählen" :disabled="loading" class="mt-3" hide-details />
                             <p class="text-caption mt-2">10 Fragen aus einem Katalog mit mindestens 10 aktiven, geprüften Fragen. Die Prüfungskandidaten werden aus dieser Leistungsfeststellung übernommen.</p>
-                            <v-text-field v-model.number="mcTotalPoints" label="Maximale MC-Punkte" type="number" min="0.01" max="100000" step="0.01" :disabled="loading" class="mt-3" hide-details />
                             <v-text-field v-model.number="mcDuration" label="MC-Bearbeitungszeit in Minuten" type="number" min="1" max="1440" :disabled="loading" class="mt-3" hide-details />
                             <p class="text-caption mt-2">Der neue Test wird als Entwurf erstellt und mit dieser Leistungsfeststellung verknüpft. Die Freigabe erfolgt später im MC-Bereich.</p>
                             <p v-if="!mcOptions.catalogs.length" class="text-caption mt-2">Bitte zuerst unter Unterricht-Tools · Multiple Choice einen Fragenkatalog vorbereiten.</p>
                         </template>
                         <p class="text-body-2 mt-4">LF gesamt: {{ mcMaximumPoints ?? 'nicht festgelegt' }} Punkte.</p>
-                        <v-text-field v-model.number="mcPoints" label="MC-Anteil an den LF-Gesamtpunkten" type="number" min="0.01" :max="mcMaximumPoints"
+                        <v-text-field v-model.number="mcPoints" label="MC-Punkte" type="number" min="0.01" :max="mcMaximumPoints"
                             step="0.01" :disabled="loading || mcOptions.configuration?.locked" class="mt-3" hide-details />
-                        <p v-if="mcPointsValid" class="text-caption mt-2" role="status">{{ mcPoints }} Punkte MC + {{ mcOtherPoints }} Punkte übrige Aufgaben = {{ mcMaximumPoints }} Punkte gesamt. Die Rohpunkte des MC-Tests werden auf diesen Anteil umgerechnet.</p>
+                        <p v-if="mcPointsValid" class="text-caption mt-2" role="status">{{ mcPoints }} Punkte MC + {{ mcOtherPoints }} Punkte übrige Aufgaben = {{ mcMaximumPoints }} Punkte gesamt.<template v-if="mcMode === 'existing'"> Die Punkte des vorhandenen MC-Tests werden auf diesen Anteil umgerechnet.</template></p>
                         <p v-else class="text-caption mt-2" role="status">Bitte einen positiven MC-Anteil bis zur LF-Gesamtpunktzahl angeben. Die übrigen Aufgaben und Bewertungskriterien werden anschließend erneut abgestimmt.</p>
                     </template>
                     <v-alert v-else-if="!error" type="warning" variant="tonal">Multiple Choice ist noch nicht verfügbar.</v-alert>
@@ -104,7 +103,6 @@ const mcTestCatalogs = computed(() => [...new Map((mcOptions.value?.tests || [])
 const filteredMcTests = computed(() => (mcOptions.value?.tests || []).filter(test => mcExistingCatalogId.value === null
     || Number(test.catalog_id || 0) === Number(mcExistingCatalogId.value)))
 const selectedMcTest = computed(() => filteredMcTests.value.find(test => String(test.id) === String(mcTestId.value)))
-const mcTotalPoints = ref(10)
 const mcDuration = ref(20)
 const mcPoints = ref(null)
 const mcMaximumPoints = computed(() => mcOptions.value?.configuration?.maximum_points ?? null)
@@ -114,7 +112,7 @@ const mcPointsValid = computed(() => Number(mcMaximumPoints.value) > 0 && Number
 const mcDispatchLocked = ref(false)
 const mcReady = computed(() => !includeMc.value || (!mcLoading.value && !mcDispatchLocked.value && !mcOptions.value?.configuration?.locked
     && mcPointsValid.value && mcOptions.value?.available && (mcMode.value === 'existing'
-    ? Boolean(selectedMcTest.value) : Boolean(mcCatalogId.value) && Number(mcTotalPoints.value) > 0 && Number(mcTotalPoints.value) <= 100000
+    ? Boolean(selectedMcTest.value) : Boolean(mcCatalogId.value)
         && Number.isInteger(Number(mcDuration.value)) && Number(mcDuration.value) >= 1 && Number(mcDuration.value) <= 1440)))
 let mcSequence = 0
 let mcPayload = null
@@ -258,12 +256,12 @@ async function loadMcOptions() {
             return { ...test, catalog_label: catalogLabel,
                 selection_label: `${test.title} · ${catalogLabel} · Nr. ${test.id} · ${test.status === 'published' ? 'freigegeben' : 'Entwurf'}` }
         }) }
-        expectedTestId = data.linked_test_id ?? null
-        mcTestId.value = expectedTestId
-        const linkedTest = mcOptions.value.tests.find(test => String(test.id) === String(expectedTestId))
+        expectedTestId = data.expected_test_id ?? data.linked_test_id ?? null
+        mcTestId.value = data.linked_test_id ?? null
+        const linkedTest = mcOptions.value.tests.find(test => String(test.id) === String(mcTestId.value))
         mcExistingCatalogId.value = linkedTest ? Number(linkedTest.catalog_id || 0) : null
         mcPoints.value = data.linked_mc_points ?? null
-        mcMode.value = expectedTestId || data.tests.length ? 'existing' : 'new'
+        mcMode.value = mcTestId.value || data.tests.length ? 'existing' : 'new'
     } catch (failure) {
         if (operation === mcSequence) error.value = failure.response?.data?.message || failure.message || 'Die MC-Auswahl konnte nicht geladen werden.'
     } finally {
@@ -284,7 +282,7 @@ async function copyExport() {
         if (mc && !mcPayload) {
             mcPayload = { mc_mode: mcMode.value, mc_points: Number(mcPoints.value), expected_maximum_points: Number(mcMaximumPoints.value), expected_test_id: expectedTestId, request_id: crypto.randomUUID(),
                 ...(props.date ? { date: props.date } : {}), ...(mcMode.value === 'existing' ? { test_id: mcTestId.value }
-                    : { catalog_id: mcCatalogId.value, total_points: mcTotalPoints.value, duration_minutes: mcDuration.value }) }
+                    : { catalog_id: mcCatalogId.value, total_points: Number(mcPoints.value), duration_minutes: mcDuration.value }) }
         }
         const { data } = mc ? await axios.post(prepareExercise.url(workId), mcPayload, { signal: controller.signal })
             : await axios.get(aiExport.url(workId), { params: { purpose: 'exercise', include_mc: 0,
@@ -333,7 +331,7 @@ watch(includeMc, value => {
 watch(mcExistingCatalogId, () => {
     if (!selectedMcTest.value) mcTestId.value = null
 })
-watch(() => [mcMode.value, mcTestId.value, mcCatalogId.value, mcTotalPoints.value, mcDuration.value, mcPoints.value], () => { clear(); mcPayload = null })
+watch(() => [mcMode.value, mcTestId.value, mcCatalogId.value, mcDuration.value, mcPoints.value], () => { clear(); mcPayload = null })
 watch(() => [admin.config?.user?.id, props.work?.id, props.course?.id, props.date, props.active, bindingVersion.value, needsPreparation.value,
     props.work?.finish_until_date, props.work?.finish_until_time, JSON.stringify(props.work?.communicated_deadline)], () => checkExercise(), { immediate: true })
 onBeforeUnmount(() => { clear(); exerciseSequence++; mcSequence++ })

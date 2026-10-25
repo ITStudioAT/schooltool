@@ -39,6 +39,7 @@ class TeachingWorkMultipleChoice
             'catalogs' => $catalogs->filter(fn (array $catalog): bool => $catalog['reviewed_question_count'] >= 10)->values(),
             'linked_test_id' => ($binding['work_id'] ?? null) === $work->id && $tests->contains('id', $binding['test_id'] ?? null)
                 ? $binding['test_id'] : null,
+            'expected_test_id' => isset($binding['test_id']) ? (int) $binding['test_id'] : null,
             'linked_mc_points' => $binding['points_plan']['mc_points'] ?? null];
     }
 
@@ -66,7 +67,7 @@ class TeachingWorkMultipleChoice
         $binding = $work->status['multiple_choice_tests'][$slot] ?? null;
         $requestHash = hash('sha256', json_encode([$data, array_column($participants, 'schooltool_person_id')], JSON_THROW_ON_ERROR));
         $repeated = ($binding['request_id'] ?? null) === $data['request_id'] && ($binding['request_hash'] ?? null) === $requestHash;
-        abort_unless($repeated || ($binding['test_id'] ?? null) === ($data['expected_test_id'] ?? null), 409,
+        abort_unless($repeated || (isset($binding['test_id']) ? (int) $binding['test_id'] : null) === (isset($data['expected_test_id']) ? (int) $data['expected_test_id'] : null), 409,
             'Die MC-Verknüpfung wurde inzwischen geändert. Bitte den Dialog erneut öffnen.');
         $studentIds = array_column($participants, 'schooltool_person_id');
         abort_unless(count($studentIds) === count($participants) && ! in_array(null, $studentIds, true), 422,
@@ -87,7 +88,7 @@ class TeachingWorkMultipleChoice
                 ->lockForUpdate()->findOrFail($data['catalog_id']);
             $test = McTest::query()->create([
                 'school_id' => $work->teachingCourse->school_id, 'schoolyear_id' => $work->teachingCourse->schoolyear_id,
-                'owner_id' => $actor->id, 'catalog_id' => $catalog->id, 'title' => mb_substr($work->title.' – MC', 0, 255),
+                'owner_id' => $actor->id, 'catalog_id' => $catalog->id, 'title' => $this->newTestTitle($work, $data['date'] ?? $workContext['scheduled_date'] ?? null),
                 'status' => 'draft', 'question_count' => 10, 'total_points' => $data['total_points'],
                 'duration_seconds' => $data['duration_minutes'] * 60, 'lead_seconds' => 60,
                 'start_mode' => 'common', 'exam_mode' => false, 'balance_types' => true,
@@ -142,6 +143,22 @@ class TeachingWorkMultipleChoice
 
         return ['locked' => $locked, 'message' => $message,
             'maximum_points' => is_numeric($maximum) && (float) $maximum > 0 ? round((float) $maximum, 2) : null];
+    }
+
+    private function newTestTitle(TeachingCourseWork $work, ?string $date): string
+    {
+        $course = $work->teachingCourse;
+        $courseTitle = trim($course->title);
+        $classes = array_values(array_unique($course->classes ?? []));
+        $cohort = implode('-', $classes);
+        if (count($classes) === 1 && preg_match('/\A(.+?)\s+-\s+(.+?)\s+-\s+([1-9][0-9]*)\z/u', $courseTitle, $parts) === 1
+            && trim($parts[2]) === $classes[0]) {
+            $cohort = $classes[0].'_Gruppe-'.(int) $parts[3];
+        }
+        $segments = array_filter([$date ?? $work->date_for_all_groups?->format('Y-m-d'), trim($work->title) ?: $courseTitle, $cohort]);
+        $segments = array_map(fn (string $segment): string => trim(preg_replace('/[^\p{L}\p{N}._-]+/u', '-', $segment), '-'), $segments);
+
+        return mb_substr(implode('_', $segments), 0, 255);
     }
 
     private function slot(TeachingCourseWork $work, ?string $date): string

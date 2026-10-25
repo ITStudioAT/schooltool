@@ -80,16 +80,76 @@ test('the LF creates and binds one draft MC test with its actual candidates and 
     Http::assertNothingSent();
 });
 
-test('an existing MC test is reused without a second test or changing its attempts', function (): void {
+test('new LF MC tests use the saved performance date work title class and course group', function (string $workTitle, string $courseTitle, array $classes, string $expectedTitle): void {
+    workMcFixture($this);
+    $this->course->update(['title' => $courseTitle, 'classes' => $classes]);
+    $this->work->update(['title' => $workTitle]);
+
+    $response = $this->postJson($this->base.'/prepare-exercise', $this->payload)->assertOk()
+        ->assertJsonPath('data.context.multiple_choice_test.title', $expectedTitle);
+
+    expect(McTest::query()->findOrFail($response->json('data.context.multiple_choice_test.test_id'))->title)->toBe($expectedTitle);
+})->with([
+    'user naming pattern' => ['Informatik', 'INF - 5A - 1', ['5A'], '2026-10-20_Informatik_5A_Gruppe-1'],
+    'work title and second course group' => ['Dateimanagement', 'DGB - 3B - 2', ['3B'], '2026-10-20_Dateimanagement_3B_Gruppe-2'],
+    'no course group' => ['Informatik', 'Informatik', ['5A'], '2026-10-20_Informatik_5A'],
+    'joint classes without invented group' => ['Informatik', 'Informatik', ['5A', '5B'], '2026-10-20_Informatik_5A-5B'],
+    'multiword title' => ['Dateien und Ordner', 'DGB - 3B - 1', ['3B'], '2026-10-20_Dateien-und-Ordner_3B_Gruppe-1'],
+]);
+
+test('the MC name follows the selected work group date instead of a deadline or creation date', function (): void {
+    workMcFixture($this);
+    $this->course->update(['title' => 'Informatik - 5A - 1', 'classes' => ['5A']]);
+    $this->work->update(['title' => 'Dateimanagement', 'date_for_all_groups' => null, 'finish_until_date' => '2026-11-20',
+        'groups' => [['date' => '2026-11-13', 'student_ids' => [$this->student->id]]]]);
+
+    $this->postJson($this->base.'/prepare-exercise', [...$this->payload, 'date' => '2026-11-13'])->assertOk()
+        ->assertJsonPath('data.context.multiple_choice_test.title', '2026-11-13_Dateimanagement_5A_Gruppe-1');
+});
+
+test('an existing MC test is reused without a second test or changing its name or attempts', function (): void {
     workMcFixture($this);
     $id = $this->postJson($this->base.'/prepare-exercise', $this->payload)->assertOk()->json('data.context.multiple_choice_test.test_id');
+    McTest::query()->findOrFail($id)->update(['title' => 'Eigener Testname']);
     $attempts = McTest::query()->findOrFail($id)->attempts()->get()->toArray();
     $this->postJson($this->base.'/prepare-exercise', ['mc_mode' => 'existing', 'mc_points' => 2, 'expected_maximum_points' => 5, 'test_id' => $id, 'expected_test_id' => $id,
         'date' => '2026-10-20', 'request_id' => 'a4c4b2fd-94de-4830-9bdf-c1db638ac17f'])->assertOk()
-        ->assertJsonPath('data.context.multiple_choice_test.test_id', $id);
+        ->assertJsonPath('data.context.multiple_choice_test.test_id', $id)
+        ->assertJsonPath('data.context.multiple_choice_test.title', 'Eigener Testname');
     expect(McTest::query()->count())->toBe(1)->and(McTest::query()->findOrFail($id)->attempts()->get()->toArray())->toBe($attempts);
     $this->postJson($this->base.'/prepare-exercise', [...$this->payload, 'request_id' => '571bbef6-a38e-4bb0-8c8c-892eb9361fa5'])
         ->assertConflict();
+    expect(McTest::query()->count())->toBe(1);
+});
+
+test('a removed linked test can be replaced using the actual binding from the refreshed choices', function (): void {
+    workMcFixture($this);
+    $oldId = $this->postJson($this->base.'/prepare-exercise', $this->payload)->assertOk()->json('data.context.multiple_choice_test.test_id');
+    $oldTest = McTest::query()->findOrFail($oldId);
+    $oldTest->attempts()->delete();
+    $oldTest->delete();
+
+    $options = $this->getJson($this->base.'/exercise-options?date=2026-10-20')->assertOk()
+        ->assertJsonPath('linked_test_id', null)
+        ->assertJsonPath('expected_test_id', $oldId);
+    $payload = [...$this->payload, 'request_id' => '81d80352-d86c-4872-a14f-e8c6d5be8f5c'];
+    $this->postJson($this->base.'/prepare-exercise', $payload)->assertConflict();
+    $response = $this->postJson($this->base.'/prepare-exercise', [...$payload,
+        'expected_test_id' => $options->json('expected_test_id')])->assertOk();
+
+    expect($response->json('data.context.multiple_choice_test.test_id'))->not->toBe($oldId);
+    expect(McTest::query()->count())->toBe(1);
+});
+
+test('a numeric expected binding from JSON is compared by ID without weakening stale binding protection', function (): void {
+    workMcFixture($this);
+    $id = $this->postJson($this->base.'/prepare-exercise', $this->payload)->assertOk()->json('data.context.multiple_choice_test.test_id');
+
+    $this->postJson($this->base.'/prepare-exercise', [...$this->payload, 'mc_mode' => 'existing', 'test_id' => $id,
+        'expected_test_id' => (string) $id, 'request_id' => '5ae82094-4653-4d5b-b63f-c0b89d0df3a7'])->assertOk()
+        ->assertJsonPath('data.context.multiple_choice_test.test_id', $id);
+    $this->postJson($this->base.'/prepare-exercise', [...$this->payload, 'expected_test_id' => (string) ($id + 1),
+        'request_id' => 'c2d40bfb-0886-4b70-bf56-c8b922e2681a'])->assertConflict();
     expect(McTest::query()->count())->toBe(1);
 });
 
