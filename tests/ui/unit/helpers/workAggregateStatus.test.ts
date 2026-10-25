@@ -321,7 +321,7 @@ describe('Work card status placement', () => {
         } finally { wrapper.unmount() }
     })
 
-    it.each([0, 1, 3])('shows %s completed people in the first header row independently of the manual brain', async completed => {
+    it.each([0, 1, 3])('shows %s completed people in the first header row independently of the manual completion icon', async completed => {
         const work = fixture()
         work.automation_enabled = false
         work.groups[0].grade = null
@@ -337,7 +337,9 @@ describe('Work card status placement', () => {
             expect(count.classes()).toContain(completed === 3 ? 'text-success' : 'text-error')
             expect(count.attributes('aria-label')).toBe(`${completed} von 3 Leistungen erledigt; ${3 - completed} offen.`)
             expect(card.find('.course-table-work-summary-progress').exists()).toBe(false)
-            expect(card.get('.course-table-work-summary-meta').findAll('v-icon').find(icon => icon.text() === 'mdi-brain')?.attributes('color')).toBe('success')
+            const completionIcon = card.get('.course-table-work-summary-meta v-icon')
+            expect(completionIcon.attributes('icon')).toBe('mdi-account-check-outline')
+            expect(completionIcon.attributes('color')).toBe('success')
         } finally { wrapper.unmount() }
     })
 

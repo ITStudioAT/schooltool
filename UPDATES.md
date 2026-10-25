@@ -2,7 +2,10 @@
 
 ## 3.53.3 !!!
 
+### Unterricht
+
 - Stundenplan: grün bei freien Tagen
+- Arbeiten: MC-Fragen einbinden
 
 ## 3.53.2
 
