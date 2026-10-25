@@ -195,6 +195,33 @@ describe('Shared work status and personal deviations', () => {
         expect(workCellDeviationStatuses(work, 12, students, now)).toEqual([])
         expect(workFullyComplete(work, students, now)).toBe(false)
     })
+
+    it.each(['points', 'grades'])('completes manual work from all saved individual %s including zero and reopens when cleared', key => {
+        const field = key === 'points' ? 'points' : 'grade'
+        const work = { ...fixture(), automation_enabled: false, status: {}, is_group_work: false,
+            groups: [{ student_ids: [12, 13, 14], use_individual_grades: true, grade: 5,
+                [key]: [{ student_id: 12, [field]: 2 }, { student_id: 13, [field]: 3 }, { student_id: 14, [field]: '' }] }] }
+        expect(workMarkedComplete(work, students, now)).toBe(false)
+        work.groups[0][key][2][field] = 0
+        expect(workMarkedComplete(work, students, now)).toBe(true)
+        expect(workFullyComplete(work, students, now)).toBe(false)
+        work.groups[0][key][2][field] = ''
+        expect(workMarkedComplete(work, students, now)).toBe(false)
+    })
+
+    it('uses shared group grades and object values only for the assigned active participants', () => {
+        const work = { ...fixture(), automation_enabled: false, status: {},
+            groups: [{ student_ids: [12, 13], grade: 2 }, { student_ids: [14], use_individual_grades: true, points: { 14: { points: 0 } } }] }
+        const roster = [...students, { user_id: 15, canceled_at: null }, { user_id: 16, canceled_at: '2026-10-01' }]
+        expect(workMarkedComplete(work, roster, now)).toBe(true)
+        work.is_group_work = false
+        expect(workMarkedComplete(work, roster, now)).toBe(false)
+        work.groups.push({ student_ids: [15], grade: 3 } as never)
+        expect(workMarkedComplete(work, roster, now)).toBe(true)
+        work.status = { completion_override: false }
+        expect(workMarkedComplete(work, roster, now)).toBe(false)
+        expect(workMarkedComplete({ ...work, status: {}, groups: [] }, [], now)).toBe(false)
+    })
 })
 
 describe('Work card status placement', () => {

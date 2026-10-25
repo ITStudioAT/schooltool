@@ -112,6 +112,35 @@ test('dropping a handshake resolves an online path without linking or importing'
     Http::assertNotSent(fn (Request $request): bool => preg_match('#/files/(upload|delete|move|create)#', $request->url()) === 1);
 });
 
+test('module lookup reuses unchanged handshake revisions but still detects newly copied identities', function (): void {
+    fakeModuleDropbox($this);
+    $payload = ['filename' => 'handshake.json', 'handshake' => $this->handshake, 'resolve' => true];
+    $this->postJson($this->url.'/folder', $payload)->assertOk()->assertJsonPath('can_link', true);
+    $downloads = Http::recorded(fn (Request $request): bool => str_ends_with($request->url(), '/files/download'))->count();
+
+    $this->postJson($this->url.'/folder', $payload)->assertOk()->assertJsonPath('can_link', true);
+    expect(Http::recorded(fn (Request $request): bool => str_ends_with($request->url(), '/files/download'))->count())->toBe($downloads + 1);
+
+    $copy = $this->online[0];
+    $copy['id'] = 'id:copy';
+    $copy['rev'] = 'revision-copy';
+    $copy['path_lower'] = str_replace('emails - kopie', 'copied-module', $copy['path_lower']);
+    $copy['path_display'] = str_replace('emails - Kopie', 'copied-module', $copy['path_display']);
+    $this->online[] = $copy;
+    $this->postJson($this->url.'/folder', $payload)->assertOk()->assertJsonPath('conflict', true)->assertJsonCount(2, 'candidates');
+    expect(TeachingWorkModuleLink::query()->count())->toBe(0);
+});
+
+test('a new handshake revision never reuses the previous module identity', function (): void {
+    fakeModuleDropbox($this);
+    $payload = ['filename' => 'handshake.json', 'handshake' => $this->handshake, 'resolve' => true];
+    $this->postJson($this->url.'/folder', $payload)->assertOk();
+    $this->online[0]['rev'] = 'revision2';
+    $this->remoteContents = str_replace('A263B873', 'B263B873', $this->handshake);
+    $this->postJson($this->url.'/folder', $payload)->assertUnprocessable();
+    expect(TeachingWorkModuleLink::query()->count())->toBe(0);
+});
+
 function addExerciseFixture(object $context, string $name = '2026-10-06_E-Mail_Fach_3B_Gruppe-2', array $override = []): void
 {
     $module = dirname($context->online[0]['path_display']);

@@ -57,11 +57,15 @@ export function workCellStatuses(work, studentId, now = Date.now()) {
     ]
 }
 
-export function workParticipantIds(work, students = []) {
-    const assigned = new Set((work?.groups || []).flatMap(group => group.student_ids || []).map(String))
+function activeStudentIds(students = []) {
     return [...new Set(students.filter(student => !student.canceled_at && !student.deleted_at)
         .map(student => Object.prototype.hasOwnProperty.call(student, 'user_id') ? student.user_id : student.id)
-        .filter(id => id && assigned.has(String(id))).map(String))]
+        .filter(Boolean).map(String))]
+}
+
+export function workParticipantIds(work, students = []) {
+    const assigned = new Set((work?.groups || []).flatMap(group => group.student_ids || []).map(String))
+    return activeStudentIds(students).filter(id => assigned.has(id))
 }
 
 export function workAggregateStatuses(work, students = [], now = Date.now()) {
@@ -160,5 +164,17 @@ export function workFullyComplete(work, students, now = Date.now()) {
 
 export function workMarkedComplete(work, students, now = Date.now()) {
     const override = work?.status?.completion_override
-    return typeof override === 'boolean' ? override : workFullyComplete(work, students, now)
+    if (typeof override === 'boolean') return override
+    if (workAutomationEnabled(work)) return workFullyComplete(work, students, now)
+
+    const ids = work?.is_group_work ? workParticipantIds(work, students) : activeStudentIds(students)
+    const hasValue = value => value !== null && value !== undefined && String(value).trim() !== ''
+    const individualValue = (values, id, key) => Array.isArray(values)
+        ? values.find(item => String(item.student_id) === id)?.[key]
+        : values?.[id]?.[key] ?? values?.[id]
+    return ids.length > 0 && ids.every(id => (work?.groups || []).some(group =>
+        (group.student_ids || []).some(studentId => String(studentId) === id)
+        && (hasValue(individualValue(group.points, id, 'points'))
+            || hasValue(individualValue(group.grades, id, 'grade'))
+            || (!group.use_individual_grades && hasValue(group.grade)))))
 }

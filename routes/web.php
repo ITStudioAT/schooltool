@@ -20,7 +20,7 @@ Route::middleware(['throttle:global', 'throttle:web'])->group(function () {
     Route::get('/explanations/{token}', [SharedTeachingExplanationController::class, 'entry'])->where('token', '[A-Za-z0-9]{48}')->name('explanations.entry');
     Route::get('/api/explanations/{token}', [SharedTeachingExplanationController::class, 'show'])->where('token', '[A-Za-z0-9]{48}')->name('explanations.show');
 
-    Route::middleware(['auth', 'students-timetables-impersonation', 'api-allowed:scope:teaching_access', 'tool-licensed:Lehrertool'])->group(function (): void {
+    Route::middleware(['auth', 'students-timetables-impersonation', 'api-allowed:scope:teaching_access', 'tool-licensed:Lehrertool,auth,scope:teaching_access'])->group(function (): void {
         Route::get('/learning-materials/curriculum/{file}', [CurriculumUnitFileController::class, 'explanation'])
             ->whereNumber('file')->name('curriculum-explanations.show');
         Route::get('/learning-materials/teaching/{attachment}', [CourseDateController::class, 'explanation'])

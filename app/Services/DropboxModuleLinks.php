@@ -431,14 +431,13 @@ class DropboxModuleLinks
             }
         }
         $matches = [];
+        $contentsById = $this->handshakeContents($connection, $entries);
         foreach ($entries as $entry) {
-            if (! is_int($entry['size'] ?? null) || $entry['size'] > ModuleHandshake::MAX_BYTES) {
+            if (! array_key_exists($entry['id'], $contentsById)) {
                 continue;
             }
             try {
-                $download = $this->dropbox->readModuleApi($connection, 'files/download', ['path' => 'rev:'.$entry['rev']])->body();
-                abort_unless(strlen($download) === $entry['size'], 422, 'Die Online-Datei wurde nicht vollständig gelesen.');
-                $candidate = $this->handshake->parse($download);
+                $candidate = $this->handshake->parse($contentsById[$entry['id']]);
             } catch (ValidationException $exception) {
                 if (isset($exception->errors()['handshake'])) {
                     continue;
@@ -458,6 +457,39 @@ class DropboxModuleLinks
         }
 
         return ['module_id' => $matches[0]['module_id'], 'candidate' => $matches[0]];
+    }
+
+    /**
+     * @param  array<string, array<string, mixed>>  $entries
+     * @return array<string, string>
+     */
+    private function handshakeContents(DropboxConnection $connection, array $entries): array
+    {
+        $contents = [];
+        $requests = [];
+        $keys = [];
+        foreach ($entries as $id => $entry) {
+            if (! is_int($entry['size'] ?? null) || $entry['size'] < 0 || $entry['size'] > ModuleHandshake::MAX_BYTES) {
+                continue;
+            }
+            $keys[$id] = 'teaching:module-handshake:v1:'.hash('sha256', serialize([
+                $connection->id, $connection->user_id, $connection->account_id, $id, $entry['rev'], $entry['size'],
+            ]));
+            $cached = Cache::get($keys[$id]);
+            if (is_string($cached) && strlen($cached) === $entry['size']) {
+                $contents[$id] = $cached;
+            } else {
+                $requests[$id] = ['endpoint' => 'files/download', 'parameters' => ['path' => 'rev:'.$entry['rev']]];
+            }
+        }
+        foreach ($this->dropbox->readModuleBatch($connection, $requests) as $id => $response) {
+            $download = $response->body();
+            abort_unless(strlen($download) === $entries[$id]['size'], 422, 'Die Online-Datei wurde nicht vollständig gelesen.');
+            $contents[$id] = $download;
+            Cache::put($keys[$id], $download, now()->addHour());
+        }
+
+        return $contents;
     }
 
     /** @return array<string, mixed> */

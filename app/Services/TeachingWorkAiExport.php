@@ -136,7 +136,7 @@ class TeachingWorkAiExport
     }
 
     /** @return array<string, mixed> */
-    public function buildExercise(TeachingCourseWork $work, User $actor, bool $includeMc, ?string $date = null): array
+    public function buildExercise(TeachingCourseWork $work, User $actor, bool $includeMc, ?string $date = null, ?array $multipleChoice = null): array
     {
         $result = $this->build($work, $actor);
         $context = $result['context'];
@@ -183,6 +183,9 @@ class TeachingWorkAiExport
         unset($person);
         $context['purpose'] = 'create-exercise';
         $context['include_multiple_choice'] = $includeMc;
+        if ($includeMc && $multipleChoice !== null) {
+            $context['multiple_choice_test'] = $multipleChoice;
+        }
         $context['course_roster'] = ['scope' => $groupIds !== [] ? 'active_saved_work_groups' : 'active_course_members',
             'complete' => true, 'participants' => $participants];
         $connection = DropboxConnection::query()->where('user_id', $actor->id)->whereNull('revoked_at')->first();
@@ -219,6 +222,12 @@ class TeachingWorkAiExport
             : 'Modul: nicht verknüpft. Die konkrete Materialquelle muss noch geklärt werden.';
         $mcText = $includeMc ? 'Ja. Ein Multiple-Choice-Prüfungsteil ist gewünscht. Verwenden Sie vorhandene fachlich autorisierte Fragen aus „Multiple Choice Fragen“ der bestätigten Modulquelle unverändert, einschließlich richtiger Antworten und Mehrfachantworten. Keine Fragen automatisch neu erzeugen. Fehlt eine eindeutig passende Quelle, klären Sie diese Lücke zuerst.'
             : 'Nein. Kein Multiple-Choice-Prüfungsteil ist beauftragt; keine MC-Aufgaben oder MC-Anhänge ergänzen.';
+        if ($includeMc && $multipleChoice !== null) {
+            $mcText = 'Ja. Der Schooltool-MC-Test '.$multipleChoice['test_id'].' ist bereits mit dieser Leistungsfeststellung verknüpft. '
+                .'Verwenden Sie ausschließlich diesen Test und seinen bestätigten Fragenstand aus multiple_choice_test.question_pool. '
+                .'Nur bei access_links_ready=true den Testexport mit persönlichen Zugangslinks über multiple_choice_test.exercise_export_url lesen. Ein Entwurf ist noch nicht freigegeben; keine verfügbaren Zugangslinks behaupten. '
+                .'Keinen zweiten MC-Test erstellen und keine Fragen neu erzeugen. Den gewählten Test einschließlich seiner Kennung im Materialpaket dieser Leistungsfeststellung dokumentieren. Die Freigabe und der Versand erfolgen gesondert.';
+        }
         $result['context'] = $context;
         $result['participants_count'] = count($participants);
         $result['active_participants_count'] = count($participants);

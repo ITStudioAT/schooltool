@@ -288,6 +288,40 @@ describe('CourseTable manual work completion', () => {
         } finally { wrapper.unmount(); clearWorkDropboxStates() }
     })
 
+    it('keeps the manual icon in the overview and dialogs while saved points update completion', async () => {
+        const { wrapper, works, courses, first, date } = mountCompletionTable()
+        try {
+            courses.selected_course.students_info = [{ id: 901, user_id: 12 }, { id: 902, user_id: 13 }] as never
+            works.courseWorks = [{ ...first, automation_enabled: false, status: {}, is_group_work: false,
+                groups: [{ student_ids: [12, 13], use_individual_grades: true, points: [{ student_id: 12, points: 3 }, { student_id: 13, points: '' }] }] }] as never
+            await flushPromises()
+            const completionIcon = () => wrapper.get('.course-table-work-summary-meta v-icon')
+            expect(completionIcon().attributes('icon')).toBe('mdi-account-check-outline')
+            expect(completionIcon().attributes('color')).not.toBe('success')
+            expect(completionIcon().attributes('title')).toBe('Manuelle Beurteilung noch nicht vollständig.')
+            ;(works.courseWorks[0] as any).groups[0].points[1].points = 0
+            await flushPromises()
+            expect(completionIcon().attributes('icon')).toBe('mdi-account-check-outline')
+            expect(completionIcon().attributes('color')).toBe('success')
+            expect(completionIcon().attributes('title')).toContain('alle manuellen Beurteilungen eingetragen')
+            ;(works.courseWorks[0] as any).groups[0].points[1].points = ''
+            await flushPromises()
+            expect(completionIcon().attributes('color')).not.toBe('success')
+            const vm = wrapper.vm as any
+            const completionToggle = () => wrapper.findAllComponents(VBtn).find(button => button.attributes('data-testid') === 'work-completion-toggle-65')!
+            vm.openWorkDialog(date)
+            await flushPromises()
+            expect(completionToggle().props('icon')).toBe('mdi-account-check-outline')
+            vm.startEditingDateWork(works.courseWorks[0])
+            await flushPromises()
+            expect(completionToggle().props('icon')).toBe('mdi-account-check-outline')
+            ;(works.courseWorks[0] as any).automation_enabled = true
+            await flushPromises()
+            expect(completionIcon().attributes('icon')).toBe('mdi-brain')
+            expect(completionToggle().props('icon')).toBe('mdi-brain')
+        } finally { wrapper.unmount() }
+    })
+
     it('toggles only the chosen work from its dialog brain, preserves returned evidence and updates the overview', async () => {
         const { wrapper, works, date, first, second } = mountCompletionTable()
         const put = vi.spyOn(axios, 'put').mockResolvedValueOnce({ data: { data: { ...second,
@@ -863,23 +897,7 @@ describe('CourseTable evaluation PDF links', () => {
             await flushPromises()
             expect(wrapper.get('[href]').attributes('href')).toContain(overall.sha256)
             const card = wrapper.get('.course-table-date-work-item')
-            const previousAxios = globalThis.axios
-            const exportRequest = vi.fn().mockResolvedValue({ data: { data: {
-                work_id: 65, course_id: 18, roster_complete: true, participants_count: 1,
-                active_participants_count: 1, context: { work: { title: work.title } },
-                warnings: [], text: 'Gespeicherter Auftrag für Übung: E-Mails',
-            } } })
-            globalThis.axios = { get: exportRequest } as never
-            try {
-                const exportButton = card.findAll('v-btn').find(button => button.text() === 'Leistungsfeststellung erstellen')!
-                expect(exportButton.attributes('disabled')).toBe('false')
-                exportButton.element.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-                await flushPromises()
-                expect(exportRequest).toHaveBeenCalledWith('/api/admin/teaching/course_works/65/ai-export')
-                expect((card.get('textarea[aria-label="Vollständiger Auftrag an Codex"]').element as HTMLTextAreaElement).value)
-                    .toBe('Gespeicherter Auftrag für Übung: E-Mails')
-                expect(vm.workDialogFormOpen).toBe(false)
-            } finally { globalThis.axios = previousAxios }
+            expect(card.findAll('v-btn').filter(button => button.text() === 'Leistungsfeststellung erstellen')).toHaveLength(0)
             expect(card.get('[data-testid="work-detail-progress"]').text()).toContain('0 erledigt · 1 offen')
             expect(card.get('[aria-label="Mindestens eine Ergebnis-E-Mail versandt"]').exists()).toBe(true)
             expect(card.get('[aria-label="Aufgabenversand: lokaler Mailpit-Test am 02.10.2026 um 17:02 Uhr."]').exists()).toBe(true)

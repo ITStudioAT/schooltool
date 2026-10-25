@@ -254,9 +254,10 @@
                                             <template v-else>
                                             <div class="course-table-work-summary-meta">
                                                 <WorkSimulationBadge :work="work.work" compact />
-                                                <v-icon :color="workMarkedComplete(work.work) ? 'success' : work.work.status?.completion_override === false ? 'error' : scheduledWorkIconColor(courseDate.date)"
+                                                <v-icon :icon="workAutomationEnabled(work.work) ? 'mdi-brain' : 'mdi-account-check-outline'"
+                                                    :color="workMarkedComplete(work.work) ? 'success' : work.work.status?.completion_override === false ? 'error' : scheduledWorkIconColor(courseDate.date)"
                                                     :title="workCompletionLabel(work.work)"
-                                                    size="13">mdi-brain</v-icon>
+                                                    size="13" />
                                                 <span>{{ work.work.type || 'Arbeit' }}</span>
                                                 <span
                                                     class="course-table-work-summary-count"
@@ -968,7 +969,7 @@
                 <v-card-title class="text-subtitle-1 font-weight-bold d-flex flex-wrap align-center ga-2 text-wrap">
                     <v-btn v-if="workDialogFormOpen && savedWorkDialogWork"
                         :data-testid="`work-completion-toggle-${savedWorkDialogWork.id}`"
-                        icon="mdi-brain" size="small" variant="text"
+                        :icon="workAutomationEnabled(savedWorkDialogWork) ? 'mdi-brain' : 'mdi-account-check-outline'" size="small" variant="text"
                         :color="workMarkedComplete(savedWorkDialogWork) ? 'success' : 'error'"
                         :aria-pressed="workMarkedComplete(savedWorkDialogWork)"
                         :aria-label="workCompletionActionLabel(savedWorkDialogWork)"
@@ -1099,7 +1100,7 @@
                                         <strong class="text-body-2">{{ assignment.work.title || assignment.label }}</strong>
                                         <WorkSimulationBadge :work="assignment.work" />
                                         <v-btn :data-testid="`work-completion-toggle-${assignment.work.id}`"
-                                            icon="mdi-brain" size="small" variant="text"
+                                            :icon="workAutomationEnabled(assignment.work) ? 'mdi-brain' : 'mdi-account-check-outline'" size="small" variant="text"
                                             :color="workMarkedComplete(assignment.work) ? 'success' : 'error'"
                                             :aria-pressed="workMarkedComplete(assignment.work)"
                                             :aria-label="workCompletionActionLabel(assignment.work)"
@@ -1162,7 +1163,6 @@
                                         <template v-else>{{ assignment.completion.completed }} beurteilt</template>
                                     </div>
                                     <div class="work-import-actions d-flex flex-wrap align-start ga-2 mt-2">
-                                        <WorkAiExport :work="assignment.work" />
                                         <WorkImportActions :work="assignment.work" @open="openImport" @link="openLink" />
                                         <WorkEvaluationPdf :work="assignment.work" />
                                         <WorkExerciseExport :work="assignment.work" :course="selected_course" :date="workDialog.courseDate?.date || ''" :active="workDialog.open" @deadline-saved="applySavedCourseWork" />
@@ -2613,7 +2613,6 @@ import { useCourseStudentEntryStore } from '@/stores/admin/teaching/CourseStuden
 import { useCourseWorkStore } from '@/stores/admin/teaching/CourseWorkStore'
 import { useCurriculumStore } from '@/stores/admin/teaching/CurriculumStore'
 import WorkEvaluationImport from './WorkEvaluationImport.vue'
-import WorkAiExport from './WorkAiExport.vue'
 import WorkImportActions from './WorkImportActions.vue'
 import WorkExerciseExport from './WorkExerciseExport.vue'
 import WorkStudentDeadline from './WorkStudentDeadline.vue'
@@ -2652,7 +2651,7 @@ const courseContentBlockedTags = new Set([
 ])
 
 export default {
-    components: { WorkSubmissionCollection, ItsRichTextEditor, CourseStudentNotes, CourseStudentIndicators, CurriculumPdfPreview, WorkEvaluationImport, WorkAiExport, WorkImportActions, WorkExerciseExport, WorkStudentDeadline, WorkDropboxLink, WorkFolderStatus, WorkDeliveryStatus, WorkSimulationBadge, WorkFolderBrowser, WorkExerciseStatus, WorkEmailPreparation, WorkContextCopy, WorkEvaluationPdf, WorkDispatchLog, WorkDispatchStatus, WorkCellStatus, WorkTimeInput },
+    components: { WorkSubmissionCollection, ItsRichTextEditor, CourseStudentNotes, CourseStudentIndicators, CurriculumPdfPreview, WorkEvaluationImport, WorkImportActions, WorkExerciseExport, WorkStudentDeadline, WorkDropboxLink, WorkFolderStatus, WorkDeliveryStatus, WorkSimulationBadge, WorkFolderBrowser, WorkExerciseStatus, WorkEmailPreparation, WorkContextCopy, WorkEvaluationPdf, WorkDispatchLog, WorkDispatchStatus, WorkCellStatus, WorkTimeInput },
 
     emits: ['update:activeSemester', 'manage-curriculum'],
 
@@ -4102,6 +4101,11 @@ export default {
         workCompletionLabel(work) {
             if (typeof work?.status?.completion_override === 'boolean') {
                 return work.status.completion_override ? 'Manuell als abgeschlossen markiert.' : 'Manuell als offen markiert.'
+            }
+            if (!workAutomationEnabled(work)) {
+                return this.workMarkedComplete(work)
+                    ? 'Arbeit abgeschlossen: alle manuellen Beurteilungen eingetragen.'
+                    : 'Manuelle Beurteilung noch nicht vollständig.'
             }
             return this.workMarkedComplete(work)
                 ? 'Arbeit abgeschlossen: Bewertung und Ergebnisinformation belegt.'

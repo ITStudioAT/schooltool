@@ -23,6 +23,27 @@
             <v-card-text>
                 <p class="text-body-2 mb-3">Den Auftrag mit den gespeicherten Arbeitsdaten und Prüfungskandidaten kopieren und anschließend an die KI übergeben.</p>
                 <v-checkbox v-model="includeMc" label="Multiple-Choice-Fragen einbeziehen" :disabled="loading" hide-details />
+                <div v-if="includeMc" class="mt-4">
+                    <p v-if="mcLoading" role="status">MC-Tests und Fragenkataloge laden …</p>
+                    <template v-else-if="mcOptions?.available">
+                        <v-radio-group v-model="mcMode" :disabled="loading" hide-details>
+                            <v-radio value="existing" label="Bestehenden MC-Test verwenden" />
+                            <v-radio value="new" label="Neuen MC-Test erstellen" />
+                        </v-radio-group>
+                        <v-select v-if="mcMode === 'existing'" v-model="mcTestId" :items="mcOptions.tests" item-title="selection_label" item-value="id"
+                            label="MC-Test auswählen" :disabled="loading" class="mt-3" hide-details />
+                        <template v-else>
+                            <v-select v-model="mcCatalogId" :items="mcOptions.catalogs" item-title="title" item-value="id"
+                                label="Fragenkatalog auswählen" :disabled="loading" class="mt-3" hide-details />
+                            <p class="text-caption mt-2">10 Fragen aus einem Katalog mit mindestens 10 aktiven, geprüften Fragen. Die Prüfungskandidaten werden aus dieser Leistungsfeststellung übernommen.</p>
+                            <v-text-field v-model.number="mcTotalPoints" label="Maximale MC-Punkte" type="number" min="0.01" max="100000" step="0.01" :disabled="loading" class="mt-3" hide-details />
+                            <v-text-field v-model.number="mcDuration" label="MC-Bearbeitungszeit in Minuten" type="number" min="1" max="1440" :disabled="loading" class="mt-3" hide-details />
+                            <p class="text-caption mt-2">Der neue Test wird als Entwurf erstellt und mit dieser Leistungsfeststellung verknüpft. Die Freigabe erfolgt später im MC-Bereich.</p>
+                            <p v-if="!mcOptions.catalogs.length" class="text-caption mt-2">Bitte zuerst unter Unterricht-Tools · Multiple Choice einen Fragenkatalog vorbereiten.</p>
+                        </template>
+                    </template>
+                    <v-alert v-else-if="!error" type="warning" variant="tonal">Multiple Choice ist noch nicht verfügbar.</v-alert>
+                </div>
                 <v-alert v-if="error" type="error" variant="tonal" class="mt-3" role="alert">{{ error }}</v-alert>
                 <p v-if="message" role="status" class="text-body-2 mt-3">{{ message }}</p>
                 <template v-if="result">
@@ -35,7 +56,7 @@
             <v-card-actions>
                 <v-spacer />
                 <v-btn :disabled="loading" @click="opened = false">{{ copied ? 'Schließen' : 'Abbrechen' }}</v-btn>
-                <v-btn :color="copied ? 'success' : 'primary'" :prepend-icon="copied ? 'mdi-check' : undefined" :loading="loading" :disabled="loading || !current" @click="copyExport">{{ copied ? 'Kopiert' : 'Übergabetext kopieren' }}</v-btn>
+                <v-btn :color="copied ? 'success' : 'primary'" :prepend-icon="copied ? 'mdi-check' : undefined" :loading="loading" :disabled="loading || !current || !mcReady" @click="copyExport">{{ copied ? 'Kopiert' : includeMc && mcOptions?.available && mcMode === 'new' ? 'MC-Test erstellen und Übergabetext kopieren' : 'Übergabetext kopieren' }}</v-btn>
             </v-card-actions>
         </v-card>
     </v-dialog>
@@ -43,7 +64,8 @@
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
-import { aiExport, show } from '@/actions/App/Http/Controllers/Admin/Teaching/CourseWorkController'
+import { VRadio, VRadioGroup } from 'vuetify/components'
+import { aiExport, exerciseOptions, prepareExercise, show } from '@/actions/App/Http/Controllers/Admin/Teaching/CourseWorkController'
 import { loadWorkExercise, workDropboxKey, workDropboxStates, workExerciseCheck } from '@/helpers/workDropbox'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { workNeedsPreparation } from '@/helpers/workOverview'
@@ -55,6 +77,19 @@ const admin = useAdminStore()
 const current = computed(() => Boolean(props.work?.id && props.course?.id && String(props.work.teaching_course_id) === String(props.course.id)))
 const opened = ref(false)
 const includeMc = ref(false)
+const mcOptions = ref(null)
+const mcLoading = ref(false)
+const mcMode = ref('existing')
+const mcTestId = ref(null)
+const mcCatalogId = ref(null)
+const mcTotalPoints = ref(10)
+const mcDuration = ref(20)
+const mcReady = computed(() => !includeMc.value || (!mcLoading.value && mcOptions.value?.available && (mcMode.value === 'existing'
+    ? Boolean(mcTestId.value) : Boolean(mcCatalogId.value) && Number(mcTotalPoints.value) > 0 && Number(mcTotalPoints.value) <= 100000
+        && Number.isInteger(Number(mcDuration.value)) && Number(mcDuration.value) >= 1 && Number(mcDuration.value) <= 1440)))
+let mcSequence = 0
+let mcPayload = null
+let expectedTestId = null
 const loading = ref(false)
 const result = ref(null)
 const error = ref('')
@@ -161,11 +196,36 @@ function openDialog() {
     if (!current.value || !moduleLinked.value || props.disabled || exerciseChecking.value || exerciseFolder.value) return
     clear()
     includeMc.value = false
+    mcOptions.value = null
+    mcTestId.value = null
+    mcCatalogId.value = null
+    mcMode.value = 'existing'
+    mcPayload = null
+    expectedTestId = null
     opened.value = true
 }
 
+async function loadMcOptions() {
+    const operation = ++mcSequence
+    mcLoading.value = true
+    try {
+        const { data } = await axios.get(exerciseOptions.url(props.work.id), { params: props.date ? { date: props.date } : {} })
+        if (operation !== mcSequence || !opened.value || !includeMc.value || !current.value) return
+        if (!Array.isArray(data.tests) || !Array.isArray(data.catalogs)) throw new Error('Die MC-Auswahl konnte nicht geladen werden.')
+        mcOptions.value = { ...data, tests: data.tests.map(test => ({ ...test,
+            selection_label: `${test.title} · Nr. ${test.id} · ${test.status === 'published' ? 'freigegeben' : 'Entwurf'}` })) }
+        expectedTestId = data.linked_test_id ?? null
+        mcTestId.value = expectedTestId
+        mcMode.value = expectedTestId || data.tests.length ? 'existing' : 'new'
+    } catch (failure) {
+        if (operation === mcSequence) error.value = failure.response?.data?.message || failure.message || 'Die MC-Auswahl konnte nicht geladen werden.'
+    } finally {
+        if (operation === mcSequence) mcLoading.value = false
+    }
+}
+
 async function copyExport() {
-    if (!opened.value || !current.value || !moduleLinked.value || loading.value) return
+    if (!opened.value || !current.value || !moduleLinked.value || loading.value || !mcReady.value) return
     clear()
     const operation = sequence
     const workId = props.work.id
@@ -174,16 +234,24 @@ async function copyExport() {
     controller = new AbortController()
     loading.value = true
     try {
-        const { data } = await axios.get(aiExport.url(workId), { params: { purpose: 'exercise', include_mc: mc ? 1 : 0,
-            ...(props.date ? { date: props.date } : {}) }, signal: controller.signal })
+        if (mc && !mcPayload) {
+            mcPayload = { mc_mode: mcMode.value, expected_test_id: expectedTestId, request_id: crypto.randomUUID(),
+                ...(props.date ? { date: props.date } : {}), ...(mcMode.value === 'existing' ? { test_id: mcTestId.value }
+                    : { catalog_id: mcCatalogId.value, total_points: mcTotalPoints.value, duration_minutes: mcDuration.value }) }
+        }
+        const { data } = mc ? await axios.post(prepareExercise.url(workId), mcPayload, { signal: controller.signal })
+            : await axios.get(aiExport.url(workId), { params: { purpose: 'exercise', include_mc: 0,
+                ...(props.date ? { date: props.date } : {}) }, signal: controller.signal })
         if (operation !== sequence || !opened.value || !current.value) return
         const exported = data.data
         if (String(exported?.work_id) !== String(workId) || String(exported?.course_id) !== String(courseId)
             || exported.roster_complete !== true || !Number.isInteger(exported.participants_count) || exported.participants_count < 1
-            || typeof exported.text !== 'string' || !exported.text.trim() || exported.context?.include_multiple_choice !== mc) {
+            || typeof exported.text !== 'string' || !exported.text.trim() || exported.context?.include_multiple_choice !== mc
+            || (mc && !Number.isInteger(exported.context?.multiple_choice_test?.test_id))) {
             throw new Error('Arbeitsdaten und Prüfungskandidaten konnten nicht vollständig bestätigt werden.')
         }
         result.value = exported
+        if (mc) expectedTestId = exported.context.multiple_choice_test.test_id
         await nextTick()
         try {
             await navigator.clipboard.writeText(exported.text)
@@ -207,12 +275,13 @@ async function copyExport() {
     }
 }
 
-watch(() => [admin.config?.user?.id, props.work?.id, props.course?.id, props.date], () => { clear(); opened.value = false })
-watch(opened, value => { if (!value) clear() })
-watch(includeMc, clear)
+watch(() => [admin.config?.user?.id, props.work?.id, props.course?.id, props.date], () => { clear(); mcSequence++; opened.value = false })
+watch(opened, value => { if (!value) { clear(); mcSequence++ } })
+watch(includeMc, value => { clear(); mcPayload = null; mcOptions.value = null; if (value && opened.value) loadMcOptions(); else mcSequence++ })
+watch(() => [mcMode.value, mcTestId.value, mcCatalogId.value, mcTotalPoints.value, mcDuration.value], () => { clear(); mcPayload = null })
 watch(() => [admin.config?.user?.id, props.work?.id, props.course?.id, props.date, props.active, bindingVersion.value, needsPreparation.value,
     props.work?.finish_until_date, props.work?.finish_until_time, JSON.stringify(props.work?.communicated_deadline)], () => checkExercise(), { immediate: true })
-onBeforeUnmount(() => { clear(); exerciseSequence++ })
+onBeforeUnmount(() => { clear(); exerciseSequence++; mcSequence++ })
 </script>
 
 <style scoped>

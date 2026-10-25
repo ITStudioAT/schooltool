@@ -16,6 +16,7 @@ use App\Services\TeachingWorkDispatchImport;
 use App\Services\TeachingWorkFolderImport;
 use App\Services\TeachingWorkJsonImport;
 use App\Services\TeachingWorkMarkdownImport;
+use App\Services\TeachingWorkMultipleChoice;
 use Closure;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -29,6 +30,42 @@ use Throwable;
 
 class CourseWorkController extends Controller
 {
+    public function exerciseOptions(Request $request, TeachingCourseWork $course_work, TeachingWorkAiExport $export, TeachingWorkMultipleChoice $multipleChoice): JsonResponse
+    {
+        $actor = $this->userHasRole(['admin', 'teaching_admin', 'teacher']);
+        abort_unless($actor && $course_work->teachingCourse, 403);
+        $this->authorizeTeachingCourseAccess($course_work->teachingCourse, $actor);
+        $data = $request->validate(['date' => ['nullable', 'date_format:Y-m-d']]);
+        $export->buildExercise($course_work, $actor, false, $data['date'] ?? null);
+
+        return response()->json($multipleChoice->options($course_work, $actor, $data['date'] ?? null))->header('Cache-Control', 'private, no-store');
+    }
+
+    public function prepareExercise(Request $request, TeachingCourseWork $course_work, TeachingWorkAiExport $export, TeachingWorkMultipleChoice $multipleChoice): JsonResponse
+    {
+        $actor = $this->userHasRole(['admin', 'teaching_admin', 'teacher']);
+        abort_unless($actor && $course_work->teachingCourse, 403);
+        $this->authorizeTeachingCourseAccess($course_work->teachingCourse, $actor);
+        $data = $request->validate([
+            'date' => ['nullable', 'date_format:Y-m-d'], 'mc_mode' => ['required', 'in:existing,new'],
+            'test_id' => ['required_if:mc_mode,existing', 'nullable', 'integer', 'min:1'],
+            'catalog_id' => ['required_if:mc_mode,new', 'nullable', 'integer', 'min:1'],
+            'total_points' => ['required_if:mc_mode,new', 'nullable', 'numeric', 'min:0.01', 'max:100000', 'decimal:0,2'],
+            'duration_minutes' => ['required_if:mc_mode,new', 'nullable', 'integer', 'min:1', 'max:1440'],
+            'request_id' => ['required', 'uuid'], 'expected_test_id' => ['present', 'nullable', 'integer', 'min:1'],
+        ]);
+
+        return DB::transaction(function () use ($course_work, $actor, $data, $export, $multipleChoice): JsonResponse {
+            $work = TeachingCourseWork::query()->with('teachingCourse')->lockForUpdate()->findOrFail($course_work->id);
+            $this->authorizeTeachingCourseAccess($work->teachingCourse, $actor);
+            $preview = $export->buildExercise($work, $actor, false, $data['date'] ?? null);
+            $test = $multipleChoice->prepare($work, $actor, $data, $preview['context']['course_roster']['participants']);
+
+            return response()->json(['data' => $export->buildExercise($work, $actor, true, $data['date'] ?? null, $test)])
+                ->header('Cache-Control', 'private, no-store');
+        });
+    }
+
     public function studentDeadline(Request $request, TeachingCourseWork $course_work, TeachingCourseWorkEntrySyncService $entries): JsonResponse
     {
         $actor = $this->userHasRole(['admin', 'teaching_admin', 'teacher']);
@@ -421,7 +458,7 @@ class CourseWorkController extends Controller
             unset($validated['status']['submission_checks']);
             unset($validated['status']['communicated_deadline_at']);
             unset($validated['status']['communicated_deadline_date']);
-            unset($validated['status']['completion_override']);
+            unset($validated['status']['completion_override'], $validated['status']['multiple_choice_tests']);
             unset($validated['status']['provision_events'], $validated['status']['provision_imports']);
             unset($validated['status']['evaluation_pdfs'], $validated['status']['dispatch_logs'], $validated['status']['dispatch_notifications'], $validated['status']['dispatch_attempts'], $validated['status']['folder_import_sources'], $validated['status']['folder_imported_at'], $validated['status']['assessment_json_imports'], $validated['status']['assessment_json_packages']);
         }
@@ -496,7 +533,7 @@ class CourseWorkController extends Controller
             $validated['status']['dispatch_notifications'] = $course_work->status['dispatch_notifications'] ?? [];
             $validated['status']['dispatch_attempts'] = $course_work->status['dispatch_attempts'] ?? [];
             $validated['status']['folder_import_sources'] = $course_work->status['folder_import_sources'] ?? [];
-            foreach (['assessment_json_imports', 'assessment_json_packages', 'submission_checks', 'provision_events', 'provision_imports', 'communicated_deadline_at', 'communicated_deadline_date', 'completion_override'] as $field) {
+            foreach (['assessment_json_imports', 'assessment_json_packages', 'submission_checks', 'provision_events', 'provision_imports', 'communicated_deadline_at', 'communicated_deadline_date', 'completion_override', 'multiple_choice_tests'] as $field) {
                 if (isset($course_work->status[$field])) {
                     $validated['status'][$field] = $course_work->status[$field];
                 } else {
