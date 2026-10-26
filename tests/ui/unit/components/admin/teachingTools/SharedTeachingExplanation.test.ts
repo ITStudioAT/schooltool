@@ -21,6 +21,8 @@ it.each([
     ['decimal-to-hexadecimal', 'Dezimal auf Hexadezimal', '254'],
     ['binary-to-hexadecimal', 'Dual auf Hexadezimal', '110101'],
     ['hexadecimal-to-binary', 'Hexadezimal auf Dual', '#AF'],
+    ['binary-to-decimal', 'Dual auf Dezimal', '1101'],
+    ['hexadecimal-to-decimal', 'Hexadezimal auf Dezimal', '1A3'],
 ])('renders the server-authorized %s explanation without teacher management', async (key, title, initialInput) => {
     vi.stubGlobal('axios', { get: vi.fn().mockResolvedValue({ data: { explanation: key } }) })
     const { wrapper } = await renderShared()

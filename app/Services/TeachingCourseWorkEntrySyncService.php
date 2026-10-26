@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\McTest;
 use App\Models\TeachingCourse;
 use App\Models\TeachingCourseStudentEntry;
 use App\Models\TeachingCourseWork;
@@ -9,6 +10,7 @@ use App\Models\TeachingCourseWorkGroupStudent;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class TeachingCourseWorkEntrySyncService
 {
@@ -76,12 +78,15 @@ class TeachingCourseWorkEntrySyncService
         return count($rows);
     }
 
-    public function serializeWork(TeachingCourseWork $work): array
+    public function serializeWork(TeachingCourseWork $work, ?array $testTitles = null): array
     {
         $payload = $work->toArray();
         $payload['automation_enabled'] = $work->automationEnabled();
         $payload['communicated_deadline'] = $work->communicatedDeadline();
         $payload['groups'] = $this->groupsForWork($work);
+        $ids = $this->multipleChoiceTestIds($work);
+        $titles = $testTitles ?? ($ids === [] ? [] : $this->multipleChoiceTestTitles($ids, $work->teachingCourse));
+        $payload['multiple_choice_test_titles'] = array_intersect_key($titles, array_flip($ids));
         $payload['submission_check_status'] = app(TeachingWorkJsonImport::class)->submissionCheckStatus($work);
         $payload['collection_run'] = app(TeachingWorkCollectionStatus::class)->cached($work);
         $payload['simulation_collection'] = app()->isLocal() && Auth::id()
@@ -92,6 +97,49 @@ class TeachingCourseWorkEntrySyncService
             ? app(TeachingWorkResultNotification::class)->status($work, (int) Auth::id()) : null;
 
         return $payload;
+    }
+
+    /** @param Collection<int, TeachingCourseWork> $works
+     * @return Collection<int, array<string, mixed>>
+     */
+    public function serializeWorks(Collection $works, TeachingCourse $course): Collection
+    {
+        $ids = $works->flatMap(fn (TeachingCourseWork $work): array => $this->multipleChoiceTestIds($work))->unique()->values()->all();
+        $titles = $this->multipleChoiceTestTitles($ids, $course);
+
+        return $works->map(fn (TeachingCourseWork $work): array => $this->serializeWork($work, $titles))->values();
+    }
+
+    /** @return list<int> */
+    private function multipleChoiceTestIds(TeachingCourseWork $work): array
+    {
+        $bindings = $work->status['multiple_choice_tests'] ?? [];
+        if (! is_array($bindings)) {
+            return [];
+        }
+        $ids = collect($bindings)
+            ->filter(fn (mixed $binding): bool => is_array($binding) && ($binding['work_id'] ?? null) === $work->id
+                && is_numeric($binding['test_id'] ?? null) && (int) $binding['test_id'] > 0)
+            ->map(fn (array $binding): int => (int) $binding['test_id'])
+            ->unique()
+            ->values();
+
+        return $ids->all();
+    }
+
+    /** @param list<int> $ids
+     * @return array<int, string>
+     */
+    private function multipleChoiceTestTitles(array $ids, ?TeachingCourse $course): array
+    {
+        if ($ids === [] || ! Schema::hasTable('mc_tests') || ! $course) {
+            return [];
+        }
+
+        return McTest::query()->whereIn('id', $ids)
+            ->where('school_id', $course->school_id)
+            ->where('schoolyear_id', $course->schoolyear_id)
+            ->pluck('title', 'id')->all();
     }
 
     /**

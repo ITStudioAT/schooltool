@@ -64,6 +64,10 @@ function fakeModuleDropbox(object $context): void
         }
         if (str_ends_with($request->url(), '/files/download')) {
             $argument = json_decode($request->header('Dropbox-API-Arg')[0], true);
+            if (isset($context->onPreparedPreviewDownload) && $argument['path'] === $context->preparedPreviewRevision) {
+                ($context->onPreparedPreviewDownload)();
+                unset($context->onPreparedPreviewDownload);
+            }
             if (isset($context->exerciseDocuments[$argument['path']])) {
                 return Http::response($context->exerciseDocuments[$argument['path']]);
             }
@@ -348,10 +352,40 @@ test('email preparation preview returns the confirmed personal message without s
         ->assertJsonPath('data.attachments.0', 'Aufgaben.pdf');
     expect($response->headers->get('Cache-Control'))->toContain('private', 'no-store');
     expect($this->work->fresh()->getAttributes())->toEqual($before);
+    $draft = collect($this->online)->firstWhere('name', 'nachricht_entwurf.md');
+    expect(Http::recorded(fn (Request $request): bool => str_ends_with($request->url(), '/files/download')
+        && json_decode($request->header('Dropbox-API-Arg')[0], true)['path'] === 'rev:'.$draft['rev']))->toHaveCount(0);
     Http::assertNotSent(fn (Request $request): bool => preg_match('#/files/(upload|delete|move|create)#', $request->url()) === 1);
 });
 
-test('email preparation preview rejects a changed or mismatched personal payload', function (string $case): void {
+test('email preparation preview is independent of the preparation record while loading', function (): void {
+    linkExerciseFixture($this);
+    addExerciseFixture($this);
+    $fixture = addPreparedEmailPreviewFixture($this);
+    $preview = collect($this->online)->firstWhere('name', '01.json');
+    $packageFile = collect($this->online)->firstWhere('name', 'Schooltool-Versandvorbereitung.json');
+    $package = json_decode($this->exerciseDocuments['rev:'.$packageFile['rev']], true, flags: JSON_THROW_ON_ERROR);
+    $this->preparedPreviewRevision = 'rev:'.$preview['rev'];
+    $this->onPreparedPreviewDownload = function () use ($fixture, $package): void {
+        $package['Pruefhinweis'] = 'nachträglich geändert';
+        addEmailPreparationFile($this, $fixture['root'].'/Schooltool-Versandvorbereitung.json', json_encode($package, JSON_THROW_ON_ERROR));
+    };
+
+    $this->getJson('/api/admin/teaching/course_works/'.$this->work->id.'/email-preparation-preview?date=2026-10-06')
+        ->assertOk()->assertJsonPath('data.html', $fixture['payload']['HtmlBody']);
+});
+
+test('email preparation preview does not read an invalid preparation record', function (): void {
+    linkExerciseFixture($this);
+    addExerciseFixture($this);
+    $fixture = addPreparedEmailPreviewFixture($this);
+    addEmailPreparationFile($this, $fixture['root'].'/Schooltool-Versandvorbereitung.json', '{invalid');
+
+    $this->getJson('/api/admin/teaching/course_works/'.$this->work->id.'/email-preparation-preview?date=2026-10-06')
+        ->assertOk()->assertJsonPath('data.html', $fixture['payload']['HtmlBody']);
+});
+
+test('email preparation preview displays a personal payload without checking readiness', function (string $case): void {
     linkExerciseFixture($this);
     addExerciseFixture($this);
     $fixture = addPreparedEmailPreviewFixture($this);
@@ -368,16 +402,54 @@ test('email preparation preview rejects a changed or mismatched personal payload
         $payload['HtmlBody'] = '<p>Verändert</p>';
     }
     setPreparedEmailPreviewFixture($this, $fixture['root'], $fixture['package'], $payload, updateHash: $case !== 'hash');
-    $this->getJson('/api/admin/teaching/course_works/'.$this->work->id.'/email-preparation-preview?date=2026-10-06')->assertStatus(409);
+    $this->getJson('/api/admin/teaching/course_works/'.$this->work->id.'/email-preparation-preview?date=2026-10-06')
+        ->assertOk()->assertJsonPath('data.to', $payload['To'])->assertJsonPath('data.subject', $payload['Subject'])
+        ->assertJsonPath('data.html', $payload['HtmlBody']);
     Http::assertNotSent(fn (Request $request): bool => preg_match('#/files/(upload|delete|move|create)#', $request->url()) === 1);
 })->with(['recipient', 'subject', 'source', 'attachment', 'hash']);
 
-test('email preparation preview rejects duplicate personal message files', function (): void {
+test('email preparation preview reads only one of multiple personal message files', function (): void {
     linkExerciseFixture($this);
     addExerciseFixture($this);
     $fixture = addPreparedEmailPreviewFixture($this);
     $raw = json_encode($fixture['payload'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
     addEmailPreparationFile($this, $fixture['root'].'/E-Mail-Vorbereitung/Nachrichtenvorschauen/02.json', $raw);
+
+    $this->getJson('/api/admin/teaching/course_works/'.$this->work->id.'/email-preparation-preview?date=2026-10-06')
+        ->assertOk()->assertJsonPath('data.html', $fixture['payload']['HtmlBody']);
+    $second = collect($this->online)->firstWhere('name', '02.json');
+    expect(Http::recorded(fn (Request $request): bool => str_ends_with($request->url(), '/files/download')
+        && json_decode($request->header('Dropbox-API-Arg')[0], true)['path'] === 'rev:'.$second['rev']))->toHaveCount(0);
+});
+
+test('email preparation preview reuses a confirmed folder while rechecking its work identity', function (): void {
+    linkExerciseFixture($this);
+    addExerciseFixture($this);
+    $fixture = addPreparedEmailPreviewFixture($this);
+    $this->getJson($this->url.'?include_exercise=1&date=2026-10-06')->assertOk()->assertJsonPath('exercise.status', 'found');
+    $before = Http::recorded()->count();
+
+    $this->getJson('/api/admin/teaching/course_works/'.$this->work->id.'/email-preparation-preview?date=2026-10-06')
+        ->assertOk()->assertJsonPath('data.html', $fixture['payload']['HtmlBody']);
+    $requests = Http::recorded()->slice($before);
+    expect($requests->filter(fn (array $pair): bool => str_ends_with($pair[0]->url(), '/files/download')))->toHaveCount(2);
+    $root = $fixture['root'];
+    $recordFile = collect($this->online)->firstWhere('name', 'Anlage_und_Quellen.json');
+    $record = json_decode($this->exerciseDocuments['rev:'.$recordFile['rev']], true, flags: JSON_THROW_ON_ERROR);
+    $record['Schooltool_Arbeit_ID'] = $this->work->id + 1;
+    addEmailPreparationFile($this, $root.'/Anlage_und_Quellen.json', json_encode($record, JSON_THROW_ON_ERROR));
+    $this->getJson('/api/admin/teaching/course_works/'.$this->work->id.'/email-preparation-preview?date=2026-10-06')->assertStatus(409);
+});
+
+test('email preparation preview rejects a selected message changed during loading', function (): void {
+    linkExerciseFixture($this);
+    addExerciseFixture($this);
+    addPreparedEmailPreviewFixture($this);
+    $preview = collect($this->online)->firstWhere('name', '01.json');
+    $this->preparedPreviewRevision = 'rev:'.$preview['rev'];
+    $this->onPreparedPreviewDownload = function (): void {
+        $this->changedPreparationFile = '01.json';
+    };
 
     $this->getJson('/api/admin/teaching/course_works/'.$this->work->id.'/email-preparation-preview?date=2026-10-06')->assertStatus(409);
 });

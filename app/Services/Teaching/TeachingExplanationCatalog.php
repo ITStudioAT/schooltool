@@ -28,6 +28,16 @@ class TeachingExplanationCatalog
                 'title' => 'Dezimal auf Dual',
                 'category' => 'Zahlensysteme',
             ],
+            'binary-to-decimal' => [
+                'key' => 'binary-to-decimal',
+                'title' => 'Dual auf Dezimal',
+                'category' => 'Zahlensysteme',
+            ],
+            'hexadecimal-to-decimal' => [
+                'key' => 'hexadecimal-to-decimal',
+                'title' => 'Hexadezimal auf Dezimal',
+                'category' => 'Zahlensysteme',
+            ],
             'network-fundamentals' => [
                 'key' => 'network-fundamentals',
                 'title' => 'Netzwerkgrundlagen und Geräte',

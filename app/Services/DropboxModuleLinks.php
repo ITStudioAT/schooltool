@@ -440,140 +440,76 @@ class DropboxModuleLinks
         }
     }
 
-    /** @return array{work_id: int, course_id: int, folder_id: string, prepared_at: string, from: string, to: string, subject: string, html: string, attachments: list<string>} */
+    /** @return array{work_id: int, course_id: int, folder_id: string, from: string, to: string, subject: string, html: string, attachments: list<string>} */
     public function preparedEmailPreview(DropboxConnection $connection, TeachingCourseWork $work, ?string $date): array
     {
         $link = $this->current($work);
         abort_unless($link && $link->dropbox_connection_id === $connection->id && $link->account_id === $connection->account_id,
             409, 'Die Modulverbindung muss zuerst bestätigt werden.');
-        $exercise = $this->exercise($connection, $work, $link, $date, refresh: true);
-        $preparation = $exercise['email_preparation'] ?? [];
-        abort_unless(($exercise['status'] ?? null) === 'found' && ($preparation['status'] ?? null) === 'ready'
-            && is_string($preparation['package_sha256'] ?? null), 409,
-            $preparation['message'] ?? $exercise['message'] ?? 'Die E-Mail-Vorbereitung ist nicht eindeutig bestätigt.');
+        $exercise = $this->exercise($connection, $work, $link, $date, initial: false);
+        if (($exercise['status'] ?? null) !== 'found') {
+            $exercise = $this->exerciseFolder($connection, $work, $link, $date);
+        }
+        abort_unless(($exercise['status'] ?? null) === 'found', 409,
+            $exercise['message'] ?? 'Die E-Mail-Vorbereitung ist nicht eindeutig bestätigt.');
 
         $folder = $exercise['folder'];
         $metadata = $this->dropbox->metadata($connection, $folder['id']);
         abort_unless($metadata['id'] === $folder['id'] && ($metadata['path_display'] ?? $metadata['path_lower']) === $folder['path'],
             409, 'Der Leistungsfeststellungsordner wurde inzwischen verschoben.');
         $children = $this->exerciseChildren($connection, $folder['id']);
-        $package = $this->exerciseJson($connection, $children, 'Schooltool-Versandvorbereitung.json');
-        abort_unless(is_array($package) && hash_equals($preparation['package_sha256'], hash('sha256', json_encode($package, JSON_THROW_ON_ERROR))),
-            409, 'Die E-Mail-Vorbereitung wurde seit der Prüfung geändert.');
-        $recipients = $package['Empfaenger'] ?? null;
-        abort_unless(is_array($recipients) && array_is_list($recipients) && count($recipients) >= 1 && count($recipients) <= 100,
-            422, 'Der Nachrichtenbeleg ist unvollständig.');
+        $record = $this->exerciseJson($connection, $children, 'Anlage_und_Quellen.json');
+        $binding = $record['Modulbindung'] ?? [];
+        $dates = array_filter(array_merge([$work->date_for_all_groups?->format('Y-m-d')], array_column($work->groups ?? [], 'date')));
+        abort_unless(is_array($record) && ($record['Schooltool_Arbeit_ID'] ?? null) === $work->id
+            && ($record['Schooltool_Kurs_ID'] ?? null) === $work->teaching_course_id
+            && ($record['Schooltool_Schule_ID'] ?? null) === $work->teachingCourse->school_id
+            && in_array($record['Durchfuehrungsdatum'] ?? null, $dates, true)
+            && ($date === null || ($record['Durchfuehrungsdatum'] ?? null) === $date)
+            && is_array($binding) && ($binding['status'] ?? null) === 'linked'
+            && is_string($binding['module_id'] ?? null) && strcasecmp($binding['module_id'], $link->module_id) === 0
+            && ($binding['dropbox_folder_id'] ?? null) === $link->folder_id
+            && is_string($binding['dropbox_path'] ?? null) && strcasecmp($binding['dropbox_path'], $link->folder_path) === 0
+            && strcasecmp(dirname($metadata['path_lower']), mb_strtolower(rtrim($link->folder_path, '/').'/Leistungsfeststellung')) === 0,
+            409, 'Die Zuordnung des Arbeitsordners konnte nicht bestätigt werden.');
 
         $order = $this->preparedEmailFolder($connection, $children, 'E-Mail-Vorbereitung', $metadata['path_lower']);
         $orderChildren = $this->exerciseChildren($connection, $order['id']);
         $previews = $this->preparedEmailFolder($connection, $orderChildren, 'Nachrichtenvorschauen', $order['path_lower']);
-        $files = $this->preparedEmailFiles($connection, $previews['id'], $previews['path_lower']);
-        abort_unless(count($files) === count($recipients), 409, 'Die vorbereiteten Nachrichten sind nicht eindeutig verfügbar.');
-        [$payload, $names] = $this->confirmedPreparedEmail($connection, $files, $recipients, $package);
+        $files = array_values(array_filter($this->exerciseChildren($connection, $previews['id']),
+            fn (array $entry): bool => ($entry['.tag'] ?? null) === 'file' && is_string($entry['name'] ?? null)
+                && preg_match('/\.json\z/i', $entry['name']) === 1));
+        usort($files, fn (array $left, array $right): int => strcasecmp($left['name'], $right['name']));
+        $file = $files[0] ?? null;
+        abort_unless(is_array($file) && is_string($file['id'] ?? null) && is_string($file['rev'] ?? null)
+            && is_string($file['path_lower'] ?? null) && dirname($file['path_lower']) === $previews['path_lower']
+            && is_int($file['size'] ?? null) && $file['size'] > 0 && $file['size'] <= 128 * 1024,
+            409, 'Eine vorbereitete Nachricht ist nicht verfügbar.');
+        $contents = $this->dropbox->readModuleApi($connection, 'files/download', ['path' => 'rev:'.$file['rev']])->body();
+        abort_unless(strlen($contents) === $file['size'], 409, 'Die Nachricht wurde nicht vollständig gelesen.');
+        try {
+            $payload = json_decode($contents, true, 64, JSON_THROW_ON_ERROR);
+        } catch (JsonException) {
+            abort(409, 'Die vorbereitete Nachricht ist ungültig.');
+        }
+        abort_unless(is_array($payload) && is_string($payload['From'] ?? null) && is_string($payload['To'] ?? null)
+            && is_string($payload['Subject'] ?? null) && is_string($payload['HtmlBody'] ?? null)
+            && is_array($payload['Attachments'] ?? null), 409, 'Die vorbereitete Nachricht ist unvollständig.');
+        $names = array_values(array_filter(array_map(fn (mixed $attachment): mixed => is_array($attachment) ? ($attachment['Name'] ?? null) : null,
+            $payload['Attachments']), fn (mixed $name): bool => is_string($name)));
 
         $freshWork = $work->fresh();
         abort_unless($freshWork && $freshWork->teaching_course_id === $work->teaching_course_id && $freshWork->automationEnabled(),
             409, 'Die Arbeitszuordnung wurde während des Ladens geändert.');
-        $again = $this->exercise($connection, $freshWork, $link, $date, refresh: true);
-        $afterFolder = $this->dropbox->metadata($connection, $previews['id']);
-        $afterFiles = $this->preparedEmailFiles($connection, $previews['id'], $previews['path_lower']);
-        abort_unless(($again['status'] ?? null) === 'found' && ($again['folder']['id'] ?? null) === $folder['id']
-            && ($again['email_preparation']['status'] ?? null) === 'ready'
-            && hash_equals($preparation['package_sha256'], $again['email_preparation']['package_sha256'] ?? '')
-            && ($afterFolder['path_lower'] ?? null) === $previews['path_lower'] && $files === $afterFiles,
-            409, 'Die Vorbereitung wurde während des Ladens geändert. Bitte erneut öffnen.');
+        $after = $this->dropbox->readModuleApi($connection, 'files/get_metadata', ['path' => $file['id']])->json();
+        abort_unless(($after['rev'] ?? null) === $file['rev'] && ($after['path_lower'] ?? null) === $file['path_lower']
+            && $this->current($freshWork)?->getAttributes() === $link->getAttributes()
+            && $connection->fresh()?->account_id === $link->account_id && ! $connection->fresh()?->revoked_at,
+            409, 'Die Nachricht oder Zuordnung wurde während des Ladens geändert. Bitte erneut öffnen.');
 
         return ['work_id' => (int) $work->id, 'course_id' => (int) $work->teaching_course_id, 'folder_id' => $folder['id'],
-            'prepared_at' => $preparation['prepared_at'], 'from' => $payload['From'], 'to' => $payload['To'],
+            'from' => $payload['From'], 'to' => $payload['To'],
             'subject' => $payload['Subject'], 'html' => $payload['HtmlBody'], 'attachments' => $names];
-    }
-
-    /** @return array<string, array{id: string, name: string, path_lower: string, rev: string, size: int}> */
-    private function preparedEmailFiles(DropboxConnection $connection, string $folderId, string $folderPath): array
-    {
-        $files = [];
-        $total = 0;
-        foreach ($this->exerciseChildren($connection, $folderId) as $entry) {
-            if (($entry['.tag'] ?? null) !== 'file' || ! is_string($entry['name'] ?? null) || ! preg_match('/\.json\z/i', $entry['name'])) {
-                continue;
-            }
-            abort_unless(is_string($entry['id'] ?? null) && is_string($entry['rev'] ?? null) && is_string($entry['path_lower'] ?? null)
-                && dirname($entry['path_lower']) === $folderPath && is_int($entry['size'] ?? null)
-                && $entry['size'] > 0 && $entry['size'] <= 128 * 1024, 422, 'Eine vorbereitete Nachricht ist ungültig oder zu groß.');
-            $total += $entry['size'];
-            $files[$entry['id']] = ['id' => $entry['id'], 'name' => $entry['name'], 'path_lower' => $entry['path_lower'],
-                'rev' => $entry['rev'], 'size' => $entry['size']];
-        }
-        abort_unless(count($files) <= 100 && $total <= 8 * 1024 * 1024, 422, 'Zu viele vorbereitete Nachrichten für die Vorschau.');
-        ksort($files);
-
-        return $files;
-    }
-
-    /** @param array<string, array{id: string, name: string, path_lower: string, rev: string, size: int}> $files
-     * @param  list<array<string, mixed>>  $recipients
-     * @param  array<string, mixed>  $package
-     * @return array{0: array<string, mixed>, 1: list<string>}
-     */
-    private function confirmedPreparedEmail(DropboxConnection $connection, array $files, array $recipients, array $package): array
-    {
-        $expected = [];
-        foreach ($recipients as $recipient) {
-            $email = $recipient['To'] ?? null;
-            abort_unless(is_string($email) && filter_var($email, FILTER_VALIDATE_EMAIL) && ! isset($expected[strtolower($email)])
-                && is_string($recipient['Nachricht_SHA256'] ?? null) && preg_match('/\A[0-9a-f]{64}\z/i', $recipient['Nachricht_SHA256']),
-                409, 'Die Empfänger der Vorbereitung sind nicht eindeutig.');
-            $expected[strtolower($email)] = $recipient;
-        }
-        $first = strtolower($recipients[0]['To']);
-        $selected = null;
-        $selectedNames = [];
-        $seen = [];
-        foreach (array_chunk($files, 8, preserve_keys: true) as $batch) {
-            $requests = [];
-            foreach ($batch as $id => $file) {
-                $requests[$id] = ['endpoint' => 'files/download', 'parameters' => ['path' => 'rev:'.$file['rev']]];
-            }
-            $responses = $this->dropbox->readModuleBatch($connection, $requests);
-            foreach ($batch as $id => $file) {
-                $contents = $responses[$id]->body();
-                abort_unless(strlen($contents) === $file['size'], 409, 'Eine vorbereitete Nachricht wurde nicht vollständig gelesen.');
-                try {
-                    $payload = json_decode($contents, true, 64, JSON_THROW_ON_ERROR);
-                } catch (JsonException) {
-                    abort(409, 'Eine vorbereitete Nachricht ist ungültig.');
-                }
-                $email = is_array($payload) && is_string($payload['To'] ?? null) ? strtolower($payload['To']) : '';
-                $recipient = $expected[$email] ?? null;
-                abort_unless(is_array($recipient) && ! isset($seen[$email])
-                    && hash_equals(strtolower($recipient['Nachricht_SHA256']), hash('sha256', $contents)),
-                    409, 'Die persönlichen Nachrichten sind doppelt, geändert oder nicht eindeutig zugeordnet.');
-                $seen[$email] = true;
-                foreach (['From' => 'From', 'To' => 'To', 'Subject' => 'Betreff'] as $payloadKey => $recipientKey) {
-                    abort_unless(is_string($recipient[$recipientKey] ?? null) && trim($recipient[$recipientKey]) !== ''
-                        && ($payload[$payloadKey] ?? null) === $recipient[$recipientKey], 409, 'Die vorbereitete Nachricht gehört nicht zum bestätigten Empfänger.');
-                }
-                abort_unless(is_string($payload['HtmlBody'] ?? null) && trim($payload['HtmlBody']) !== ''
-                    && is_string($payload['TextBody'] ?? null) && trim($payload['TextBody']) !== ''
-                    && is_string($payload['SourceTextSHA256'] ?? null) && is_string($package['Textquelle_SHA256'] ?? null)
-                    && hash_equals(strtolower($package['Textquelle_SHA256']), strtolower($payload['SourceTextSHA256'])),
-                    409, 'Der Inhalt oder Textstand der Nachricht ist nicht bestätigt.');
-                $attachments = $payload['Attachments'] ?? null;
-                abort_unless(is_array($attachments) && array_is_list($attachments)
-                    && is_array($recipient['VorbereiteteAnhaenge'] ?? null) && array_is_list($recipient['VorbereiteteAnhaenge']),
-                    409, 'Die Anhangliste der Nachricht ist nicht bestätigt.');
-                $names = array_column($recipient['VorbereiteteAnhaenge'], 'Dateiname');
-                abort_unless(count($attachments) === count($names) && array_column($attachments, 'Name') === $names,
-                    409, 'Die Anhangliste der Nachricht weicht von der Vorbereitung ab.');
-                if ($email === $first) {
-                    $selected = $payload;
-                    $selectedNames = $names;
-                }
-            }
-        }
-        abort_unless($selected !== null && count($seen) === count($expected), 409, 'Die bestätigten persönlichen Nachrichten sind unvollständig.');
-
-        return [$selected, $selectedNames];
     }
 
     /** @param list<array<string, mixed>> $entries

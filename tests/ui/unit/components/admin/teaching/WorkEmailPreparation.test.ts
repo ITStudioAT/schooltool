@@ -48,7 +48,7 @@ function dispatchExported(deliveryMode = 'live') {
 }
 
 function preparedPreview(overrides = {}) {
-    return { data: { data: { work_id: 65, course_id: 2, folder_id: 'id:exercise', prepared_at: '2026-10-20T05:26:00Z',
+    return { data: { data: { work_id: 65, course_id: 2, folder_id: 'id:exercise',
         from: 'teacher@example.test', to: 'student@example.test', subject: 'Leistungsfeststellung',
         html: '<html><body><p>Hallo! <a href="https://schooltool.example/personal-token" onclick="alert(1)">Zum Test</a></p><img src="https://external.example/tracker.png"><script>alert(1)</script><form action="https://external.example/send"><button>Absenden</button></form></body></html>',
         attachments: ['Aufgabe.pdf'], ...overrides,
@@ -350,7 +350,8 @@ it('shows the stored personal email safely without sending or opening personal l
         expect(dialog.text()).toContain('student@example.test')
         expect(dialog.text()).toContain('Leistungsfeststellung')
         expect(dialog.text()).toContain('Aufgabe.pdf')
-        expect(dialog.text()).toContain('Persönliche Links und externe Inhalte sind in dieser Vorschau deaktiviert')
+        expect(dialog.text()).toContain('Die Vorschau zeigt eine gespeicherte E-Mail und prüft nicht die Versandbereitschaft.')
+        expect(dialog.text()).toContain('Persönliche Links und externe Inhalte sind deaktiviert')
         const iframe = dialog.get('iframe')
         expect(iframe.attributes('sandbox')).toBe('')
         expect(iframe.attributes('referrerpolicy')).toBe('no-referrer')
@@ -385,7 +386,7 @@ it('does not show a late email response after the preparation context changes', 
     } finally { wrapper.unmount() }
 })
 
-it.each([{ work_id: 66 }, { course_id: 3 }, { folder_id: 'id:other' }, { prepared_at: '2026-10-21T05:26:00Z' }, { html: '' }])(
+it.each([{ work_id: 66 }, { course_id: 3 }, { folder_id: 'id:other' }, { html: '' }])(
     'does not display a prepared email with invalid identity or content: %j', async invalid => {
         const get = vi.fn().mockResolvedValue(preparedPreview(invalid))
         const { wrapper } = render({ statusOnly: true, state: { ...state,

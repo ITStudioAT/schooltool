@@ -442,7 +442,7 @@ class CourseWorkController extends Controller
             ->orderBy('date_for_all_groups', 'desc')
             ->get();
 
-        return response()->json(['data' => $works->map(fn (TeachingCourseWork $work): array => $entrySyncService->serializeWork($work))->values()]);
+        return response()->json(['data' => $entrySyncService->serializeWorks($works, $course)]);
     }
 
     public function store(

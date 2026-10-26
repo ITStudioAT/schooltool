@@ -1,5 +1,5 @@
 <template>
-    <v-btn v-if="work?.id && workAutomationEnabled(work)" size="small" variant="tonal" prepend-icon="mdi-inbox-arrow-down-outline" :disabled="disabled" @click.stop="openAction">{{ repeat ? 'Erneut einsammeln' : 'Abgaben einsammeln' }}</v-btn>
+    <v-btn v-if="work?.id && workAutomationEnabled(work)" size="small" variant="tonal" prepend-icon="mdi-inbox-arrow-down-outline" :disabled="disabled || !hasSentTasks" @click.stop="openAction">{{ repeat ? 'Erneut einsammeln' : 'Abgaben einsammeln' }}</v-btn>
     <v-dialog v-if="opened" v-model="opened" max-width="720" scrollable :persistent="loading">
         <v-card>
             <v-card-title class="text-wrap">{{ repeat ? 'Abgaben erneut einsammeln' : 'Abgaben einsammeln' }} · {{ work.title }}</v-card-title>
@@ -14,7 +14,7 @@
             </v-card-text>
             <v-card-actions>
                 <v-spacer />
-                <v-btn :disabled="!result || loading || copying || disabled" :color="copied ? 'success' : 'primary'" :prepend-icon="copied ? 'mdi-check' : 'mdi-content-copy'" @click="copyOrder">{{ copied ? 'Kopiert' : 'Auftrag kopieren' }}</v-btn>
+                <v-btn :disabled="!result || loading || copying || disabled || !hasSentTasks" :color="copied ? 'success' : 'primary'" :prepend-icon="copied ? 'mdi-check' : 'mdi-content-copy'" @click="copyOrder">{{ copied ? 'Kopiert' : 'Auftrag kopieren' }}</v-btn>
                 <v-btn :disabled="loading" @click="opened = false">Schließen</v-btn>
             </v-card-actions>
         </v-card>
@@ -22,11 +22,27 @@
 </template>
 
 <script setup>
-import { onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { aiExport } from '@/actions/App/Http/Controllers/Admin/Teaching/CourseWorkController'
 import { workAutomationEnabled } from '@/helpers/workAutomation'
+import { workDropboxKey, workDropboxStates, workExerciseCheck } from '@/helpers/workDropbox'
+import { workDispatchNotifications } from '@/helpers/workDispatch'
+import { useAdminStore } from '@/stores/admin/AdminStore'
 
-const props = defineProps({ work: { type: Object, required: true }, date: { type: String, default: '' }, repeat: Boolean, disabled: Boolean })
+const props = defineProps({ work: { type: Object, required: true }, date: { type: String, default: '' }, repeat: Boolean, disabled: Boolean, dispatch: { type: Object, default: null } })
+const admin = useAdminStore()
+const hasSentTasks = computed(() => {
+    const date = props.date || props.work.date_for_all_groups || ''
+    const key = workDropboxKey(admin.config?.user?.id, props.work)
+    const cached = workExerciseCheck(key, props.work, date)?.data
+    const checked = cached?.exercise?.email_dispatch ? cached : workDropboxStates.get(key)
+    const status = props.dispatch || (checked?.exercise?.status === 'found' && (!date || checked.exercise.folder?.name?.startsWith(`${date}_`))
+        ? checked.exercise.email_dispatch : null)
+    if (status) return ['sent', 'partial'].includes(status.status) && Number(status.confirmed_count) > 0
+    const groups = (props.work.groups || []).filter(group => !date || !group.date || group.date === date)
+    const students = new Set(groups.flatMap(group => group.student_ids || []).map(String))
+    return workDispatchNotifications(props.work, 'tasks').some(notification => students.has(String(notification.student_id)))
+})
 const opened = ref(false)
 const loading = ref(false)
 const copying = ref(false)
@@ -50,7 +66,7 @@ function clear() {
 }
 
 async function openAction() {
-    if (props.disabled || !props.work?.id || !workAutomationEnabled(props.work)) return
+    if (props.disabled || !hasSentTasks.value || !props.work?.id || !workAutomationEnabled(props.work)) return
     clear()
     opened.value = true
     loading.value = true
@@ -76,7 +92,7 @@ async function openAction() {
 }
 
 async function copyOrder() {
-    if (!result.value || loading.value || copying.value || props.disabled) return
+    if (!result.value || loading.value || copying.value || props.disabled || !hasSentTasks.value) return
     const operation = sequence
     copying.value = true
     copied.value = false
@@ -100,6 +116,7 @@ async function copyOrder() {
 }
 
 watch(() => [props.work?.id, props.work?.teaching_course_id, props.work?.updated_at, props.date, props.repeat], () => { opened.value = false; clear() })
+watch(hasSentTasks, value => { if (!value && opened.value) { opened.value = false; clear() } })
 watch(opened, value => { if (!value) clear() })
 onBeforeUnmount(clear)
 </script>

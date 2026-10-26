@@ -32,7 +32,7 @@
                         <dt>Betreff</dt><dd>{{ emailPreview.subject }}</dd>
                         <dt>Anhänge</dt><dd>{{ emailPreview.attachments.length ? emailPreview.attachments.join(', ') : 'Keine' }}</dd>
                     </dl>
-                    <p class="text-caption mt-3">Persönliche Links und externe Inhalte sind in dieser Vorschau deaktiviert.</p>
+                    <p class="text-caption mt-3">Die Vorschau zeigt eine gespeicherte E-Mail und prüft nicht die Versandbereitschaft. Persönliche Links und externe Inhalte sind deaktiviert.</p>
                     <iframe :srcdoc="emailPreview.document" sandbox="" referrerpolicy="no-referrer" title="Vorschau der vorbereiteten E-Mail" class="email-preview__frame" />
                 </section>
             </v-card-text>
@@ -197,7 +197,6 @@ async function loadEmailPreview() {
         const data = response.data?.data
         if (String(data?.work_id) !== String(props.work.id) || String(data?.course_id) !== String(props.work.teaching_course_id)
             || data?.folder_id !== props.state.folder.id
-            || (preparation.value?.prepared_at && Date.parse(data?.prepared_at) !== Date.parse(preparation.value.prepared_at))
             || !['from', 'to', 'subject', 'html'].every(key => typeof data?.[key] === 'string' && data[key].trim())
             || !Array.isArray(data.attachments) || !data.attachments.every(name => typeof name === 'string')) {
             throw new Error('Die vorbereitete E-Mail konnte nicht eindeutig zugeordnet werden.')

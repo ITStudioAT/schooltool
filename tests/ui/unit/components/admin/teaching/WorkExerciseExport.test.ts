@@ -43,35 +43,46 @@ afterEach(() => {
     else delete (document as any).execCommand
 })
 
-it.each(['sent', 'partial'])('blocks adding MC after a confirmed %s participant dispatch', async (dispatchStatus) => {
+it.each(['sent', 'partial'])('does not offer a separate MC button after a confirmed %s participant dispatch', async (dispatchStatus) => {
     const status = vi.fn().mockResolvedValue({ data: { ...linkedExercise,
         exercise: { ...linkedExercise.exercise, email_dispatch: { status: dispatchStatus, confirmed_count: 1 } } } })
     const wrapper = mountExport(undefined, undefined, status)
     try {
         await flushPromises()
-        expect(button(wrapper, 'MC-Fragen einbeziehen').attributes('disabled')).toBeDefined()
-        await button(wrapper, 'MC-Fragen einbeziehen').trigger('click')
+        expect(wrapper.findAll('button').some(item => item.text() === 'MC-Fragen einbeziehen')).toBe(false)
         expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
         expect(axios.post).not.toHaveBeenCalled()
     } finally { wrapper.unmount() }
 })
 
-it('can reopen MC configuration for an existing unsent LF and always reloads its point allocation', async () => {
+it('shows the linked MC test in an existing LF without a separate configuration button', async () => {
     const status = vi.fn().mockResolvedValue({ data: { ...linkedExercise,
         exercise: { ...linkedExercise.exercise, email_dispatch: { status: 'missing', confirmed_count: 0 } } } })
-    const wrapper = mountExport(undefined, undefined, status)
+    const linkedWork = { ...work, status: { multiple_choice_tests: { '2026-10-20': { work_id: 65, test_id: 9 } } },
+        multiple_choice_test_titles: { '9': 'Word – Dateimanagement' } }
+    const wrapper = mountExport(undefined, undefined, status, linkedWork)
     try {
         await flushPromises()
-        for (let opening = 0; opening < 2; opening++) {
-            await button(wrapper, 'MC-Fragen einbeziehen').trigger('click')
-            await flushPromises()
-            expect((wrapper.get('input[type="checkbox"]').element as HTMLInputElement).checked).toBe(true)
-            expect(wrapper.text()).toContain('2 Punkte MC + 3 Punkte übrige Aufgaben = 5 Punkte gesamt')
-            expect(button(wrapper, 'Übergabetext kopieren').attributes('disabled')).toBeUndefined()
-            await button(wrapper, 'Abbrechen').trigger('click')
-            await flushPromises()
-        }
+        expect(wrapper.text()).toContain('MC-Test: Word – Dateimanagement')
+        expect(wrapper.text()).not.toContain('Nr. 9')
+        expect(wrapper.findAll('button').some(item => item.text() === 'MC-Fragen einbeziehen')).toBe(false)
         expect(axios.post).not.toHaveBeenCalled()
+    } finally { wrapper.unmount() }
+})
+
+it('shows only the MC test for the selected date even after the work has progressed', async () => {
+    const linkedWork = { ...work, status: { folder_imported_at: '2026-10-13T12:54:00Z', multiple_choice_tests: {
+        '2026-10-20': { work_id: 65, test_id: 9 },
+        '2026-10-21': { work_id: 65, test_id: 10 },
+    } }, multiple_choice_test_titles: { '9': 'Test A', '10': 'Test B' } }
+    const wrapper = mountExport(undefined, undefined, undefined, linkedWork)
+    try {
+        await flushPromises()
+        expect(wrapper.text()).toContain('MC-Test: Test A')
+        expect(wrapper.text()).not.toContain('Test B')
+        await wrapper.setProps({ date: '2026-10-21' })
+        expect(wrapper.text()).toContain('MC-Test: Test B')
+        expect(wrapper.text()).not.toContain('Test A')
     } finally { wrapper.unmount() }
 })
 

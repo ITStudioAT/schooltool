@@ -2,11 +2,10 @@
     <div v-if="needsPreparation" class="exercise-action" @click.stop>
         <template v-if="exerciseFolder">
             <span v-if="!hideFolderName" class="exercise-folder text-body-2" aria-label="Leistungsfeststellungsordner">{{ exerciseFolder.name }}</span>
-            <v-btn size="small" variant="tonal" prepend-icon="mdi-format-list-checks" :disabled="disabled || !current || mcDispatchLocked"
-                :title="mcDispatchLocked ? 'Nach dem Aufgabenversand können keine MC-Fragen mehr einbezogen werden.' : undefined" @click="openDialog(true)">MC-Fragen einbeziehen</v-btn>
         </template>
         <span v-else-if="exerciseChecking" role="status" class="text-body-2">Leistungsfeststellung wird geprüft …</span>
         <v-btn v-else-if="moduleLinked && checkedStatus === 'missing'" size="small" variant="tonal" prepend-icon="mdi-clipboard-text-outline" :disabled="disabled || !current" @click="openDialog">Leistungsfeststellung erstellen</v-btn>
+        <span v-if="linkedMcTest" class="exercise-folder text-body-2">MC-Test: {{ linkedMcTest }}</span>
         <span v-if="!work?.id" class="d-block text-caption mt-1">Arbeit zuerst speichern, damit Arbeitskennung und Prüfungskandidaten bestätigt werden können.</span>
         <v-btn v-if="active && current && !exerciseChecking" size="small" variant="tonal" prepend-icon="mdi-refresh"
             class="exercise-check-button" :disabled="disabled" @click="checkExercise(true)">
@@ -18,6 +17,7 @@
         <span v-if="exerciseMessage" role="status" class="exercise-check-message d-block text-caption mt-1">{{ exerciseMessage }}</span>
         <WorkCheckProgress :state="checkProgressState" :unavailable="progressUnavailable" />
     </div>
+    <span v-if="!needsPreparation && linkedMcTest" class="exercise-folder text-body-2">MC-Test: {{ linkedMcTest }}</span>
     <WorkProgressCheck v-if="checkProgress && !needsPreparation && active && current" :work="work" :disabled="disabled"
         @saved="emit('deadline-saved', $event)" @busy="emit('check-busy', $event)" />
     <v-dialog v-if="opened" v-model="opened" max-width="640" :persistent="loading">
@@ -25,7 +25,7 @@
             <v-card-title class="text-wrap">Leistungsfeststellung erstellen</v-card-title>
             <v-card-text>
                 <p class="text-body-2 mb-3">Den Auftrag mit den gespeicherten Arbeitsdaten und Prüfungskandidaten kopieren und anschließend an die KI übergeben.</p>
-                <v-checkbox v-model="includeMc" label="Multiple-Choice-Fragen einbeziehen" :disabled="loading || addingMc || mcDispatchLocked" hide-details />
+                <v-checkbox v-model="includeMc" label="Multiple-Choice-Fragen einbeziehen" :disabled="loading || mcDispatchLocked" hide-details />
                 <div v-if="includeMc" class="mt-4">
                     <p class="text-caption mb-3">Individueller Start beim Öffnen des persönlichen Links. Als Schlussfrist gilt das Enddatum der Arbeit; ohne Uhrzeit gilt 23:59:00 Uhr.</p>
                     <p v-if="mcLoading" role="status">MC-Tests und Fragenkataloge laden …</p>
@@ -94,7 +94,13 @@ const admin = useAdminStore()
 const current = computed(() => Boolean(props.work?.id && props.course?.id && String(props.work.teaching_course_id) === String(props.course.id)))
 const opened = ref(false)
 const includeMc = ref(false)
-const addingMc = ref(false)
+const linkedMcTest = computed(() => {
+    const slot = props.date || props.work?.date_for_all_groups || 'all'
+    const binding = props.work?.status?.multiple_choice_tests?.[slot]
+    if (!binding?.test_id || String(binding.work_id) !== String(props.work?.id)) return null
+    const title = props.work?.multiple_choice_test_titles?.[String(binding.test_id)]
+    return typeof title === 'string' && title.trim() ? title : `Nr. ${binding.test_id}`
+})
 const mcOptions = ref(null)
 const mcLoading = ref(false)
 const mcMode = ref('existing')
@@ -241,12 +247,10 @@ function clear() {
     copied.value = false
 }
 
-function openDialog(mcOnly = false) {
-    mcOnly = mcOnly === true
-    if (!current.value || !moduleLinked.value || props.disabled || exerciseChecking.value || (exerciseFolder.value && !mcOnly) || (mcOnly && mcDispatchLocked.value)) return
+function openDialog() {
+    if (!current.value || !moduleLinked.value || props.disabled || exerciseChecking.value || exerciseFolder.value) return
     clear()
-    addingMc.value = mcOnly
-    includeMc.value = mcOnly
+    includeMc.value = false
     mcOptions.value = null
     mcTestId.value = null
     mcCatalogId.value = null
@@ -256,7 +260,6 @@ function openDialog(mcOnly = false) {
     mcPayload = null
     expectedTestId = null
     opened.value = true
-    if (mcOnly) loadMcOptions()
 }
 
 async function loadMcOptions() {
@@ -371,7 +374,7 @@ watch(opened, value => { if (!value) { clear(); mcSequence++ } })
 watch(includeMc, value => {
     clear(); mcPayload = null; mcOptions.value = null
     if (value && opened.value) {
-        if (!addingMc.value) loadMcOptions()
+        loadMcOptions()
     } else mcSequence++
 })
 watch(mcExistingCatalogId, () => {

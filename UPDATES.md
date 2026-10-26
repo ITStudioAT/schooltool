@@ -6,6 +6,12 @@
 
 - Stundenplan: grün bei freien Tagen
 - Arbeiten: MC-Fragen einbinden
+- Arbeit: Ablauf prüfen: beschleunigt
+- Arbeit: Kein Download-Button ohne E-Mail-Versand
+
+### Erklärungen
+
+- Weitere Umrechnungsarten eingefügt: Dual -> Dezimal, ## -> Dezimal
 
 ## 3.53.2
 

@@ -50,7 +50,9 @@ it('offers grading in the evaluation dialog footer after simulator collection an
 
 it('shows the repeat collection completion in Vienna time without replacing it with the later storage time', async () => {
     const wrapper = mount(WorkDeliveryStatus, { props: { work: { id: 64, teaching_course_id: 16, title: 'E-Mails',
-        groups: [{ student_ids: [1] }], collection_run: { origin: 'dropbox_collection_run', work_id: 64, course_id: 16,
+        groups: [{ student_ids: [1] }], status: { dispatch_logs: [{ origin: 'dispatch_import', purpose: 'tasks', sha256: 'a'.repeat(64) }],
+            dispatch_notifications: [{ origin: 'dispatch_import', purpose: 'tasks', student_id: 1, sent_at: '2026-10-24T12:00:00Z', log_sha256: 'a'.repeat(64) }] },
+        collection_run: { origin: 'dropbox_collection_run', work_id: 64, course_id: 16,
             sha256: 'e'.repeat(64), completed_at: '2026-10-24T13:46:16Z', stored_at: '2026-10-24T13:48:22Z' } } },
         global: { plugins: [createTestingPinia({ createSpy: vi.fn }), createVuetify({ components: { VBtn } })],
             components: { 'v-btn': VBtn }, stubs: { 'v-btn': false, VBtn: false,
@@ -77,6 +79,21 @@ it('keeps later stages visible but disabled until earlier steps are complete', a
     } finally { wrapper.unmount() }
 })
 
+it('enables collection only for confirmed task emails in the selected group', async () => {
+    const work = { id: 64, teaching_course_id: 16, title: 'E-Mails', groups: [
+        { date: '2026-10-16', student_ids: [1, 2] }, { date: '2026-10-17', student_ids: [3] },
+    ], status: { dispatch_logs: [{ origin: 'dispatch_import', purpose: 'tasks', sha256: 'a'.repeat(64) }],
+        dispatch_notifications: [{ origin: 'dispatch_import', purpose: 'tasks', student_id: 1, sent_at: '2026-10-14T12:00:00Z', log_sha256: 'a'.repeat(64) }] } }
+    const wrapper = mount(WorkDeliveryStatus, { props: { work, date: '2026-10-16' }, global: {
+        plugins: [createTestingPinia({ createSpy: vi.fn }), createVuetify({ components: { VBtn } })], components: { 'v-btn': VBtn },
+        stubs: { 'v-btn': false, VBtn: false } } })
+    try {
+        expect(wrapper.get('[data-workflow-stage="collection"]').element.disabled).toBe(false)
+        await wrapper.setProps({ date: '2026-10-17' })
+        expect(wrapper.get('[data-workflow-stage="collection"]').element.disabled).toBe(true)
+    } finally { wrapper.unmount() }
+})
+
 it.each(['missing', 'sent', 'partial', 'unknown'])('shows the saved dispatch state and opens its details: %s', async status => {
     workDropboxStates.set('7:16:65', { exercise: { status: 'found', folder: { name: '2026-10-16_E-Mails' },
         email_dispatch: { status, confirmed_count: status === 'sent' ? 15 : 0, expected_count: 15, transport: 'mailpit', sent_at: '2026-10-23T22:23:34Z' } } })
@@ -85,6 +102,7 @@ it.each(['missing', 'sent', 'partial', 'unknown'])('shows the saved dispatch sta
             components: { 'v-btn': VBtn }, stubs: { 'v-btn': false, VBtn: false, 'v-dialog': { props: ['modelValue'], template: '<section v-if="modelValue" role="dialog"><slot /></section>' } } } })
     try {
         expect(wrapper.findAll('button')).toHaveLength(5)
+        expect(wrapper.get('[data-workflow-stage="collection"]').element.disabled).toBe(status !== 'sent')
         await wrapper.findAll('button')[0].trigger('click')
         if (status === 'sent') expect(wrapper.get('[role="dialog"]').text()).toContain('15 von 15 Nachrichten bestätigt')
         else expect(wrapper.get('[role="dialog"]').text()).not.toContain('15 von 15 Nachrichten bestätigt')
@@ -93,6 +111,7 @@ it.each(['missing', 'sent', 'partial', 'unknown'])('shows the saved dispatch sta
                 emailDispatch: { status: 'sent', confirmed_count: 15, expected_count: 15, transport: 'mailpit' } } })
             expect(wrapper.get('[role="dialog"]').text()).toContain('15 von 15 Nachrichten bestätigt')
             expect(wrapper.find('[data-workflow-stage="collection"]').exists()).toBe(true)
+            expect(wrapper.get('[data-workflow-stage="collection"]').element.disabled).toBe(false)
         }
     } finally { wrapper.unmount() }
 })

@@ -41,7 +41,7 @@
                 </template>
             </v-card-text>
             <v-card-actions class="d-flex flex-wrap ga-2" aria-label="Dialogaktionen">
-                <WorkSubmissionCollection v-if="opened === 'collection' && !selectedStage?.simulation" :work="work" :date="date" :repeat="selectedStage?.complete || Boolean(lastCollectionAt)" />
+                <WorkSubmissionCollection v-if="opened === 'collection' && !selectedStage?.simulation" :work="work" :date="date" :dispatch="dispatch" :repeat="selectedStage?.complete || Boolean(lastCollectionAt)" />
                 <v-btn v-if="opened === 'collection' && selectedStage?.simulation" variant="tonal" prepend-icon="mdi-flask-outline" to="/admin/teaching-tools/simulator">Simulator öffnen</v-btn>
                 <WorkGradingAction v-if="opened === 'evaluation'" :work="work" :date="date" :repeat="selectedStage?.complete"
                     :disabled="!stages[0]?.complete && !lastCollectionAt" />
@@ -71,7 +71,8 @@ import WorkResultNotification from './WorkResultNotification.vue'
 const props = defineProps({ work: { type: Object, required: true }, date: { type: String, default: '' }, state: { type: Object, default: null }, size: { type: [Number, String], default: 18 } })
 const admin = useAdminStore()
 const emit = defineEmits(['import', 'saved'])
-const stages = computed(() => workProgressStages(props.work))
+const stages = computed(() => workProgressStages(props.work).map(stage => stage.key === 'collection' && !hasSentTasks.value
+    ? { ...stage, blocked: true, blockedBy: 'E-Mail-Versand' } : stage))
 const stageLabel = stage => stage.blocked ? `${stage.title}: zuerst „${stage.blockedBy}“ abschließen`
     : stage.completedAt ? `${stage.label} · ${assessmentTimeText(stage.completedAt)}` : stage.label
 const openStage = stage => { if (!stage.blocked) opened.value = stage.key }
@@ -83,7 +84,6 @@ const nextAction = computed(() => workProgressNextAction(props.work) || 'Abgaben
 const nextActionText = computed(() => nextAction.value === 'Abgeschlossen' ? 'Status: ABGESCHLOSSEN.' : `Nächster Schritt: ${nextAction.value}.`)
 const opened = ref(null)
 const dialog = computed({ get: () => Boolean(opened.value), set: value => { if (!value) opened.value = null } })
-watch(stages, value => { if (value.find(stage => stage.key === opened.value)?.blocked) opened.value = null })
 const dispatch = computed(() => {
     if (props.state?.status === 'found' && props.state.userId === admin.config?.user?.id
         && String(props.state.workId) === String(props.work.id) && String(props.state.courseId) === String(props.work.teaching_course_id)
@@ -94,12 +94,16 @@ const dispatch = computed(() => {
     const cached = workExerciseCheck(key, props.work, date)?.data
     const checked = cached?.exercise?.email_dispatch ? cached : state
     if (checked?.exercise?.status === 'found' && (!date || checked.exercise.folder?.name?.startsWith(`${date}_`))) return checked.exercise.email_dispatch || {}
-    const notifications = workDispatchNotifications(props.work, 'tasks')
-    const expected = new Set((props.work.groups || []).flatMap(group => group.student_ids || [])).size
-    return { status: expected > 0 && new Set(notifications.map(item => item.student_id)).size === expected ? 'sent' : 'missing',
-        confirmed_count: notifications.length, expected_count: expected, sent_at: notifications[0]?.sent_at, transport: 'office_outlook' }
+    const groups = (props.work.groups || []).filter(group => !date || !group.date || group.date === date)
+    const students = new Set(groups.flatMap(group => group.student_ids || []).map(String))
+    const notifications = workDispatchNotifications(props.work, 'tasks').filter(item => students.has(String(item.student_id)))
+    const count = new Set(notifications.map(item => String(item.student_id))).size
+    return { status: count > 0 ? (count === students.size ? 'sent' : 'partial') : 'missing',
+        confirmed_count: count, expected_count: students.size, sent_at: notifications[0]?.sent_at, transport: 'office_outlook' }
 })
 const sent = computed(() => dispatch.value.status === 'sent')
+const hasSentTasks = computed(() => ['sent', 'partial'].includes(dispatch.value.status) && Number(dispatch.value.confirmed_count) > 0)
+watch(stages, value => { if (value.find(stage => stage.key === opened.value)?.blocked) opened.value = null })
 const sendLabel = computed(() => sent.value ? `E-Mails versandt${dispatch.value.transport === 'mailpit' ? ' · Testversand über Mailpit' : ''}`
     : dispatch.value.status === 'partial' ? `E-Mail-Versand unvollständig: ${dispatch.value.confirmed_count} bestätigt`
         : dispatch.value.status === 'unknown' ? 'E-Mail-Versand nicht bestätigt – erneut prüfen' : 'E-Mails noch nicht versandt')

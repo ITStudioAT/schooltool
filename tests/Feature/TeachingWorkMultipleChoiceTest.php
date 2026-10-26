@@ -84,6 +84,34 @@ test('the LF creates and binds one draft MC test with its actual candidates and 
     Http::assertNothingSent();
 });
 
+test('work responses show only the titles of tests actually bound to the work and its school year', function (): void {
+    workMcFixture($this);
+    $id = $this->postJson($this->base.'/prepare-exercise', $this->payload)->assertOk()->json('data.context.multiple_choice_test.test_id');
+    $test = McTest::query()->findOrFail($id);
+    $otherSchool = School::factory()->create();
+    $otherYear = Schoolyear::factory()->create(['school_id' => $otherSchool->id]);
+    $foreign = $test->replicate();
+    $foreign->school_id = $otherSchool->id;
+    $foreign->schoolyear_id = $otherYear->id;
+    $foreign->title = 'Fremder Test';
+    $foreign->save();
+    $notBound = $test->replicate();
+    $notBound->title = 'Nicht zugeordneter Test';
+    $notBound->save();
+    $status = $this->work->fresh()->status;
+    $status['multiple_choice_tests']['foreign'] = ['work_id' => $this->work->id, 'test_id' => $foreign->id];
+    $status['multiple_choice_tests']['other_work'] = ['work_id' => $this->work->id + 1, 'test_id' => $notBound->id];
+    $this->work->update(['status' => $status]);
+
+    $this->getJson($this->base)->assertOk()
+        ->assertJsonPath('data.multiple_choice_test_titles.'.$id, $test->title)
+        ->assertJsonMissingPath('data.multiple_choice_test_titles.'.$foreign->id)
+        ->assertJsonMissingPath('data.multiple_choice_test_titles.'.$notBound->id);
+    $this->getJson('/api/admin/teaching/course_works?course_id='.$this->course->id)->assertOk()
+        ->assertJsonPath('data.0.multiple_choice_test_titles.'.$id, $test->title)
+        ->assertJsonMissingPath('data.0.multiple_choice_test_titles.'.$foreign->id);
+});
+
 test('LF MC tests use the saved end time when one is specified', function (): void {
     workMcFixture($this);
     $this->work->update(['finish_until_date' => '2026-11-13', 'finish_until_time' => '12:25']);

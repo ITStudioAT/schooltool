@@ -126,8 +126,10 @@ describe('Teaching tools games navigation', () => {
         const { wrapper } = await renderTools('/admin/teaching-tools/explanations/number-systems')
 
         expect(wrapper.get('h1').text()).toBe('Zahlensysteme')
-        expect(wrapper.get('[aria-label="Verfügbare Erklärungen"]').findAll('a')).toHaveLength(4)
+        expect(wrapper.get('[aria-label="Verfügbare Erklärungen"]').findAll('a')).toHaveLength(6)
         expect(wrapper.get('[aria-label="Dezimal auf Dual öffnen"]').attributes('href')).toBe('/admin/teaching-tools/explanations/decimal-to-binary')
+        expect(wrapper.get('[aria-label="Dual auf Dezimal öffnen"]').attributes('href')).toBe('/admin/teaching-tools/explanations/binary-to-decimal')
+        expect(wrapper.get('[aria-label="Hexadezimal auf Dezimal öffnen"]').attributes('href')).toBe('/admin/teaching-tools/explanations/hexadecimal-to-decimal')
         expect(wrapper.get('.explanations__back').attributes('href')).toBe('/admin/teaching-tools/explanations')
         expect(window.axios.post).not.toHaveBeenCalled()
     })
@@ -187,6 +189,8 @@ describe('Teaching tools games navigation', () => {
         ['decimal-to-hexadecimal', 'Dezimal auf Hexadezimal'],
         ['binary-to-hexadecimal', 'Dual auf Hexadezimal'],
         ['hexadecimal-to-binary', 'Hexadezimal auf Dual'],
+        ['binary-to-decimal', 'Dual auf Dezimal'],
+        ['hexadecimal-to-decimal', 'Hexadezimal auf Dezimal'],
     ])('copies the current student link for %s directly from its card', async (key, title) => {
         const writeText = vi.fn().mockResolvedValue(undefined)
         vi.stubGlobal('navigator', { clipboard: { writeText } })
