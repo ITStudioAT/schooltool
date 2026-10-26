@@ -73,8 +73,8 @@
             <section v-else-if="currentPage === 'devices'" aria-labelledby="devices-heading">
                 <div class="section-heading"><div><span>Bausteine</span><h2 id="devices-heading">Was machen Netzwerkgeräte?</h2></div><p>Jedes Gerät übernimmt eine bestimmte Aufgabe. Mehrere Funktionen können in einem Gerät stecken.</p></div>
                 <div class="two-columns"><div class="visual-panel"><div class="choice-grid devices-grid">
-                    <button v-for="item in devices" :key="item.name" type="button" :aria-pressed="selectedDevice === item.name" @click="selectedDevice = item.name"><NetworkDevicePhoto :name="item.name" class="device-thumbnail" decorative /><strong>{{ item.name }}</strong><span>{{ item.label }}</span></button>
-                </div><NetworkDevicePhoto :names="devices.map(item => item.name)" credits /></div><div class="detail-panel" aria-live="polite"><div class="device-detail device-detail--illustrated"><div><span class="device-detail__label">Aufgabe</span><h3>{{ activeDevice.name }}</h3><p>{{ activeDevice.description }}</p></div><NetworkDevicePhoto :name="activeDevice.name" class="device-detail__image" /></div><p class="note">Ein Heimrouter enthält häufig Router, Switch, WLAN-Access-Point und Firewall; je nach Anschluss auch ein Modem.</p></div></div>
+                    <button v-for="item in devices" :key="item.name" type="button" :aria-pressed="selectedDevice === item.name" @click="selectedDevice = item.name"><NetworkDevicePhoto v-if="networkDevicePhotos[item.name]" :name="item.name" class="device-thumbnail" decorative /><strong>{{ item.name }}</strong><span>{{ item.label }}</span></button>
+                </div><NetworkDevicePhoto :names="devices.map(item => item.name)" credits /></div><div class="detail-panel" aria-live="polite"><div class="device-detail" :class="{ 'device-detail--illustrated': networkDevicePhotos[activeDevice.name] }"><div><span class="device-detail__label">Aufgabe</span><h3>{{ activeDevice.name }}</h3><p>{{ activeDevice.description }}</p></div><NetworkDevicePhoto v-if="networkDevicePhotos[activeDevice.name]" :name="activeDevice.name" class="device-detail__image" /></div><p class="note">Ein Heimrouter enthält häufig Router, Switch, WLAN-Access-Point und Firewall; je nach Anschluss auch ein Modem.</p></div></div>
             </section>
 
             <section v-else-if="currentPage === 'switch'" aria-labelledby="switch-heading">
@@ -109,6 +109,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import NetworkDevicePhoto from './NetworkDevicePhoto.vue'
+import { networkDevicePhotos } from './networkDevicePhotos'
 
 const pages = [
     { key: 'network', label: 'Netzwerk' }, { key: 'types', label: 'Netzarten' },
@@ -120,7 +121,7 @@ const pageIndex = ref(0)
 const currentPage = computed(() => pages[pageIndex.value].key)
 const networkCore = ['Internet', 'Router', 'Switch']
 const networkEnds = ['Computer', 'Server', 'Access Point', 'Smartphone']
-const illustratedNetworkDevices = ['Router', 'Switch', 'Computer', 'Server', 'Access Point', 'Smartphone']
+const illustratedNetworkDevices = ['Router', 'Switch', 'Computer', 'Server', 'Access Point']
 const networkSelection = ref('Switch')
 const internetConnected = ref(true)
 const networkDescriptions = {
@@ -190,7 +191,7 @@ const buildingParts = [
     { name: 'USV', description: 'Eine unterbrechungsfreie Stromversorgung versorgt geeignete Geräte bei Stromausfall für begrenzte Zeit. Die Dauer hängt von Kapazität und angeschlossener Last ab.' },
 ]
 const selectedBuilding = ref('Netzwerkdose')
-const illustratedBuildingDevices = ['Netzwerkdose', 'Patchpanel', 'Switch', 'Router', 'USV']
+const illustratedBuildingDevices = ['Patchpanel', 'Switch', 'Router', 'USV']
 const activeBuilding = computed(() => buildingParts.find(item => item.name === selectedBuilding.value))
 </script>
 
