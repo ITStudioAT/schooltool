@@ -74,7 +74,7 @@
                 <div class="section-heading"><div><span>Bausteine</span><h2 id="devices-heading">Was machen Netzwerkgeräte?</h2></div><p>Jedes Gerät übernimmt eine bestimmte Aufgabe. Mehrere Funktionen können in einem Gerät stecken.</p></div>
                 <div class="two-columns"><div class="visual-panel"><div class="choice-grid devices-grid">
                     <button v-for="item in devices" :key="item.name" type="button" :aria-pressed="selectedDevice === item.name" @click="selectedDevice = item.name"><strong>{{ item.name }}</strong><span>{{ item.label }}</span></button>
-                </div></div><div class="detail-panel" aria-live="polite"><span>Aufgabe</span><h3>{{ activeDevice.name }}</h3><p>{{ activeDevice.description }}</p><p class="note">Ein Heimrouter enthält häufig Router, Switch, WLAN-Access-Point und Firewall; je nach Anschluss auch ein Modem. Ein erweiterter Switch kann ebenfalls Routing übernehmen.</p></div></div>
+                </div></div><div class="detail-panel" aria-live="polite"><span>Aufgabe</span><h3>{{ activeDevice.name }}</h3><p>{{ activeDevice.description }}</p><p class="note">Ein Heimrouter enthält häufig Router, Switch, WLAN-Access-Point und Firewall; je nach Anschluss auch ein Modem.</p></div></div>
             </section>
 
             <section v-else-if="currentPage === 'switch'" aria-labelledby="switch-heading">
