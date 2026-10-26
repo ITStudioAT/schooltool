@@ -1,6 +1,6 @@
 # UPDATES
 
-## 3.53.3 !!!
+## 3.53.3
 
 ### Unterricht
 
@@ -12,6 +12,7 @@
 ### Erklärungen
 
 - Weitere Umrechnungsarten eingefügt: Dual -> Dezimal, ## -> Dezimal
+- Netzwerke: Netzwerkgrundlagen und Geräte, Übertragungsmedien, LAN und WLAN, Datenkommunikation und Internet
 
 ## 3.53.2
 

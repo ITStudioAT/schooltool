@@ -10,9 +10,9 @@
             </form>
         </header>
         <div class="grouping-controls" aria-label="Erklärung Schritt für Schritt steuern">
-            <button type="button" :disabled="step === 0" @click="step--">← Zurück</button>
-            <button type="button" :disabled="complete" @click="step++">Weiter →</button>
-            <button type="button" @click="step = 0">Neu starten</button>
+            <button type="button" :disabled="step === 0" @click="move(-1)">← Zurück</button>
+            <button type="button" :disabled="complete" @click="move(1)">Weiter →</button>
+            <button type="button" @click="restart">Neu starten</button>
         </div>
         <div v-if="complete" class="grouping-completion" role="status"><strong>Erklärung abgeschlossen.</strong><p>Mit „Neu starten“ wiederholst du die Umrechnung. Oben kannst du eine andere Zahl eingeben.</p></div>
         <div class="grouping-progress"><progress :value="step + 1" :max="steps.length" aria-label="Fortschritt der Erklärung" /><span>Schritt {{ step + 1 }} von {{ steps.length }}</span></div>
@@ -47,6 +47,7 @@
 import { computed, ref } from 'vue'
 import { nibbleConversion, nibbleReference } from '@/helpers/nibbleConversionExplanation'
 import { numberSystemNotation } from '@/helpers/numberSystemNotation'
+import { useNumberExplanationPosition } from '@/helpers/useNumberExplanationPosition'
 
 const props = defineProps({ sourceBase: { type: Number, default: 2, validator: value => [2, 16].includes(value) } })
 const toHex = computed(() => props.sourceBase === 2)
@@ -71,6 +72,15 @@ const current = computed(() => steps.value[step.value])
 const complete = computed(() => step.value === steps.value.length - 1)
 const paddingVisible = computed(() => ['padding', 'convert', 'result'].includes(current.value.phase))
 const knownGroups = computed(() => steps.value.slice(0, step.value + 1).filter(item => item.phase === 'convert').length)
+const savePosition = useNumberExplanationPosition({
+    getValue: () => conversion.value.source,
+    setValue: value => { conversion.value = nibbleConversion(value, props.sourceBase); draft.value = sourceNotation.value.prefix + value; error.value = '' },
+    step,
+    maximumStep: () => steps.value.length - 1,
+    parseValue: value => nibbleConversion(value, props.sourceBase)?.source ?? null,
+})
+function move(direction) { step.value = Math.max(0, Math.min(steps.value.length - 1, step.value + direction)); savePosition() }
+function restart() { step.value = 0; savePosition() }
 function applyInput() {
     const result = nibbleConversion(draft.value, props.sourceBase)
     if (!result) { error.value = toHex.value ? 'Bitte 1 bis 16 Bits aus 0 und 1 eingeben.' : 'Bitte 1 bis 4 Hexziffern aus 0–9 und A–F eingeben, mit oder ohne #.'; return }
@@ -78,6 +88,7 @@ function applyInput() {
     step.value = 0
     conversion.value = result
     draft.value = sourceNotation.value.prefix + result.source
+    savePosition()
 }
 </script>
 

@@ -166,16 +166,18 @@ test('hexadecimal and binary have independent publications and teaching referenc
 });
 
 test('all registered explanations have separate public shares and course assignment links', function (): void {
+    $explanations = TeachingExplanationCatalog::all();
     $links = [];
     $shares = [];
-    foreach (TeachingExplanationCatalog::all() as $key => $definition) {
+    foreach ($explanations as $key => $definition) {
         $file = $this->postJson($this->unitEndpoint.'/explanations', ['explanation_key' => $key])->assertCreated()->json('data.id');
         $this->putJson("/api/admin/teaching/course_dates/{$this->date->id}/curriculum-files/{$file}/visibility", ['student_visible' => true])->assertOk();
         $attachment = $this->date->materials()->sole()->attachments()->where('explanation_key', $key)->sole();
         $links[$key] = route('student-material-explanations.show', $attachment, false);
         $shares[$key] = $this->postJson('/api/admin/teaching-explanations/'.$key.'/publication', ['access_mode' => 'public'])->assertOk()->json('invitation.url');
     }
-    expect(array_unique($links))->toHaveCount(4)->and(array_unique($shares))->toHaveCount(4);
+    expect(array_unique($links))->toHaveCount(count($explanations))
+        ->and(array_unique($shares))->toHaveCount(count($explanations));
     $this->deleteJson('/api/admin/teaching-explanations/binary-to-hexadecimal/publication')->assertOk();
     $this->getJson('/api/explanations/'.basename($shares['binary-to-hexadecimal']))->assertNotFound();
     foreach (array_diff_key($shares, ['binary-to-hexadecimal' => true]) as $key => $url) {

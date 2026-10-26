@@ -9,6 +9,8 @@ const explanationComponents = {
     'binary-to-decimal': defineAsyncComponent(() => import('@/pages/admin/teachingTools/BinaryToDecimalExplanation.vue')),
     'hexadecimal-to-decimal': defineAsyncComponent(() => import('@/pages/admin/teachingTools/HexadecimalToDecimalExplanation.vue')),
     'network-fundamentals': defineAsyncComponent(() => import('@/pages/admin/teachingTools/NetworkFundamentalsExplanation.vue')),
+    'network-media': defineAsyncComponent(() => import('@/pages/admin/teachingTools/NetworkMediaExplanation.vue')),
+    'network-communication': defineAsyncComponent(() => import('@/pages/admin/teachingTools/NetworkCommunicationExplanation.vue')),
 }
 
 export const teachingExplanationCategories = [
@@ -24,6 +26,8 @@ export const teachingExplanations = [
     { key: 'binary-to-hexadecimal', category: 'number-systems', title: 'Dual auf Hexadezimal', sourceBase: 2, sourceSystem: 'Dual', system: 'Hexadezimal', base: 16, example: '110101', result: '35', description: 'Bits von rechts in Vierergruppen einteilen, links mit Nullen ergänzen und jede Gruppe in eine Hexziffer umwandeln.' },
     { key: 'hexadecimal-to-binary', category: 'number-systems', title: 'Hexadezimal auf Dual', sourceBase: 16, sourceSystem: 'Hexadezimal', system: 'Dual', base: 2, example: 'AF', result: '10101111', description: 'Jede Hexziffer in genau vier Bits übersetzen und die Vierergruppen von links nach rechts zusammensetzen.' },
     { key: 'network-fundamentals', category: 'networks', title: 'Netzwerkgrundlagen und Geräte', description: 'Entdecke, wie Geräte verbunden sind, Daten austauschen und welche Aufgaben die Netzwerkgeräte übernehmen.' },
+    { key: 'network-media', category: 'networks', title: 'Übertragungsmedien, LAN und WLAN', description: 'Entdecke, wie Daten über Kabel, Glasfaser und Funk übertragen werden und wie LAN und WLAN zusammenarbeiten.' },
+    { key: 'network-communication', category: 'networks', title: 'Datenkommunikation und Internet', description: 'Entdecke, wie Daten zwischen Geräten und über das Internet ausgetauscht werden.' },
 ].map(item => item.category === 'number-systems'
     ? { sourceSystem: 'Dezimal', ...item, ...numberSystemNotation(item.base), sourceNotation: numberSystemNotation(item.sourceBase || 10) }
     : item)

@@ -17,7 +17,7 @@
         <div class="controls" aria-label="Erklärung Schritt für Schritt steuern">
             <button type="button" :disabled="step === 0" @click="move(-1)"><span aria-hidden="true">←</span> Zurück</button>
             <button type="button" :disabled="step === maximumStep" @click="move(1)">Weiter <span aria-hidden="true">→</span></button>
-            <button type="button" @click="step = 0">Neu starten</button>
+            <button type="button" @click="restart">Neu starten</button>
         </div>
         <div class="progress"><progress :value="step + 1" :max="maximumStep + 1" aria-label="Fortschritt der Erklärung" /><span>Schritt {{ step + 1 }} von {{ maximumStep + 1 }}</span></div>
 
@@ -56,6 +56,7 @@
 
 <script setup>
 import { computed, ref } from 'vue'
+import { useNumberExplanationPosition } from '@/helpers/useNumberExplanationPosition'
 
 const number = ref('1A3')
 const draft = ref(number.value)
@@ -72,6 +73,13 @@ const activeIndex = computed(() => step.value > 0 && step.value < maximumStep.va
 const activePlace = computed(() => places.value[activeIndex.value] || null)
 const total = computed(() => places.value.reduce((sum, place) => sum + place.contribution, 0))
 const addition = computed(() => places.value.map(place => place.contribution).join(' + '))
+const savePosition = useNumberExplanationPosition({
+    getValue: () => number.value,
+    setValue: value => { number.value = value; draft.value = value; inputError.value = '' },
+    step,
+    maximumStep: () => maximumStep.value,
+    parseValue: value => /^[0-9A-F]{1,4}$/.test(value) ? value : null,
+})
 
 function isRevealed(index) {
     return step.value === maximumStep.value || (step.value > 0 && index >= places.value.length - step.value)
@@ -79,7 +87,10 @@ function isRevealed(index) {
 
 function move(direction) {
     step.value = Math.max(0, Math.min(maximumStep.value, step.value + direction))
+    savePosition()
 }
+
+function restart() { step.value = 0; savePosition() }
 
 function applyNumber() {
     const selected = draft.value.trim().toUpperCase()
@@ -91,6 +102,7 @@ function applyNumber() {
     number.value = selected
     draft.value = selected
     step.value = 0
+    savePosition()
 }
 </script>
 

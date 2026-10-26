@@ -1,5 +1,6 @@
 import { afterEach, expect, it } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
+import { createMemoryHistory, createRouter } from 'vue-router'
 import NetworkFundamentalsExplanation from '@/pages/admin/teachingTools/NetworkFundamentalsExplanation.vue'
 
 const wrappers: ReturnType<typeof mount>[] = []
@@ -17,6 +18,44 @@ function button(wrapper, name: string) {
 }
 
 afterEach(() => { wrappers.splice(0).forEach(wrapper => wrapper.unmount()) })
+
+it('restores the topic, selection and simulation settings from the address', async () => {
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/lesson', component: NetworkFundamentalsExplanation }] })
+    await router.push('/lesson?preview=1&chapter=devices&selection=Router#details')
+    await router.isReady()
+    const wrapper = mount(NetworkFundamentalsExplanation, { global: { plugins: [router] } })
+    wrappers.push(wrapper)
+    expect(wrapper.get('.detail-panel h3').text()).toBe('Router')
+    await button(wrapper, 'Übertragung').trigger('click')
+    await flushPromises()
+    await wrapper.get('#transfer-rate').setValue(400)
+    await wrapper.get('#transfer-latency').setValue(65)
+    await flushPromises()
+    expect(router.currentRoute.value.query).toMatchObject({ preview: '1', chapter: 'transfer', rate: '400', latency: '65' })
+    expect(router.currentRoute.value.hash).toBe('#details')
+    const address = router.currentRoute.value.fullPath
+    wrapper.unmount()
+    const reloadRouter = createRouter({ history: createMemoryHistory(), routes: [{ path: '/lesson', component: NetworkFundamentalsExplanation }] })
+    await reloadRouter.push(address)
+    await reloadRouter.isReady()
+    const reloaded = mount(NetworkFundamentalsExplanation, { global: { plugins: [reloadRouter] } })
+    wrappers.push(reloaded)
+    expect((reloaded.get('#transfer-rate').element as HTMLInputElement).value).toBe('400')
+    expect((reloaded.get('#transfer-latency').element as HTMLInputElement).value).toBe('65')
+    await button(reloaded, 'Netzwerk').trigger('click')
+    await flushPromises()
+    await button(reloaded, 'Internetverbindung trennen').trigger('click')
+    await flushPromises()
+    expect(reloadRouter.currentRoute.value.query.internet).toBe('off')
+    const restoredAddress = reloadRouter.currentRoute.value.fullPath
+    reloaded.unmount()
+    const restoreRouter = createRouter({ history: createMemoryHistory(), routes: [{ path: '/lesson', component: NetworkFundamentalsExplanation }] })
+    await restoreRouter.push(restoredAddress)
+    await restoreRouter.isReady()
+    const restored = mount(NetworkFundamentalsExplanation, { global: { plugins: [restoreRouter] } })
+    wrappers.push(restored)
+    expect(restored.get('[role="status"]').text()).toContain('Internetverbindung getrennt')
+})
 
 it('navigates between short topics and stops at the beginning and end', async () => {
     const wrapper = render()

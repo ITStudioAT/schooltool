@@ -43,6 +43,16 @@ class TeachingExplanationCatalog
                 'title' => 'Netzwerkgrundlagen und Geräte',
                 'category' => 'Netzwerke',
             ],
+            'network-media' => [
+                'key' => 'network-media',
+                'title' => 'Übertragungsmedien, LAN und WLAN',
+                'category' => 'Netzwerke',
+            ],
+            'network-communication' => [
+                'key' => 'network-communication',
+                'title' => 'Datenkommunikation und Internet',
+                'category' => 'Netzwerke',
+            ],
         ];
     }
 

@@ -69,6 +69,7 @@
 import { computed, ref } from 'vue'
 import { radixDivisionSteps, parseDecimalExample } from '@/helpers/decimalToBinaryExplanation'
 import { numberSystemNotation } from '@/helpers/numberSystemNotation'
+import { useNumberExplanationPosition } from '@/helpers/useNumberExplanationPosition'
 
 const props = defineProps({ base: { type: Number, default: 2, validator: value => [2, 16].includes(value) } })
 const hexadecimal = computed(() => props.base === 16)
@@ -125,19 +126,27 @@ const highlightedRow = computed(() => assembling.value ? rows.value.length - Mat
     : step.value < readingStep.value ? currentStep.value.rowIndex : -1)
 const binary = computed(() => reversedRows.value.map(row => digit(row.remainder)).join(''))
 const proof = computed(() => `${reversedRows.value.filter(row => row.remainder).map(row => hexadecimal.value ? `${row.remainder} × ${row.place}` : row.place).join(' + ') || '0'} = ${number.value}`)
+const savePosition = useNumberExplanationPosition({
+    getValue: () => number.value,
+    setValue: value => { number.value = value; draft.value = String(value); inputError.value = '' },
+    step,
+    maximumStep: () => maximumStep.value,
+    parseValue: parseDecimalExample,
+})
 function digit(remainder) { return remainder.toString(props.base).toUpperCase() }
 function isCalculationVisible(index) {
     return step.value >= readingStep.value || index < currentStep.value.rowIndex || !['divide', 'why'].includes(currentStep.value.phase)
 }
-function move(direction) { step.value = Math.max(0, Math.min(maximumStep.value, step.value + direction)) }
-function restart() { step.value = 0 }
+function move(direction) { step.value = Math.max(0, Math.min(maximumStep.value, step.value + direction)); savePosition() }
+function restart() { step.value = 0; savePosition() }
 function applyNumber() {
     const selected = parseDecimalExample(draft.value)
     if (selected === null) { inputError.value = 'Bitte eine ganze Zahl von 0 bis 65.535 eingeben.'; return }
     inputError.value = ''
-    restart()
+    step.value = 0
     number.value = selected
     draft.value = String(selected)
+    savePosition()
 }
 </script>
 

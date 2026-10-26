@@ -68,7 +68,11 @@ it('does not show a completed check if the server returns a different work', asy
 })
 
 it('updates the Unterricht collection indicator and simulator time after an explicit recheck', async () => {
-    const initial = { id: 86, teaching_course_id: 16, title: 'E-Mails', groups: [{ student_ids: [492, 493] }] }
+    const initial = { id: 86, teaching_course_id: 16, title: 'E-Mails', groups: [{ student_ids: [492, 493] }], status: {
+        dispatch_logs: [{ origin: 'dispatch_import', purpose: 'tasks', sha256: 'a'.repeat(64) }],
+        dispatch_notifications: [492, 493].map(studentId => ({ origin: 'dispatch_import', purpose: 'tasks',
+            student_id: studentId, sent_at: '2026-10-24T12:00:00Z', log_sha256: 'a'.repeat(64) })),
+    } }
     const refreshed = { ...initial, simulation_collection: { origin: 'mailpit_simulation', simulation: true,
         run_id: 'selected-simulation', work_id: 86, course_id: 16, student_ids: [492, 493],
         collected_count: 1, non_submission_count: 1, processed_count: 2, complete: true,
@@ -82,16 +86,18 @@ it('updates the Unterricht collection indicator and simulator time after an expl
         template: '<WorkProgressCheck :work="work" @saved="work = $event.data" /><WorkDeliveryStatus :work="work" />' })
     const wrapper = mount(page, { global: {
         plugins: [createTestingPinia({ createSpy: vi.fn })],
-        stubs: { 'v-btn': { template: '<button><slot /></button>' },
+        stubs: { 'v-btn': { props: ['disabled'], template: '<button :disabled="disabled"><slot /></button>' },
             'v-dialog': { props: ['modelValue'], template: '<section v-if="modelValue" role="dialog"><slot /></section>' } },
     } })
     try {
         await flushPromises()
         expect(wrapper.get('[data-workflow-stage="collection"]').attributes('data-workflow-state')).toBe('open')
+        expect(wrapper.get('[data-workflow-stage="collection"]').element.disabled).toBe(false)
         await wrapper.findAll('button').find(button => button.text().includes('Erneut prüfen')).trigger('click')
         await flushPromises()
         expect(wrapper.get('[data-workflow-stage="collection"]').attributes('data-workflow-state')).toBe('complete')
         expect(wrapper.get('[data-workflow-stage="evaluation"]').attributes('data-workflow-state')).toBe('partial')
+        expect(wrapper.get('[data-workflow-stage="collection"]').element.disabled).toBe(false)
         await wrapper.get('[data-workflow-stage="collection"]').trigger('click')
         expect(wrapper.get('[role="dialog"]').text()).toContain('abgeschlossen · Simulation')
         expect(wrapper.get('[role="dialog"]').text()).toContain('1 gesicherte Rückgaben, 1 vorgesehene Nichtabgaben')

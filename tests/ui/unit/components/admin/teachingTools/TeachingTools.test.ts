@@ -109,6 +109,7 @@ describe('Teaching tools games navigation', () => {
         expect(wrapper.get('[role="dialog"]').text()).not.toContain('Veröffentlichen')
         expect(wrapper.get('[role="dialog"]').text()).not.toContain('Freigabe widerrufen')
         await wrapper.findAll('button').find(button => button.text() === 'Vorschau beenden').trigger('click')
+        await flushPromises()
         expect(wrapper.find('.binary-explanation').exists()).toBe(false)
         await wrapper.get('.explanations__back').trigger('click')
         await flushPromises()
@@ -120,6 +121,28 @@ describe('Teaching tools games navigation', () => {
         expect(direct.wrapper.get('h1').text()).toBe('Dezimal auf Dual')
         expect(direct.wrapper.find('.binary-explanation').exists()).toBe(false)
         expect(direct.wrapper.get('.explanations__back').attributes('href')).toBe('/admin/teaching-tools/explanations/number-systems')
+    })
+
+    it('restores the student preview from the URL and preserves unrelated parameters and history', async () => {
+        const { wrapper, router } = await renderTools('/admin/teaching-tools/explanations/network-media?other=kept#section')
+        await wrapper.findAll('button').find(button => button.text() === 'Schüleransicht testen').trigger('click')
+        await flushPromises()
+        await vi.waitFor(() => expect(wrapper.get('[role="dialog"] h1').text()).toBe('Übertragungsmedien, LAN und WLAN'))
+        expect(router.currentRoute.value.query.preview).toBe('1')
+        expect(router.currentRoute.value.query.other).toBe('kept')
+        expect(router.currentRoute.value.hash).toBe('#section')
+
+        const restored = await renderTools(router.currentRoute.value.fullPath)
+        await vi.waitFor(() => expect(restored.wrapper.get('[role="dialog"] h1').text()).toBe('Übertragungsmedien, LAN und WLAN'))
+
+        await wrapper.findAll('button').find(button => button.text() === 'Vorschau beenden').trigger('click')
+        await flushPromises()
+        expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+        expect(router.currentRoute.value.query.preview).toBeUndefined()
+        expect(router.currentRoute.value.query.other).toBe('kept')
+        router.back()
+        await vi.waitFor(() => expect(router.currentRoute.value.query.preview).toBe('1'))
+        await vi.waitFor(() => expect(wrapper.find('[role="dialog"]').exists()).toBe(true))
     })
 
     it('opens the number systems category with binary and hexadecimal explanations', async () => {
@@ -159,12 +182,14 @@ describe('Teaching tools games navigation', () => {
 
     it('opens the network learning area, student preview and sharing setup', async () => {
         const { wrapper } = await renderTools('/admin/teaching-tools/explanations')
-        expect(wrapper.get('[aria-label="Netzwerke öffnen"]').text()).toContain('1 Erklärung')
+        expect(wrapper.get('[aria-label="Netzwerke öffnen"]').text()).toContain('3 Erklärungen')
         expect(wrapper.get('[aria-label="Verfügbare Kategorien"]').find('.explanation-tile__preview').exists()).toBe(false)
         await wrapper.get('[aria-label="Netzwerke öffnen"]').trigger('click')
         await flushPromises()
         expect(wrapper.get('h1').text()).toBe('Netzwerke')
-        expect(wrapper.get('[aria-label="Verfügbare Erklärungen"]').findAll('a')).toHaveLength(1)
+        expect(wrapper.get('[aria-label="Verfügbare Erklärungen"]').findAll('a')).toHaveLength(3)
+        expect(wrapper.get('[aria-label="Übertragungsmedien, LAN und WLAN öffnen"]').attributes('href')).toBe('/admin/teaching-tools/explanations/network-media')
+        expect(wrapper.get('[aria-label="Datenkommunikation und Internet öffnen"]').attributes('href')).toBe('/admin/teaching-tools/explanations/network-communication')
         expect(wrapper.get('.explanations__back').attributes('href')).toBe('/admin/teaching-tools/explanations')
         await wrapper.get('[aria-label="Netzwerkgrundlagen und Geräte öffnen"]').trigger('click')
         await flushPromises()
@@ -182,6 +207,26 @@ describe('Teaching tools games navigation', () => {
         await flushPromises()
         expect(window.axios.post).toHaveBeenCalledWith('/api/admin/teaching-explanations/network-fundamentals/publication', { access_mode: 'public' })
         expect(wrapper.get('.explanation-detail__link input').element.value).toBe('https://schooltool.example/explanations/network')
+    })
+
+    it('opens the transmission media explanation from the network overview', async () => {
+        const { wrapper } = await renderTools('/admin/teaching-tools/explanations/networks')
+        await wrapper.get('[aria-label="Übertragungsmedien, LAN und WLAN öffnen"]').trigger('click')
+        await flushPromises()
+        expect(wrapper.get('h1').text()).toBe('Übertragungsmedien, LAN und WLAN')
+        expect(window.axios.get).toHaveBeenCalledWith('/api/admin/teaching-explanations/network-media')
+        await wrapper.findAll('button').find(button => button.text() === 'Schüleransicht testen').trigger('click')
+        await vi.waitFor(() => expect(wrapper.get('[role="dialog"] h1').text()).toBe('Übertragungsmedien, LAN und WLAN'))
+    })
+
+    it('opens the data communication explanation from the network overview', async () => {
+        const { wrapper } = await renderTools('/admin/teaching-tools/explanations/networks')
+        await wrapper.get('[aria-label="Datenkommunikation und Internet öffnen"]').trigger('click')
+        await flushPromises()
+        expect(wrapper.get('h1').text()).toBe('Datenkommunikation und Internet')
+        expect(window.axios.get).toHaveBeenCalledWith('/api/admin/teaching-explanations/network-communication')
+        await wrapper.findAll('button').find(button => button.text() === 'Schüleransicht testen').trigger('click')
+        await vi.waitFor(() => expect(wrapper.get('[role="dialog"] h1').text()).toBe('Datenkommunikation und Internet'))
     })
 
     it.each([

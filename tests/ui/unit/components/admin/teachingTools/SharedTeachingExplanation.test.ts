@@ -32,10 +32,14 @@ it.each([
     expect(wrapper.text()).not.toContain('Schüleransicht testen')
 })
 
-it('renders the authorized network learning area in the student view', async () => {
-    vi.stubGlobal('axios', { get: vi.fn().mockResolvedValue({ data: { explanation: 'network-fundamentals' } }) })
+it.each([
+    ['network-fundamentals', 'Netzwerkgrundlagen und Geräte'],
+    ['network-media', 'Übertragungsmedien, LAN und WLAN'],
+    ['network-communication', 'Datenkommunikation und Internet'],
+])('renders the authorized %s learning area in the student view', async (explanation, title) => {
+    vi.stubGlobal('axios', { get: vi.fn().mockResolvedValue({ data: { explanation } }) })
     const { wrapper } = await renderShared()
-    await vi.waitFor(() => expect(wrapper.get('h1').text()).toContain('Netzwerk'))
+    await vi.waitFor(() => expect(wrapper.get('h1').text()).toBe(title))
     expect(wrapper.text()).not.toContain('Veröffentlichen')
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
 })

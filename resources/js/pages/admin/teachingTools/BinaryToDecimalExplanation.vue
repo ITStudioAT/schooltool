@@ -41,6 +41,7 @@
 
 <script setup>
 import { computed, ref } from 'vue'
+import { useNumberExplanationPosition } from '@/helpers/useNumberExplanationPosition'
 
 const number = ref('1101')
 const draft = ref(number.value)
@@ -67,8 +68,15 @@ const explanation = computed(() => {
         ? `Die 1 bedeutet: ${activePlace.value.value} wird zur Summe hinzugefügt.`
         : `Die 0 bedeutet: Der Stellenwert ${activePlace.value.value} wird nicht mitgezählt.`
 })
-function move(direction) { step.value = Math.max(0, Math.min(maximumStep.value, step.value + direction)) }
-function restart() { step.value = 0 }
+const savePosition = useNumberExplanationPosition({
+    getValue: () => number.value,
+    setValue: value => { number.value = value; draft.value = value; inputError.value = '' },
+    step,
+    maximumStep: () => maximumStep.value,
+    parseValue: value => /^[01]{1,16}$/.test(value) ? value : null,
+})
+function move(direction) { step.value = Math.max(0, Math.min(maximumStep.value, step.value + direction)); savePosition() }
+function restart() { step.value = 0; savePosition() }
 function applyNumber() {
     const value = draft.value.trim()
     if (!/^[01]{1,16}$/.test(value)) {
@@ -78,7 +86,8 @@ function applyNumber() {
     inputError.value = ''
     number.value = value
     draft.value = value
-    restart()
+    step.value = 0
+    savePosition()
 }
 </script>
 

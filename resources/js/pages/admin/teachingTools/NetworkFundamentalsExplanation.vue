@@ -7,7 +7,7 @@
 
         <nav class="lesson-navigation" aria-label="Themen auswählen">
             <button v-for="(page, index) in pages" :key="page.key" type="button"
-                :aria-pressed="pageIndex === index" @click="pageIndex = index">{{ page.label }}</button>
+                :aria-pressed="pageIndex === index" @click="openPage(index)">{{ page.label }}</button>
         </nav>
 
         <main class="lesson-content">
@@ -17,15 +17,15 @@
                 <div class="two-columns">
                     <div class="visual-panel network-map" aria-label="Aufbau eines lokalen Netzwerks">
                         <div class="map-core" :class="{ 'map-core--offline': !internetConnected }">
-                            <button v-for="device in networkCore" :key="device" type="button" :aria-pressed="networkSelection === device" @click="networkSelection = device">{{ device }}</button>
+                            <button v-for="device in networkCore" :key="device" type="button" :aria-pressed="networkSelection === device" @click="selectItem('network', device)">{{ device }}</button>
                         </div>
                         <div class="map-branch" aria-hidden="true"></div>
                         <div class="map-devices">
-                            <button v-for="device in networkEnds.slice(0, 3)" :key="device" type="button" :aria-pressed="networkSelection === device" @click="networkSelection = device">{{ device }}</button>
-                            <div class="map-wireless"><span aria-hidden="true"></span><button type="button" :aria-pressed="networkSelection === 'Smartphone'" @click="networkSelection = 'Smartphone'">Smartphone · WLAN</button></div>
+                            <button v-for="device in networkEnds.slice(0, 3)" :key="device" type="button" :aria-pressed="networkSelection === device" @click="selectItem('network', device)">{{ device }}</button>
+                            <div class="map-wireless"><span aria-hidden="true"></span><button type="button" :aria-pressed="networkSelection === 'Smartphone'" @click="selectItem('network', 'Smartphone')">Smartphone · WLAN</button></div>
                         </div>
                         <p class="caption">Computer und Server sind am Switch; das Smartphone verbindet sich über den Access Point.</p>
-                        <button class="connection-button" type="button" @click="internetConnected = !internetConnected">{{ internetConnected ? 'Internetverbindung trennen' : 'Internetverbindung herstellen' }}</button>
+                        <button class="connection-button" type="button" @click="toggleInternet">{{ internetConnected ? 'Internetverbindung trennen' : 'Internetverbindung herstellen' }}</button>
                         <p class="connection-state" role="status">{{ internetConnected ? 'Internetverbindung besteht' : 'Internetverbindung getrennt – das lokale Netzwerk bleibt bestehen' }}</p>
                     </div>
                     <div class="detail-panel" aria-live="polite"><div class="device-detail" :class="{ 'device-detail--illustrated': illustratedNetworkDevices.includes(networkSelection) }"><div><span class="device-detail__label">Im Netzwerk</span><h3>{{ networkSelection }}</h3><p>{{ networkDescriptions[networkSelection] }}</p></div><NetworkDevicePhoto v-if="illustratedNetworkDevices.includes(networkSelection)" :name="networkSelection" class="device-detail__image" /></div>
@@ -36,7 +36,7 @@
             <section v-else-if="currentPage === 'types'" aria-labelledby="types-heading">
                 <div class="section-heading"><div><span>Netze und Zugänge</span><h2 id="types-heading">Welche Arten von Netzwerken gibt es?</h2></div><p>Die Begriffe beschreiben die Reichweite, die Verbindung oder den Zugang zu Diensten.</p></div>
                 <div class="two-columns"><div class="visual-panel"><div class="choice-grid">
-                    <button v-for="item in networkTypes" :key="item.name" type="button" :aria-pressed="selectedType === item.name" @click="selectedType = item.name"><strong>{{ item.name }}</strong><span>{{ item.label }}</span></button>
+                    <button v-for="item in networkTypes" :key="item.name" type="button" :aria-pressed="selectedType === item.name" @click="selectItem('types', item.name)"><strong>{{ item.name }}</strong><span>{{ item.label }}</span></button>
                 </div><p class="caption">LAN und WLAN können Teil desselben lokalen Netzwerks sein.</p></div>
                     <div class="detail-panel" aria-live="polite"><span>Ausgewählter Begriff</span><h3>{{ activeType.name }}</h3><p>{{ activeType.description }}</p><p class="note">{{ activeType.note }}</p></div></div>
             </section>
@@ -44,12 +44,12 @@
             <section v-else-if="currentPage === 'services'" aria-labelledby="services-heading">
                 <div class="section-heading"><div><span>Dienste im Netzwerk</span><h2 id="services-heading">Wer bietet an, wer nutzt?</h2></div><p>Ein Dienst kann eine Webseite oder eine gemeinsame Dateiablage sein.</p></div>
                 <div class="two-columns"><div class="visual-panel"><div class="segmented">
-                    <button type="button" :aria-pressed="serviceMode === 'client'" @click="serviceMode = 'client'">Client-Server</button>
-                    <button type="button" :aria-pressed="serviceMode === 'peer'" @click="serviceMode = 'peer'">Peer-to-Peer</button>
+                    <button type="button" :aria-pressed="serviceMode === 'client'" @click="selectItem('serviceMode', 'client')">Client-Server</button>
+                    <button type="button" :aria-pressed="serviceMode === 'peer'" @click="selectItem('serviceMode', 'peer')">Peer-to-Peer</button>
                 </div><div class="service-diagram" v-if="serviceMode === 'client'">
                     <div><strong>Client</strong><small>nutzt den Dienst</small></div><div class="service-arrow"><span>{{ serviceStep === 'request' ? 'Anfrage' : 'Antwort' }}</span><b>{{ serviceStep === 'request' ? '→' : '←' }}</b></div><div><strong>Server</strong><small>bietet den Dienst an</small></div>
                 </div><div v-else class="service-diagram"><div><strong>Gerät A</strong><small>bietet an und nutzt</small></div><div class="service-arrow"><span>direkter Austausch</span><b>↔</b></div><div><strong>Gerät B</strong><small>bietet an und nutzt</small></div></div>
-                    <div v-if="serviceMode === 'client'" class="segmented"><button type="button" :aria-pressed="serviceStep === 'request'" @click="serviceStep = 'request'">Anfrage zeigen</button><button type="button" :aria-pressed="serviceStep === 'response'" @click="serviceStep = 'response'">Antwort zeigen</button></div></div>
+                    <div v-if="serviceMode === 'client'" class="segmented"><button type="button" :aria-pressed="serviceStep === 'request'" @click="selectItem('serviceStep', 'request')">Anfrage zeigen</button><button type="button" :aria-pressed="serviceStep === 'response'" @click="selectItem('serviceStep', 'response')">Antwort zeigen</button></div></div>
                     <div class="detail-panel" aria-live="polite"><span>So funktioniert es</span><template v-if="serviceMode === 'client'"><h3>{{ serviceStep === 'request' ? 'Der Client fragt an' : 'Der Server antwortet' }}</h3><p>{{ serviceStep === 'request' ? 'Ein Browser fordert Inhalte vom Webserver an.' : 'Der Webserver sendet die Inhalte zurück. Der Browser zeigt sie an.' }}</p><p class="note">Client und Server sind Rollen, nicht zwingend verschiedene Gerätearten. Zentrale Verwaltung erleichtert etwa die Rechtevergabe; der Dienst hängt von der Erreichbarkeit des Servers ab.</p></template><template v-else><h3>Direkter Austausch</h3><p>Geräte können Ressourcen direkt austauschen und dabei gleichzeitig anbieten und nutzen.</p><p class="note">Je nach Anwendung können zusätzliche zentrale Dienste den Austausch unterstützen.</p></template></div></div>
             </section>
 
@@ -58,12 +58,12 @@
                 <div class="two-columns transfer-comparison">
                     <div class="visual-panel transfer-controls">
                         <h3>Datenrate: Wie viele Daten pro Sekunde?</h3>
-                        <label for="transfer-rate">Datenrate <strong>{{ rate }} Mbit/s</strong></label><input id="transfer-rate" v-model.number="rate" type="range" min="10" max="1000" step="10" />
+                        <label for="transfer-rate">Datenrate <strong>{{ rate }} Mbit/s</strong></label><input id="transfer-rate" v-model.number="rate" @change="syncLocation(false)" type="range" min="10" max="1000" step="10" />
                         <div class="transfer-result" aria-live="polite"><span>Eine Datei mit 100 MB</span><strong>mindestens ca. {{ formattedTransferTime }} Sekunden</strong><small>Reine Übertragungszeit bei {{ formattedRate }} MB/s, ohne Verzögerung und Zusatzaufwand.</small></div>
                     </div>
                     <div class="detail-panel transfer-controls">
                         <h3>Latenz: Wie lange dauert der Hin- und Rückweg?</h3>
-                        <label for="transfer-latency">Latenz <strong>{{ latency }} ms</strong></label><input id="transfer-latency" v-model.number="latency" type="range" min="5" max="200" step="5" />
+                        <label for="transfer-latency">Latenz <strong>{{ latency }} ms</strong></label><input id="transfer-latency" v-model.number="latency" @change="syncLocation(false)" type="range" min="5" max="200" step="5" />
                         <div class="transfer-result" aria-live="polite"><span>Gerät → Anfrage → Dienst<br />Gerät ← Antwort ← Dienst</span><strong>Hin und zurück: {{ latency }} ms = {{ formattedLatency }} s</strong><small>Bei höherer Latenz dauert dieser Weg länger. Der Wert ist hier frei gewählt, nicht gemessen.</small></div>
                     </div>
                 </div>
@@ -73,20 +73,20 @@
             <section v-else-if="currentPage === 'devices'" aria-labelledby="devices-heading">
                 <div class="section-heading"><div><span>Bausteine</span><h2 id="devices-heading">Was machen Netzwerkgeräte?</h2></div><p>Jedes Gerät übernimmt eine bestimmte Aufgabe. Mehrere Funktionen können in einem Gerät stecken.</p></div>
                 <div class="two-columns"><div class="visual-panel"><div class="choice-grid devices-grid">
-                    <button v-for="item in devices" :key="item.name" type="button" :aria-pressed="selectedDevice === item.name" @click="selectedDevice = item.name"><NetworkDevicePhoto v-if="networkDevicePhotos[item.name]" :name="item.name" class="device-thumbnail" decorative /><strong>{{ item.name }}</strong><span>{{ item.label }}</span></button>
+                    <button v-for="item in devices" :key="item.name" type="button" :aria-pressed="selectedDevice === item.name" @click="selectItem('devices', item.name)"><NetworkDevicePhoto v-if="networkDevicePhotos[item.name]" :name="item.name" class="device-thumbnail" decorative /><strong>{{ item.name }}</strong><span>{{ item.label }}</span></button>
                 </div><NetworkDevicePhoto :names="devices.map(item => item.name)" credits /></div><div class="detail-panel" aria-live="polite"><div class="device-detail" :class="{ 'device-detail--illustrated': networkDevicePhotos[activeDevice.name] }"><div><span class="device-detail__label">Aufgabe</span><h3>{{ activeDevice.name }}</h3><p>{{ activeDevice.description }}</p></div><NetworkDevicePhoto v-if="networkDevicePhotos[activeDevice.name]" :name="activeDevice.name" class="device-detail__image" /></div><p class="note">Ein Heimrouter enthält häufig Router, Switch, WLAN-Access-Point und Firewall; je nach Anschluss auch ein Modem.</p></div></div>
             </section>
 
             <section v-else-if="currentPage === 'switch'" aria-labelledby="switch-heading">
                 <div class="section-heading"><div><span>Im lokalen Netz</span><h2 id="switch-heading">Schnittstellen und Switches</h2></div><p>Die Netzwerkschnittstelle verbindet ein Gerät über Kabel oder Funk.</p></div>
                 <div class="two-columns"><div class="visual-panel"><div class="choice-grid compact-grid">
-                    <button v-for="item in switchConcepts" :key="item.name" type="button" :aria-pressed="selectedSwitch === item.name" @click="selectedSwitch = item.name"><strong>{{ item.name }}</strong><span>{{ item.label }}</span></button>
+                    <button v-for="item in switchConcepts" :key="item.name" type="button" :aria-pressed="selectedSwitch === item.name" @click="selectItem('switch', item.name)"><strong>{{ item.name }}</strong><span>{{ item.label }}</span></button>
                 </div></div><div class="detail-panel" aria-live="polite"><div class="device-detail" :class="{ 'device-detail--illustrated': switchIllustration }"><div><span class="device-detail__label">Begriff erklärt</span><h3>{{ activeSwitch.name }}</h3><p>{{ activeSwitch.description }}</p><p v-if="activeSwitch.example" class="mac-example">{{ activeSwitch.example }}</p></div><NetworkDevicePhoto v-if="switchIllustration" :name="switchIllustration" class="device-detail__image" /></div><p class="note">{{ activeSwitch.note || 'Verwendet ein Gerät zwei Netzwerkadapter – einen für WLAN und einen für das Netzwerkkabel –, hat normalerweise jeder Adapter eine eigene MAC-Adresse.' }}</p></div></div>
             </section>
 
             <section v-else-if="currentPage === 'topologies'" aria-labelledby="topology-heading">
                 <div class="section-heading"><div><span>Strukturen</span><h2 id="topology-heading">Wie sind Geräte verbunden?</h2></div><p>Eine Topologie beschreibt den tatsächlichen oder logischen Aufbau eines Netzwerks.</p></div>
-                <div class="two-columns"><div class="visual-panel topology-panel"><div class="segmented topology-options"><button v-for="item in topologies" :key="item.name" type="button" :aria-pressed="selectedTopology === item.name" @click="selectedTopology = item.name">{{ item.name }}</button></div>
+                <div class="two-columns"><div class="visual-panel topology-panel"><div class="segmented topology-options"><button v-for="item in topologies" :key="item.name" type="button" :aria-pressed="selectedTopology === item.name" @click="selectItem('topologies', item.name)">{{ item.name }}</button></div>
                     <svg viewBox="0 0 250 120" role="img" :aria-label="activeTopology.diagram"><path :d="activeTopology.path"/><circle v-for="(point, index) in activeTopology.points" :key="index" :cx="point[0]" :cy="point[1]" r="7" /></svg>
                     <p class="caption">{{ activeTopology.diagram }}</p></div><div class="detail-panel" aria-live="polite"><span>Topologie</span><h3>{{ activeTopology.name }}</h3><p>{{ activeTopology.description }}</p><p class="note">In heutigen kabelgebundenen LANs ist die Sternstruktur häufig: Jedes Endgerät ist mit einem Switch verbunden.</p></div></div>
             </section>
@@ -94,20 +94,21 @@
             <section v-else aria-labelledby="building-heading">
                 <div class="section-heading"><div><span>Im Gebäude</span><h2 id="building-heading">Von der Dose ins Netzwerk</h2></div><p>Ein möglicher Aufbau vom Raum bis ins Internet.</p></div>
                 <div class="two-columns"><div class="visual-panel building-panel"><div class="building-chain">
-                    <template v-for="(item, index) in buildingParts.slice(0, 3)" :key="item.name"><button type="button" :aria-pressed="selectedBuilding === item.name" @click="selectedBuilding = item.name">{{ item.name }}</button><span v-if="index < 2" aria-hidden="true">↔</span></template>
-                </div><div class="building-chain building-chain--route"><span class="building-chain__label">Vom Switch</span><span aria-hidden="true">↔</span><template v-for="(item, index) in buildingParts.slice(3, 5)" :key="item.name"><button type="button" :aria-pressed="selectedBuilding === item.name" @click="selectedBuilding = item.name">{{ item.name }}</button><span v-if="index === 0" aria-hidden="true">↔</span></template></div>
+                    <template v-for="(item, index) in buildingParts.slice(0, 3)" :key="item.name"><button type="button" :aria-pressed="selectedBuilding === item.name" @click="selectItem('building', item.name)">{{ item.name }}</button><span v-if="index < 2" aria-hidden="true">↔</span></template>
+                </div><div class="building-chain building-chain--route"><span class="building-chain__label">Vom Switch</span><span aria-hidden="true">↔</span><template v-for="(item, index) in buildingParts.slice(3, 5)" :key="item.name"><button type="button" :aria-pressed="selectedBuilding === item.name" @click="selectItem('building', item.name)">{{ item.name }}</button><span v-if="index === 0" aria-hidden="true">↔</span></template></div>
                     <p class="caption">Die feste Leitung endet am Patchpanel. Ein Patchkabel verbindet es mit dem Switch. Der Router verbindet das lokale Netzwerk mit anderen Netzen.</p>
-                    <div class="building-extras"><button type="button" class="usv-button" :aria-pressed="selectedBuilding === 'Backbone'" @click="selectedBuilding = 'Backbone'">Backbone – Verbindung</button><button type="button" class="usv-button" :aria-pressed="selectedBuilding === 'USV'" @click="selectedBuilding = 'USV'">USV – Stromversorgung</button></div></div>
+                    <div class="building-extras"><button type="button" class="usv-button" :aria-pressed="selectedBuilding === 'Backbone'" @click="selectItem('building', 'Backbone')">Backbone – Verbindung</button><button type="button" class="usv-button" :aria-pressed="selectedBuilding === 'USV'" @click="selectItem('building', 'USV')">USV – Stromversorgung</button></div></div>
                     <div class="detail-panel" aria-live="polite"><div class="device-detail" :class="{ 'device-detail--illustrated': illustratedBuildingDevices.includes(activeBuilding.name) }"><div><span class="device-detail__label">Baustein</span><h3>{{ activeBuilding.name }}</h3><p>{{ activeBuilding.description }}</p></div><NetworkDevicePhoto v-if="illustratedBuildingDevices.includes(activeBuilding.name)" :name="activeBuilding.name" class="device-detail__image" /></div><p class="note">Patchpanel und Geräte stehen häufig in einem Netzwerkschrank. Leitungen und Anschlüsse müssen zu Datenrate und Entfernung passen.</p></div></div>
             </section>
         </main>
 
-        <footer class="lesson-footer"><button type="button" :disabled="pageIndex === 0" @click="pageIndex--">← Zurück</button><span>{{ pages[pageIndex].label }} · {{ pageIndex + 1 }} von {{ pages.length }}</span><button type="button" class="next-button" :disabled="pageIndex === pages.length - 1" @click="pageIndex++">Weiter →</button></footer>
+        <footer class="lesson-footer"><button type="button" :disabled="pageIndex === 0" @click="openPage(pageIndex - 1)">← Zurück</button><span>{{ pages[pageIndex].label }} · {{ pageIndex + 1 }} von {{ pages.length }}</span><button type="button" class="next-button" :disabled="pageIndex === pages.length - 1" @click="openPage(pageIndex + 1)">Weiter →</button></footer>
     </article>
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import NetworkDevicePhoto from './NetworkDevicePhoto.vue'
 import { networkDevicePhotos } from './networkDevicePhotos'
 
@@ -117,6 +118,8 @@ const pages = [
     { key: 'devices', label: 'Geräte' }, { key: 'switch', label: 'Switch & VLAN' },
     { key: 'topologies', label: 'Topologien' }, { key: 'building', label: 'Gebäude' },
 ]
+const route = useRoute()
+const router = useRouter()
 const pageIndex = ref(0)
 const currentPage = computed(() => pages[pageIndex.value].key)
 const networkCore = ['Internet', 'Router', 'Switch']
@@ -193,6 +196,69 @@ const buildingParts = [
 const selectedBuilding = ref('Netzwerkdose')
 const illustratedBuildingDevices = ['Patchpanel', 'Switch', 'Router', 'USV']
 const activeBuilding = computed(() => buildingParts.find(item => item.name === selectedBuilding.value))
+
+const selectedByPage = {
+    network: networkSelection, types: selectedType, devices: selectedDevice,
+    switch: selectedSwitch, topologies: selectedTopology, building: selectedBuilding,
+}
+const optionsByPage = {
+    network: Object.keys(networkDescriptions), types: networkTypes.map(item => item.name),
+    devices: devices.map(item => item.name), switch: switchConcepts.map(item => item.name),
+    topologies: topologies.map(item => item.name), building: buildingParts.map(item => item.name),
+}
+const initialByPage = { network: 'Switch', types: 'LAN', devices: 'Switch', switch: 'Netzwerkadapter', topologies: 'Stern', building: 'Netzwerkdose' }
+
+watch(() => [route?.query?.chapter, route?.query?.selection, route?.query?.internet, route?.query?.rate, route?.query?.latency],
+    ([chapter, selection, internet, selectedRate, selectedLatency]) => {
+        const index = pages.findIndex(page => page.key === chapter)
+        pageIndex.value = index >= 0 ? index : 0
+        const key = pages[pageIndex.value].key
+        if (selectedByPage[key]) {
+            selectedByPage[key].value = optionsByPage[key].includes(selection) ? selection : initialByPage[key]
+        }
+        if (key === 'services') {
+            serviceMode.value = selection === 'peer' ? 'peer' : 'client'
+            serviceStep.value = selection === 'client-response' ? 'response' : 'request'
+        }
+        if (key === 'network') internetConnected.value = internet !== 'off'
+        if (key === 'transfer') {
+            const nextRate = Number(selectedRate)
+            const nextLatency = Number(selectedLatency)
+            rate.value = Number.isInteger(nextRate) && nextRate >= 10 && nextRate <= 1000 && nextRate % 10 === 0 ? nextRate : 100
+            latency.value = Number.isInteger(nextLatency) && nextLatency >= 5 && nextLatency <= 200 && nextLatency % 5 === 0 ? nextLatency : 40
+        }
+    }, { immediate: true })
+
+function syncLocation(push) {
+    if (!router || !route) return
+    const key = pages[pageIndex.value].key
+    const selection = key === 'services' ? (serviceMode.value === 'peer' ? 'peer' : `client-${serviceStep.value}`) : selectedByPage[key]?.value
+    const query = {
+        ...route.query, chapter: key,
+        selection: selection && selection !== initialByPage[key] && selection !== 'client-request' ? selection : undefined,
+        internet: key === 'network' && !internetConnected.value ? 'off' : undefined,
+        rate: key === 'transfer' && rate.value !== 100 ? String(rate.value) : undefined,
+        latency: key === 'transfer' && latency.value !== 40 ? String(latency.value) : undefined,
+    }
+    router[push ? 'push' : 'replace']({ query, hash: route.hash })
+}
+
+function openPage(index) {
+    if (index < 0 || index >= pages.length) return
+    pageIndex.value = index
+    syncLocation(true)
+}
+
+function selectItem(key, value) {
+    const field = key === 'serviceMode' ? serviceMode : key === 'serviceStep' ? serviceStep : selectedByPage[key]
+    field.value = value
+    syncLocation(false)
+}
+
+function toggleInternet() {
+    internetConnected.value = !internetConnected.value
+    syncLocation(false)
+}
 </script>
 
 <style scoped>

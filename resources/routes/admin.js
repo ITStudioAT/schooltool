@@ -55,6 +55,8 @@ export const routes = [
     { path: '/admin/teaching-tools/explanations/number-systems', component: TeachingTools, props: { section: 'explanations', category: 'number-systems' }, meta: { capability: 'teaching' } },
     { path: '/admin/teaching-tools/explanations/networks', component: TeachingTools, props: { section: 'explanations', category: 'networks' }, meta: { capability: 'teaching' } },
     { path: '/admin/teaching-tools/explanations/network-fundamentals', component: TeachingTools, props: { section: 'explanations', explanation: 'network-fundamentals' }, meta: { capability: 'teaching' } },
+    { path: '/admin/teaching-tools/explanations/network-media', component: TeachingTools, props: { section: 'explanations', explanation: 'network-media' }, meta: { capability: 'teaching' } },
+    { path: '/admin/teaching-tools/explanations/network-communication', component: TeachingTools, props: { section: 'explanations', explanation: 'network-communication' }, meta: { capability: 'teaching' } },
     { path: '/admin/teaching-tools/explanations/decimal-to-hexadecimal', component: TeachingTools, props: { section: 'explanations', explanation: 'decimal-to-hexadecimal' }, meta: { capability: 'teaching' } },
     { path: '/admin/teaching-tools/explanations/binary-to-hexadecimal', component: TeachingTools, props: { section: 'explanations', explanation: 'binary-to-hexadecimal' }, meta: { capability: 'teaching' } },
     { path: '/admin/teaching-tools/explanations/hexadecimal-to-binary', component: TeachingTools, props: { section: 'explanations', explanation: 'hexadecimal-to-binary' }, meta: { capability: 'teaching' } },

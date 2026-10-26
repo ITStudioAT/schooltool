@@ -119,18 +119,27 @@
 
 <script setup>
 import { computed, ref, watch } from 'vue'
-import { RouterLink, useRouter } from 'vue-router'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { show, publish, revoke } from '@/actions/App/Http/Controllers/Admin/TeachingExplanationController'
 import { teachingExplanations, teachingExplanationCategories, teachingExplanationComponent } from '@/helpers/teachingExplanations'
 
 const props = defineProps({ category: { type: String, default: null }, explanation: { type: String, default: null } })
 const router = useRouter()
+const route = useRoute()
 const cardShares = ref({})
 const currentExplanation = computed(() => teachingExplanations.find(item => item.key === props.explanation))
 const explanationCategoryTitle = computed(() => teachingExplanationCategories.find(item => item.key === currentExplanation.value?.category)?.title || '')
 const currentCategory = computed(() => teachingExplanationCategories.find(item => item.key === props.category))
 const categoryExplanations = computed(() => teachingExplanations.filter(item => item.category === props.category))
-const previewOpened = ref(false)
+const previewOpened = computed({
+    get: () => Boolean(currentExplanation.value) && route.query.preview === '1',
+    set(opened) {
+        const query = { ...route.query }
+        if (opened) query.preview = '1'
+        else delete query.preview
+        void router.push({ query, hash: route.hash })
+    },
+})
 const sharing = ref(null)
 const loading = ref(false)
 const busy = ref(false)
@@ -236,7 +245,7 @@ async function copyLink() {
     try { await navigator.clipboard.writeText(sharing.value.invitation.url); copied.value = true }
     catch { error.value = 'Bitte den Link im Textfeld markieren und kopieren.' }
 }
-watch(() => props.explanation, () => { previewOpened.value = false; sharing.value = null; successMessage.value = ''; void loadSharing() }, { immediate: true })
+watch(() => props.explanation, () => { sharing.value = null; successMessage.value = ''; void loadSharing() }, { immediate: true })
 watch(accessMode, () => { successMessage.value = '' })
 </script>
 
