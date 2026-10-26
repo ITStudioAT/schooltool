@@ -167,6 +167,60 @@ describe('deployment notices', () => {
         expect(fetchStatus).not.toHaveBeenCalledWith('/up', expect.anything())
     })
 
+    it('lets users minimize and reopen the active notice without losing their inputs or hiding warnings', async () => {
+        const input = document.querySelector('input')
+        await start()
+        await setStatus('maintenance')
+
+        const toggle = () => notice()?.querySelector<HTMLButtonElement>('.schooltool-deployment-notice__toggle')
+        expect(toggle()?.textContent).toBe('Ansicht verkleinern')
+        expect(toggle()?.getAttribute('aria-expanded')).toBe('true')
+        toggle()?.click()
+        expect(notice()).toBeVisible()
+        expect(notice()?.textContent).toContain('Speichern ist vorübergehend nicht möglich')
+        expect(toggle()?.textContent).toBe('Hinweis vergrößern')
+        expect(toggle()?.getAttribute('aria-expanded')).toBe('false')
+        expect(input?.value).toBe('Unsaved lesson plan')
+        expect(reload).not.toHaveBeenCalled()
+
+        await setStatus('maintenance')
+        expect(toggle()?.textContent).toBe('Hinweis vergrößern')
+        await setStatus('failed')
+        expect(notice()?.textContent).toContain('Aktualisierung verzögert')
+        expect(toggle()?.textContent).toBe('Hinweis vergrößern')
+        fetchStatus.mockRejectedValueOnce(new Error('Network offline'))
+        await monitor.checkNow()
+        expect(notice()?.textContent).toContain('Verbindung unterbrochen')
+        expect(toggle()?.textContent).toBe('Hinweis vergrößern')
+        toggle()?.click()
+        expect(toggle()?.getAttribute('aria-expanded')).toBe('true')
+        expect(input?.value).toBe('Unsaved lesson plan')
+        expect(reload).not.toHaveBeenCalled()
+    })
+
+    it('offers saving open input after recovery and starts the next update in the large view', async () => {
+        const input = document.querySelector('input')
+        await start()
+        await setStatus('maintenance')
+        notice()?.querySelector<HTMLButtonElement>('.schooltool-deployment-notice__toggle')?.click()
+
+        fetchStatus.mockResolvedValueOnce(jsonResponse({ state: 'completed', id: 'release-1' }))
+            .mockResolvedValueOnce(jsonResponse({ status: 'up' }))
+        await monitor.checkNow()
+        expect(notice()?.textContent).toContain('Bitte prüfen und speichern Sie offene Eingaben')
+        expect(notice()?.querySelector('.schooltool-deployment-notice__toggle')).toBeNull()
+        expect(input?.value).toBe('Unsaved lesson plan')
+        expect(reload).not.toHaveBeenCalled()
+
+        await setStatus('scheduled', 'release-2')
+        await setStatus('maintenance', 'release-2')
+        const toggle = notice()?.querySelector<HTMLButtonElement>('.schooltool-deployment-notice__toggle')
+        expect(toggle?.textContent).toBe('Ansicht verkleinern')
+        expect(toggle?.getAttribute('aria-expanded')).toBe('true')
+        expect(input?.value).toBe('Unsaved lesson plan')
+        expect(reload).not.toHaveBeenCalled()
+    })
+
     it.each([500, 502, 503, 504])('checks %s failures immediately without retrying writes or changing Axios results', async (status) => {
         const axiosClient = { interceptors: { response: { use: vi.fn().mockReturnValue(7), eject: vi.fn() } } }
         await start({ axiosClient })

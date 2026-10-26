@@ -1,6 +1,7 @@
 const storageKey = 'schooltool-deployment-id';
 const activeStates = ['scheduled', 'maintenance', 'failed'];
 const knownStates = ['idle', ...activeStates, 'completed'];
+const largeNoticeStates = ['maintenance', 'failed', 'unavailable'];
 
 export function startDeploymentNotice({ axiosClient, fetchStatus = window.fetch.bind(window), reload = () => window.location.reload() } = {}) {
     let stopped = false;
@@ -11,6 +12,7 @@ export function startDeploymentNotice({ axiosClient, fetchStatus = window.fetch.
     let visibleState = null;
     let recovered = false;
     let deploymentId = null;
+    let minimized = false;
 
     try {
         deploymentId = window.sessionStorage.getItem(storageKey);
@@ -41,6 +43,10 @@ export function startDeploymentNotice({ axiosClient, fetchStatus = window.fetch.
 
         visibleState = state;
 
+        if (!largeNoticeStates.includes(state)) {
+            minimized = false;
+        }
+
         if (!banner) {
             banner = document.createElement('aside');
             banner.className = 'schooltool-deployment-notice';
@@ -58,6 +64,10 @@ export function startDeploymentNotice({ axiosClient, fetchStatus = window.fetch.
             completed: ['SchoolTool ist wieder verfügbar', 'Bitte prüfen und speichern Sie offene Eingaben, bevor Sie die Seite neu laden.'],
         };
         const [title, description] = messages[state];
+        const brand = document.createElement('div');
+        brand.className = 'schooltool-deployment-notice__brand';
+        brand.setAttribute('aria-hidden', 'true');
+        brand.textContent = 'schooltool.';
         const text = document.createElement('div');
         text.className = 'schooltool-deployment-notice__text';
         const heading = document.createElement('strong');
@@ -65,9 +75,32 @@ export function startDeploymentNotice({ axiosClient, fetchStatus = window.fetch.
         const paragraph = document.createElement('p');
         paragraph.textContent = description;
         text.append(heading, paragraph);
-        banner.replaceChildren(text);
+        const illustration = document.createElement('div');
+        illustration.className = 'schooltool-deployment-notice__illustration';
+        illustration.setAttribute('aria-hidden', 'true');
+        banner.replaceChildren(brand, text, illustration);
         banner.hidden = false;
         banner.dataset.state = state;
+        banner.dataset.minimized = String(minimized);
+
+        if (largeNoticeStates.includes(state)) {
+            const toggleButton = document.createElement('button');
+            toggleButton.type = 'button';
+            toggleButton.className = 'schooltool-deployment-notice__toggle';
+
+            function updateToggle() {
+                banner.dataset.minimized = String(minimized);
+                toggleButton.textContent = minimized ? 'Hinweis vergrößern' : 'Ansicht verkleinern';
+                toggleButton.setAttribute('aria-expanded', String(!minimized));
+            }
+
+            toggleButton.addEventListener('click', () => {
+                minimized = !minimized;
+                updateToggle();
+            });
+            updateToggle();
+            banner.append(toggleButton);
+        }
 
         if (['scheduled', 'completed'].includes(state)) {
             const dismissButton = document.createElement('button');
