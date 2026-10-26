@@ -81,7 +81,7 @@
                 <div class="section-heading"><div><span>Im lokalen Netz</span><h2 id="switch-heading">Schnittstellen und Switches</h2></div><p>Die Netzwerkschnittstelle verbindet ein Gerät über Kabel oder Funk.</p></div>
                 <div class="two-columns"><div class="visual-panel"><div class="choice-grid compact-grid">
                     <button v-for="item in switchConcepts" :key="item.name" type="button" :aria-pressed="selectedSwitch === item.name" @click="selectedSwitch = item.name"><strong>{{ item.name }}</strong><span>{{ item.label }}</span></button>
-                </div></div><div class="detail-panel" aria-live="polite"><span>Begriff erklärt</span><h3>{{ activeSwitch.name }}</h3><p>{{ activeSwitch.description }}</p><p class="note">Eine MAC-Adresse kennzeichnet eine Schnittstelle auf der lokalen Verbindungsebene. Je nach Gerät oder Einstellung kann sie geändert oder zufällig gewählt werden.</p></div></div>
+                </div></div><div class="detail-panel" aria-live="polite"><span>Begriff erklärt</span><h3>{{ activeSwitch.name }}</h3><p>{{ activeSwitch.description }}</p><p class="note">Eine MAC-Adresse ist die Adresse eines Netzwerkanschlusses, zum Beispiel des WLAN-Adapters oder des Ethernet-Anschlusses. Ein Switch kann sie nutzen, um Daten im lokalen Netzwerk an den richtigen Anschluss weiterzuleiten. WLAN und Kabel können unterschiedliche MAC-Adressen haben. Eine WLAN-Adresse kann zum Schutz der Privatsphäre auch zufällig gewählt werden.</p></div></div>
             </section>
 
             <section v-else-if="currentPage === 'topologies'" aria-labelledby="topology-heading">
