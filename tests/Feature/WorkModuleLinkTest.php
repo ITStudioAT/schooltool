@@ -11,7 +11,12 @@ use App\Models\User;
 use App\Services\DropboxModuleLinks;
 use App\Services\DropboxWorkImport;
 use App\Services\ModuleHandshake;
+use App\Services\TeachingWorkDeadlineSync;
+use GuzzleHttp\Promise\Promise;
+use GuzzleHttp\Promise\Utils;
+use GuzzleHttp\Psr7\Response as PsrResponse;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Factory as HttpFactory;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Spatie\Permission\Models\Role;
@@ -75,6 +80,12 @@ function fakeModuleDropbox(object $context): void
                     if (($context->changedExerciseRevision ?? false) && $entry['name'] === 'Anlage_und_Quellen.json') {
                         $entry['rev'] = 'changed-revision';
                     }
+                    if (($context->changedExercisePath ?? false) && $entry['name'] === 'Anlage_und_Quellen.json') {
+                        $entry['path_lower'] .= '-moved';
+                    }
+                    if (($context->changedPreparationFile ?? null) === $entry['name']) {
+                        $entry['rev'] = 'changed-revision';
+                    }
 
                     return Http::response($entry);
                 }
@@ -88,11 +99,47 @@ function fakeModuleDropbox(object $context): void
         }
         if (str_ends_with($request->url(), '/files/list_folder')) {
             $parentFolder = collect($context->online)->firstWhere('id', $request['path']);
-
-            return Http::response(['entries' => array_values(array_filter($context->online,
+            if (($context->failedCandidateFolderId ?? null) === $request['path']) {
+                return Http::response([], 503);
+            }
+            $entries = array_values(array_filter($context->online,
                 fn (array $entry): bool => ($parentFolder['.tag'] ?? null) === 'folder'
                     ? dirname($entry['path_lower']) === $parentFolder['path_lower']
-                    : $request['path'] === 'id:folder'.basename(dirname($entry['path_lower'])))), 'has_more' => false]);
+                    : $request['path'] === 'id:folder'.basename(dirname($entry['path_lower']))));
+            $listing = ['entries' => $entries, 'has_more' => false];
+            if (($context->pagedCandidateFolderId ?? null) === $request['path']) {
+                $context->continuedCandidateEntries = array_slice($entries, 1);
+                $listing = ['entries' => array_slice($entries, 0, 1), 'has_more' => true];
+                if (! ($context->missingCandidateCursor ?? false)) {
+                    $listing['cursor'] = 'candidate-page-2';
+                }
+            }
+            if (in_array($request['path'], $context->deferredCandidateIds ?? [], true)) {
+                $promise = new Promise(fn () => Utils::queue()->run());
+                $context->candidatePending[] = [$promise, $listing];
+                $context->candidateMaximum = max($context->candidateMaximum, count($context->candidatePending));
+                if (! $context->candidateDrainScheduled) {
+                    $context->candidateDrainScheduled = true;
+                    Utils::queue()->add(function () use ($context): void {
+                        $batch = $context->candidatePending;
+                        $context->candidatePending = [];
+                        $context->candidateDrainScheduled = false;
+                        $context->candidateWaves[] = count($batch);
+                        foreach (array_reverse($batch) as [$promise, $data]) {
+                            $promise->resolve(new PsrResponse(200, ['Content-Type' => 'application/json'], json_encode($data, JSON_THROW_ON_ERROR)));
+                        }
+                    });
+                }
+
+                return $promise;
+            }
+
+            return Http::response($listing);
+        }
+        if (str_ends_with($request->url(), '/files/list_folder/continue')) {
+            expect($request['cursor'])->toBe('candidate-page-2');
+
+            return Http::response(['entries' => $context->continuedCandidateEntries, 'has_more' => false]);
         }
 
         throw new RuntimeException('Unexpected module Dropbox request: '.$request->url());
@@ -218,6 +265,133 @@ function addEmailPreparationFixture(object $context): string
     return $root;
 }
 
+test('a cold deadline refresh reads email readiness only in the final full check', function (): void {
+    linkExerciseFixture($this);
+    addExerciseFixture($this);
+    addEmailPreparationFixture($this);
+    $package = collect($this->online)->firstWhere('name', 'Schooltool-Versandvorbereitung.json');
+    $this->partialMock(TeachingWorkDeadlineSync::class)
+        ->shouldReceive('sync')->once()->andReturn(['changed' => false, 'message' => 'Frist abgeglichen.']);
+
+    $this->postJson($this->url.'/refresh', ['date' => '2026-10-06', 'finish_until_date' => null, 'finish_until_time' => null,
+        'expected' => ['date' => null, 'time' => null]])->assertOk()
+        ->assertJsonPath('exercise.status', 'found')->assertJsonPath('exercise.email_preparation.status', 'ready');
+
+    $reads = Http::recorded(fn (Request $request): bool => str_ends_with($request->url(), '/files/download')
+        && json_decode($request->header('Dropbox-API-Arg')[0], true)['path'] === 'rev:'.$package['rev']);
+    expect($reads)->toHaveCount(1);
+    Http::assertNotSent(fn (Request $request): bool => preg_match('#/files/(upload|delete|move|create)#', $request->url()) === 1);
+});
+
+test('folder-only discovery preserves group ambiguity and validates other matching groups', function (): void {
+    linkExerciseFixture($this);
+    $this->work->update(['groups' => [['date' => '2026-10-07']]]);
+    addExerciseFixture($this);
+    addExerciseFixture($this, '2026-10-07_Andere-Gruppe', ['Durchfuehrungsdatum' => '2026-10-07']);
+    $service = app(DropboxModuleLinks::class);
+    $work = $this->work->fresh();
+    $link = $service->current($work);
+
+    expect($service->exerciseFolder($this->connection, $work, $link, null)['status'])->toBe('unknown')
+        ->and($service->exerciseFolder($this->connection, $work, $link, '2026-10-07')['folder']['name'])->toBe('2026-10-07_Andere-Gruppe')
+        ->and($service->exercise($this->connection, $work, $link, '2026-10-07', initial: false)['status'])->toBe('unknown');
+
+    $this->online = array_values(array_filter($this->online, fn (array $entry): bool => ! (($entry['name'] ?? null) === 'History.json'
+        && str_contains($entry['path_display'], '2026-10-06_E-Mail_Fach_3B_Gruppe-2'))));
+    expect($service->exerciseFolder($this->connection, $work, $link, '2026-10-07')['status'])->toBe('unknown');
+});
+
+/** @return array{root: string, payload: array<string, mixed>, package: array<string, mixed>} */
+function addPreparedEmailPreviewFixture(object $context): array
+{
+    $root = addEmailPreparationFixture($context);
+    $entry = collect($context->online)->firstWhere('name', 'Schooltool-Versandvorbereitung.json');
+    $package = json_decode($context->exerciseDocuments['rev:'.$entry['rev']], true, flags: JSON_THROW_ON_ERROR);
+    $recipient = $package['Empfaenger'][0];
+    $payload = ['From' => $recipient['From'], 'To' => $recipient['To'], 'Subject' => $recipient['Betreff'],
+        'TextBody' => 'Hallo Ada, deine Aufgabe ist bereit.',
+        'HtmlBody' => '<div><p>Hallo Ada, deine Aufgabe ist bereit.</p><a href="https://example.test/private-token">Test öffnen</a></div>',
+        'SourceTextSHA256' => $package['Textquelle_SHA256'],
+        'SourceTextPath' => 'C:\\historisch\\nachricht_entwurf.md',
+        'Attachments' => [['Name' => 'Aufgaben.pdf', 'Path' => 'C:\\historisch\\Aufgaben.pdf']]];
+    foreach ([$root.'/E-Mail-Vorbereitung', $root.'/E-Mail-Vorbereitung/Nachrichtenvorschauen'] as $folder) {
+        $context->online[] = ['.tag' => 'folder', 'id' => 'id:'.hash('sha256', $folder), 'name' => basename($folder),
+            'path_lower' => strtolower($folder), 'path_display' => $folder];
+    }
+    setPreparedEmailPreviewFixture($context, $root, $package, $payload);
+
+    return ['root' => $root, 'payload' => $payload, 'package' => $package];
+}
+
+/** @param array<string, mixed> $package
+ * @param  array<string, mixed>  $payload
+ */
+function setPreparedEmailPreviewFixture(object $context, string $root, array $package, array $payload, bool $updateHash = true): void
+{
+    $raw = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+    if ($updateHash) {
+        $package['Empfaenger'][0]['Nachricht_SHA256'] = hash('sha256', $raw);
+    }
+    addEmailPreparationFile($context, $root.'/Schooltool-Versandvorbereitung.json', json_encode($package, JSON_THROW_ON_ERROR));
+    addEmailPreparationFile($context, $root.'/E-Mail-Vorbereitung/Nachrichtenvorschauen/01.json', $raw);
+}
+
+test('email preparation preview returns the confirmed personal message without sending or modifying it', function (): void {
+    linkExerciseFixture($this);
+    addExerciseFixture($this);
+    $fixture = addPreparedEmailPreviewFixture($this);
+    $before = $this->work->fresh()->getAttributes();
+    $response = $this->getJson('/api/admin/teaching/course_works/'.$this->work->id.'/email-preparation-preview?date=2026-10-06');
+    $response->assertOk()->assertJsonPath('data.work_id', $this->work->id)->assertJsonPath('data.course_id', $this->course->id)
+        ->assertJsonPath('data.from', $fixture['payload']['From'])->assertJsonPath('data.to', 'ada@example.test')
+        ->assertJsonPath('data.subject', $fixture['payload']['Subject'])->assertJsonPath('data.html', $fixture['payload']['HtmlBody'])
+        ->assertJsonPath('data.attachments.0', 'Aufgaben.pdf');
+    expect($response->headers->get('Cache-Control'))->toContain('private', 'no-store');
+    expect($this->work->fresh()->getAttributes())->toEqual($before);
+    Http::assertNotSent(fn (Request $request): bool => preg_match('#/files/(upload|delete|move|create)#', $request->url()) === 1);
+});
+
+test('email preparation preview rejects a changed or mismatched personal payload', function (string $case): void {
+    linkExerciseFixture($this);
+    addExerciseFixture($this);
+    $fixture = addPreparedEmailPreviewFixture($this);
+    $payload = $fixture['payload'];
+    if ($case === 'recipient') {
+        $payload['To'] = 'another@example.test';
+    } elseif ($case === 'subject') {
+        $payload['Subject'] = 'Geändert';
+    } elseif ($case === 'source') {
+        $payload['SourceTextSHA256'] = str_repeat('e', 64);
+    } elseif ($case === 'attachment') {
+        $payload['Attachments'][0]['Name'] = 'Andere.pdf';
+    } else {
+        $payload['HtmlBody'] = '<p>Verändert</p>';
+    }
+    setPreparedEmailPreviewFixture($this, $fixture['root'], $fixture['package'], $payload, updateHash: $case !== 'hash');
+    $this->getJson('/api/admin/teaching/course_works/'.$this->work->id.'/email-preparation-preview?date=2026-10-06')->assertStatus(409);
+    Http::assertNotSent(fn (Request $request): bool => preg_match('#/files/(upload|delete|move|create)#', $request->url()) === 1);
+})->with(['recipient', 'subject', 'source', 'attachment', 'hash']);
+
+test('email preparation preview rejects duplicate personal message files', function (): void {
+    linkExerciseFixture($this);
+    addExerciseFixture($this);
+    $fixture = addPreparedEmailPreviewFixture($this);
+    $raw = json_encode($fixture['payload'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+    addEmailPreparationFile($this, $fixture['root'].'/E-Mail-Vorbereitung/Nachrichtenvorschauen/02.json', $raw);
+
+    $this->getJson('/api/admin/teaching/course_works/'.$this->work->id.'/email-preparation-preview?date=2026-10-06')->assertStatus(409);
+});
+
+test('email preparation preview rejects an unrelated teacher before accessing Dropbox', function (): void {
+    linkExerciseFixture($this);
+    addExerciseFixture($this);
+    addPreparedEmailPreviewFixture($this);
+    $other = User::factory()->create(['school_id' => $this->course->school_id, 'schoolyear_id' => $this->course->schoolyear_id])->assignRole('teacher');
+    $before = Http::recorded()->count();
+    $this->actingAs($other, 'sanctum')->getJson('/api/admin/teaching/course_works/'.$this->work->id.'/email-preparation-preview?date=2026-10-06')->assertForbidden();
+    expect(Http::recorded()->count())->toBe($before);
+});
+
 test('exercise checks keep creation confirmed when an independent dispatch journal is invalid', function (): void {
     linkExerciseFixture($this);
     addExerciseFixture($this);
@@ -297,6 +471,40 @@ test('changed or incomplete email preparation never invalidates the created exer
     $this->getJson($this->url.'?include_exercise=1')->assertOk()->assertJsonPath('exercise.status', 'found')
         ->assertJsonPath('exercise.email_preparation.status', 'unknown');
 })->with(['roster', 'attachment', 'deadline', 'recipient', 'malformed']);
+
+test('preparation rejects ambiguous files and changes during source or attachment checks', function (string $failure): void {
+    linkExerciseFixture($this);
+    addExerciseFixture($this);
+    addEmailPreparationFixture($this);
+    if ($failure === 'source revision') {
+        $this->changedPreparationFile = 'Teilnehmer.json';
+    } elseif ($failure === 'attachment revision') {
+        $this->changedPreparationFile = 'Aufgaben.pdf';
+    } else {
+        $name = $failure === 'duplicate source' ? 'Teilnehmer.json' : 'Aufgaben.pdf';
+        $duplicate = collect($this->online)->firstWhere('name', $name);
+        $duplicate['id'] .= '-duplicate';
+        $this->online[] = $duplicate;
+    }
+
+    $this->getJson($this->url.'?include_exercise=1&refresh=1')->assertOk()->assertJsonPath('exercise.status', 'found')
+        ->assertJsonPath('exercise.email_preparation.status', 'unknown');
+})->with(['source revision', 'attachment revision', 'duplicate source', 'duplicate attachment']);
+
+test('preparation enforces the attachment size limit', function (bool $tooLarge): void {
+    linkExerciseFixture($this);
+    addExerciseFixture($this);
+    $root = addEmailPreparationFixture($this);
+    $contents = str_repeat('A', 8 * 1024 * 1024 + (int) $tooLarge);
+    addEmailPreparationFile($this, $root.'/Angaben/Aufgaben.pdf', $contents);
+    $packageFile = collect($this->online)->firstWhere('name', 'Schooltool-Versandvorbereitung.json');
+    $package = json_decode($this->exerciseDocuments['rev:'.$packageFile['rev']], true, flags: JSON_THROW_ON_ERROR);
+    $package['Empfaenger'][0]['VorbereiteteAnhaenge'][0]['SHA256'] = hash('sha256', $contents);
+    addEmailPreparationFile($this, $root.'/Schooltool-Versandvorbereitung.json', json_encode($package, JSON_THROW_ON_ERROR));
+
+    $this->getJson($this->url.'?include_exercise=1&refresh=1')->assertOk()->assertJsonPath('exercise.status', 'found')
+        ->assertJsonPath('exercise.email_preparation.status', $tooLarge ? 'unknown' : 'ready');
+})->with([false, true]);
 
 function addContentsRootFixture(object $context): void
 {
@@ -560,6 +768,74 @@ test('failed Dropbox reads or changed LF evidence never confirm creation', funct
     }
     $this->getJson($this->url.'?include_exercise=1')->assertOk()->assertJsonPath('exercise.status', 'unknown')->assertJsonPath('exercise.folder', null);
 })->with([true, false]);
+
+test('candidate folders are checked concurrently and unrelated works do not hide the matching work', function (): void {
+    $factory = new class extends HttpFactory
+    {
+        public function fake($callback = null): static
+        {
+            $this->record();
+            $this->stubCallbacks = collect([$callback]);
+
+            return $this;
+        }
+    };
+    Http::swap($factory);
+    Http::preventStrayRequests();
+    linkExerciseFixture($this);
+    addExerciseFixture($this);
+    foreach (range(1, 7) as $index) {
+        addExerciseFixture($this, '2026-10-06_Other_'.$index, ['Schooltool_Arbeit_ID' => 90000 + $index]);
+    }
+    $root = strtolower(dirname($this->online[0]['path_display']).'/Leistungsfeststellung');
+    $this->deferredCandidateIds = collect($this->online)->filter(fn (array $entry): bool => $entry['.tag'] === 'folder' && dirname($entry['path_lower']) === $root)->pluck('id')->all();
+    $this->candidatePending = [];
+    $this->candidateWaves = [];
+    $this->candidateMaximum = 0;
+    $this->candidateDrainScheduled = false;
+    $before = $this->work->fresh()->getAttributes();
+
+    $this->getJson($this->url.'?include_exercise=1&refresh=1')->assertOk()->assertJsonPath('exercise.status', 'found');
+
+    expect($this->deferredCandidateIds)->toHaveCount(8)
+        ->and($this->candidateMaximum)->toBeGreaterThan(1)->toBeLessThanOrEqual(4)
+        ->and($this->candidateWaves)->toBe([4, 4])
+        ->and($this->work->fresh()->getAttributes())->toEqual($before);
+    Http::assertNotSent(fn (Request $request): bool => preg_match('#/files/(upload|delete|move|create)#', $request->url()) === 1);
+});
+
+test('candidate pagination checks metadata on subsequent pages', function (): void {
+    linkExerciseFixture($this);
+    addExerciseFixture($this);
+    $this->pagedCandidateFolderId = collect($this->online)->firstWhere('name', '2026-10-06_E-Mail_Fach_3B_Gruppe-2')['id'];
+
+    $this->getJson($this->url.'?include_exercise=1&refresh=1')->assertOk()->assertJsonPath('exercise.status', 'found');
+    Http::assertSent(fn (Request $request): bool => str_ends_with($request->url(), '/files/list_folder/continue') && $request['cursor'] === 'candidate-page-2');
+});
+
+test('candidate errors do not confirm a partially checked exercise', function (string $failure): void {
+    linkExerciseFixture($this);
+    addExerciseFixture($this);
+    $candidate = collect($this->online)->firstWhere('name', '2026-10-06_E-Mail_Fach_3B_Gruppe-2');
+    if ($failure === 'remote') {
+        $this->failedCandidateFolderId = $candidate['id'];
+    } elseif ($failure === 'pagination') {
+        $this->pagedCandidateFolderId = $candidate['id'];
+        $this->missingCandidateCursor = true;
+    } elseif ($failure === 'path') {
+        $this->changedExercisePath = true;
+    } else {
+        foreach ($this->online as &$entry) {
+            if ($entry['name'] === 'Anlage_und_Quellen.json') {
+                $this->exerciseDocuments['rev:'.$entry['rev']] = '{';
+                $entry['size'] = 1;
+            }
+        }
+        unset($entry);
+    }
+
+    $this->getJson($this->url.'?include_exercise=1&refresh=1')->assertOk()->assertJsonPath('exercise.status', 'unknown')->assertJsonPath('exercise.folder', null);
+})->with(['remote', 'pagination', 'path', 'invalid JSON']);
 
 test('copied metadata for a different folder is not accepted and unlinking removes the displayed LF state', function (): void {
     linkExerciseFixture($this);

@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\DropboxConnection;
 use App\Models\TeachingCourseWork;
 use App\Models\TeachingWorkDropboxFolder;
+use App\Models\TeachingWorkModuleLink;
 use App\Models\User;
 use DateTimeImmutable;
 use Illuminate\Support\Facades\Cache;
@@ -19,34 +20,80 @@ class TeachingWorkCollectionStatus
         return Cache::store('file')->get($this->key($work));
     }
 
-    public function refresh(TeachingCourseWork $work, User $actor): void
+    /** @param (callable(string): void)|null $onProgress */
+    public function refresh(TeachingCourseWork $work, User $actor, ?array $freshExercise = null, ?array $freshLink = null, ?callable $onProgress = null): void
     {
         if (! $this->dropbox->configured() || ! $this->dropbox->installed()) {
+            if ($onProgress) {
+                $onProgress('unavailable');
+            }
+
             return;
         }
         $connection = DropboxConnection::query()->where('user_id', $actor->id)->whereNull('revoked_at')->first();
         if (! $connection) {
+            if ($onProgress) {
+                $onProgress('unavailable');
+            }
+
             return;
+        }
+        if ($onProgress) {
+            $onProgress('connection');
         }
         $link = $this->modules->current($work);
         if ($link) {
-            $exercise = $this->modules->exercise($connection, $work, $link, null, refresh: true);
+            $exercise = $this->reusableExercise($connection, $work, $link, $freshExercise, $freshLink);
+            $exercise ??= $this->modules->exercise($connection, $work, $link, null, refresh: true);
             abort_unless(in_array($exercise['status'], ['found', 'missing'], true), 409, $exercise['message'] ?? 'Arbeitsordner nicht eindeutig bestätigt.');
             $folderId = $exercise['folder']['id'] ?? null;
         } else {
             $folderId = TeachingWorkDropboxFolder::query()->where('dropbox_connection_id', $connection->id)
                 ->where('teaching_course_work_id', $work->id)->value('folder_id');
         }
+        if ($onProgress) {
+            $onProgress('folder');
+        }
         if (! $folderId) {
+            if ($onProgress) {
+                $onProgress('no_folder');
+            }
+
             return;
         }
         $run = $this->read($connection, $work, $folderId);
         if (! $run) {
             Cache::store('file')->forget($this->key($work));
+            if ($onProgress) {
+                $onProgress('collection');
+            }
 
             return;
         }
         Cache::store('file')->forever($this->key($work), $run);
+        if ($onProgress) {
+            $onProgress('collection');
+        }
+    }
+
+    private function reusableExercise(DropboxConnection $connection, TeachingCourseWork $work, TeachingWorkModuleLink $link,
+        ?array $freshExercise, ?array $freshLink): ?array
+    {
+        if (! $freshExercise || $freshLink !== $link->getAttributes()
+            || $link->dropbox_connection_id !== $connection->id || $link->account_id !== $connection->account_id
+            || ! is_string($freshExercise['checked_at'] ?? null)) {
+            return null;
+        }
+        // Without the date filter, the server also detects additional matching group folders.
+        $candidate = $this->modules->exercise($connection, $work, $link, null, initial: false);
+        if (($candidate['checked_at'] ?? null) !== $freshExercise['checked_at']
+            || ! in_array($candidate['status'] ?? null, ['found', 'missing'], true)
+            || $candidate['status'] !== ($freshExercise['status'] ?? null)
+            || ($candidate['folder']['id'] ?? null) !== ($freshExercise['folder']['id'] ?? null)) {
+            return null;
+        }
+
+        return $candidate;
     }
 
     public function read(DropboxConnection $connection, TeachingCourseWork $work, string $folderId): ?array

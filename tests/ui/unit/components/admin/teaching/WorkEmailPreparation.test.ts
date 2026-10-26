@@ -47,6 +47,14 @@ function dispatchExported(deliveryMode = 'live') {
     } } }
 }
 
+function preparedPreview(overrides = {}) {
+    return { data: { data: { work_id: 65, course_id: 2, folder_id: 'id:exercise', prepared_at: '2026-10-20T05:26:00Z',
+        from: 'teacher@example.test', to: 'student@example.test', subject: 'Leistungsfeststellung',
+        html: '<html><body><p>Hallo! <a href="https://schooltool.example/personal-token" onclick="alert(1)">Zum Test</a></p><img src="https://external.example/tracker.png"><script>alert(1)</script><form action="https://external.example/send"><button>Absenden</button></form></body></html>',
+        attachments: ['Aufgabe.pdf'], ...overrides,
+    } } }
+}
+
 afterEach(() => {
     vi.restoreAllMocks(); vi.unstubAllGlobals(); document.body.innerHTML = ''
     if (originalExecCommand) Object.defineProperty(document, 'execCommand', originalExecCommand)
@@ -321,6 +329,90 @@ it.each(['click', 'keydown.enter', 'keydown.space'])('opens preparation informat
 
         await button(wrapper, 'Schließen').trigger('click')
         expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+    } finally { wrapper.unmount() }
+})
+
+it('shows the stored personal email safely without sending or opening personal links', async () => {
+    const get = vi.fn().mockResolvedValue(preparedPreview())
+    const { wrapper } = render({ statusOnly: true, state: { ...state,
+        emailPreparation: { status: 'ready', prepared_at: '2026-10-20T05:26:00Z' } } }, get)
+    try {
+        await wrapper.get('[role="button"]').trigger('click')
+        expect(get).not.toHaveBeenCalled()
+        await button(wrapper, 'E-Mail ansehen').trigger('click')
+        await flushPromises()
+
+        expect(get).toHaveBeenCalledExactlyOnceWith('/api/admin/teaching/course_works/65/email-preparation-preview', {
+            params: { date: state.date }, signal: expect.any(AbortSignal),
+        })
+        const dialog = wrapper.get('[role="dialog"]')
+        expect(dialog.text()).toContain('teacher@example.test')
+        expect(dialog.text()).toContain('student@example.test')
+        expect(dialog.text()).toContain('Leistungsfeststellung')
+        expect(dialog.text()).toContain('Aufgabe.pdf')
+        expect(dialog.text()).toContain('Persönliche Links und externe Inhalte sind in dieser Vorschau deaktiviert')
+        const iframe = dialog.get('iframe')
+        expect(iframe.attributes('sandbox')).toBe('')
+        expect(iframe.attributes('referrerpolicy')).toBe('no-referrer')
+        const content = iframe.attributes('srcdoc')!
+        expect(content).toContain('Hallo!')
+        expect(content).toContain('Zum Test')
+        expect(content).toContain("default-src 'none'")
+        expect(content).toContain("form-action 'none'")
+        expect(content).not.toContain('personal-token')
+        expect(content).not.toContain('tracker.png')
+        expect(content).not.toContain('onclick')
+        expect(content).not.toContain('<script')
+        expect(content).not.toContain('<form')
+        expect(axios.post).not.toHaveBeenCalled()
+    } finally { wrapper.unmount() }
+})
+
+it('does not show a late email response after the preparation context changes', async () => {
+    let finish: (value: unknown) => void = () => {}
+    const get = vi.fn(() => new Promise(resolve => { finish = resolve }))
+    const { wrapper } = render({ statusOnly: true, state: { ...state, emailPreparation: { status: 'ready' } } }, get)
+    try {
+        await wrapper.get('[role="button"]').trigger('click')
+        await button(wrapper, 'E-Mail ansehen').trigger('click')
+        const signal = get.mock.calls[0][1].signal as AbortSignal
+        await wrapper.setProps({ state: { ...state, folder: { id: 'id:other' }, emailPreparation: { status: 'ready' } } })
+        finish(preparedPreview())
+        await flushPromises()
+        expect(signal.aborted).toBe(true)
+        expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+        expect(wrapper.find('iframe').exists()).toBe(false)
+    } finally { wrapper.unmount() }
+})
+
+it.each([{ work_id: 66 }, { course_id: 3 }, { folder_id: 'id:other' }, { prepared_at: '2026-10-21T05:26:00Z' }, { html: '' }])(
+    'does not display a prepared email with invalid identity or content: %j', async invalid => {
+        const get = vi.fn().mockResolvedValue(preparedPreview(invalid))
+        const { wrapper } = render({ statusOnly: true, state: { ...state,
+            emailPreparation: { status: 'ready', prepared_at: '2026-10-20T05:26:00Z' } } }, get)
+        try {
+            await wrapper.get('[role="button"]').trigger('click')
+            await button(wrapper, 'E-Mail ansehen').trigger('click')
+            await flushPromises()
+            expect(wrapper.get('[role="alert"]').text()).toContain('nicht eindeutig zugeordnet')
+            expect(wrapper.find('iframe').exists()).toBe(false)
+        } finally { wrapper.unmount() }
+    },
+)
+
+it('shows the server error and allows retrying the preview', async () => {
+    const get = vi.fn().mockRejectedValueOnce({ response: { data: { message: 'Die Vorbereitung wurde geändert.' } } })
+        .mockResolvedValueOnce(preparedPreview())
+    const { wrapper } = render({ statusOnly: true, state: { ...state, emailPreparation: { status: 'ready' } } }, get)
+    try {
+        await wrapper.get('[role="button"]').trigger('click')
+        await button(wrapper, 'E-Mail ansehen').trigger('click')
+        await flushPromises()
+        expect(wrapper.get('[role="alert"]').text()).toContain('Die Vorbereitung wurde geändert')
+        await button(wrapper, 'E-Mail ansehen').trigger('click')
+        await flushPromises()
+        expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+        expect(wrapper.find('iframe').exists()).toBe(true)
     } finally { wrapper.unmount() }
 })
 

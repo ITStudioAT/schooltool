@@ -132,6 +132,29 @@ describe('Teaching tools games navigation', () => {
         expect(window.axios.post).not.toHaveBeenCalled()
     })
 
+    it('shows the confirmed availability and an unknown status when the status refresh fails', async () => {
+        const url = 'https://schooltool.example/explanations/active'
+        window.axios.get.mockImplementation(path => {
+            if (path.endsWith('/binary-to-hexadecimal')) return Promise.reject(new Error('Unavailable'))
+            if (path.endsWith('/decimal-to-binary')) return Promise.resolve({ data: { ...sharingState, published: true, invitation: { url } } })
+            if (path.endsWith('/hexadecimal-to-binary')) return Promise.resolve({ data: { ...sharingState, available: false, published: true, invitation: { url } } })
+            return Promise.resolve({ data: sharingState })
+        })
+        const { wrapper } = await renderTools('/admin/teaching-tools/explanations/number-systems')
+
+        expect(wrapper.find('[aria-label="Dezimal auf Dual: veröffentlicht"]').exists()).toBe(true)
+        expect(wrapper.find('[aria-label="Dezimal auf Hexadezimal: nicht verfügbar"]').exists()).toBe(true)
+        expect(wrapper.find('[aria-label="Dual auf Hexadezimal: Status unbekannt"]').exists()).toBe(true)
+        expect(wrapper.find('[aria-label="Hexadezimal auf Dual: nicht verfügbar"]').exists()).toBe(true)
+
+        window.axios.get.mockRejectedValueOnce(new Error('Unavailable'))
+        await wrapper.get('button[aria-label="Dezimal auf Dual: Link kopieren"]').trigger('click')
+        await flushPromises()
+        expect(wrapper.find('[aria-label="Dezimal auf Dual: veröffentlicht"]').exists()).toBe(false)
+        expect(wrapper.find('[aria-label="Dezimal auf Dual: Status unbekannt"]').exists()).toBe(true)
+        expect(wrapper.text()).toContain('Der aktuelle Link konnte nicht geladen werden')
+    })
+
     it('opens the network learning area, student preview and sharing setup', async () => {
         const { wrapper } = await renderTools('/admin/teaching-tools/explanations')
         expect(wrapper.get('[aria-label="Netzwerke öffnen"]').text()).toContain('1 Erklärung')
@@ -208,6 +231,7 @@ describe('Teaching tools games navigation', () => {
         expect(card.querySelector('input')?.value).toBe(url)
         expect(card.textContent).toContain('Textfeld markieren und kopieren')
         expect(card.textContent).toContain('nur auf diesem Rechner erreichbar')
+        expect(card.querySelector('[aria-label="Dezimal auf Dual: veröffentlicht"]')).not.toBeNull()
         expect(card.querySelector('button')?.textContent).not.toContain('Link kopiert')
     })
 
@@ -225,6 +249,7 @@ describe('Teaching tools games navigation', () => {
 
         expect(writeText).not.toHaveBeenCalled()
         expect(wrapper.get('[role="alert"]').text()).toContain(condition === 'revoked' ? 'nicht freigegeben' : 'nicht geladen')
+        expect(wrapper.find(`[aria-label="Dezimal auf Dual: ${condition === 'revoked' ? 'nicht verfügbar' : 'Status unbekannt'}"]`).exists()).toBe(true)
         expect(window.axios.post).not.toHaveBeenCalled()
     })
 

@@ -10,9 +10,12 @@ use App\Models\TeachingEntryDefinition;
 use App\Models\TeachingWorkDropboxFolder;
 use App\Models\TeachingWorkModuleLink;
 use App\Models\User;
+use App\Services\DropboxFolderContents;
 use App\Services\DropboxModuleLinks;
 use App\Services\DropboxWorkImport;
 use App\Services\TeachingCourseWorkEntrySyncService;
+use App\Services\TeachingWorkCollectionStatus;
+use App\Services\TeachingWorkDeadlineSync;
 use App\Support\SchooltoolAssessmentJson;
 use GuzzleHttp\Promise\Promise;
 use GuzzleHttp\Promise\Utils;
@@ -21,10 +24,13 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Factory;
 use Illuminate\Http\Client\Request;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Spatie\Permission\Models\Role;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\Support\TeachingWorkDispatchFixture;
 use Tests\Support\TeachingWorkJsonFixture;
 
@@ -58,6 +64,116 @@ function dropboxConnectionForWork(object $context): DropboxConnection
 
     return $connection;
 }
+
+test('combined refresh saves the deadline and safely reuses or rechecks the collection binding', function (string $case): void {
+    $progressId = (string) Str::uuid();
+    $progressKey = 'teaching-work-refresh-progress:'.hash('sha256', $this->user->id.':'.$this->work->id.':'.$progressId);
+    $connection = dropboxConnectionForWork($this);
+    $this->work->update(['finish_until_date' => '2026-10-15', 'finish_until_time' => '16:00',
+        'date_for_all_groups' => '2026-10-20', 'groups' => [['date' => '2026-10-21', 'student_ids' => []]]]);
+    $link = (new TeachingWorkModuleLink)->forceFill(['id' => 1, 'dropbox_connection_id' => $connection->id,
+        'account_id' => $connection->account_id, 'module_id' => 'module', 'folder_id' => 'id:module',
+        'folder_name' => 'Modul', 'folder_path' => '/modul']);
+    $changedLink = clone $link;
+    $changedLink->folder_id = 'id:othermodule';
+    $found = ['status' => 'found', 'folder' => ['id' => 'id:exercise', 'name' => 'Arbeit'], 'checked_at' => '2026-10-26T10:00:00Z'];
+    $calls = [];
+    $currentCalls = 0;
+    $modules = Mockery::mock(DropboxModuleLinks::class);
+    $modules->shouldReceive('current')->andReturnUsing(function () use (&$currentCalls, $case, $link, $changedLink) {
+        return ++$currentCalls >= 4 && $case === 'binding' ? $changedLink : $link;
+    });
+    $modules->shouldReceive('installed')->andReturnTrue();
+    $modules->shouldReceive('assignmentVersion')->andReturn(str_repeat('a', 64));
+    $modules->shouldReceive('exercise')->andReturnUsing(function (...$args) use (&$calls, $case, $found, $progressKey) {
+        $date = $args[3];
+        $refresh = $args[4] ?? false;
+        $initial = $args[5] ?? true;
+        $calls[] = [$date, $refresh, $initial];
+        if ($date !== null && ! $refresh) {
+            expect(Cache::store('file')->get($progressKey))->toMatchArray(['state' => 'running', 'active' => 'folder', 'completed' => ['connection']]);
+        }
+        if ($date !== null && $refresh) {
+            expect(Cache::store('file')->get($progressKey))->toMatchArray(['state' => 'running', 'active' => 'verification', 'completed' => ['connection', 'folder', 'deadline']]);
+        }
+        if ($date === null && ! $refresh && $case === 'groups') {
+            return ['status' => 'unknown', 'folder' => null, 'checked_at' => $found['checked_at']];
+        }
+
+        return $found;
+    });
+    $this->app->instance(DropboxModuleLinks::class, $modules);
+    $deadlines = Mockery::mock(TeachingWorkDeadlineSync::class);
+    $deadlines->shouldReceive('metadata')->once()->andReturn([]);
+    $deadlines->shouldReceive('sync')->once()->andReturn(['changed' => true, 'message' => 'Gespeichert']);
+    $this->app->instance(TeachingWorkDeadlineSync::class, $deadlines);
+    $folders = Mockery::mock(DropboxFolderContents::class);
+    $read = $folders->shouldReceive('read')->once();
+    if ($case === 'error') {
+        $read->andThrow(new HttpException(409, 'Einsammelprüfung fehlgeschlagen.'));
+    } else {
+        $read->andReturn(['root' => ['path' => '/arbeit'], 'entries' => [], 'cursor' => null]);
+    }
+    $this->app->instance(DropboxFolderContents::class, $folders);
+    $response = $this->postJson($this->url.'/refresh', ['date' => '2026-10-20', 'finish_until_date' => '2026-10-15',
+        'finish_until_time' => '14:55', 'expected' => ['date' => '2026-10-15', 'time' => '16:00'], 'refresh_collection' => true, 'progress_id' => $progressId]);
+    $response->assertOk()->assertJsonPath('saved_work.id', $this->work->id)->assertJsonPath('saved_work.finish_until_time', '14:55');
+    expect($this->work->fresh()->finish_until_time)->toBe('14:55');
+    if ($case === 'error') {
+        $response->assertJsonPath('collection_error.message', 'Einsammelprüfung fehlgeschlagen.');
+        $response->assertJsonPath('progress.state', 'failed')->assertJsonPath('progress.active', 'collection');
+    } else {
+        $response->assertJsonMissingPath('collection_error');
+        $response->assertJsonPath('progress.state', 'done')->assertJsonPath('progress.completed.4', 'collection');
+    }
+    $this->getJson($this->url.'/refresh-progress/'.$progressId)->assertOk()->assertHeader('Cache-Control', 'no-store, private')
+        ->assertJsonPath('state', $case === 'error' ? 'failed' : 'done');
+    $this->getJson($this->url.'/refresh-progress/'.Str::uuid())->assertNotFound();
+    $otherWork = TeachingCourseWork::factory()->create(['teaching_course_id' => $this->course->id]);
+    $this->getJson('/api/admin/teaching/course_works/'.$otherWork->id.'/dropbox/refresh-progress/'.$progressId)->assertNotFound();
+    $otherUser = User::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id])->assignRole('admin');
+    $this->actingAs($otherUser, 'sanctum')->getJson($this->url.'/refresh-progress/'.$progressId)->assertNotFound();
+    $collectionRefreshes = array_values(array_filter($calls, fn (array $call): bool => $call[0] === null && $call[1]));
+    expect(count($collectionRefreshes))->toBe(in_array($case, ['groups', 'binding'], true) ? 1 : 0);
+})->with(['same', 'groups', 'binding', 'error']);
+
+test('collection refresh reports actual progress and skips unavailable steps', function (string $case): void {
+    $progressId = (string) Str::uuid();
+    $key = 'teaching-work-refresh-progress:'.hash('sha256', $this->user->id.':'.$this->work->id.':'.$progressId);
+    $service = Mockery::mock(TeachingWorkCollectionStatus::class);
+    $service->shouldReceive('cached')->andReturnNull();
+    $service->shouldReceive('refresh')->once()->andReturnUsing(function ($work, $actor, $freshExercise, $freshLink, $onProgress) use ($case, $key): void {
+        expect(Cache::store('file')->get($key))->toMatchArray(['state' => 'running', 'active' => 'connection', 'completed' => []]);
+        if ($case === 'unavailable') {
+            $onProgress('unavailable');
+
+            return;
+        }
+        $onProgress('connection');
+        expect(Cache::store('file')->get($key))->toMatchArray(['active' => 'folder', 'completed' => ['connection']]);
+        if ($case === 'error') {
+            throw new HttpException(409, 'Arbeitsordner nicht verfügbar.');
+        }
+        $onProgress('folder');
+        expect(Cache::store('file')->get($key))->toMatchArray(['active' => 'collection', 'completed' => ['connection', 'folder']]);
+        $onProgress($case === 'no_folder' ? 'no_folder' : 'collection');
+    });
+    $this->app->instance(TeachingWorkCollectionStatus::class, $service);
+    $response = $this->getJson('/api/admin/teaching/course_works/'.$this->work->id.'?refresh_collection=1&progress_id='.$progressId);
+    if ($case === 'error') {
+        $response->assertStatus(409);
+        $this->getJson($this->url.'/refresh-progress/'.$progressId)->assertOk()->assertJsonPath('state', 'failed')
+            ->assertJsonPath('active', 'folder')->assertJsonPath('completed', ['connection']);
+    } else {
+        $response->assertOk()->assertJsonPath('progress.state', 'done');
+        $expected = match ($case) {
+            'unavailable' => ['connection', 'folder', 'collection'],
+            'no_folder' => ['collection'],
+            default => [],
+        };
+        $response->assertJsonPath('progress.skipped', $expected);
+    }
+})->with(['success', 'no_folder', 'unavailable', 'error']);
 
 test('work context reads only the assigned Dropbox metadata path on explicit request without sharing a folder', function (): void {
     dropboxConnectionForWork($this);

@@ -799,6 +799,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/admin/teaching/import116/runs/reset', [Import116Controller::class, 'resetRuns']);
         Route::delete('/admin/teaching/import116/runs/{import116_run}', [Import116Controller::class, 'destroyRun']);
         Route::get('/admin/teaching/course_works/{course_work}/ai-export', [CourseWorkController::class, 'aiExport'])->name('teaching.course-works.ai-export');
+        Route::get('/admin/teaching/course_works/{course_work}/email-preparation-preview', [CourseWorkController::class, 'emailPreparationPreview'])->name('teaching.course-works.email-preparation-preview');
         Route::get('/admin/teaching/course_works/{course_work}/exercise-options', [CourseWorkController::class, 'exerciseOptions'])->name('teaching.course-works.exercise-options');
         Route::post('/admin/teaching/course_works/{course_work}/prepare-exercise', [CourseWorkController::class, 'prepareExercise'])->name('teaching.course-works.prepare-exercise');
         Route::post('/admin/teaching/course_works/{course_work}/import-evaluations', [CourseWorkController::class, 'importEvaluations'])->name('teaching.course-works.import-evaluations');
@@ -813,6 +814,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::prefix('/admin/teaching/course_works/{course_work}/dropbox')->name('teaching.work-dropbox.')->group(function (): void {
             Route::get('/', [WorkDropboxController::class, 'show'])->name('show');
             Route::post('/refresh', [WorkDropboxController::class, 'refresh'])->name('refresh');
+            Route::get('/refresh-progress/{progress_id}', [WorkDropboxController::class, 'refreshProgress'])->name('refresh-progress');
             Route::post('/connect', [WorkDropboxController::class, 'connect'])->middleware(StartSession::class)->name('connect');
             Route::get('/folders', [WorkDropboxController::class, 'folders'])->name('folders');
             Route::post('/folder', [WorkDropboxController::class, 'storeFolder'])->name('store-folder');

@@ -7,6 +7,8 @@ use App\Models\Import116;
 use App\Models\TeachingCourse;
 use App\Models\TeachingCourseWork;
 use App\Models\User;
+use App\Services\DropboxModuleLinks;
+use App\Services\DropboxWorkImport;
 use App\Services\TeachingCourseStudentEntryService;
 use App\Services\TeachingCourseWorkEntrySyncService;
 use App\Services\TeachingCourseWorkService;
@@ -17,6 +19,7 @@ use App\Services\TeachingWorkFolderImport;
 use App\Services\TeachingWorkJsonImport;
 use App\Services\TeachingWorkMarkdownImport;
 use App\Services\TeachingWorkMultipleChoice;
+use App\Services\TeachingWorkRefreshProgress;
 use Closure;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -30,6 +33,18 @@ use Throwable;
 
 class CourseWorkController extends Controller
 {
+    public function emailPreparationPreview(Request $request, TeachingCourseWork $course_work, DropboxWorkImport $dropbox, DropboxModuleLinks $modules): JsonResponse
+    {
+        $actor = $this->userHasRole(['admin', 'teaching_admin', 'teacher']);
+        abort_unless($actor && $course_work->teachingCourse, 403);
+        $this->authorizeTeachingCourseAccess($course_work->teachingCourse, $actor);
+        abort_unless($course_work->automationEnabled(), 422, 'Automatik ist für diese Arbeit ausgeschaltet.');
+        $data = $request->validate(['date' => ['nullable', 'date_format:Y-m-d']]);
+
+        return response()->json(['data' => $modules->preparedEmailPreview($dropbox->connection($actor), $course_work, $data['date'] ?? null)])
+            ->header('Cache-Control', 'private, no-store');
+    }
+
     public function exerciseOptions(Request $request, TeachingCourseWork $course_work, TeachingWorkAiExport $export, TeachingWorkMultipleChoice $multipleChoice): JsonResponse
     {
         $actor = $this->userHasRole(['admin', 'teaching_admin', 'teacher']);
@@ -490,11 +505,56 @@ class CourseWorkController extends Controller
 
         $this->authorizeTeachingCourseAccess($course, $auth_user);
 
+        $progress = null;
+        $progressKey = null;
+        $progressService = app(TeachingWorkRefreshProgress::class);
         if (request()->boolean('refresh_collection')) {
-            app(TeachingWorkCollectionStatus::class)->refresh($course_work, $auth_user);
+            $data = request()->validate(['progress_id' => ['sometimes', 'uuid']]);
+            if (isset($data['progress_id'])) {
+                $progressKey = $progressService->key($auth_user, $course_work, $data['progress_id']);
+                $progress = ['state' => 'running', 'active' => 'connection', 'completed' => [], 'skipped' => [],
+                    'steps' => ['connection', 'folder', 'collection']];
+                $progressService->save($progressKey, $progress);
+            }
+            try {
+                $update = $progressKey === null ? null : function (string $event) use (&$progress, $progressService, $progressKey): void {
+                    if ($event === 'unavailable') {
+                        $progress['skipped'] = ['connection', 'folder', 'collection'];
+                        $progress['active'] = null;
+                    } elseif ($event === 'no_folder') {
+                        $progress['skipped'][] = 'collection';
+                        $progress['active'] = null;
+                    } else {
+                        $progress['completed'][] = $event;
+                        $progress['active'] = match ($event) {
+                            'connection' => 'folder',
+                            'folder' => 'collection',
+                            default => null,
+                        };
+                    }
+                    $progressService->save($progressKey, $progress);
+                };
+                app(TeachingWorkCollectionStatus::class)->refresh($course_work, $auth_user, onProgress: $update);
+                $body = ['data' => $entrySyncService->serializeWork($course_work->load('teachingCourseWorkGroupStudents'))];
+                if ($progress !== null) {
+                    $progress['state'] = 'done';
+                    $progressService->save($progressKey, $progress);
+                }
+            } catch (Throwable $exception) {
+                if ($progress !== null) {
+                    $progress['state'] = 'failed';
+                    $progressService->save($progressKey, $progress);
+                }
+                throw $exception;
+            }
         }
 
-        return response()->json(['data' => $entrySyncService->serializeWork($course_work->load('teachingCourseWorkGroupStudents'))]);
+        $body ??= ['data' => $entrySyncService->serializeWork($course_work->load('teachingCourseWorkGroupStudents'))];
+        if ($progress !== null) {
+            $body['progress'] = $progress;
+        }
+
+        return response()->json($body);
     }
 
     public function update(

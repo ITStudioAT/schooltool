@@ -11,7 +11,7 @@
         <v-icon :size="size" :color="color" :aria-label="tooltip" :aria-hidden="false" role="img">mdi-email-edit-outline</v-icon>
         <v-tooltip activator="parent" location="top" :text="tooltip" :open-delay="200" :max-width="420" />
     </span>
-    <v-dialog v-if="infoOpened && available && ready && statusOnly" v-model="infoOpened" scrollable max-width="640">
+    <v-dialog v-if="infoOpened && available && ready && statusOnly" v-model="infoOpened" scrollable :max-width="emailPreview ? 900 : 640">
         <v-card>
             <v-card-title class="text-wrap">Versandbereitschaft · {{ work.title || 'Ohne Titel' }}</v-card-title>
             <v-card-text>
@@ -22,8 +22,23 @@
                     <dt>Zuletzt geprüft</dt><dd>{{ checkTime || 'Nicht angegeben' }}</dd>
                     <dt>Prüfungsordner</dt><dd>{{ state.folder?.path || state.folder?.name }}</dd>
                 </dl>
+                <p v-if="emailPreviewLoading" role="status" class="text-body-2 mt-4">E-Mail wird geladen …</p>
+                <v-alert v-if="emailPreviewError" type="error" variant="tonal" role="alert" class="mt-4">{{ emailPreviewError }}</v-alert>
+                <section v-if="emailPreview" aria-labelledby="email-preview-title" class="email-preview mt-4">
+                    <h3 id="email-preview-title">Eine vorbereitete E-Mail</h3>
+                    <dl class="preparation-info mt-3">
+                        <dt>Von</dt><dd>{{ emailPreview.from }}</dd>
+                        <dt>An</dt><dd>{{ emailPreview.to }}</dd>
+                        <dt>Betreff</dt><dd>{{ emailPreview.subject }}</dd>
+                        <dt>Anhänge</dt><dd>{{ emailPreview.attachments.length ? emailPreview.attachments.join(', ') : 'Keine' }}</dd>
+                    </dl>
+                    <p class="text-caption mt-3">Persönliche Links und externe Inhalte sind in dieser Vorschau deaktiviert.</p>
+                    <iframe :srcdoc="emailPreview.document" sandbox="" referrerpolicy="no-referrer" title="Vorschau der vorbereiteten E-Mail" class="email-preview__frame" />
+                </section>
             </v-card-text>
             <v-card-actions>
+                <v-btn color="primary" variant="tonal" prepend-icon="mdi-eye-outline" :loading="emailPreviewLoading"
+                    :disabled="emailPreviewLoading || !canInspect" @click="loadEmailPreview">{{ emailPreview ? 'Vorschau aktualisieren' : 'E-Mail ansehen' }}</v-btn>
                 <v-spacer />
                 <v-btn @click="infoOpened = false">Schließen</v-btn>
             </v-card-actions>
@@ -76,7 +91,7 @@
 
 <script setup>
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import { aiExport } from '@/actions/App/Http/Controllers/Admin/Teaching/CourseWorkController'
+import { aiExport, emailPreparationPreview } from '@/actions/App/Http/Controllers/Admin/Teaching/CourseWorkController'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { workAutomationEnabled } from '@/helpers/workAutomation'
 import { workNeedsPreparation } from '@/helpers/workOverview'
@@ -97,8 +112,13 @@ const result = ref(null)
 const error = ref('')
 const message = ref('')
 const copyText = ref(null)
+const emailPreview = ref(null)
+const emailPreviewLoading = ref(false)
+const emailPreviewError = ref('')
 let sequence = 0
 let controller = null
+let emailPreviewSequence = 0
+let emailPreviewController = null
 const available = computed(() => workAutomationEnabled(props.work) && workNeedsPreparation(props.work)
     && props.state?.status === 'found' && props.state.userId === admin.config?.user?.id
     && String(props.state.workId) === String(props.work?.id)
@@ -135,9 +155,68 @@ function openInfo() {
     if (canInspect.value && props.statusOnly) infoOpened.value = true
 }
 
+function clearEmailPreview() {
+    emailPreviewSequence++
+    emailPreviewController?.abort()
+    emailPreviewController = null
+    emailPreview.value = null
+    emailPreviewLoading.value = false
+    emailPreviewError.value = ''
+}
+
+function isolatedEmailDocument(html) {
+    const template = document.createElement('template')
+    template.innerHTML = html
+    template.content.querySelectorAll('form').forEach(form => form.replaceWith(...form.childNodes))
+    template.content.querySelectorAll('script, iframe, frame, frameset, object, embed, base, meta, link, audio, video, source, track, template, animate, animateMotion, animateTransform, set, discard').forEach(element => element.remove())
+    template.content.querySelectorAll('*').forEach(element => {
+        for (const attribute of [...element.attributes]) {
+            const name = attribute.name.toLowerCase()
+            const isInlineImage = element.tagName.toLowerCase() === 'img' && name === 'src'
+                && /^data:image\/(?:png|jpeg|gif|webp);base64,/i.test(attribute.value)
+            if (name.startsWith('on') || ['href', 'xlink:href', 'srcset', 'srcdoc', 'formaction', 'action', 'target', 'ping', 'poster', 'background'].includes(name)
+                || (name === 'src' && !isInlineImage)) element.removeAttribute(attribute.name)
+        }
+    })
+    const policy = "default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:; form-action 'none'; base-uri 'none'; object-src 'none'; connect-src 'none'; media-src 'none'; frame-src 'none'"
+    return `<!doctype html><html lang="de"><head><meta http-equiv="Content-Security-Policy" content="${policy}"></head><body>${template.innerHTML}</body></html>`
+}
+
+async function loadEmailPreview() {
+    if (!infoOpened.value || !canInspect.value || emailPreviewLoading.value) return
+    clearEmailPreview()
+    const operation = emailPreviewSequence
+    const requestController = new AbortController()
+    emailPreviewController = requestController
+    emailPreviewLoading.value = true
+    try {
+        const response = await axios.get(emailPreparationPreview.url(props.work.id), {
+            params: props.date ? { date: props.date } : {}, signal: requestController.signal,
+        })
+        if (operation !== emailPreviewSequence || !infoOpened.value || !canInspect.value) return
+        const data = response.data?.data
+        if (String(data?.work_id) !== String(props.work.id) || String(data?.course_id) !== String(props.work.teaching_course_id)
+            || data?.folder_id !== props.state.folder.id
+            || (preparation.value?.prepared_at && Date.parse(data?.prepared_at) !== Date.parse(preparation.value.prepared_at))
+            || !['from', 'to', 'subject', 'html'].every(key => typeof data?.[key] === 'string' && data[key].trim())
+            || !Array.isArray(data.attachments) || !data.attachments.every(name => typeof name === 'string')) {
+            throw new Error('Die vorbereitete E-Mail konnte nicht eindeutig zugeordnet werden.')
+        }
+        emailPreview.value = { from: data.from, to: data.to, subject: data.subject, attachments: data.attachments,
+            document: isolatedEmailDocument(data.html) }
+    } catch (exception) {
+        if (operation === emailPreviewSequence && !requestController.signal.aborted) {
+            emailPreviewError.value = exception.response?.data?.message || exception.message || 'Die E-Mail konnte nicht geladen werden.'
+        }
+    } finally {
+        if (operation === emailPreviewSequence) emailPreviewLoading.value = false
+    }
+}
+
 function clear() {
     sequence++
     controller?.abort()
+    clearEmailPreview()
     loading.value = false
     copying.value = false
     copied.value = false
@@ -228,6 +307,7 @@ async function copyPreparation() {
 watch(() => [available.value, admin.config?.user?.id, admin.config?.user?.email, props.work?.id, props.work?.teaching_course_id, props.date, props.state?.folder?.id,
     preparation.value?.status, preparation.value?.prepared_at], () => { clear(); opened.value = false; infoOpened.value = false })
 watch(opened, value => { if (!value) clear() })
+watch(infoOpened, value => { if (!value) clearEmailPreview() })
 watch(addressForm, () => {
     if (sending.value) return
     if (opened.value && ['du', 'sie'].includes(addressForm.value)) loadPreparation()
@@ -246,4 +326,5 @@ onBeforeUnmount(clear)
 .preparation-info { display: grid; grid-template-columns: minmax(0, 160px) minmax(0, 1fr); gap: 12px 16px; }
 .preparation-info dt { font-weight: 600; }
 .preparation-info dd { margin: 0; overflow-wrap: anywhere; }
+.email-preview__frame { display: block; width: 100%; height: 430px; margin-top: 12px; border: 1px solid #d4dce5; background: white; }
 </style>

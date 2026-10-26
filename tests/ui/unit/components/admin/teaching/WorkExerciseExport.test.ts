@@ -128,7 +128,7 @@ it('shows question catalogs and filters existing tests without silently changing
 it('uses one explicit recheck for both folder and workflow status without refreshing status on mount', async () => {
     const saved = { ...work, simulation_collection: { simulation: true, complete: true } }
     const get = vi.fn().mockResolvedValue({ data: { data: saved } })
-    const status = vi.fn().mockResolvedValue({ data: linkedExercise })
+    const status = vi.fn().mockResolvedValueOnce({ data: linkedExercise }).mockResolvedValueOnce({ data: { ...linkedExercise, saved_work: saved } })
     const wrapper = mountExport(get, undefined, status)
     try {
         await wrapper.setProps({ checkProgress: true })
@@ -137,11 +137,26 @@ it('uses one explicit recheck for both folder and workflow status without refres
         expect(wrapper.findAll('button').filter(button => button.text().startsWith('Erneut prüfen'))).toHaveLength(1)
         await button(wrapper, 'Erneut prüfen').trigger('click')
         await flushPromises()
-        expect(axios.post).toHaveBeenCalledWith(expect.stringContaining('/dropbox/refresh'), expect.objectContaining({ date: '2026-10-20' }), expect.any(Object))
-        expect(get).toHaveBeenCalledWith(expect.stringContaining('/course_works/65'), { params: { refresh_collection: true } })
+        expect(axios.post).toHaveBeenCalledWith(expect.stringContaining('/dropbox/refresh'), expect.objectContaining({ date: '2026-10-20', refresh_collection: true }), expect.any(Object))
+        expect(get).not.toHaveBeenCalled()
         expect(wrapper.emitted('deadline-saved')).toEqual([[{ data: saved }]])
         expect(wrapper.emitted('check-busy')).toEqual([[true], [false]])
         expect(wrapper.findAll('button').filter(button => button.text().startsWith('Erneut prüfen'))).toHaveLength(1)
+    } finally { wrapper.unmount() }
+})
+
+it('keeps the saved deadline visible when the combined collection check fails', async () => {
+    const saved = { ...work, finish_until_date: '2026-11-13' }
+    const status = vi.fn().mockResolvedValueOnce({ data: linkedExercise }).mockResolvedValueOnce({ data: {
+        ...linkedExercise, saved_work: saved, collection_error: { message: 'Einsammelprüfung fehlgeschlagen.' },
+    } })
+    const wrapper = mountExport(vi.fn(), undefined, status)
+    try {
+        await wrapper.setProps({ checkProgress: true }); await flushPromises()
+        await button(wrapper, 'Erneut prüfen').trigger('click'); await flushPromises()
+        expect(wrapper.emitted('deadline-saved')).toEqual([[{ data: saved }]])
+        expect(wrapper.text()).toContain('Einsammelprüfung fehlgeschlagen.')
+        expect(wrapper.emitted('exercise-status').at(-1)[0].status).toBe('unknown')
     } finally { wrapper.unmount() }
 })
 
@@ -158,7 +173,7 @@ it('retains one status recheck for historical work without reopening its folder 
         await flushPromises()
         expect(wrapper.findAll('button').filter(button => button.text().startsWith('Erneut prüfen'))).toHaveLength(1)
         await button(wrapper, 'Erneut prüfen').trigger('click'); await flushPromises()
-        expect(get).toHaveBeenCalledWith(expect.stringContaining('/course_works/65'), { params: { refresh_collection: true } })
+        expect(get).toHaveBeenCalledWith(expect.stringContaining('/course_works/65'), { params: { refresh_collection: true, progress_id: expect.any(String) } })
         expect(wrapper.emitted('deadline-saved')).toEqual([[{ data: saved }]])
         expect(status).not.toHaveBeenCalled()
     } finally { wrapper.unmount() }
@@ -463,6 +478,7 @@ it('reuses the last check on reopening, refreshes explicitly and clears it immed
         expect(status).toHaveBeenCalledTimes(2)
         expect(axios.post).toHaveBeenCalledExactlyOnceWith('/api/admin/teaching/course_works/65/dropbox/refresh', {
             date: '2026-10-20', finish_until_date: null, finish_until_time: null, expected: { date: null, time: null },
+            progress_id: expect.any(String),
         }, { timeout: 120000 })
         status.mockResolvedValue({ data: { connected: true, module_link: null, exercise: { status: 'missing', folder: null } } })
         workDropboxStates.set('7:2:65', { connected: true, module_link: null, link_version: 'unlinked' })
@@ -487,6 +503,7 @@ it('saves the edited internal deadline when checking and leaves other form chang
         expect(axios.post).toHaveBeenCalledExactlyOnceWith('/api/admin/teaching/course_works/65/dropbox/refresh', {
             date: '2026-10-20', finish_until_date: '2026-10-24', finish_until_time: '12:30',
             expected: { date: '2026-10-23', time: null },
+            progress_id: expect.any(String),
         }, { timeout: 120000 })
         expect(wrapper.emitted('deadline-saved')).toEqual([[{ data: saved }]])
         expect(wrapper.emitted('exercise-status')?.at(-1)?.[0]).toMatchObject({ status: 'found', emailDispatch: dispatch })
@@ -509,6 +526,51 @@ it('reports a synchronization conflict and never publishes it as a saved deadlin
         expect(workDropboxStates.get('7:2:65')?.exercise?.status).toBe('unknown')
         expect(wrapper.emitted('check-busy')).toEqual([[true], [false]])
     } finally { wrapper.unmount() }
+})
+
+it('shows actual check progress and the completed server result', async () => {
+    let finish: (value: unknown) => void = () => {}
+    const progress = { state: 'running', active: 'deadline', completed: ['connection', 'folder'],
+        steps: ['connection', 'folder', 'deadline', 'verification'] }
+    const get = vi.fn().mockResolvedValue({ data: progress })
+    const status = vi.fn().mockResolvedValueOnce({ data: linkedExercise })
+        .mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    const wrapper = mountExport(get, undefined, status)
+    try {
+        await flushPromises()
+        vi.useFakeTimers()
+        await button(wrapper, 'Erneut prüfen').trigger('click')
+        expect(wrapper.get('[aria-label="Fortschritt der Prüfung"]').text()).toContain('Prüfung wird gestartet')
+        await vi.advanceTimersByTimeAsync(200)
+        expect(wrapper.get('[aria-label="Fortschritt der Prüfung"]').text()).toContain('Frist abgleichenWird geprüft')
+        expect(wrapper.get('[aria-label="Fortschritt der Prüfung"]').text()).toContain('Arbeitsordner ermittelnErledigt')
+        expect(wrapper.get('[aria-label="Fortschritt der Prüfung"]').text()).toContain('Aktuellen Status ermittelnAusstehend')
+        const completed = { ...progress, state: 'done', active: null, completed: progress.steps }
+        finish({ data: { ...linkedExercise, progress: completed } })
+        await vi.runAllTicks()
+        await flushPromises()
+        expect(wrapper.get('[aria-label="Fortschritt der Prüfung"]').text()).toContain('Prüfung abgeschlossen')
+        expect(wrapper.get('[aria-label="Fortschritt der Prüfung"]').text()).toContain('Aktuellen Status ermittelnErledigt')
+        expect(get).toHaveBeenCalledTimes(1)
+        await vi.advanceTimersByTimeAsync(2000)
+        expect(get).toHaveBeenCalledTimes(1)
+    } finally { wrapper.unmount(); vi.useRealTimers() }
+})
+
+it('stops polling when the check view closes', async () => {
+    const get = vi.fn().mockResolvedValue({ data: { state: 'running', steps: ['connection'], completed: [], active: 'connection' } })
+    const status = vi.fn().mockResolvedValueOnce({ data: linkedExercise }).mockImplementationOnce(() => new Promise(() => {}))
+    const wrapper = mountExport(get, undefined, status)
+    try {
+        await flushPromises()
+        vi.useFakeTimers()
+        await button(wrapper, 'Erneut prüfen').trigger('click')
+        await vi.advanceTimersByTimeAsync(200)
+        expect(get).toHaveBeenCalledTimes(1)
+        wrapper.unmount()
+        await vi.advanceTimersByTimeAsync(2000)
+        expect(get).toHaveBeenCalledTimes(1)
+    } finally { wrapper.unmount(); vi.useRealTimers() }
 })
 
 it('ignores an old folder response after changing the module and reports failed fresh reads', async () => {

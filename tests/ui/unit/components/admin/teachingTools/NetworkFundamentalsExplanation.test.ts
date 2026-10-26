@@ -41,11 +41,29 @@ it('shows what a selected network device does and explains a disconnected intern
     await button(wrapper, 'Router').trigger('click')
     expect(wrapper.get('h3').text()).toBe('Router')
     expect(wrapper.text()).toContain('verbindet verschiedene IP-Netze')
+    expect(wrapper.get('.detail-panel img').attributes('alt')).toContain('Heimrouter')
     await button(wrapper, 'Internetverbindung trennen').trigger('click')
     expect(wrapper.get('[role="status"]').text()).toContain('das lokale Netzwerk bleibt bestehen')
 
     await button(wrapper, 'Internetverbindung herstellen').trigger('click')
     expect(wrapper.get('[role="status"]').text()).toBe('Internetverbindung besteht')
+})
+
+it('shows real device photographs and their sources when a device is selected', async () => {
+    const wrapper = render()
+
+    await button(wrapper, 'Geräte').trigger('click')
+    expect(wrapper.findAll('.device-thumbnail')).toHaveLength(8)
+    expect(wrapper.get('.detail-panel img').attributes('src')).toBe('/images/network-devices/switch-avaya.jpg')
+    expect(wrapper.get('.detail-panel figcaption').text()).toContain('Geek2003')
+    await wrapper.findAll('button').find(item => item.text().startsWith('Firewall'))!.trigger('click')
+    expect(wrapper.get('.detail-panel img').attributes('alt')).toContain('Firewall-Gerät')
+    await wrapper.findAll('button').find(item => item.text().startsWith('Server'))!.trigger('click')
+    expect(wrapper.get('.detail-panel img').attributes('src')).toBe('/images/network-devices/server.jpg')
+    await wrapper.findAll('button').find(item => item.text().startsWith('NAS'))!.trigger('click')
+    expect(wrapper.get('.detail-panel img').attributes('src')).toBe('/images/network-devices/nas.jpg')
+    expect(wrapper.get('.detail-panel figcaption').text()).toContain('Mro')
+    expect(wrapper.get('summary').text()).toBe('Bildnachweise')
 })
 
 it('shows the request, response and peer-to-peer roles separately', async () => {
@@ -59,6 +77,18 @@ it('shows the request, response and peer-to-peer roles separately', async () => 
     await button(wrapper, 'Peer-to-Peer').trigger('click')
     expect(wrapper.get('h3').text()).toBe('Direkter Austausch')
     expect(wrapper.text()).toContain('Geräte können Ressourcen direkt austauschen')
+})
+
+it('shows a suitable additional explanation for each selected network type', async () => {
+    const wrapper = render()
+
+    await button(wrapper, 'Netzarten').trigger('click')
+    expect(wrapper.text()).toContain('Geräte im LAN können auch dann miteinander kommunizieren')
+    await wrapper.findAll('button').find(item => item.text().startsWith('WLAN'))!.trigger('click')
+    expect(wrapper.text()).toContain('Ein WLAN verbindet Geräte mit dem lokalen Netzwerk')
+    expect(wrapper.text()).not.toContain('Geräte im LAN können auch dann miteinander kommunizieren')
+    await wrapper.findAll('button').find(item => item.text().startsWith('Extranet'))!.trigger('click')
+    expect(wrapper.text()).toContain('Im Extranet erhalten Außenstehende Zugang')
 })
 
 it('changes the topology illustration and its explanation', async () => {
@@ -82,6 +112,21 @@ it('opens the explanation of MAC addresses and their displayed format', async ()
     expect(wrapper.get('h3').text()).toBe('MAC-Adresse')
     expect(wrapper.text()).toContain('00:1A:2B:3C:4D:5E')
     expect(wrapper.text()).toContain('zufällig gewählt')
+})
+
+it('explains the router and the backbone in the building network', async () => {
+    const wrapper = render()
+
+    await button(wrapper, 'Gebäude').trigger('click')
+    await button(wrapper, 'Router').trigger('click')
+    expect(wrapper.get('h3').text()).toBe('Router')
+    expect(wrapper.text()).toContain('Der Router verbindet unterschiedliche Netzwerke')
+    expect(wrapper.get('.detail-panel img').attributes('src')).toBe('/images/network-devices/router.jpg')
+    await button(wrapper, 'Backbone – Verbindung').trigger('click')
+    expect(wrapper.get('h3').text()).toBe('Backbone')
+    expect(wrapper.text()).toContain('Er ist eine Verbindung, kein eigenes Gerät')
+    expect(wrapper.find('.detail-panel img').exists()).toBe(false)
+    expect(button(wrapper, 'Internet').exists()).toBe(true)
 })
 
 it('updates data rate and latency independently', async () => {

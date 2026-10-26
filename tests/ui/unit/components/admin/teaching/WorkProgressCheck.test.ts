@@ -16,7 +16,7 @@ it.each([true, false])('refreshes collection evidence explicitly and accepts onl
     try {
         await wrapper.get('button').trigger('click')
         await flushPromises()
-        expect(get).toHaveBeenCalledWith(expect.any(String), { params: { refresh_collection: true } })
+        expect(get).toHaveBeenCalledWith(expect.any(String), { params: { refresh_collection: true, progress_id: expect.any(String) } })
         if (matching) {
             expect(wrapper.emitted('saved')?.[0]?.[0]).toMatchObject({ data: { id: 64,
                 collection_run: { completed_at: '2026-10-24T13:46:16Z' } } })
@@ -24,6 +24,46 @@ it.each([true, false])('refreshes collection evidence explicitly and accepts onl
             expect(wrapper.emitted('saved')).toBeUndefined()
             expect(wrapper.get('[role="alert"]').text()).toBe('Arbeitsstand nicht bestätigt.')
         }
+    } finally { wrapper.unmount() }
+})
+
+it('shows real progress during the collection check and marks skipped work neutrally', async () => {
+    let finish: (value: unknown) => void = () => {}
+    const get = vi.fn((url: string) => url.includes('/refresh-progress/')
+        ? Promise.resolve({ data: { state: 'running', active: 'collection', steps: ['connection', 'folder', 'collection'], completed: ['connection'], skipped: ['folder'] } })
+        : new Promise(resolve => { finish = resolve }))
+    vi.stubGlobal('axios', { get })
+    const wrapper = mount(WorkProgressCheck, { props: { work: { id: 64, teaching_course_id: 16 } },
+        global: { stubs: { 'v-btn': { template: '<button><slot /></button>' } } } })
+    try {
+        vi.useFakeTimers()
+        await wrapper.get('button').trigger('click')
+        await vi.advanceTimersByTimeAsync(200)
+        const progress = wrapper.get('[aria-label="Fortschritt der Prüfung"]')
+        expect(progress.text()).toContain('Dropbox-Zuordnung prüfenErledigt')
+        expect(progress.text()).toContain('Arbeitsordner ermittelnNicht ausgeführt')
+        expect(progress.text()).toContain('Arbeitsstand prüfenWird geprüft')
+        finish({ data: { data: { id: 64, teaching_course_id: 16 }, progress: { state: 'done', active: null,
+            steps: ['connection', 'folder', 'collection'], completed: ['connection', 'collection'], skipped: ['folder'] } } })
+        await vi.runAllTicks()
+        await flushPromises()
+        expect(progress.text()).toContain('Prüfung abgeschlossen')
+        expect(progress.text()).toContain('Arbeitsstand prüfenErledigt')
+        await vi.advanceTimersByTimeAsync(2000)
+        expect(get).toHaveBeenCalledTimes(2)
+    } finally { wrapper.unmount(); vi.useRealTimers() }
+})
+
+it('does not show a completed check if the server returns a different work', async () => {
+    vi.stubGlobal('axios', { get: vi.fn().mockResolvedValue({ data: { data: { id: 99, teaching_course_id: 16 },
+        progress: { state: 'done', steps: ['connection'], completed: ['connection'], skipped: [], active: null } } }) })
+    const wrapper = mount(WorkProgressCheck, { props: { work: { id: 64, teaching_course_id: 16 } },
+        global: { stubs: { 'v-btn': { template: '<button><slot /></button>' } } } })
+    try {
+        await wrapper.get('button').trigger('click')
+        await flushPromises()
+        expect(wrapper.get('[aria-label="Fortschritt der Prüfung"]').text()).toContain('Prüfung unterbrochen')
+        expect(wrapper.get('[role="alert"]').text()).toContain('Arbeitsstand nicht bestätigt')
     } finally { wrapper.unmount() }
 })
 

@@ -2,6 +2,7 @@
 
 use App\Models\DropboxConnection;
 use App\Models\TeachingCourseWork;
+use App\Models\TeachingWorkModuleLink;
 use App\Services\DropboxFolderContents;
 use App\Services\DropboxModuleLinks;
 use App\Services\DropboxWorkImport;
@@ -12,6 +13,32 @@ use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\TestCase;
 
 uses(TestCase::class);
+
+test('only the same unambiguous fresh server result can be reused for collection', function (string $scenario): void {
+    $work = (new TeachingCourseWork)->forceFill(['id' => 64, 'teaching_course_id' => 16]);
+    $connection = (new DropboxConnection)->forceFill(['id' => 7, 'account_id' => 'account']);
+    $link = (new TeachingWorkModuleLink)->forceFill(['id' => 3, 'dropbox_connection_id' => 7, 'account_id' => 'account']);
+    $freshLink = $link->getAttributes();
+    $fresh = ['status' => 'found', 'folder' => ['id' => 'id:one'], 'checked_at' => '2026-10-26T10:00:00Z'];
+    $candidate = $fresh;
+    match ($scenario) {
+        'groups' => $candidate = ['status' => 'unknown', 'folder' => null, 'checked_at' => $fresh['checked_at']],
+        'changed schedule' => $candidate = ['status' => 'unknown', 'folder' => null, 'checked_at' => $fresh['checked_at']],
+        'changed folder' => $candidate['folder']['id'] = 'id:two',
+        'changed check' => $candidate['checked_at'] = '2026-10-26T10:00:01Z',
+        'changed binding' => $freshLink['id'] = 4,
+        default => null,
+    };
+    $modules = Mockery::mock(DropboxModuleLinks::class);
+    if ($scenario !== 'changed binding') {
+        $modules->shouldReceive('exercise')->once()->with($connection, $work, $link, null, false, false)->andReturn($candidate);
+    } else {
+        $modules->shouldNotReceive('exercise');
+    }
+    $service = new TeachingWorkCollectionStatus(Mockery::mock(DropboxWorkImport::class), $modules, Mockery::mock(DropboxFolderContents::class));
+    $method = new ReflectionMethod($service, 'reusableExercise');
+    expect($method->invoke($service, $connection, $work, $link, $fresh, $freshLink))->toBe($scenario === 'same' ? $fresh : null);
+})->with(['same', 'groups', 'changed schedule', 'changed folder', 'changed check', 'changed binding']);
 
 function collectionRunFixture(): array
 {

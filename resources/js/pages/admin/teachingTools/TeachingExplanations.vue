@@ -78,6 +78,7 @@
             <header><h1>{{ currentCategory.title }}</h1></header>
             <ul class="explanations__grid" aria-label="Verfügbare Erklärungen">
                 <li v-for="item in categoryExplanations" :key="item.key" class="explanation-card">
+                    <span class="explanation-card__availability" :class="`explanation-card__availability--${cardAvailability(cardShares[item.key]?.sharing)}`" role="img" :aria-label="`${item.title}: ${cardAvailabilityLabel(cardShares[item.key]?.sharing)}`" :title="cardAvailabilityLabel(cardShares[item.key]?.sharing)"></span>
                     <RouterLink :to="`/admin/teaching-tools/explanations/${item.key}`" class="explanation-tile" :aria-label="`${item.title} öffnen`">
                         <div v-if="item.category === 'number-systems'" class="explanation-tile__preview" aria-hidden="true"><span>{{ item.sourceNotation.prefix }}{{ item.example }}<sub v-if="item.sourceNotation.subscript">{{ item.sourceNotation.subscript }}</sub></span><span class="explanation-tile__arrow">→</span><span>{{ item.prefix }}{{ item.result }}<sub v-if="item.subscript">{{ item.subscript }}</sub></span></div>
                         <div v-else class="explanation-tile__preview" aria-hidden="true"><v-icon icon="mdi-lan-connect" size="64" /></div>
@@ -140,6 +141,13 @@ const successMessage = ref('')
 let sharingLoadVersion = 0
 const hasUnsavedAccess = computed(() => Boolean(sharing.value?.published && accessMode.value !== sharing.value.access_mode))
 function accessLabel(mode) { return mode === 'public' ? 'Ohne Anmeldung' : 'Nur mit Schooltool-Anmeldung' }
+function cardAvailability(sharing) {
+    if (!sharing) return 'unknown'
+    return sharing.available && sharing.published && sharing.invitation?.url ? 'available' : 'unavailable'
+}
+function cardAvailabilityLabel(sharing) {
+    return { available: 'veröffentlicht', unavailable: 'nicht verfügbar', unknown: 'Status unbekannt' }[cardAvailability(sharing)]
+}
 
 async function loadCardShare(key) {
     cardShares.value[key] = { busy: true, sharing: null, copied: false, error: '', manualUrl: '' }
@@ -178,6 +186,7 @@ async function copyCardLink(key) {
             state.error = 'Bitte den Link im Textfeld markieren und kopieren.'
         }
     } catch {
+        state.sharing = null
         state.error = 'Der aktuelle Link konnte nicht geladen werden. Bitte erneut versuchen.'
     } finally { state.busy = false }
 }
@@ -256,7 +265,10 @@ watch(accessMode, () => { successMessage.value = '' })
 .explanation-tile h2 { display: inline; vertical-align: middle; margin-left: 10px; font-size: 1.2rem; }
 .explanation-tile p { margin-top: 14px; color: #50647c; font-size: .95rem; line-height: 1.6; }
 .explanation-tile__open { display: flex; justify-content: space-between; margin-top: 24px; font-weight: 650; color: #1b62c5; }
-.explanation-card { display: flex; flex-direction: column; overflow: hidden; border: 1px solid #c8d5e5; border-radius: 12px; background: #fff; }
+.explanation-card { position: relative; display: flex; flex-direction: column; overflow: hidden; border: 1px solid #c8d5e5; border-radius: 12px; background: #fff; }
+.explanation-card__availability { position: absolute; top: 14px; right: 14px; z-index: 1; width: 14px; height: 14px; border: 2px solid #fff; border-radius: 50%; background: #778798; box-shadow: 0 0 0 1px #778798; pointer-events: none; }
+.explanation-card__availability--available { background: #16864a; box-shadow: 0 0 0 1px #16864a, 0 0 9px #16864a66; }
+.explanation-card__availability--unavailable { background: #c33434; box-shadow: 0 0 0 1px #c33434, 0 0 9px #c3343455; }
 .explanation-card > .explanation-tile { flex: 1; border: 0; border-radius: 0; }
 .explanation-card > .explanation-tile:focus-visible { outline-offset: -3px; }
 .explanation-card__sharing { padding: 16px 22px; border-top: 1px solid #e0e7ef; }

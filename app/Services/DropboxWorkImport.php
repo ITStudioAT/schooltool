@@ -806,7 +806,7 @@ class DropboxWorkImport
     public function readModuleBatch(DropboxConnection $connection, array $requests): array
     {
         foreach ($requests as $request) {
-            abort_unless(in_array($request['endpoint'], ['files/download', 'files/get_metadata'], true), 422);
+            abort_unless(in_array($request['endpoint'], ['files/download', 'files/get_metadata', 'files/list_folder', 'files/list_folder/continue'], true), 422);
         }
         if ($requests === []) {
             return [];
@@ -820,7 +820,7 @@ class DropboxWorkImport
                     $client->withHeaders(['Dropbox-API-Arg' => json_encode($request['parameters'], JSON_THROW_ON_ERROR), 'Content-Type' => ''])
                         ->withBody('', '')->post('https://content.dropboxapi.com/2/files/download');
                 } else {
-                    $client->post('https://api.dropboxapi.com/2/files/get_metadata', $request['parameters']);
+                    $client->post('https://api.dropboxapi.com/2/'.$request['endpoint'], $request['parameters']);
                 }
             }
         }, concurrency: 4);

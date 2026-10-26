@@ -1,5 +1,5 @@
 <template>
-    <span v-if="needsPreparation" class="exercise-action" @click.stop>
+    <div v-if="needsPreparation" class="exercise-action" @click.stop>
         <template v-if="exerciseFolder">
             <span v-if="!hideFolderName" class="exercise-folder text-body-2" aria-label="Leistungsfeststellungsordner">{{ exerciseFolder.name }}</span>
             <v-btn size="small" variant="tonal" prepend-icon="mdi-format-list-checks" :disabled="disabled || !current || mcDispatchLocked"
@@ -16,7 +16,8 @@
             </span>
         </v-btn>
         <span v-if="exerciseMessage" role="status" class="exercise-check-message d-block text-caption mt-1">{{ exerciseMessage }}</span>
-    </span>
+        <WorkCheckProgress :state="checkProgressState" :unavailable="progressUnavailable" />
+    </div>
     <WorkProgressCheck v-if="checkProgress && !needsPreparation && active && current" :work="work" :disabled="disabled"
         @saved="emit('deadline-saved', $event)" @busy="emit('check-busy', $event)" />
     <v-dialog v-if="opened" v-model="opened" max-width="640" :persistent="loading">
@@ -79,11 +80,13 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { VRadio, VRadioGroup } from 'vuetify/components'
-import { aiExport, exerciseOptions, prepareExercise, show } from '@/actions/App/Http/Controllers/Admin/Teaching/CourseWorkController'
+import { aiExport, exerciseOptions, prepareExercise } from '@/actions/App/Http/Controllers/Admin/Teaching/CourseWorkController'
 import { loadWorkExercise, workDropboxKey, workDropboxStates, workExerciseCheck } from '@/helpers/workDropbox'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { workNeedsPreparation } from '@/helpers/workOverview'
 import WorkProgressCheck from './WorkProgressCheck.vue'
+import WorkCheckProgress from './WorkCheckProgress.vue'
+import { useWorkCheckProgress } from './workCheckProgress'
 
 const props = defineProps({ work: Object, course: Object, date: { type: String, default: '' }, disabled: Boolean, active: { type: Boolean, default: true }, hideFolderName: Boolean, checkProgress: Boolean, deadlineDraft: { type: Object, default: null } })
 const emit = defineEmits(['exercise-status', 'deadline-saved', 'check-busy'])
@@ -138,6 +141,8 @@ const bindingVersion = computed(() => JSON.stringify([binding.value?.connected, 
 let sequence = 0
 let controller = null
 let exerciseSequence = 0
+const { state: checkProgressState, unavailable: progressUnavailable, start: startProgressPolling,
+    finish: finishProgressPolling, reset: resetProgressPolling } = useWorkCheckProgress()
 
 async function checkExercise(fresh = false) {
     const operation = ++exerciseSequence
@@ -168,24 +173,31 @@ async function checkExercise(fresh = false) {
     publish(displayed ? displayed.status : exerciseChecking.value ? 'checking' : 'unknown', displayed?.folder,
         displayed?.data?.exercise?.email_preparation, displayed?.data?.exercise?.email_dispatch)
     if (!props.active || !current.value || !needsPreparation.value) return
-    if (fresh) emit('check-busy', true)
+    const progressId = fresh ? crypto.randomUUID() : null
+    let progressOperation = null
+    let finalProgress = null
+    let progressFailed = false
+    if (fresh) {
+        progressOperation = startProgressPolling(props.work.id, progressId)
+        emit('check-busy', true)
+    }
     try {
-        const data = await loadWorkExercise(key, props.work, props.date, fresh, fresh ? props.deadlineDraft : null)
+        const data = await loadWorkExercise(key, props.work, props.date, fresh, fresh ? props.deadlineDraft : null, fresh && props.checkProgress, progressId)
         if (operation !== exerciseSequence) return
+        if (fresh && data.progress) finalProgress = data.progress
         mcDispatchLocked.value = Number(data.exercise?.email_dispatch?.confirmed_count || 0) > 0
             || ['sent', 'partial'].includes(data.exercise?.email_dispatch?.status)
-        let savedWork = data.saved_work
-        if (fresh && props.checkProgress) {
-            try {
-                const response = await axios.get(show.url(context.workId), { params: { refresh_collection: true } })
-                if (operation !== exerciseSequence) return
-                if (String(response.data?.data?.id) !== String(context.workId)
-                    || String(response.data.data.teaching_course_id) !== String(context.courseId)) throw new Error('Der Arbeitsstand konnte nicht geprüft werden.')
-                savedWork = response.data.data
-            } catch (failure) {
-                if (operation === exerciseSequence && data.saved_work) emit('deadline-saved', { data: data.saved_work })
-                throw failure
-            }
+        const savedWork = data.saved_work
+        if (fresh && props.checkProgress && data.collection_error) {
+            if (data.saved_work) emit('deadline-saved', { data: data.saved_work })
+            const failure = new Error('Der Arbeitsstand konnte nicht geprüft werden.')
+            failure.response = { data: data.collection_error }
+            throw failure
+        }
+        if (fresh && props.checkProgress && (String(savedWork?.id) !== String(context.workId)
+            || String(savedWork?.teaching_course_id) !== String(context.courseId))) {
+            if (data.saved_work) emit('deadline-saved', { data: data.saved_work })
+            throw new Error('Der Arbeitsstand konnte nicht geprüft werden.')
         }
         if (savedWork) emit('deadline-saved', { data: savedWork })
         checkedAt.value = workExerciseCheck(key, savedWork || props.work, props.date)?.checkedAt || null
@@ -203,6 +215,7 @@ async function checkExercise(fresh = false) {
             }
         }
     } catch (failure) {
+        progressFailed = true
         if (operation === exerciseSequence) {
             checkedAt.value = workExerciseCheck(workDropboxKey(admin.config?.user?.id, props.work), props.work, props.date)?.checkedAt || null
             publish('unknown')
@@ -210,8 +223,11 @@ async function checkExercise(fresh = false) {
                 || failure.response?.data?.message || 'Der Anlagezustand konnte nicht geprüft werden. Bitte den Dialog erneut öffnen.'
         }
     } finally {
+        if (fresh && finishProgressPolling(progressOperation, finalProgress, progressFailed)) {
+            if (operation !== exerciseSequence && checkProgressState.value?.state === 'running') checkProgressState.value = null
+            emit('check-busy', false)
+        }
         if (operation === exerciseSequence) exerciseChecking.value = false
-        if (fresh) emit('check-busy', false)
     }
 }
 
@@ -344,7 +360,13 @@ async function copyResult(operation) {
         : 'Der Browser blockiert das Kopieren. Bitte „Text kopieren“ anklicken oder den markierten Text mit Strg+C kopieren.'
 }
 
-watch(() => [admin.config?.user?.id, props.work?.id, props.course?.id, props.date], () => { clear(); mcSequence++; opened.value = false })
+watch(() => [admin.config?.user?.id, props.work?.id, props.course?.id, props.date], () => {
+    clear()
+    if (checkProgressState.value?.state === 'running') emit('check-busy', false)
+    resetProgressPolling()
+    mcSequence++
+    opened.value = false
+})
 watch(opened, value => { if (!value) { clear(); mcSequence++ } })
 watch(includeMc, value => {
     clear(); mcPayload = null; mcOptions.value = null
@@ -358,7 +380,7 @@ watch(mcExistingCatalogId, () => {
 watch(() => [mcMode.value, mcTestId.value, mcCatalogId.value, mcDuration.value, mcPoints.value], () => { clear(); mcPayload = null })
 watch(() => [admin.config?.user?.id, props.work?.id, props.course?.id, props.date, props.active, bindingVersion.value, needsPreparation.value,
     props.work?.finish_until_date, props.work?.finish_until_time, JSON.stringify(props.work?.communicated_deadline)], () => checkExercise(), { immediate: true })
-onBeforeUnmount(() => { clear(); exerciseSequence++; mcSequence++ })
+onBeforeUnmount(() => { clear(); resetProgressPolling(); exerciseSequence++; mcSequence++ })
 </script>
 
 <style scoped>

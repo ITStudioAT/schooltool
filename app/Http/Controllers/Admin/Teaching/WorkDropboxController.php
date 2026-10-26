@@ -14,16 +14,20 @@ use App\Services\DropboxModuleLinks;
 use App\Services\DropboxWorkImport;
 use App\Services\TeachingCourseWorkEntrySyncService;
 use App\Services\TeachingSimulation;
+use App\Services\TeachingWorkCollectionStatus;
 use App\Services\TeachingWorkDeadlineSync;
 use App\Services\TeachingWorkDispatchImport;
 use App\Services\TeachingWorkFolderImport;
 use App\Services\TeachingWorkFolderVerification;
 use App\Services\TeachingWorkJsonImport;
+use App\Services\TeachingWorkRefreshProgress;
+use Illuminate\Contracts\Debug\ExceptionHandler;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class WorkDropboxController extends Controller
@@ -38,45 +42,117 @@ class WorkDropboxController extends Controller
             'expected' => ['required', 'array:date,time'],
             'expected.date' => ['present', 'nullable', 'date_format:Y-m-d'],
             'expected.time' => ['present', 'nullable', 'date_format:H:i'],
+            'refresh_collection' => ['sometimes', 'boolean'],
+            'progress_id' => ['sometimes', 'uuid'],
         ]);
-        $connection = $dropbox->connection($actor);
-        $modules = app(DropboxModuleLinks::class);
-        $link = $modules->current($course_work);
-        abort_unless($link && $link->dropbox_connection_id === $connection->id && $link->account_id === $connection->account_id, 409,
-            'Die Modulverbindung muss zuerst bestätigt werden.');
-        $synchronized = DB::transaction(function () use ($course_work, $data, $modules, $connection, $link, $deadlines): array {
-            $work = TeachingCourseWork::query()->with('teachingCourse')->lockForUpdate()->findOrFail($course_work->id);
-            abort_unless($work->teaching_course_id === $course_work->teaching_course_id
-                && $modules->current($work)?->getAttributes() === $link->getAttributes(), 409, 'Die Arbeitszuordnung wurde inzwischen geändert.');
-            abort_unless($work->finish_until_date?->format('Y-m-d') === $data['expected']['date']
-                && ($work->finish_until_time ?: null) === $data['expected']['time'], 409, 'Die Frist wurde inzwischen geändert. Bitte den Arbeiten-Dialog neu öffnen.');
-            $exercise = $modules->exercise($connection, $work, $link, $data['date'] ?? null);
-            if ($exercise['status'] === 'unknown') {
-                $exercise = $modules->exercise($connection, $work, $link, $data['date'] ?? null, refresh: true);
-            }
-            abort_unless(in_array($exercise['status'], ['found', 'missing'], true), 409, $exercise['message'] ?? 'Die Leistungsfeststellung ist nicht eindeutig.');
-            $work->finish_until_date = $data['finish_until_date'];
-            $work->finish_until_time = $data['finish_until_time'];
-            $deadlines->metadata($work, ['MitgeteilteAbgabefrist' => $work->communicatedDeadline()['at'] ?? null,
-                'Schooltool_Fristdaten' => ['communicated_deadline' => $work->communicatedDeadline()]]);
-            $result = $exercise['status'] === 'found' ? $deadlines->sync($connection, $work, $exercise['folder'])
-                : ['changed' => false, 'message' => 'Frist gespeichert; die Leistungsfeststellung wurde noch nicht erstellt.'];
-            if ($work->isDirty(['finish_until_date', 'finish_until_time'])) {
-                $work->save();
-                app(TeachingCourseWorkEntrySyncService::class)->syncWork($work);
-            }
+        $progressService = app(TeachingWorkRefreshProgress::class);
+        $progressKey = isset($data['progress_id']) ? $progressService->key($actor, $course_work, $data['progress_id']) : null;
+        $progress = ['state' => 'running', 'active' => 'connection', 'completed' => [], 'skipped' => [],
+            'steps' => array_merge(['connection', 'folder', 'deadline', 'verification'], ($data['refresh_collection'] ?? false) ? ['collection'] : [])];
+        $progressService->save($progressKey, $progress);
+        try {
+            $connection = $dropbox->connection($actor);
+            $modules = app(DropboxModuleLinks::class);
+            $link = $modules->current($course_work);
+            abort_unless($link && $link->dropbox_connection_id === $connection->id && $link->account_id === $connection->account_id, 409,
+                'Die Modulverbindung muss zuerst bestätigt werden.');
+            $progress['completed'][] = 'connection';
+            $progress['active'] = 'folder';
+            $progressService->save($progressKey, $progress);
+            $synchronized = DB::transaction(function () use ($course_work, $data, $modules, $connection, $link, $deadlines, $progressKey, $progressService, &$progress): array {
+                $work = TeachingCourseWork::query()->with('teachingCourse')->lockForUpdate()->findOrFail($course_work->id);
+                abort_unless($work->teaching_course_id === $course_work->teaching_course_id
+                    && $modules->current($work)?->getAttributes() === $link->getAttributes(), 409, 'Die Arbeitszuordnung wurde inzwischen geändert.');
+                abort_unless($work->finish_until_date?->format('Y-m-d') === $data['expected']['date']
+                    && ($work->finish_until_time ?: null) === $data['expected']['time'], 409, 'Die Frist wurde inzwischen geändert. Bitte den Arbeiten-Dialog neu öffnen.');
+                $exercise = $modules->exercise($connection, $work, $link, $data['date'] ?? null, initial: false);
+                if ($exercise['status'] === 'unknown') {
+                    $exercise = $modules->exerciseFolder($connection, $work, $link, $data['date'] ?? null);
+                }
+                abort_unless(in_array($exercise['status'], ['found', 'missing'], true), 409, $exercise['message'] ?? 'Die Leistungsfeststellung ist nicht eindeutig.');
+                $progress['completed'][] = 'folder';
+                $progress['active'] = 'deadline';
+                $progressService->save($progressKey, $progress);
+                $work->finish_until_date = $data['finish_until_date'];
+                $work->finish_until_time = $data['finish_until_time'];
+                $deadlines->metadata($work, ['MitgeteilteAbgabefrist' => $work->communicatedDeadline()['at'] ?? null,
+                    'Schooltool_Fristdaten' => ['communicated_deadline' => $work->communicatedDeadline()]]);
+                $result = $exercise['status'] === 'found' ? $deadlines->sync($connection, $work, $exercise['folder'])
+                    : ['changed' => false, 'message' => 'Frist gespeichert; die Leistungsfeststellung wurde noch nicht erstellt.'];
+                if ($work->isDirty(['finish_until_date', 'finish_until_time'])) {
+                    $work->save();
+                    app(TeachingCourseWorkEntrySyncService::class)->syncWork($work);
+                }
 
-            return $result;
-        });
-        $course_work->refresh();
-        $request->merge(['include_exercise' => true, 'refresh' => true]);
-        $response = $this->show($course_work, $dropbox);
-        $body = $response->getData(true);
-        $body['deadline_sync'] = $synchronized;
-        $body['saved_work'] = app(TeachingCourseWorkEntrySyncService::class)->serializeWork($course_work->load('teachingCourseWorkGroupStudents'));
-        $response->setData($body);
+                return $result;
+            });
+            $progress['completed'][] = 'deadline';
+            $progress['active'] = 'verification';
+            $progressService->save($progressKey, $progress);
+            $course_work->refresh();
+            $request->merge(['include_exercise' => true, 'refresh' => true]);
+            $response = $this->show($course_work, $dropbox);
+            $body = $response->getData(true);
+            if (($body['exercise']['status'] ?? 'unknown') !== 'unknown') {
+                $progress['completed'][] = 'verification';
+                $progress['active'] = ($data['refresh_collection'] ?? false) ? 'collection' : null;
+            } else {
+                $progress['state'] = 'failed';
+            }
+            $progressService->save($progressKey, $progress);
+            $body['deadline_sync'] = $synchronized;
+            if ($data['refresh_collection'] ?? false) {
+                try {
+                    $course_work->refresh();
+                    $collectionChecked = false;
+                    app(TeachingWorkCollectionStatus::class)->refresh($course_work, $actor, $body['exercise'] ?? null, $link->getAttributes(),
+                        function (string $event) use (&$collectionChecked): void {
+                            $collectionChecked = $event === 'collection';
+                        });
+                    if ($progress['state'] !== 'failed') {
+                        if ($collectionChecked) {
+                            $progress['completed'][] = 'collection';
+                        } else {
+                            $progress['skipped'][] = 'collection';
+                        }
+                        $progress['active'] = null;
+                    }
+                } catch (\Throwable $exception) {
+                    $progress['state'] = 'failed';
+                    $handler = app(ExceptionHandler::class);
+                    $handler->report($exception);
+                    $failure = $handler->render($request, $exception);
+                    $body['collection_error'] = $failure instanceof JsonResponse ? $failure->getData(true)
+                        : ['message' => 'Der Arbeitsstand konnte nicht geprüft werden.'];
+                }
+            }
+            $body['saved_work'] = app(TeachingCourseWorkEntrySyncService::class)->serializeWork($course_work->load('teachingCourseWorkGroupStudents'));
+            if ($progress['state'] !== 'failed') {
+                $progress['state'] = 'done';
+            }
+            $progressService->save($progressKey, $progress);
+            if ($progressKey !== null) {
+                $body['progress'] = $progress;
+            }
+            $response->setData($body);
 
-        return $response;
+            return $response;
+        } catch (\Throwable $exception) {
+            $progress['state'] = 'failed';
+            $progressService->save($progressKey, $progress);
+            throw $exception;
+        }
+    }
+
+    public function refreshProgress(TeachingCourseWork $course_work, string $progress_id): JsonResponse
+    {
+        $actor = $this->actor($course_work);
+        abort_unless(Str::isUuid($progress_id), 404);
+        $service = app(TeachingWorkRefreshProgress::class);
+        $progress = $service->read($service->key($actor, $course_work, $progress_id));
+        abort_unless(is_array($progress), 404);
+
+        return response()->json($progress)->header('Cache-Control', 'private, no-store');
     }
 
     public function show(TeachingCourseWork $course_work, DropboxWorkImport $dropbox): JsonResponse
