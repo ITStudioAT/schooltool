@@ -72,6 +72,18 @@ it('changes the topology illustration and its explanation', async () => {
     expect(wrapper.text()).toContain('alternative Wege verfügbar')
 })
 
+it('opens the explanation of MAC addresses and their displayed format', async () => {
+    const wrapper = render()
+
+    await button(wrapper, 'Switch & VLAN').trigger('click')
+    const macButton = wrapper.findAll('button').find(item => item.text().includes('MAC-Adresse'))
+    expect(macButton).toBeDefined()
+    await macButton!.trigger('click')
+    expect(wrapper.get('h3').text()).toBe('MAC-Adresse')
+    expect(wrapper.text()).toContain('00:1A:2B:3C:4D:5E')
+    expect(wrapper.text()).toContain('zufällig gewählt')
+})
+
 it('updates data rate and latency independently', async () => {
     const wrapper = render()
 

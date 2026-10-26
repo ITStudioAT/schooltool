@@ -81,7 +81,7 @@
                 <div class="section-heading"><div><span>Im lokalen Netz</span><h2 id="switch-heading">Schnittstellen und Switches</h2></div><p>Die Netzwerkschnittstelle verbindet ein Gerät über Kabel oder Funk.</p></div>
                 <div class="two-columns"><div class="visual-panel"><div class="choice-grid compact-grid">
                     <button v-for="item in switchConcepts" :key="item.name" type="button" :aria-pressed="selectedSwitch === item.name" @click="selectedSwitch = item.name"><strong>{{ item.name }}</strong><span>{{ item.label }}</span></button>
-                </div></div><div class="detail-panel" aria-live="polite"><span>Begriff erklärt</span><h3>{{ activeSwitch.name }}</h3><p>{{ activeSwitch.description }}</p><p class="note">Eine MAC-Adresse ist die Adresse eines Netzwerkanschlusses, zum Beispiel des WLAN-Adapters oder des Ethernet-Anschlusses. Ein Switch kann sie nutzen, um Daten im lokalen Netzwerk an den richtigen Anschluss weiterzuleiten. WLAN und Kabel können unterschiedliche MAC-Adressen haben. Eine WLAN-Adresse kann zum Schutz der Privatsphäre auch zufällig gewählt werden.</p></div></div>
+                </div></div><div class="detail-panel" aria-live="polite"><span>Begriff erklärt</span><h3>{{ activeSwitch.name }}</h3><p>{{ activeSwitch.description }}</p><p v-if="activeSwitch.example" class="mac-example">{{ activeSwitch.example }}</p><p class="note">{{ activeSwitch.note || 'Ein Gerät kann für WLAN und Kabel unterschiedliche MAC-Adressen haben.' }}</p></div></div>
             </section>
 
             <section v-else-if="currentPage === 'topologies'" aria-labelledby="topology-heading">
@@ -159,6 +159,7 @@ const selectedDevice = ref('Switch')
 const activeDevice = computed(() => devices.find(item => item.name === selectedDevice.value))
 const switchConcepts = [
     { name: 'Netzwerkadapter', label: 'Anschluss ans Netz', description: 'Ein Netzwerkadapter verbindet ein Gerät per Kabel oder Funk mit dem Netzwerk.' },
+    { name: 'MAC-Adresse', label: 'Kennung des Adapters', description: 'Eine MAC-Adresse kennzeichnet einen Netzwerkadapter, etwa den WLAN- oder Ethernet-Adapter. Ein Switch nutzt MAC-Adressen, um Daten im lokalen Netzwerk weiterzuleiten.', example: 'Beispiel: 00:1A:2B:3C:4D:5E', note: 'Bei Ethernet und WLAN sind das üblicherweise 48 Bit, dargestellt als sechs Zeichenpaare mit den Ziffern 0–9 und Buchstaben A–F. Eine MAC-Adresse kann geändert oder zufällig gewählt werden und ist daher nicht immer dauerhaft an die Hardware gebunden. Die IP-Adresse wird zusätzlich für die Adressierung und Weiterleitung zwischen Netzwerken verwendet.' },
     { name: 'Unmanaged Switch', label: 'ohne eigene Einrichtung', description: 'Ein unmanaged Switch arbeitet normalerweise ohne eigene Konfiguration.' },
     { name: 'Managed Switch', label: 'verwaltbar', description: 'Ein managed Switch bietet je nach Modell Verwaltungsfunktionen, etwa Anschlussüberwachung oder die Einrichtung von VLANs.' },
     { name: 'VLAN', label: 'logische Trennung', description: 'Ein VLAN trennt Netzwerkbereiche logisch innerhalb einer gemeinsamen Netzwerkinfrastruktur.' },
@@ -205,6 +206,7 @@ button[aria-pressed='true'] { border-color: #3272b1 !important; background: #e5f
 .building-chain { display: flex; align-items: center; gap: 6px; }.building-chain button { flex: 1; min-width: 0; }.building-chain > span { color: #6591b9; font-weight: 700; }.usv-button { margin-top: 16px; padding-inline: 14px; }
 .lesson-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 0 0; }.lesson-footer button { min-height: 37px; padding: 6px 16px; border: 1px solid #b8cde1; border-radius: 8px; background: #fff; color: #265989; font-weight: 700; }.lesson-footer button.next-button { border-color: #2868a8; background: #2868a8; color: #fff; }.lesson-footer button:disabled { opacity: .45; cursor: default; }.lesson-footer span { color: #667b91; font-size: .8rem; }
 .map-branch { background: linear-gradient(#a6c1dc, #a6c1dc) 50% 100% / 2px 10px no-repeat; }
+.detail-panel .mac-example { margin: 12px 0; color: #1f4d7d; font-size: 1rem; font-weight: 700; }
 @media (max-width: 850px) { .lesson-navigation { grid-template-columns: repeat(4, minmax(0, 1fr)); }.section-heading { align-items: start; flex-direction: column; gap: 4px; }.two-columns { grid-template-columns: 1fr; }.detail-panel .note { margin-top: 8px; } }
 @media (max-width: 520px) { .lesson-content { padding: 17px 14px; }.lesson-navigation { grid-template-columns: repeat(4, minmax(0, 1fr)); }.lesson-navigation button { font-size: .72rem; }.choice-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }.map-core button, .map-devices button { font-size: .72rem; }.building-chain { flex-wrap: wrap; }.building-chain button { flex: 1 1 36%; }.lesson-footer span { text-align: center; }.service-diagram > div:not(.service-arrow) { min-width: 90px; } }
 </style>
