@@ -92,11 +92,11 @@
                     <p>Antworten können nicht mehr geändert werden. Der Server schließt deinen Versuch ab.</p>
                 </template>
                 <template v-else-if="attempt.start_mode === 'individual' && !attempt.started_at">
-                    <h2 id="mc-wait-title">Du bestimmst den Start.</h2>
-                    <p>Du kannst diesen Test einmal starten. Ab deinem Klick hast du {{ minutes(attempt.duration_seconds) }} Minuten. Die Zeit läuft auch weiter, wenn du die Seite verlässt.</p>
+                    <h2 id="mc-wait-title">Dein Test startet automatisch.</h2>
+                    <p>Dein Test startet beim Öffnen automatisch. Du hast {{ minutes(attempt.duration_seconds) }} Minuten. Die Zeit läuft auch weiter, wenn du die Seite verlässt.</p>
                     <p><strong>Spätestes Testende: {{ deadlineLabel(attempt.closes_at) }}</strong></p>
                     <p class="mc-description">Bei einem späten Start bleibt weniger Zeit. Nach der Schlussfrist oder nach Ablauf deiner Bearbeitungszeit sind keine Änderungen mehr möglich.</p>
-                    <button class="mc-button" :disabled="submitting" @click="startAttempt">{{ submitting ? 'Test wird gestartet …' : 'Test jetzt starten' }}</button>
+                    <button class="mc-button" :disabled="submitting" @click="startAttempt">{{ submitting ? 'Test wird gestartet …' : 'Start erneut versuchen' }}</button>
                 </template>
                 <template v-else>
                     <h2 id="mc-wait-title">{{ attempt.starts_at ? 'Gleich geht es los.' : 'Willkommen im Warteraum.' }}</h2>

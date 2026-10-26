@@ -16,10 +16,15 @@ import { useSchoolHourStore } from '@/stores/admin/teaching/SchoolHourStore'
 let browser: Browser
 
 beforeAll(async () => {
+    // Ubuntu's AppArmor profile supports the runner's system Chrome, not Puppeteer's downloaded binary.
+    const useSystemChrome = (process.env.GITHUB_ACTIONS === 'true' && process.platform === 'linux')
+        || !existsSync(await puppeteer.executablePath())
     browser = await puppeteer.launch({
         headless: true,
         pipe: true,
-        ...(existsSync(await puppeteer.executablePath()) ? {} : { channel: 'chrome' }),
+        timeout: 20_000,
+        dumpio: process.env.CI === 'true',
+        ...(useSystemChrome ? { channel: 'chrome' } : {}),
     })
 }, 30_000)
 

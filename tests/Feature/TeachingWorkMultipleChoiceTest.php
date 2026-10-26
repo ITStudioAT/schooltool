@@ -12,6 +12,7 @@ use App\Models\TeachingEntryDefinition;
 use App\Models\TeachingWorkModuleLink;
 use App\Models\User;
 use App\Services\DropboxModuleLinks;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
@@ -21,6 +22,7 @@ uses(RefreshDatabase::class);
 
 function workMcFixture(object $context): void
 {
+    $context->travelTo(CarbonImmutable::parse('2026-10-01 12:00:00', 'Europe/Vienna'));
     Http::preventStrayRequests();
     Mail::fake();
     foreach (['teacher', 'student'] as $role) {
@@ -39,7 +41,8 @@ function workMcFixture(object $context): void
     $context->course = TeachingCourse::factory()->forSchool($school)->forSchoolyear($year)->forTeacher($context->teacher)->create(['teaching_entry_area_id' => $area->id]);
     $context->course->teachingCourseStudents()->create(['user_id' => $context->student->id]);
     $context->work = TeachingCourseWork::factory()->create(['teaching_course_id' => $context->course->id,
-        'date_for_all_groups' => '2026-10-20', 'groups' => [], 'is_group_work' => false, 'status' => ['automation_enabled' => true]]);
+        'date_for_all_groups' => '2026-10-20', 'finish_until_date' => '2026-10-20', 'finish_until_time' => null,
+        'groups' => [], 'is_group_work' => false, 'status' => ['automation_enabled' => true]]);
     $questions = [];
     for ($index = 1; $index <= 10; $index++) {
         $questions[] = ['id' => 'q'.$index, 'prompt' => 'Frage '.$index, 'type' => 'single', 'active' => true, 'reviewed' => true,
@@ -64,6 +67,7 @@ test('the LF creates and binds one draft MC test with its actual candidates and 
     $id = $response->json('data.context.multiple_choice_test.test_id');
     $test = McTest::query()->findOrFail($id);
     expect($test->question_count)->toBe(10)->and($test->duration_seconds)->toBe(900)
+        ->and($test->start_mode)->toBe('individual')->and($test->closes_at->setTimezone('Europe/Vienna')->format('Y-m-d H:i:s'))->toBe('2026-10-20 23:59:00')
         ->and($test->attempts()->pluck('student_id')->all())->toBe([$this->student->id]);
     expect($response->json('data.text'))->toContain('Schooltool-MC-Test '.$id, 'Keinen zweiten MC-Test');
     expect($this->work->fresh()->status['multiple_choice_tests']['2026-10-20']['test_id'])->toBe($id);
@@ -79,6 +83,51 @@ test('the LF creates and binds one draft MC test with its actual candidates and 
     Mail::assertNothingSent();
     Http::assertNothingSent();
 });
+
+test('LF MC tests use the saved end time when one is specified', function (): void {
+    workMcFixture($this);
+    $this->work->update(['finish_until_date' => '2026-11-13', 'finish_until_time' => '12:25']);
+    $id = $this->postJson($this->base.'/prepare-exercise', $this->payload)->assertOk()->json('data.context.multiple_choice_test.test_id');
+    expect(McTest::query()->findOrFail($id)->closes_at->setTimezone('Europe/Vienna')->toIso8601String())->toBe('2026-11-13T12:25:00+01:00');
+});
+
+test('LF MC creation requires a future saved end date and does not invent one', function (?string $date): void {
+    workMcFixture($this);
+    $this->work->update(['finish_until_date' => $date]);
+    $this->postJson($this->base.'/prepare-exercise', $this->payload)->assertUnprocessable()->assertJsonValidationErrors('mc_mode');
+    expect(McTest::query()->count())->toBe(0);
+})->with([null, '2026-09-30']);
+
+test('linking an unstarted common MC test changes its start and deadline without replacing questions or links', function (): void {
+    workMcFixture($this);
+    $id = $this->postJson($this->base.'/prepare-exercise', $this->payload)->assertOk()->json('data.context.multiple_choice_test.test_id');
+    $test = McTest::query()->findOrFail($id);
+    $snapshot = $test->snapshot;
+    $snapshot['start_mode'] = 'common';
+    $snapshot['closes_at'] = null;
+    $test->update(['start_mode' => 'common', 'closes_at' => null, 'snapshot' => $snapshot]);
+    $attempts = $test->attempts()->get()->toArray();
+    $this->postJson($this->base.'/prepare-exercise', [...$this->payload, 'mc_mode' => 'existing', 'test_id' => $id,
+        'expected_test_id' => $id, 'request_id' => 'e9b85247-dc5e-4e97-a281-5c57970eb739'])->assertOk();
+    expect($test->fresh()->start_mode)->toBe('individual')
+        ->and($test->fresh()->snapshot['start_mode'])->toBe('individual')
+        ->and($test->fresh()->snapshot['questions'])->toBe($snapshot['questions'])
+        ->and($test->attempts()->get()->toArray())->toBe($attempts);
+});
+
+test('linking cannot change a common MC test whose countdown or personal attempt already started', function (bool $countdown): void {
+    workMcFixture($this);
+    $id = $this->postJson($this->base.'/prepare-exercise', $this->payload)->assertOk()->json('data.context.multiple_choice_test.test_id');
+    $test = McTest::query()->findOrFail($id);
+    $test->update(['start_mode' => 'common', 'closes_at' => null, 'starts_at' => $countdown ? now()->addMinute() : null]);
+    if (! $countdown) {
+        $test->attempts()->first()->update(['started_at' => now()]);
+    }
+    $before = $test->fresh()->getAttributes();
+    $this->postJson($this->base.'/prepare-exercise', [...$this->payload, 'mc_mode' => 'existing', 'test_id' => $id,
+        'expected_test_id' => $id, 'request_id' => '29bc5361-d0dc-4fe8-9988-598062327c0e'])->assertUnprocessable()->assertJsonValidationErrors('mc_mode');
+    expect($test->fresh()->getAttributes())->toBe($before);
+})->with([true, false]);
 
 test('new LF MC tests use the saved performance date work title class and course group', function (string $workTitle, string $courseTitle, array $classes, string $expectedTitle): void {
     workMcFixture($this);

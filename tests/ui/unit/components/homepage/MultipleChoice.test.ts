@@ -412,26 +412,40 @@ it('resumes a reopened completed attempt with saved answers and its own addition
 })
 
 
-it('shows an explicit individual start without starting on load or refresh and then resumes the timed attempt', async () => {
+it('starts an individual attempt on opening its link and does not restart it on refresh', async () => {
     const waiting = fixture({ start_mode: 'individual', questions: [], starts_at: null, started_at: null, status: 'not_started', closes_at: '2026-10-16T09:00:00Z', ends_at: '2026-10-16T09:00:00Z' })
     vi.mocked(axios.get).mockResolvedValue({ data: { attempt: waiting } })
+    vi.mocked(axios.post).mockResolvedValue({ data: { attempt: fixture({ start_mode: 'individual', closes_at: waiting.closes_at }) } })
     const wrapper = mount(MultipleChoice)
     wrappers.push(wrapper)
     await flushPromises()
-    expect(wrapper.text()).toContain('Du bestimmst den Start.')
-    expect(wrapper.text()).toContain('Spätestes Testende:')
-    expect(wrapper.text()).toContain('11:00')
-    expect(wrapper.find('input').exists()).toBe(false)
-    await vi.advanceTimersByTimeAsync(2100)
-    expect(axios.post).not.toHaveBeenCalled()
-    vi.mocked(axios.post).mockResolvedValueOnce({ data: { attempt: fixture({ start_mode: 'individual', closes_at: waiting.closes_at }) } })
-    await wrapper.findAll('button').find(button => button.text() === 'Test jetzt starten').trigger('click')
-    await flushPromises()
-    expect(axios.post).toHaveBeenCalledWith('/api/multiple-choice/attempts/7/start', {}, expect.objectContaining({ headers: { 'X-MC-Access': 'personal-secret' } }))
+    expect(axios.post).toHaveBeenCalledExactlyOnceWith('/api/multiple-choice/attempts/7/start', {}, expect.objectContaining({ headers: { 'X-MC-Access': 'personal-secret' } }))
     expect(wrapper.find('input').exists()).toBe(true)
     expect(wrapper.text()).not.toContain('Test jetzt starten')
+    window.dispatchEvent(new Event('online'))
+    await flushPromises()
+    expect(axios.post).toHaveBeenCalledTimes(1)
 })
 
+it.each([{ teacher_preview: true }, { paused_at: '2026-10-16T08:01:00Z' }, { status: 'timeout' }, { start_mode: 'common' }])('does not automatically start a protected or shared attempt: %o', async overrides => {
+    vi.mocked(axios.get).mockResolvedValue({ data: { attempt: fixture({ start_mode: 'individual', status: 'not_started', started_at: null, starts_at: null, questions: [], ...overrides }) } })
+    wrappers.push(mount(MultipleChoice))
+    await flushPromises()
+    expect(axios.post).not.toHaveBeenCalled()
+})
+
+it('does not loop automatic start requests after a failed start', async () => {
+    vi.mocked(axios.get).mockResolvedValue({ data: { attempt: fixture({ start_mode: 'individual', status: 'not_started', started_at: null, starts_at: null, questions: [] }) } })
+    vi.mocked(axios.post).mockRejectedValue(new Error('Offline'))
+    const wrapper = mount(MultipleChoice)
+    wrappers.push(wrapper)
+    await flushPromises()
+    window.dispatchEvent(new Event('online'))
+    await vi.advanceTimersByTimeAsync(4000)
+    await flushPromises()
+    expect(axios.post).toHaveBeenCalledTimes(1)
+    expect(wrapper.findAll('button').some(button => button.text() === 'Start erneut versuchen')).toBe(true)
+})
 
 it('freezes the current question, selected answers and remaining clock during a teacher pause and resumes in place', async () => {
     const wrapper = mount(MultipleChoice)
@@ -582,17 +596,20 @@ it.each([{ supported: false, reject: false }, { supported: true, reject: true }]
     expect(wrapper.text()).not.toContain('Eine richtige Antwort?')
 })
 
-it('requires fullscreen before an individual start and observes fullscreen exit even before the timer has started', async () => {
+it('starts an individual exam automatically only after required fullscreen has been entered', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true }))
     const fullscreen = mockFullscreen()
     vi.mocked(axios.get).mockResolvedValue({ data: { attempt: fixture({ exam_mode: true, start_mode: 'individual', status: 'not_started', started_at: null, starts_at: null, questions: [] }) } })
     const wrapper = mount(MultipleChoice)
     wrappers.push(wrapper)
     await flushPromises()
     expect(wrapper.findAll('button').some(button => button.text() === 'Test jetzt starten')).toBe(false)
+    expect(axios.post).not.toHaveBeenCalled()
+    vi.mocked(axios.post).mockResolvedValue({ data: { attempt: fixture({ exam_mode: true, start_mode: 'individual' }) } })
     await wrapper.findAll('button').find(button => button.text() === 'Vollbild starten').trigger('click')
     await flushPromises()
-    expect(wrapper.findAll('button').some(button => button.text() === 'Test jetzt starten')).toBe(true)
-    expect(axios.post).not.toHaveBeenCalled()
+    expect(axios.post).toHaveBeenCalledWith('/api/multiple-choice/attempts/7/start', {}, expect.any(Object))
+    expect(wrapper.find('input').exists()).toBe(true)
     fullscreen.exit()
     await flushPromises()
     expect(wrapper.findAll('button').some(button => button.text() === 'Test jetzt starten')).toBe(false)

@@ -30,6 +30,7 @@ export function useMultipleChoiceSession(route) {
     let answerRevision = 0
     let clockInitialized = false
     let disposed = false
+    const automaticStarts = new Set()
 
     const finished = computed(() => ['submitted', 'timeout'].includes(attempt.value?.status))
     const hasPending = computed(() => Object.keys(pending.value).length > 0)
@@ -373,6 +374,17 @@ export function useMultipleChoiceSession(route) {
     }
 
     watch(() => route.fullPath, () => void load())
+    watch(() => [attempt.value?.id, attempt.value?.start_mode, attempt.value?.started_at, attempt.value?.status,
+        attempt.value?.paused_at, loading.value, submitting.value, exam.fullscreen.value], () => {
+        const current = attempt.value
+        if (disposed || loading.value || !current || current.start_mode !== 'individual' || current.started_at
+            || current.teacher_preview || current.paused_at || finished.value || submitting.value
+            || !['not_started', 'ready'].includes(current.status) || (exam.enabled.value && !exam.fullscreen.value)) return
+        const key = `${generation}:${current.id}`
+        if (automaticStarts.has(key)) return
+        automaticStarts.add(key)
+        void startAttempt()
+    }, { flush: 'post' })
     watch(active, (value, previous) => {
         if (!value && previous) {
             void refresh()

@@ -26,6 +26,7 @@
                 <p class="text-body-2 mb-3">Den Auftrag mit den gespeicherten Arbeitsdaten und Prüfungskandidaten kopieren und anschließend an die KI übergeben.</p>
                 <v-checkbox v-model="includeMc" label="Multiple-Choice-Fragen einbeziehen" :disabled="loading || addingMc || mcDispatchLocked" hide-details />
                 <div v-if="includeMc" class="mt-4">
+                    <p class="text-caption mb-3">Individueller Start beim Öffnen des persönlichen Links. Als Schlussfrist gilt das Enddatum der Arbeit; ohne Uhrzeit gilt 23:59:00 Uhr.</p>
                     <p v-if="mcLoading" role="status">MC-Tests und Fragenkataloge laden …</p>
                     <template v-else-if="mcOptions?.available">
                         <v-alert v-if="mcOptions.configuration?.locked" type="warning" variant="tonal" class="mb-3">{{ mcOptions.configuration.message }}</v-alert>

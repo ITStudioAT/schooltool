@@ -3,11 +3,13 @@
 namespace App\Services;
 
 use App\Models\DropboxConnection;
+use App\Models\McAttempt;
 use App\Models\McCatalog;
 use App\Models\McTest;
 use App\Models\TeachingCourseWork;
 use App\Models\User;
 use App\Services\MultipleChoice\McTestService;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
 
@@ -73,10 +75,12 @@ class TeachingWorkMultipleChoice
         abort_unless(count($studentIds) === count($participants) && ! in_array(null, $studentIds, true), 422,
             'Für den MC-Test benötigen alle Prüfungskandidaten ein zugeordnetes Schülerkonto.');
         $studentIds = array_map('intval', $studentIds);
+        $closingDeadline = $this->closingDeadline($work);
         if ($data['mc_mode'] === 'existing' || $repeated) {
             $test = McTest::query()->where('school_id', $work->teachingCourse->school_id)->where('owner_id', $actor->id)
                 ->where('schoolyear_id', $work->teachingCourse->schoolyear_id)
                 ->lockForUpdate()->findOrFail($repeated ? $binding['test_id'] : $data['test_id']);
+            $this->configureIndividualStart($test, $closingDeadline);
             if ($test->snapshot === null && ! $test->attempts()->exists() && $test->status === 'draft') {
                 $test = $this->tests->prepare($test, $studentIds);
             }
@@ -91,7 +95,7 @@ class TeachingWorkMultipleChoice
                 'owner_id' => $actor->id, 'catalog_id' => $catalog->id, 'title' => $this->newTestTitle($work, $data['date'] ?? $workContext['scheduled_date'] ?? null),
                 'status' => 'draft', 'question_count' => 10, 'total_points' => $data['total_points'],
                 'duration_seconds' => $data['duration_minutes'] * 60, 'lead_seconds' => 60,
-                'start_mode' => 'common', 'exam_mode' => false, 'balance_types' => true,
+                'start_mode' => 'individual', 'closes_at' => $closingDeadline, 'exam_mode' => false, 'balance_types' => true,
                 'shuffle_questions' => true, 'shuffle_options' => true,
             ]);
             $test = $this->tests->prepare($test, $studentIds);
@@ -108,10 +112,43 @@ class TeachingWorkMultipleChoice
         return ['test_id' => $test->id, 'catalog_id' => $test->catalog_id, 'title' => $test->title, 'points_plan' => $pointsPlan,
             'status' => $test->status, 'question_count' => $test->question_count,
             'total_points' => $test->total_points, 'duration_seconds' => $test->duration_seconds,
+            'start_mode' => $test->start_mode, 'closes_at' => $test->closes_at?->toIso8601String(),
             'question_pool' => $test->snapshot['questions'] ?? [],
             'access_links_ready' => $test->status === 'published' && $test->access_links_disabled_at === null,
             'exercise_export_url' => $test->status === 'published' && $test->access_links_disabled_at === null
                 ? route('admin.multiple-choice.tests.exercise-export', ['test' => $test->id]) : null];
+    }
+
+    private function closingDeadline(TeachingCourseWork $work): CarbonImmutable
+    {
+        if ($work->finish_until_date === null) {
+            throw ValidationException::withMessages(['mc_mode' => 'Bitte zuerst das Enddatum der Arbeit festlegen. Der MC-Test startet individuell; ohne Uhrzeit gilt 23:59:00 Uhr.']);
+        }
+
+        $deadline = CarbonImmutable::parse($work->finish_until_date->format('Y-m-d').' '.($work->finish_until_time ?: '23:59:00'), 'Europe/Vienna');
+        if (! $deadline->isFuture()) {
+            throw ValidationException::withMessages(['mc_mode' => 'Das Enddatum der Arbeit muss für den individuellen MC-Test in der Zukunft liegen.']);
+        }
+
+        return $deadline;
+    }
+
+    private function configureIndividualStart(McTest $test, CarbonImmutable $deadline): void
+    {
+        if ($test->start_mode === 'individual' && $test->closes_at?->equalTo($deadline)) {
+            return;
+        }
+        $attempts = $test->attempts()->lockForUpdate()->get();
+        if ($test->starts_at !== null || $attempts->contains(fn (McAttempt $attempt): bool => $attempt->started_at !== null
+            || $attempt->completed_at !== null || ($attempt->answers ?? []) !== [])) {
+            throw ValidationException::withMessages(['mc_mode' => 'Dieser MC-Test wurde bereits gestartet. Startart und Schlussfrist können beim Verknüpfen nicht mehr geändert werden.']);
+        }
+        $snapshot = $test->snapshot;
+        if (is_array($snapshot)) {
+            $snapshot['start_mode'] = 'individual';
+            $snapshot['closes_at'] = $deadline->toIso8601String();
+        }
+        $test->forceFill(['start_mode' => 'individual', 'closes_at' => $deadline, 'snapshot' => $snapshot])->save();
     }
 
     /** @return array{locked: bool, message: ?string, maximum_points: ?float} */
