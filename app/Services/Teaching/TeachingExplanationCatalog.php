@@ -28,6 +28,11 @@ class TeachingExplanationCatalog
                 'title' => 'Dezimal auf Dual',
                 'category' => 'Zahlensysteme',
             ],
+            'network-fundamentals' => [
+                'key' => 'network-fundamentals',
+                'title' => 'Netzwerkgrundlagen und Geräte',
+                'category' => 'Netzwerke',
+            ],
         ];
     }
 

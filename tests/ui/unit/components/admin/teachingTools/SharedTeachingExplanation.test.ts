@@ -30,6 +30,14 @@ it.each([
     expect(wrapper.text()).not.toContain('Schüleransicht testen')
 })
 
+it('renders the authorized network learning area in the student view', async () => {
+    vi.stubGlobal('axios', { get: vi.fn().mockResolvedValue({ data: { explanation: 'network-fundamentals' } }) })
+    const { wrapper } = await renderShared()
+    await vi.waitFor(() => expect(wrapper.get('h1').text()).toContain('Netzwerk'))
+    expect(wrapper.text()).not.toContain('Veröffentlichen')
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+})
+
 it.each([401, 404])('does not render the explanation when access is refused with %s', async status => {
     vi.stubGlobal('axios', { get: vi.fn().mockRejectedValue({ response: { status } }) })
     const { wrapper } = await renderShared()

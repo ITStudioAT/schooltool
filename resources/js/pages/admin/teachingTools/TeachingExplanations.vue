@@ -2,10 +2,10 @@
     <section class="explanations">
         <template v-if="currentExplanation">
             <div class="explanation-detail">
-            <RouterLink to="/admin/teaching-tools/explanations/number-systems" class="explanations__back">← Zur Kategorie Zahlensysteme</RouterLink>
+            <RouterLink :to="`/admin/teaching-tools/explanations/${currentExplanation.category}`" class="explanations__back">← Zur Kategorie {{ explanationCategoryTitle }}</RouterLink>
             <header class="explanation-detail__heading">
                 <h1>{{ currentExplanation.title }}</h1>
-                <p class="explanation-detail__summary">{{ currentExplanation.description }} Mit eigener Zahl, Weiter, Zurück und Neustart.</p>
+                <p class="explanation-detail__summary">{{ currentExplanation.description }}<template v-if="currentExplanation.category === 'number-systems'"> Mit eigener Zahl, Weiter, Zurück und Neustart.</template></p>
                 <figure v-if="sharing?.published && sharing.invitation?.url && sharing.invitation?.qr_data_url" class="explanation-qr">
                     <img class="explanation-detail__qr" :src="sharing.invitation.qr_data_url" alt="QR-Code zur freigegebenen Erklärung" width="192" height="192" />
                     <figcaption>Mit dem Handy scannen</figcaption>
@@ -14,12 +14,13 @@
             <p v-if="error" class="explanation-error" role="alert">{{ error }}</p>
             <div class="explanation-workbench">
                 <aside class="explanation-preview" aria-labelledby="explanation-preview-title">
-                    <div class="explanation-preview__example" role="img" :aria-label="`Beispielumrechnung: ${currentExplanation.example} ${currentExplanation.sourceSystem} entspricht ${currentExplanation.result} ${currentExplanation.system}`">
+                    <div v-if="currentExplanation.category === 'number-systems'" class="explanation-preview__example" role="img" :aria-label="`Beispielumrechnung: ${currentExplanation.example} ${currentExplanation.sourceSystem} entspricht ${currentExplanation.result} ${currentExplanation.system}`">
                         <div class="explanation-preview__decimal" :class="{ 'explanation-preview__decimal--long': String(currentExplanation.example).length > 4 }"><span>{{ currentExplanation.sourceSystem }}</span><strong>{{ currentExplanation.sourceNotation.prefix }}{{ currentExplanation.example }}<sub v-if="currentExplanation.sourceNotation.subscript">{{ currentExplanation.sourceNotation.subscript }}</sub></strong></div>
                         <span class="explanation-preview__connector" aria-hidden="true"><v-icon icon="mdi-arrow-down" size="22" /></span>
                         <div class="explanation-preview__binary"><span>{{ currentExplanation.system }}</span><div><span v-if="currentExplanation.prefix" class="explanation-preview__prefix">{{ currentExplanation.prefix }}</span><b v-for="(digit, index) in currentExplanation.result" :key="index">{{ digit }}</b><sub v-if="currentExplanation.subscript">{{ currentExplanation.subscript }}</sub></div></div>
                     </div>
-                    <div class="explanation-preview__copy"><h2 id="explanation-preview-title">Erst selbst ausprobieren</h2>
+                    <div v-else class="explanation-preview__network" aria-hidden="true"><v-icon icon="mdi-lan-connect" size="96" /></div>
+                    <div class="explanation-preview__copy"><h2 id="explanation-preview-title">{{ currentExplanation.category === 'networks' ? 'Schüleransicht ansehen' : 'Erst selbst ausprobieren' }}</h2>
                         <p>Teste die Erklärung so, wie deine Schüler:innen sie sehen.</p>
                         <button type="button" class="explanation-action explanation-preview__button" @click="previewOpened = true"><v-icon icon="mdi-eye-outline" size="20" aria-hidden="true" />Schüleransicht testen</button>
                     </div>
@@ -78,7 +79,8 @@
             <ul class="explanations__grid" aria-label="Verfügbare Erklärungen">
                 <li v-for="item in categoryExplanations" :key="item.key" class="explanation-card">
                     <RouterLink :to="`/admin/teaching-tools/explanations/${item.key}`" class="explanation-tile" :aria-label="`${item.title} öffnen`">
-                        <div class="explanation-tile__preview" aria-hidden="true"><span>{{ item.sourceNotation.prefix }}{{ item.example }}<sub v-if="item.sourceNotation.subscript">{{ item.sourceNotation.subscript }}</sub></span><span class="explanation-tile__arrow">→</span><span>{{ item.prefix }}{{ item.result }}<sub v-if="item.subscript">{{ item.subscript }}</sub></span></div>
+                        <div v-if="item.category === 'number-systems'" class="explanation-tile__preview" aria-hidden="true"><span>{{ item.sourceNotation.prefix }}{{ item.example }}<sub v-if="item.sourceNotation.subscript">{{ item.sourceNotation.subscript }}</sub></span><span class="explanation-tile__arrow">→</span><span>{{ item.prefix }}{{ item.result }}<sub v-if="item.subscript">{{ item.subscript }}</sub></span></div>
+                        <div v-else class="explanation-tile__preview" aria-hidden="true"><v-icon icon="mdi-lan-connect" size="64" /></div>
                         <div class="explanation-tile__copy"><v-icon :icon="currentCategory.icon" size="26" aria-hidden="true" /><h2>{{ item.title }}</h2>
                             <p>{{ item.description }}</p>
                             <span class="explanation-tile__open">Erklärung öffnen <span aria-hidden="true">↗</span></span>
@@ -104,7 +106,7 @@
                 <li v-for="item in teachingExplanationCategories" :key="item.key">
                     <RouterLink :to="`/admin/teaching-tools/explanations/${item.key}`" class="explanation-tile" :aria-label="`${item.title} öffnen`">
                         <div class="explanation-tile__copy"><v-icon :icon="item.icon" size="24" aria-hidden="true" /><h2>{{ item.title }}</h2>
-                            <p>{{ teachingExplanations.filter(explanation => explanation.category === item.key).length }} Erklärungen</p>
+                            <p>{{ teachingExplanations.filter(explanation => explanation.category === item.key).length }} {{ teachingExplanations.filter(explanation => explanation.category === item.key).length === 1 ? 'Erklärung' : 'Erklärungen' }}</p>
                             <span class="explanation-tile__open">Öffnen <span aria-hidden="true">→</span></span>
                         </div>
                     </RouterLink>
@@ -124,6 +126,7 @@ const props = defineProps({ category: { type: String, default: null }, explanati
 const router = useRouter()
 const cardShares = ref({})
 const currentExplanation = computed(() => teachingExplanations.find(item => item.key === props.explanation))
+const explanationCategoryTitle = computed(() => teachingExplanationCategories.find(item => item.key === currentExplanation.value?.category)?.title || '')
 const currentCategory = computed(() => teachingExplanationCategories.find(item => item.key === props.category))
 const categoryExplanations = computed(() => teachingExplanations.filter(item => item.category === props.category))
 const previewOpened = ref(false)
@@ -270,6 +273,7 @@ watch(accessMode, () => { successMessage.value = '' })
 .explanation-workbench { display: grid; grid-template-columns: minmax(260px, .85fr) minmax(0, 1.65fr); overflow: hidden; border: 1px solid #d6e0eb; border-radius: 22px; background: white; box-shadow: 0 8px 30px #17345806; }
 .explanation-preview { display: flex; flex-direction: column; justify-content: space-between; padding: 30px; background: #edf3f9; border-right: 1px solid #d6e0eb; }
 .explanation-preview__example { display: grid; justify-items: center; gap: 8px; padding: 10px 0 28px; }
+.explanation-preview__network { display: grid; place-items: center; min-height: 180px; color: #237353; }
 .explanation-preview__decimal, .explanation-preview__binary { display: grid; justify-items: center; gap: 8px; }
 .explanation-preview__decimal > span, .explanation-preview__binary > span { color: #61758b; font-size: .8rem; font-weight: 600; }
 .explanation-preview__decimal strong { position: relative; color: #173458; font-size: 4.5rem; font-weight: 650; line-height: 1.1; letter-spacing: -.07em; font-variant-numeric: tabular-nums; }

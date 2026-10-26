@@ -70,6 +70,20 @@ test('public publication is reachable without login and revocation invalidates t
     $this->get($url)->assertNotFound();
 });
 
+test('network fundamentals can be shared and revoked using the existing access rules', function (): void {
+    explanationAs($this, $this->teacher);
+    $url = $this->postJson('/api/admin/teaching-explanations/network-fundamentals/publication', ['access_mode' => 'public'])
+        ->assertOk()->assertJsonPath('published', true)->json('invitation.url');
+
+    explanationAs($this, null);
+    $this->getJson('/api/explanations/'.basename($url))->assertOk()->assertJsonPath('explanation', 'network-fundamentals');
+
+    explanationAs($this, $this->teacher);
+    $this->deleteJson('/api/admin/teaching-explanations/network-fundamentals/publication')->assertOk()->assertJsonPath('published', false);
+    explanationAs($this, null);
+    $this->getJson('/api/explanations/'.basename($url))->assertNotFound();
+});
+
 test('login-required publication rejects guests and inactive accounts but admits an active Schooltool account', function (): void {
     explanationAs($this, $this->teacher);
     $url = $this->postJson($this->base.'/publication', ['access_mode' => 'authenticated'])->assertOk()->json('invitation.url');

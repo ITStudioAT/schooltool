@@ -6,6 +6,7 @@ const explanationComponents = {
     'hexadecimal-to-binary': defineAsyncComponent(() => import('@/pages/admin/teachingTools/HexadecimalToBinaryExplanation.vue')),
     'decimal-to-hexadecimal': defineAsyncComponent(() => import('@/pages/admin/teachingTools/DecimalToHexadecimalExplanation.vue')),
     'decimal-to-binary': defineAsyncComponent(() => import('@/pages/admin/teachingTools/DecimalToBinaryExplanation.vue')),
+    'network-fundamentals': defineAsyncComponent(() => import('@/pages/admin/teachingTools/NetworkFundamentalsExplanation.vue')),
 }
 
 export const teachingExplanationCategories = [
@@ -18,7 +19,10 @@ export const teachingExplanations = [
     { key: 'decimal-to-hexadecimal', category: 'number-systems', title: 'Dezimal auf Hexadezimal', system: 'Hexadezimal', base: 16, example: 254, result: 'FE', description: 'Immer durch sechzehn teilen, Reste sammeln und A bis F kennenlernen. Von unten nach oben entsteht die Hexadezimalzahl.' },
     { key: 'binary-to-hexadecimal', category: 'number-systems', title: 'Dual auf Hexadezimal', sourceBase: 2, sourceSystem: 'Dual', system: 'Hexadezimal', base: 16, example: '110101', result: '35', description: 'Bits von rechts in Vierergruppen einteilen, links mit Nullen ergänzen und jede Gruppe in eine Hexziffer umwandeln.' },
     { key: 'hexadecimal-to-binary', category: 'number-systems', title: 'Hexadezimal auf Dual', sourceBase: 16, sourceSystem: 'Hexadezimal', system: 'Dual', base: 2, example: 'AF', result: '10101111', description: 'Jede Hexziffer in genau vier Bits übersetzen und die Vierergruppen von links nach rechts zusammensetzen.' },
-].map(item => ({ sourceSystem: 'Dezimal', ...item, ...numberSystemNotation(item.base), sourceNotation: numberSystemNotation(item.sourceBase || 10) }))
+    { key: 'network-fundamentals', category: 'networks', title: 'Netzwerkgrundlagen und Geräte', description: 'Entdecke, wie Geräte verbunden sind, Daten austauschen und welche Aufgaben die Netzwerkgeräte übernehmen.' },
+].map(item => item.category === 'number-systems'
+    ? { sourceSystem: 'Dezimal', ...item, ...numberSystemNotation(item.base), sourceNotation: numberSystemNotation(item.sourceBase || 10) }
+    : item)
 
 export function teachingExplanationComponent(key) {
     return explanationComponents[key] || null
