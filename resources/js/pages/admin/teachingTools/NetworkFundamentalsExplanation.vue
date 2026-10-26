@@ -1,149 +1,201 @@
 <template>
-    <article class="network-lesson" aria-labelledby="network-lesson-title">
-        <header class="lesson-intro">
-            <div>
-                <p class="lesson-kicker">Netzwerke</p>
-                <h1 id="network-lesson-title">Netzwerkgrundlagen und Netzwerkgeräte</h1>
-                <p>Wie Geräte miteinander verbunden sind, Daten austauschen und gemeinsame Dienste nutzen.</p>
-            </div>
-            <div class="intro-mark" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
+    <article class="network-lesson" aria-labelledby="network-title">
+        <header class="lesson-header">
+            <div><p class="eyebrow">Netzwerke verstehen</p><h1 id="network-title">Netzwerkgrundlagen und Geräte</h1></div>
+            <span class="page-number">{{ pageIndex + 1 }} / {{ pages.length }}</span>
         </header>
 
-        <nav class="lesson-nav" aria-label="Themenübersicht">
-            <a href="#netzwerk">Netzwerk</a><a href="#netzarten">Netzarten</a><a href="#dienste">Dienste</a><a href="#datenrate">Datenrate</a><a href="#geraete">Geräte</a><a href="#aufbau">Aufbau</a>
+        <nav class="lesson-navigation" aria-label="Themen auswählen">
+            <button v-for="(page, index) in pages" :key="page.key" type="button"
+                :aria-pressed="pageIndex === index" @click="pageIndex = index">{{ page.label }}</button>
         </nav>
 
-        <section id="netzwerk" class="lesson-section">
-            <div class="section-heading"><span>Grundidee</span><h2>Was ist ein Computernetzwerk?</h2></div>
-            <p>Ein <strong>Computernetzwerk</strong> verbindet Geräte, damit sie Daten austauschen und Dienste gemeinsam nutzen können. Die Verbindung erfolgt über Kabel oder über Funk.</p>
-            <p>Für die Übertragung gelten gemeinsame Regeln, sogenannte <strong>Protokolle</strong>. Größere Datenmengen können in kleinere Einheiten aufgeteilt werden. Adressen helfen dabei, die Daten zum richtigen Ziel zu bringen.</p>
-            <figure class="network-figure">
-                <svg viewBox="0 0 780 290" role="img" aria-labelledby="network-map-title network-map-desc">
-                    <title id="network-map-title">Ein einfaches Netzwerk</title>
-                    <desc id="network-map-desc">Das Internet ist mit einem Router verbunden. Der Router ist mit einem Switch verbunden. Am Switch hängen ein Computer, ein Server und ein WLAN-Zugangspunkt, mit dem ein Smartphone per Funk verbunden ist.</desc>
-                    <g class="map-lines"><path d="M115 145H195 M315 145H375 M495 145H520 M520 70V220 M520 70H540 M520 145H540 M520 220H540"/><path class="wireless-line" d="M660 145H710"/></g>
-                    <g class="map-node"><rect x="10" y="117" width="105" height="56" rx="12"/><text x="62" y="151">Internet</text><rect x="195" y="117" width="120" height="56" rx="12"/><text x="255" y="151">Router</text><rect x="375" y="117" width="120" height="56" rx="12"/><text x="435" y="151">Switch</text><rect x="540" y="42" width="120" height="56" rx="12"/><text x="600" y="76">Computer</text><rect x="540" y="117" width="120" height="56" rx="12"/><text x="600" y="151">Access Point</text><rect x="540" y="192" width="120" height="56" rx="12"/><text x="600" y="226">Server</text><rect x="710" y="117" width="65" height="56" rx="12"/><text x="742" y="143" class="small-label">Smart-</text><text x="742" y="158" class="small-label">phone</text></g>
-                    <text x="250" y="200" class="map-note">Verbindung zu anderen Netzen</text><text x="435" y="200" class="map-note">lokales Netzwerk</text><text x="685" y="130" class="map-note">Funk</text>
-                </svg>
-                <figcaption>Ein möglicher Aufbau: Kabelgebundene Geräte und WLAN-Geräte gehören zum selben lokalen Netzwerk.</figcaption>
-            </figure>
-            <div class="callout"><strong>Gut zu wissen</strong><p>Ein lokales Netzwerk kann auch ohne Internet funktionieren. Es ist nicht automatisch sicher: Zugriffsrechte, Schutzmaßnahmen und die Verwaltung der Geräte bleiben wichtig.</p></div>
-            <p>Über ein Netzwerk können berechtigte Personen Dateien und Anwendungen gemeinsam nutzen, drucken, Nachrichten austauschen oder einen Internetzugang teilen.</p>
-        </section>
+        <main class="lesson-content">
+            <section v-if="currentPage === 'network'" aria-labelledby="network-heading">
+                <div class="section-heading"><div><span>Die Grundidee</span><h2 id="network-heading">Was verbindet ein Netzwerk?</h2></div>
+                    <p>Geräte tauschen über Kabel oder Funk Daten aus und nutzen gemeinsame Dienste.</p></div>
+                <div class="two-columns">
+                    <div class="visual-panel network-map" aria-label="Aufbau eines lokalen Netzwerks">
+                        <div class="map-core" :class="{ 'map-core--offline': !internetConnected }">
+                            <button v-for="device in networkCore" :key="device" type="button" :aria-pressed="networkSelection === device" @click="networkSelection = device">{{ device }}</button>
+                        </div>
+                        <div class="map-branch" aria-hidden="true"></div>
+                        <div class="map-devices">
+                            <button v-for="device in networkEnds.slice(0, 3)" :key="device" type="button" :aria-pressed="networkSelection === device" @click="networkSelection = device">{{ device }}</button>
+                            <div class="map-wireless"><span aria-hidden="true"></span><button type="button" :aria-pressed="networkSelection === 'Smartphone'" @click="networkSelection = 'Smartphone'">Smartphone · WLAN</button></div>
+                        </div>
+                        <p class="caption">Computer und Server sind am Switch; das Smartphone verbindet sich über den Access Point.</p>
+                        <button class="connection-button" type="button" @click="internetConnected = !internetConnected">{{ internetConnected ? 'Internetverbindung trennen' : 'Internetverbindung herstellen' }}</button>
+                        <p class="connection-state" role="status">{{ internetConnected ? 'Internetverbindung besteht' : 'Internetverbindung getrennt – das lokale Netzwerk bleibt bestehen' }}</p>
+                    </div>
+                    <div class="detail-panel" aria-live="polite"><span>Im Netzwerk</span><h3>{{ networkSelection }}</h3><p>{{ networkDescriptions[networkSelection] }}</p>
+                        <p class="note">Gemeinsame Regeln heißen Protokolle; Adressen helfen, Daten zum Ziel zu bringen. Dateien, Drucker und Kommunikation können gemeinsam genutzt werden. Zugriffsrechte und Schutzmaßnahmen bleiben wichtig.</p></div>
+                </div>
+            </section>
 
-        <section id="netzarten" class="lesson-section">
-            <div class="section-heading"><span>Begriffe</span><h2>Lokale und weitreichende Netzwerke</h2></div>
-            <p>LAN, WLAN und WAN beschreiben die räumliche Ausdehnung oder die Art der Verbindung. Internet, Intranet und Extranet bezeichnen miteinander verbundene Netze oder zugängliche Dienste.</p>
-            <div class="concept-grid">
-                <div><h3>LAN</h3><p>Ein <strong>Local Area Network</strong> ist ein lokales Netzwerk, zum Beispiel in einem Gebäude oder auf einem Schulgelände. Geräte können unter anderem per Ethernet-Kabel verbunden sein.</p></div>
-                <div><h3>WLAN</h3><p>Ein <strong>Wireless Local Area Network</strong> bietet drahtlosen Zugang zum lokalen Netzwerk über Funk. WLAN und Kabel können zum selben LAN gehören.</p></div>
-                <div><h3>WAN</h3><p>Ein <strong>Wide Area Network</strong> verbindet Netzwerke über größere Entfernungen, etwa Standorte in verschiedenen Städten. Es kann auch privat betrieben werden.</p></div>
-                <div><h3>Internet</h3><p>Ein weltweiter Zusammenschluss vieler Netzwerke, die gemeinsame Internetprotokolle nutzen.</p></div>
-                <div><h3>Intranet</h3><p>Ein interner Bereich mit Informationen und Diensten für eine begrenzte Organisation, etwa eine Schule.</p></div>
-                <div><h3>Extranet</h3><p>Ein für ausgewählte externe Personen oder Organisationen zugänglicher Teil interner Dienste. Der Zugang ist üblicherweise geschützt.</p></div>
-            </div>
-            <p>Ein Internetanbieter verbindet das lokale Netzwerk über einen Internetanschluss mit anderen Netzwerken. Ob ein interner Dienst von außen erreichbar ist, hängt von seiner Einrichtung und den Zugriffsrechten ab.</p>
-        </section>
+            <section v-else-if="currentPage === 'types'" aria-labelledby="types-heading">
+                <div class="section-heading"><div><span>Netze und Zugänge</span><h2 id="types-heading">Welche Arten von Netzwerken gibt es?</h2></div><p>Die Begriffe beschreiben die Reichweite, die Verbindung oder den Zugang zu Diensten.</p></div>
+                <div class="two-columns"><div class="visual-panel"><div class="choice-grid">
+                    <button v-for="item in networkTypes" :key="item.name" type="button" :aria-pressed="selectedType === item.name" @click="selectedType = item.name"><strong>{{ item.name }}</strong><span>{{ item.label }}</span></button>
+                </div><p class="caption">LAN und WLAN können Teil desselben lokalen Netzwerks sein.</p></div>
+                    <div class="detail-panel" aria-live="polite"><span>Ausgewählter Begriff</span><h3>{{ activeType.name }}</h3><p>{{ activeType.description }}</p><p class="note">Ein Internetanbieter verbindet das lokale Netzwerk mit anderen Netzen. Interne Dienste sind nur nach entsprechender Einrichtung und Berechtigung von außen erreichbar.</p></div></div>
+            </section>
 
-        <section id="dienste" class="lesson-section">
-            <div class="section-heading"><span>Zusammenarbeit</span><h2>Wie Geräte Dienste nutzen</h2></div>
-            <p>Ein <strong>Dienst</strong> ist eine Funktion, die über das Netzwerk angeboten wird, etwa eine Dateiablage oder eine Webseite. Ein <strong>Server</strong> stellt den Dienst bereit; ein <strong>Client</strong> fordert ihn an oder nutzt ihn. Das sind Rollen – nicht zwingend verschiedene Gerätearten.</p>
-            <figure class="network-figure client-figure">
-                <svg viewBox="0 0 680 170" role="img" aria-labelledby="client-title client-desc">
-                    <title id="client-title">Client und Server</title><desc id="client-desc">Ein Client sendet eine Anfrage an den Server. Der Server sendet eine Antwort zurück.</desc>
-                    <g class="map-node"><rect x="28" y="48" width="155" height="75" rx="14"/><text x="105" y="81">Client</text><text x="105" y="101" class="small-label">nutzt den Dienst</text><rect x="497" y="48" width="155" height="75" rx="14"/><text x="575" y="81">Server</text><text x="575" y="101" class="small-label">bietet den Dienst an</text></g>
-                    <g class="map-lines"><path d="M202 65H471 M463 57L471 65L463 73 M478 108H210 M218 100L210 108L218 116"/></g><text x="338" y="53" class="map-note">Anfrage</text><text x="338" y="133" class="map-note">Antwort</text>
-                </svg>
-                <figcaption>Beim Aufrufen einer Webseite ist der Browser der Client. Er fordert Inhalte vom Webserver an und zeigt die Antwort an.</figcaption>
-            </figure>
-            <div class="compare"><div><h3>Client-Server</h3><p>Server stellen Dienste bereit, Clients greifen darauf zu. Zentrale Verwaltung kann Rechtevergabe und Datensicherung erleichtern. Der Dienst hängt von der Erreichbarkeit des Servers ab.</p></div><div><h3>Peer-to-Peer</h3><p>Geräte können Ressourcen direkt austauschen und gleichzeitig anbieten und nutzen. Je nach Anwendung können zusätzliche zentrale Dienste unterstützen.</p></div></div>
-        </section>
+            <section v-else-if="currentPage === 'services'" aria-labelledby="services-heading">
+                <div class="section-heading"><div><span>Dienste im Netzwerk</span><h2 id="services-heading">Wer bietet an, wer nutzt?</h2></div><p>Ein Dienst kann eine Webseite oder eine gemeinsame Dateiablage sein.</p></div>
+                <div class="two-columns"><div class="visual-panel"><div class="segmented">
+                    <button type="button" :aria-pressed="serviceMode === 'client'" @click="serviceMode = 'client'">Client-Server</button>
+                    <button type="button" :aria-pressed="serviceMode === 'peer'" @click="serviceMode = 'peer'">Peer-to-Peer</button>
+                </div><div class="service-diagram" v-if="serviceMode === 'client'">
+                    <div><strong>Client</strong><small>nutzt den Dienst</small></div><div class="service-arrow"><span>{{ serviceStep === 'request' ? 'Anfrage' : 'Antwort' }}</span><b>{{ serviceStep === 'request' ? '→' : '←' }}</b></div><div><strong>Server</strong><small>bietet den Dienst an</small></div>
+                </div><div v-else class="service-diagram"><div><strong>Gerät A</strong><small>bietet an und nutzt</small></div><div class="service-arrow"><span>direkter Austausch</span><b>↔</b></div><div><strong>Gerät B</strong><small>bietet an und nutzt</small></div></div>
+                    <div v-if="serviceMode === 'client'" class="segmented"><button type="button" :aria-pressed="serviceStep === 'request'" @click="serviceStep = 'request'">Anfrage zeigen</button><button type="button" :aria-pressed="serviceStep === 'response'" @click="serviceStep = 'response'">Antwort zeigen</button></div></div>
+                    <div class="detail-panel" aria-live="polite"><span>So funktioniert es</span><template v-if="serviceMode === 'client'"><h3>{{ serviceStep === 'request' ? 'Der Client fragt an' : 'Der Server antwortet' }}</h3><p>{{ serviceStep === 'request' ? 'Ein Browser fordert Inhalte vom Webserver an.' : 'Der Webserver sendet die Inhalte zurück. Der Browser zeigt sie an.' }}</p><p class="note">Client und Server sind Rollen, nicht zwingend verschiedene Gerätearten. Zentrale Verwaltung erleichtert etwa die Rechtevergabe; der Dienst hängt von der Erreichbarkeit des Servers ab.</p></template><template v-else><h3>Direkter Austausch</h3><p>Geräte können Ressourcen direkt austauschen und dabei gleichzeitig anbieten und nutzen.</p><p class="note">Je nach Anwendung können zusätzlich zentrale Dienste unterstützen.</p></template></div></div>
+            </section>
 
-        <section id="datenrate" class="lesson-section">
-            <div class="section-heading"><span>Übertragung</span><h2>Datenrate und Verzögerung</h2></div>
-            <p>Die <strong>Datenrate</strong> beschreibt, wie viele Bits pro Sekunde übertragen werden. Acht Bit bilden ein Byte. Netzwerkgeschwindigkeiten stehen oft in Mbit/s oder Gbit/s, Dateigrößen dagegen in MB oder GB.</p>
-            <div class="concept-grid concept-grid--two">
-                <div><h3>Bandbreite</h3><p>Im Netzwerkalltag häufig die verfügbare Übertragungskapazität. Technisch kann der Begriff auch die Breite eines Frequenzbereichs in Hertz bezeichnen.</p></div>
-                <div><h3>Datendurchsatz</h3><p>Die Datenmenge, die tatsächlich in einer bestimmten Zeit übertragen wird. Sie kann unter der angegebenen Verbindungsgeschwindigkeit liegen.</p></div>
-                <div><h3>Latenz</h3><p>Die Verzögerung bei der Übertragung, meist in Millisekunden. Messungen geben oft die Zeit für Hin- und Rückweg an.</p></div>
-                <div><h3>Download und Upload</h3><p>Beim <strong>Download</strong> kommen Daten zum eigenen Gerät. Beim <strong>Upload</strong> werden Daten vom eigenen Gerät zu einem anderen Gerät oder Dienst übertragen.</p></div>
-            </div>
-            <div class="callout"><strong>Einordnung der Einheiten</strong><p>100 Mbit/s entsprechen rechnerisch höchstens 12,5 MB/s bei dezimalen Einheiten. Protokollaufwand, andere Nutzer, Funkbedingungen und Geräte können den tatsächlichen Durchsatz verringern. Eine hohe Datenrate bedeutet nicht automatisch eine niedrige Latenz.</p></div>
-        </section>
+            <section v-else-if="currentPage === 'transfer'" aria-labelledby="transfer-heading">
+                <div class="section-heading"><div><span>Daten unterwegs</span><h2 id="transfer-heading">Datenrate und Latenz</h2></div><p>Übertragungskapazität und Verzögerung beschreiben unterschiedliche Eigenschaften.</p></div>
+                <div class="two-columns"><div class="visual-panel transfer-controls">
+                    <label for="transfer-rate">Datenrate <strong>{{ rate }} Mbit/s</strong></label><input id="transfer-rate" v-model.number="rate" type="range" min="10" max="1000" step="10" />
+                    <div class="meter"><span :style="{ width: `${rate / 10}%` }"></span></div><p class="caption">Rechnerisch höchstens {{ formattedRate }} MB/s bei dezimalen Einheiten.</p>
+                    <label for="transfer-latency">Latenz <strong>{{ latency }} ms</strong></label><input id="transfer-latency" v-model.number="latency" type="range" min="5" max="200" step="5" />
+                    <div class="latency-line"><span>Gerät</span><span class="latency-track"><i :style="{ width: `${latency / 2}%` }"></i></span><span>Dienst</span></div><p class="caption">Die Regler veranschaulichen zwei unabhängige Eigenschaften.</p>
+                </div><div class="detail-panel"><span>Einordnung</span><h3>Geschwindigkeit ist nicht alles</h3><p>Acht Bit bilden ein Byte. Die Datenrate steht oft in Mbit/s oder Gbit/s. Latenz ist eine Verzögerung, häufig als Zeit für Hin- und Rückweg gemessen.</p><p class="note">Der tatsächliche Durchsatz kann durch Protokollaufwand, andere Nutzer, Funk und Geräte niedriger sein. Download bedeutet Empfang, Upload das Senden von Daten. „Bandbreite“ bezeichnet im Netzwerkalltag oft die Kapazität, technisch auch einen Frequenzbereich.</p></div></div>
+            </section>
 
-        <section id="geraete" class="lesson-section">
-            <div class="section-heading"><span>Bausteine</span><h2>Netzwerkgeräte und ihre Aufgaben</h2></div>
-            <p>Ein Gerät benötigt eine passende <strong>Netzwerkschnittstelle</strong>: Ein Netzwerkadapter verbindet es über Kabel oder Funk. Eine <strong>MAC-Adresse</strong> kennzeichnet eine Schnittstelle auf der lokalen Verbindungsebene. Sie kann je nach Gerät oder Einstellung geändert oder zufällig gewählt werden.</p>
-            <dl class="device-list">
-                <div><dt>Switch</dt><dd>Verbindet Geräte in einem Ethernet-LAN. Ein einfacher Switch leitet Ethernet-Daten anhand von MAC-Adressen an passende Anschlüsse weiter.</dd></div>
-                <div><dt>Router</dt><dd>Verbindet unterschiedliche IP-Netzwerke und leitet Datenpakete anhand ihrer IP-Zieladresse weiter, etwa vom Schulnetz Richtung Internet.</dd></div>
-                <div><dt>Access Point</dt><dd>Ermöglicht den drahtlosen Zugang zu einem Netzwerk. Häufig ist er per Netzwerkkabel mit dem LAN verbunden.</dd></div>
-                <div><dt>Modem</dt><dd>Passt Signale an die Technik eines Internetanschlusses an, etwa bei einem DSL- oder Kabelanschluss.</dd></div>
-                <div><dt>Glasfaser-ONT</dt><dd>Der optische Netzabschluss setzt die optische Verbindung des Anbieters in einen passenden Anschluss für das Kundennetz um.</dd></div>
-                <div><dt>Firewall</dt><dd>Kontrolliert Netzwerkverkehr anhand festgelegter Regeln. Sie kann ein eigenes Gerät oder eine Funktion in einem anderen Gerät sein.</dd></div>
-                <div><dt>Server und NAS</dt><dd>Ein Server stellt Dienste bereit. Ein NAS ist auf Datenspeicherung im Netzwerk ausgerichtet und kann Dateidienste bereitstellen.</dd></div>
-            </dl>
-            <p>Mehrere Aufgaben können in einem Gerät stecken: Ein Heimrouter enthält häufig Router, Switch, WLAN-Access-Point und Firewall; je nach Anschluss auch ein Modem. Ein erweiterter Switch kann ebenfalls Routing übernehmen.</p>
-            <div class="compare"><div><h3>Unmanaged Switch</h3><p>Arbeitet normalerweise ohne eigene Konfiguration.</p></div><div><h3>Managed Switch</h3><p>Bietet je nach Modell Verwaltungsfunktionen, etwa Anschlussüberwachung oder VLANs. Ein VLAN trennt Bereiche logisch innerhalb einer gemeinsamen Netzwerkinfrastruktur.</p></div></div>
-        </section>
+            <section v-else-if="currentPage === 'devices'" aria-labelledby="devices-heading">
+                <div class="section-heading"><div><span>Bausteine</span><h2 id="devices-heading">Was machen Netzwerkgeräte?</h2></div><p>Jedes Gerät übernimmt eine bestimmte Aufgabe. Mehrere Funktionen können in einem Gerät stecken.</p></div>
+                <div class="two-columns"><div class="visual-panel"><div class="choice-grid devices-grid">
+                    <button v-for="item in devices" :key="item.name" type="button" :aria-pressed="selectedDevice === item.name" @click="selectedDevice = item.name"><strong>{{ item.name }}</strong><span>{{ item.label }}</span></button>
+                </div></div><div class="detail-panel" aria-live="polite"><span>Aufgabe</span><h3>{{ activeDevice.name }}</h3><p>{{ activeDevice.description }}</p><p class="note">Ein Heimrouter enthält häufig Router, Switch, WLAN-Access-Point und Firewall; je nach Anschluss auch ein Modem. Ein erweiterter Switch kann ebenfalls Routing übernehmen.</p></div></div>
+            </section>
 
-        <section id="aufbau" class="lesson-section">
-            <div class="section-heading"><span>Verbindungen</span><h2>Wie ein Netzwerk aufgebaut ist</h2></div>
-            <p>Eine <strong>Topologie</strong> beschreibt die Anordnung von Geräten oder Verbindungen. Gemeint sein kann die tatsächliche Verkabelung oder der logische Aufbau.</p>
-            <div class="topology-grid">
-                <div><svg viewBox="0 0 120 75" role="img" aria-label="Stern: vier Geräte sind einzeln mit einer zentralen Stelle verbunden"><g class="topology-lines"><path d="M60 38L22 13 M60 38L98 13 M60 38L22 63 M60 38L98 63"/></g><g class="topology-nodes"><circle cx="60" cy="38" r="7"/><circle cx="22" cy="13" r="6"/><circle cx="98" cy="13" r="6"/><circle cx="22" cy="63" r="6"/><circle cx="98" cy="63" r="6"/></g></svg><h3>Stern</h3><p>Geräte sind einzeln mit einer zentralen Stelle verbunden. Fällt eine Verbindung aus, betrifft das meist nur diesen Anschluss; fällt der zentrale Switch aus, sind alle daran angeschlossenen Geräte betroffen.</p></div>
-                <div><svg viewBox="0 0 120 75" role="img" aria-label="Baum: Verbindungen verzweigen sich hierarchisch"><g class="topology-lines"><path d="M60 10L30 35L15 62 M30 35L45 62 M60 10L90 35L75 62 M90 35L105 62"/></g><g class="topology-nodes"><circle cx="60" cy="10" r="6"/><circle cx="30" cy="35" r="6"/><circle cx="90" cy="35" r="6"/><circle cx="15" cy="62" r="5"/><circle cx="45" cy="62" r="5"/><circle cx="75" cy="62" r="5"/><circle cx="105" cy="62" r="5"/></g></svg><h3>Baum</h3><p>Mehrere sternförmige Bereiche sind hierarchisch verbunden, etwa Etagen-Switches mit einem zentralen Switch.</p></div>
-                <div><svg viewBox="0 0 120 75" role="img" aria-label="Bus: Geräte teilen sich eine gemeinsame Leitung"><g class="topology-lines"><path d="M8 48H112 M25 48V20 M60 48V20 M95 48V20"/></g><g class="topology-nodes"><circle cx="25" cy="20" r="6"/><circle cx="60" cy="20" r="6"/><circle cx="95" cy="20" r="6"/></g></svg><h3>Bus</h3><p>Geräte teilen sich eine gemeinsame Leitung. Bei heutigen Ethernet-LANs mit Switches ist das unüblich.</p></div>
-                <div><svg viewBox="0 0 120 75" role="img" aria-label="Ring: Netzwerkkomponenten bilden einen geschlossenen Ring"><g class="topology-lines"><path d="M25 15H95V60H25Z"/></g><g class="topology-nodes"><circle cx="25" cy="15" r="6"/><circle cx="95" cy="15" r="6"/><circle cx="25" cy="60" r="6"/><circle cx="95" cy="60" r="6"/></g></svg><h3>Ring</h3><p>Komponenten sind zu einem geschlossenen Ring verbunden. Das Verhalten bei einem Ausfall hängt von der Technik ab.</p></div>
-                <div><svg viewBox="0 0 120 75" role="img" aria-label="Mesh: mehrere Knoten sind über verschiedene Wege miteinander verbunden"><g class="topology-lines"><path d="M25 15H95V60H25Z M25 15L95 60 M95 15L25 60"/></g><g class="topology-nodes"><circle cx="25" cy="15" r="6"/><circle cx="95" cy="15" r="6"/><circle cx="25" cy="60" r="6"/><circle cx="95" cy="60" r="6"/></g></svg><h3>Mesh</h3><p>Knoten besitzen mehrere Verbindungen untereinander. Je nach Technik können alternative Wege verfügbar sein.</p></div>
-            </div>
-            <p>In modernen kabelgebundenen LANs ist die Sternstruktur häufig: Endgeräte sind jeweils mit einem zentralen Switch verbunden.</p>
-            <h3 class="subheading">Verkabelung im Gebäude</h3>
-            <p>Die feste <strong>Gebäudeverkabelung</strong> führt von den Netzwerkdosen der Räume zu zentralen Anschlusspunkten. Ein <strong>Patchpanel</strong> sammelt diese Leitungen. Kurze <strong>Patchkabel</strong> verbinden seine Anschlüsse mit den Switches. Geräte und Patchpanel stehen häufig in einem Netzwerkschrank.</p>
-            <figure class="network-figure building-figure">
-                <svg viewBox="0 0 740 140" role="img" aria-labelledby="building-title building-desc">
-                    <title id="building-title">Gebäudeverkabelung</title><desc id="building-desc">Eine Leitung führt von der Netzwerkdose zum Patchpanel. Ein Patchkabel verbindet das Patchpanel mit dem Switch. Der Switch ist über eine Backbone-Verbindung mit einem weiteren Netzwerkbereich verbunden.</desc>
-                    <g class="map-lines"><path d="M145 70H205 M340 70H400 M535 70H590"/></g>
-                    <g class="map-node"><rect x="10" y="42" width="135" height="56" rx="12"/><text x="77" y="76">Netzwerkdose</text><rect x="205" y="42" width="135" height="56" rx="12"/><text x="272" y="76">Patchpanel</text><rect x="400" y="42" width="135" height="56" rx="12"/><text x="467" y="76">Switch</text><rect x="590" y="42" width="140" height="56" rx="12"/><text x="660" y="68" class="small-label">weiterer</text><text x="660" y="85" class="small-label">Netzwerkbereich</text></g><text x="175" y="30" class="map-note">feste Leitung</text><text x="370" y="30" class="map-note">Patchkabel</text><text x="562" y="30" class="map-note">Backbone</text>
-                </svg>
-                <figcaption>Eine mögliche Verbindung vom Raum bis zu einem weiteren Netzwerkbereich.</figcaption>
-            </figure>
-            <p>Ein <strong>Backbone</strong> ist eine leistungsfähige zentrale Verbindung zwischen größeren Netzwerkbereichen. Leitungen, Anschlüsse und Geräte müssen zur benötigten Datenrate und zu den Entfernungen passen.</p>
-            <p>Eine <strong>USV</strong> (unterbrechungsfreie Stromversorgung) versorgt geeignete Geräte bei Stromausfall für begrenzte Zeit weiter. Die Dauer hängt von ihrer Kapazität und der angeschlossenen Last ab.</p>
-        </section>
+            <section v-else-if="currentPage === 'switch'" aria-labelledby="switch-heading">
+                <div class="section-heading"><div><span>Im lokalen Netz</span><h2 id="switch-heading">Schnittstellen und Switches</h2></div><p>Die Netzwerkschnittstelle verbindet ein Gerät über Kabel oder Funk.</p></div>
+                <div class="two-columns"><div class="visual-panel"><div class="choice-grid compact-grid">
+                    <button v-for="item in switchConcepts" :key="item.name" type="button" :aria-pressed="selectedSwitch === item.name" @click="selectedSwitch = item.name"><strong>{{ item.name }}</strong><span>{{ item.label }}</span></button>
+                </div></div><div class="detail-panel" aria-live="polite"><span>Begriff erklärt</span><h3>{{ activeSwitch.name }}</h3><p>{{ activeSwitch.description }}</p><p class="note">Eine MAC-Adresse kennzeichnet eine Schnittstelle auf der lokalen Verbindungsebene. Je nach Gerät oder Einstellung kann sie geändert oder zufällig gewählt werden.</p></div></div>
+            </section>
+
+            <section v-else-if="currentPage === 'topologies'" aria-labelledby="topology-heading">
+                <div class="section-heading"><div><span>Strukturen</span><h2 id="topology-heading">Wie sind Geräte verbunden?</h2></div><p>Eine Topologie beschreibt den tatsächlichen oder logischen Aufbau eines Netzwerks.</p></div>
+                <div class="two-columns"><div class="visual-panel topology-panel"><div class="segmented topology-options"><button v-for="item in topologies" :key="item.name" type="button" :aria-pressed="selectedTopology === item.name" @click="selectedTopology = item.name">{{ item.name }}</button></div>
+                    <svg viewBox="0 0 250 120" role="img" :aria-label="activeTopology.diagram"><path :d="activeTopology.path"/><circle v-for="(point, index) in activeTopology.points" :key="index" :cx="point[0]" :cy="point[1]" r="7" /></svg>
+                    <p class="caption">{{ activeTopology.diagram }}</p></div><div class="detail-panel" aria-live="polite"><span>Topologie</span><h3>{{ activeTopology.name }}</h3><p>{{ activeTopology.description }}</p><p class="note">In heutigen kabelgebundenen LANs ist die Sternstruktur häufig: Jedes Endgerät ist mit einem Switch verbunden.</p></div></div>
+            </section>
+
+            <section v-else aria-labelledby="building-heading">
+                <div class="section-heading"><div><span>Im Gebäude</span><h2 id="building-heading">Von der Dose ins Netzwerk</h2></div><p>Die Gebäudeverkabelung führt zu zentralen Anschlusspunkten.</p></div>
+                <div class="two-columns"><div class="visual-panel building-panel"><div class="building-chain">
+                    <template v-for="(item, index) in buildingParts.slice(0, 4)" :key="item.name"><button type="button" :aria-pressed="selectedBuilding === item.name" @click="selectedBuilding = item.name">{{ item.name }}</button><span v-if="index < 3" aria-hidden="true">→</span></template>
+                </div><p class="caption">Die feste Leitung endet am Patchpanel. Ein Patchkabel verbindet dieses mit dem Switch.</p>
+                    <button type="button" class="usv-button" :aria-pressed="selectedBuilding === 'USV'" @click="selectedBuilding = 'USV'">USV – Stromversorgung</button></div>
+                    <div class="detail-panel" aria-live="polite"><span>Baustein</span><h3>{{ activeBuilding.name }}</h3><p>{{ activeBuilding.description }}</p><p class="note">Patchpanel und Geräte stehen häufig in einem Netzwerkschrank. Leitungen und Anschlüsse müssen zu Datenrate und Entfernung passen.</p></div></div>
+            </section>
+        </main>
+
+        <footer class="lesson-footer"><button type="button" :disabled="pageIndex === 0" @click="pageIndex--">← Zurück</button><span>{{ pages[pageIndex].label }} · {{ pageIndex + 1 }} von {{ pages.length }}</span><button type="button" class="next-button" :disabled="pageIndex === pages.length - 1" @click="pageIndex++">Weiter →</button></footer>
     </article>
 </template>
 
+<script setup>
+import { computed, ref } from 'vue'
+
+const pages = [
+    { key: 'network', label: 'Netzwerk' }, { key: 'types', label: 'Netzarten' },
+    { key: 'services', label: 'Dienste' }, { key: 'transfer', label: 'Übertragung' },
+    { key: 'devices', label: 'Geräte' }, { key: 'switch', label: 'Switch & VLAN' },
+    { key: 'topologies', label: 'Topologien' }, { key: 'building', label: 'Gebäude' },
+]
+const pageIndex = ref(0)
+const currentPage = computed(() => pages[pageIndex.value].key)
+const networkCore = ['Internet', 'Router', 'Switch']
+const networkEnds = ['Computer', 'Server', 'Access Point', 'Smartphone']
+const networkSelection = ref('Switch')
+const internetConnected = ref(true)
+const networkDescriptions = {
+    Internet: 'Das Internet verbindet weltweit viele Netzwerke. Das lokale Netz kann auch ohne Internet funktionieren.',
+    Router: 'Der Router verbindet verschiedene IP-Netze und leitet Datenpakete anhand ihrer Zieladresse weiter.',
+    Switch: 'Der Switch verbindet Geräte im Ethernet-LAN und leitet Daten anhand von MAC-Adressen an passende Anschlüsse weiter.',
+    Computer: 'Der Computer kann mit berechtigtem Zugriff Daten und Dienste im Netzwerk nutzen.',
+    Server: 'Der Server stellt Dienste bereit, zum Beispiel eine Webseite oder eine gemeinsame Dateiablage.',
+    'Access Point': 'Der Access Point stellt den drahtlosen Zugang zum lokalen Netzwerk bereit.',
+    Smartphone: 'Das Smartphone ist hier über WLAN mit dem Access Point und damit dem lokalen Netzwerk verbunden.',
+}
+const networkTypes = [
+    { name: 'LAN', label: 'lokal', description: 'Ein Local Area Network ist ein lokales Netzwerk, etwa in einem Gebäude oder auf einem Schulgelände. Geräte können unter anderem per Ethernet-Kabel verbunden sein.' },
+    { name: 'WLAN', label: 'drahtlos', description: 'Ein Wireless Local Area Network bietet drahtlosen Zugang über Funk. Kabelgebundene und drahtlose Geräte können zum selben LAN gehören.' },
+    { name: 'WAN', label: 'große Entfernung', description: 'Ein Wide Area Network verbindet Netzwerke über größere Entfernungen, etwa Standorte in verschiedenen Städten. Es kann auch privat betrieben werden.' },
+    { name: 'Internet', label: 'weltweit', description: 'Das Internet ist ein weltweiter Zusammenschluss vieler Netzwerke, die gemeinsame Internetprotokolle nutzen.' },
+    { name: 'Intranet', label: 'intern', description: 'Ein Intranet bietet interne Informationen und Dienste für eine begrenzte Organisation, etwa eine Schule.' },
+    { name: 'Extranet', label: 'für ausgewählte Externe', description: 'Ein Extranet macht einen Teil interner Dienste für ausgewählte externe Personen oder Organisationen zugänglich. Der Zugang ist üblicherweise geschützt.' },
+]
+const selectedType = ref('LAN')
+const activeType = computed(() => networkTypes.find(item => item.name === selectedType.value))
+const serviceMode = ref('client')
+const serviceStep = ref('request')
+const rate = ref(100)
+const latency = ref(40)
+const formattedRate = computed(() => (rate.value / 8).toLocaleString('de-AT', { maximumFractionDigits: 2 }))
+const devices = [
+    { name: 'Switch', label: 'verbindet Geräte', description: 'Ein Switch verbindet Geräte in einem Ethernet-LAN. Ein einfacher Switch leitet Ethernet-Daten anhand von MAC-Adressen an passende Anschlüsse weiter.' },
+    { name: 'Router', label: 'verbindet Netze', description: 'Ein Router verbindet verschiedene IP-Netzwerke und leitet Datenpakete anhand ihrer IP-Zieladresse weiter.' },
+    { name: 'Access Point', label: 'ermöglicht WLAN', description: 'Ein Access Point bietet drahtlosen Zugang zum Netzwerk. Häufig ist er per Netzwerkkabel an das LAN angeschlossen.' },
+    { name: 'Modem', label: 'passt Signale an', description: 'Ein Modem passt Signale an die Technik eines Internetanschlusses an, etwa bei DSL oder Kabel.' },
+    { name: 'Glasfaser-ONT', label: 'optischer Netzabschluss', description: 'Ein optischer Netzabschluss setzt die Glasfaserverbindung des Anbieters in einen passenden Anschluss für das Kundennetz um.' },
+    { name: 'Firewall', label: 'prüft Datenverkehr', description: 'Eine Firewall kontrolliert Netzwerkverkehr nach festgelegten Regeln. Sie kann ein eigenes Gerät oder eine Funktion in einem anderen Gerät sein.' },
+    { name: 'Server und NAS', label: 'bieten Dienste', description: 'Ein Server stellt Dienste bereit. Ein NAS ist auf Datenspeicherung im Netzwerk ausgerichtet und kann Dateidienste bereitstellen.' },
+]
+const selectedDevice = ref('Switch')
+const activeDevice = computed(() => devices.find(item => item.name === selectedDevice.value))
+const switchConcepts = [
+    { name: 'Netzwerkadapter', label: 'Anschluss ans Netz', description: 'Ein Netzwerkadapter verbindet ein Gerät per Kabel oder Funk mit dem Netzwerk.' },
+    { name: 'Unmanaged Switch', label: 'ohne eigene Einrichtung', description: 'Ein unmanaged Switch arbeitet normalerweise ohne eigene Konfiguration.' },
+    { name: 'Managed Switch', label: 'verwaltbar', description: 'Ein managed Switch bietet je nach Modell Verwaltungsfunktionen, etwa Anschlussüberwachung oder die Einrichtung von VLANs.' },
+    { name: 'VLAN', label: 'logische Trennung', description: 'Ein VLAN trennt Netzwerkbereiche logisch innerhalb einer gemeinsamen Netzwerkinfrastruktur.' },
+]
+const selectedSwitch = ref('Netzwerkadapter')
+const activeSwitch = computed(() => switchConcepts.find(item => item.name === selectedSwitch.value))
+const topologies = [
+    { name: 'Stern', diagram: 'Stern: Geräte sind einzeln mit einer zentralen Stelle verbunden.', path: 'M125 60L35 20 M125 60L215 20 M125 60L35 100 M125 60L215 100', points: [[125, 60], [35, 20], [215, 20], [35, 100], [215, 100]], description: 'Geräte sind einzeln mit einer zentralen Stelle verbunden. Fällt eine Leitung aus, betrifft das meist nur diesen Anschluss; fällt der zentrale Switch aus, sind alle angeschlossenen Geräte betroffen.' },
+    { name: 'Baum', diagram: 'Baum: Verbindungen verzweigen sich hierarchisch.', path: 'M125 15L65 55L30 100 M65 55L100 100 M125 15L185 55L150 100 M185 55L220 100', points: [[125, 15], [65, 55], [185, 55], [30, 100], [100, 100], [150, 100], [220, 100]], description: 'Mehrere sternförmige Bereiche sind hierarchisch verbunden, etwa Etagen-Switches mit einem zentralen Switch.' },
+    { name: 'Bus', diagram: 'Bus: Geräte teilen sich eine gemeinsame Leitung.', path: 'M15 80H235 M55 80V30 M125 80V30 M195 80V30', points: [[55, 30], [125, 30], [195, 30]], description: 'Geräte teilen sich eine gemeinsame Leitung. Bei heutigen Ethernet-LANs mit Switches ist diese Struktur unüblich.' },
+    { name: 'Ring', diagram: 'Ring: Verbindungen bilden einen geschlossenen Ring.', path: 'M55 20H195V100H55Z', points: [[55, 20], [195, 20], [195, 100], [55, 100]], description: 'Komponenten sind zu einem geschlossenen Ring verbunden. Das Verhalten bei Ausfall hängt von der eingesetzten Technik ab.' },
+    { name: 'Mesh', diagram: 'Mesh: Knoten sind über mehrere Wege verbunden.', path: 'M55 20H195V100H55Z M55 20L195 100 M195 20L55 100', points: [[55, 20], [195, 20], [195, 100], [55, 100]], description: 'Knoten besitzen mehrere Verbindungen untereinander. Je nach Technik können alternative Wege verfügbar sein.' },
+]
+const selectedTopology = ref('Stern')
+const activeTopology = computed(() => topologies.find(item => item.name === selectedTopology.value))
+const buildingParts = [
+    { name: 'Netzwerkdose', description: 'Die Netzwerkdose im Raum ist Teil der festen Gebäudeverkabelung. Ihre Leitung führt zu einem zentralen Anschlusspunkt.' },
+    { name: 'Patchpanel', description: 'Das Patchpanel sammelt die fest installierten Leitungen. Kurze Patchkabel verbinden seine Anschlüsse mit einem Switch.' },
+    { name: 'Switch', description: 'Der Switch verbindet die angeschlossenen Geräte im lokalen Netzwerk. Er kann mit weiteren Netzwerkbereichen verbunden sein.' },
+    { name: 'Backbone', description: 'Ein Backbone ist eine leistungsfähige zentrale Verbindung zwischen größeren Netzwerkbereichen, etwa zwischen Etagen-Switches.' },
+    { name: 'USV', description: 'Eine unterbrechungsfreie Stromversorgung versorgt geeignete Geräte bei Stromausfall für begrenzte Zeit. Die Dauer hängt von Kapazität und angeschlossener Last ab.' },
+]
+const selectedBuilding = ref('Netzwerkdose')
+const activeBuilding = computed(() => buildingParts.find(item => item.name === selectedBuilding.value))
+</script>
+
 <style scoped>
-.network-lesson { max-width: 1160px; margin: 0 auto; color: #1b3049; font-size: 1rem; line-height: 1.7; }
-.lesson-intro { display: flex; align-items: center; justify-content: space-between; gap: 32px; padding: clamp(24px, 5vw, 54px); border-radius: 18px; background: #eaf2fb; overflow: hidden; }
-.lesson-intro h1 { max-width: 680px; margin: 6px 0 12px; color: #193c68; font-size: clamp(2rem, 4.3vw, 3.3rem); line-height: 1.12; letter-spacing: -.035em; }
-.lesson-intro p { max-width: 55ch; margin: 0; color: #445e7d; font-size: 1.1rem; }
-.lesson-intro .lesson-kicker { color: #326db6; font-size: .9rem; font-weight: 700; }
-.intro-mark { position: relative; flex: 0 0 170px; width: 170px; height: 130px; background: linear-gradient(25deg, transparent 48%, #8eb4dd 49%, #8eb4dd 51%, transparent 52%), linear-gradient(-25deg, transparent 48%, #8eb4dd 49%, #8eb4dd 51%, transparent 52%); }
-.intro-mark span { position: absolute; width: 28px; height: 28px; border: 5px solid #d8e9f9; border-radius: 50%; background: #386fae; }
-.intro-mark span:nth-child(1) { left: 0; top: 0; }.intro-mark span:nth-child(2) { right: 0; top: 0; }.intro-mark span:nth-child(3) { left: 0; bottom: 0; }.intro-mark span:nth-child(4) { right: 0; bottom: 0; }
-.lesson-nav { display: flex; flex-wrap: wrap; gap: 9px; padding: 18px 0; }
-.lesson-nav a { padding: 7px 14px; border: 1px solid #cbd9e8; border-radius: 999px; background: #fff; color: #285a92; font-size: .91rem; font-weight: 600; text-decoration: none; }
-.lesson-nav a:focus-visible { outline: 3px solid #2f6fb8; outline-offset: 3px; }
-.lesson-section { scroll-margin-top: 100px; margin: 0 0 18px; padding: clamp(22px, 4vw, 42px); border: 1px solid #e0e6ed; border-radius: 16px; background: #fff; }
-.section-heading span { color: #356da8; font-size: .84rem; font-weight: 700; }
-.section-heading h2 { margin: 3px 0 18px; color: #193c68; font-size: clamp(1.55rem, 3vw, 2rem); line-height: 1.2; }
-.lesson-section > p { max-width: 88ch; margin: 0 0 16px; }.lesson-section > p:last-child { margin-bottom: 0; }
-.lesson-section h3 { margin: 0 0 5px; color: #254b75; font-size: 1.05rem; line-height: 1.3; }
-.concept-grid, .compare { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; overflow: hidden; margin: 22px 0; border: 1px solid #dce6f1; border-radius: 12px; background: #dce6f1; }
-.concept-grid > div, .compare > div { min-width: 0; padding: 19px; background: #f6f9fd; }
-.concept-grid p, .compare p, .topology-grid p { margin: 0; font-size: .95rem; line-height: 1.55; }
-.concept-grid--two, .compare { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.network-figure { margin: 24px 0; padding: clamp(14px, 3vw, 26px); border: 1px solid #dbe7f3; border-radius: 14px; background: #f4f8fc; }
-.network-figure svg { display: block; width: 100%; height: auto; overflow: visible; }
-.network-figure figcaption { margin-top: 10px; color: #526a81; font-size: .88rem; line-height: 1.5; }
-.map-lines path, .topology-lines path { fill: none; stroke: #6a98c9; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }.map-lines .wireless-line { stroke-dasharray: 5 5; }
-.map-node rect { fill: #fff; stroke: #bfd2e6; stroke-width: 2; }.map-node text { fill: #244a74; font-size: 16px; font-weight: 700; text-anchor: middle; }.map-node .small-label { font-size: 12px; }.map-note { fill: #526a81; font-size: 11px; text-anchor: middle; }
-.callout { margin: 22px 0; padding: 17px 20px; border-left: 4px solid #4382bd; border-radius: 0 10px 10px 0; background: #edf5fc; }.callout strong { color: #214c78; }.callout p { margin: 4px 0 0; }
-.device-list { margin: 24px 0; border-top: 1px solid #dce6f1; }.device-list > div { display: grid; grid-template-columns: minmax(140px, 180px) 1fr; gap: 18px; padding: 14px 0; border-bottom: 1px solid #dce6f1; }.device-list dt { color: #254b75; font-weight: 700; }.device-list dd { margin: 0; }
-.topology-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px; margin: 24px 0; }.topology-grid > div { padding: 15px; border: 1px solid #dce6f1; border-radius: 12px; background: #f8fbfe; }.topology-grid svg { width: 100%; max-height: 80px; margin-bottom: 8px; }.topology-nodes circle { fill: #326fae; stroke: #e3effa; stroke-width: 2; }.topology-grid p { font-size: .86rem; }
-.subheading { margin-top: 25px !important; font-size: 1.25rem !important; }
-@media (max-width: 850px) { .topology-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }.concept-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }.intro-mark { flex-basis: 130px; width: 130px; height: 110px; } }
-@media (max-width: 560px) { .intro-mark { display: none; }.lesson-section { padding: 22px 18px; }.concept-grid, .compare, .topology-grid { grid-template-columns: 1fr; }.topology-grid svg { width: 120px; }.device-list > div { grid-template-columns: 1fr; gap: 4px; }.network-figure { overflow-x: auto; }.network-figure svg { min-width: 520px; }.client-figure svg { min-width: 400px; }.building-figure svg { min-width: 520px; } }
+.network-lesson { max-width: 1200px; margin: 0 auto; color: #1b3049; font-size: 1rem; line-height: 1.45; }
+.lesson-header { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 10px; }
+.lesson-header h1 { margin: 0; color: #193c68; font-size: clamp(1.35rem, 2.2vw, 1.8rem); line-height: 1.15; }
+.eyebrow { margin: 0 0 2px; color: #52729a; font-size: .75rem; font-weight: 700; }.page-number { flex: 0 0 auto; color: #64778b; font-size: .85rem; }
+.lesson-navigation { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 5px; margin-bottom: 10px; }
+button { font: inherit; cursor: pointer; } button:focus-visible, input:focus-visible { outline: 3px solid #2c6fb6; outline-offset: 2px; }
+.lesson-navigation button, .segmented button { min-height: 38px; padding: 6px; border: 1px solid #cbd9e8; border-radius: 9px; background: #fff; color: #32577f; font-size: .8rem; font-weight: 650; }
+button[aria-pressed='true'] { border-color: #3272b1 !important; background: #e5f1fc !important; color: #174a7d !important; box-shadow: inset 0 0 0 1px #3272b1; }
+.lesson-content { padding: 20px 24px; border: 1px solid #dce5ef; border-radius: 16px; background: #fff; }
+.section-heading { display: flex; align-items: end; justify-content: space-between; gap: 20px; margin-bottom: 13px; }.section-heading span, .detail-panel > span { color: #3973ad; font-size: .75rem; font-weight: 700; }.section-heading h2 { margin: 1px 0 0; color: #193c68; font-size: clamp(1.25rem, 2vw, 1.65rem); line-height: 1.15; }.section-heading > p { max-width: 43ch; margin: 0; color: #5a7189; font-size: .87rem; }
+.two-columns { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr); gap: 16px; align-items: stretch; }.visual-panel, .detail-panel { min-width: 0; padding: 16px; border-radius: 12px; }.visual-panel { background: #f0f6fc; border: 1px solid #dbe8f4; }.detail-panel { background: #f8fafc; border: 1px solid #e1e8ef; }.detail-panel h3 { margin: 3px 0 8px; color: #1f4d7d; font-size: 1.3rem; }.detail-panel p { margin: 0; font-size: .95rem; }.detail-panel .note { margin-top: 15px; color: #516980; font-size: .86rem; }
+.map-core, .map-devices { display: grid; gap: 8px; }.map-core { position: relative; grid-template-columns: repeat(3, 1fr); }.map-core::before { position: absolute; top: 50%; right: 12%; left: 12%; height: 3px; background: #a6c1dc; content: ''; }.map-core--offline::before { background: linear-gradient(to right, transparent 0 50%, #a6c1dc 50% 100%); }.map-core--offline button:first-child { opacity: .55; }.map-core button { position: relative; }.map-devices { grid-template-columns: repeat(3, 1fr); }.map-core button, .map-devices button, .building-chain button, .usv-button { min-height: 43px; padding: 6px; border: 1px solid #b9cfe5; border-radius: 9px; background: #fff; color: #28527b; font-weight: 700; font-size: .82rem; }.map-branch { position: relative; height: 19px; }.map-branch::before { position: absolute; top: 0; left: 83.33%; height: 10px; border-left: 2px solid #a6c1dc; content: ''; }.map-branch::after { position: absolute; top: 9px; right: 16.67%; left: 16.67%; height: 10px; border: 2px solid #a6c1dc; border-bottom: 0; content: ''; }.map-wireless { grid-column: 3; display: grid; justify-items: stretch; margin-top: -8px; }.map-wireless span { justify-self: center; height: 12px; border-left: 2px dashed #7ba2c6; }.caption { margin: 9px 0 0; color: #577089; font-size: .8rem; line-height: 1.35; }.connection-button { margin-top: 8px; padding: 5px 10px; border: 1px solid #98b5d1; border-radius: 7px; background: #fff; color: #265a8d; font-size: .8rem; font-weight: 650; }.connection-state { display: inline; margin-left: 8px; color: #516980; font-size: .78rem; }
+.choice-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }.choice-grid button { display: flex; flex-direction: column; align-items: start; justify-content: center; min-height: 62px; padding: 8px 10px; border: 1px solid #c5d7e8; border-radius: 9px; background: white; color: #28527b; text-align: left; }.choice-grid button strong { font-size: .9rem; }.choice-grid button span { margin-top: 2px; color: #667d94; font-size: .73rem; }.compact-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }.devices-grid button { min-height: 52px; }
+.segmented { display: flex; flex-wrap: wrap; gap: 6px; }.segmented button { padding-inline: 12px; }.service-diagram { display: flex; align-items: center; justify-content: center; gap: 12px; min-height: 126px; }.service-diagram > div:not(.service-arrow) { display: grid; min-width: 115px; padding: 12px; border: 1px solid #bfd3e6; border-radius: 10px; background: #fff; text-align: center; color: #28527b; }.service-diagram small { color: #637c94; font-size: .72rem; }.service-arrow { display: grid; color: #3973ad; text-align: center; font-size: .76rem; }.service-arrow b { font-size: 2rem; line-height: 1; }
+.transfer-controls label { display: flex; justify-content: space-between; gap: 12px; color: #28527b; font-weight: 700; font-size: .9rem; }.transfer-controls input { width: 100%; margin: 8px 0; accent-color: #3272b1; }.transfer-controls label:not(:first-child) { margin-top: 16px; }.meter, .latency-track { height: 8px; border-radius: 8px; background: #d6e4f1; overflow: hidden; }.meter span, .latency-track i { display: block; height: 100%; border-radius: inherit; background: #4e8bc2; }.latency-line { display: flex; align-items: center; gap: 10px; color: #5b7390; font-size: .75rem; }.latency-track { flex: 1; }
+.topology-panel svg { display: block; width: min(100%, 250px); height: 120px; margin: 8px auto 0; }.topology-panel svg path { fill: none; stroke: #84acd1; stroke-width: 3; }.topology-panel svg circle { fill: #326fae; stroke: #d9eaf8; stroke-width: 3; }.topology-options { justify-content: center; }.topology-options button { min-width: 65px; }
+.building-chain { display: flex; align-items: center; gap: 6px; }.building-chain button { flex: 1; min-width: 0; }.building-chain > span { color: #6591b9; font-weight: 700; }.usv-button { margin-top: 16px; padding-inline: 14px; }
+.lesson-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 0 0; }.lesson-footer button { min-height: 37px; padding: 6px 16px; border: 1px solid #b8cde1; border-radius: 8px; background: #fff; color: #265989; font-weight: 700; }.lesson-footer button.next-button { border-color: #2868a8; background: #2868a8; color: #fff; }.lesson-footer button:disabled { opacity: .45; cursor: default; }.lesson-footer span { color: #667b91; font-size: .8rem; }
+.map-branch { background: linear-gradient(#a6c1dc, #a6c1dc) 50% 100% / 2px 10px no-repeat; }
+@media (max-width: 850px) { .lesson-navigation { grid-template-columns: repeat(4, minmax(0, 1fr)); }.section-heading { align-items: start; flex-direction: column; gap: 4px; }.two-columns { grid-template-columns: 1fr; }.detail-panel .note { margin-top: 8px; } }
+@media (max-width: 520px) { .lesson-content { padding: 17px 14px; }.lesson-navigation { grid-template-columns: repeat(4, minmax(0, 1fr)); }.lesson-navigation button { font-size: .72rem; }.choice-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }.map-core button, .map-devices button { font-size: .72rem; }.building-chain { flex-wrap: wrap; }.building-chain button { flex: 1 1 36%; }.lesson-footer span { text-align: center; }.service-diagram > div:not(.service-arrow) { min-width: 90px; } }
 </style>
