@@ -1608,7 +1608,6 @@
                                     :inert="workSaving" :aria-disabled="workSaving" :class="{ 'opacity-50': workSaving }">
                                     <WorkFolderStatus :work="savedWorkDialogWork" :date="workDialog.courseDate?.date || ''" :size="30" />
                                     <WorkExerciseStatus :work="savedWorkDialogWork" :course="selected_course" :date="workDialog.courseDate?.date || ''" :state="workDialogExerciseStatus" :size="30" />
-                                    <WorkEmailPreparation :work="savedWorkDialogWork" :date="workDialog.courseDate?.date || ''" :state="workDialogExerciseStatus" status-only :size="30" />
                                     <WorkDeliveryStatus :work="savedWorkDialogWork" :date="workDialog.courseDate?.date || ''" :state="workDialogExerciseStatus" :size="30" @import="openImport" @saved="applySavedCourseWork({ data: $event })" />
                                 </span>
                                 <v-btn

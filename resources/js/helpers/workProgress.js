@@ -99,7 +99,7 @@ export function workProgressStages(work, now = Date.now()) {
             simulation: Boolean(simulation),
             targetCount: gradingRunComplete ? readyIds.length : total,
             complete: publicationComplete, detail: 'Die abgeschlossenen persönlichen Ergebnisse des aktuellen Bewertungslaufs werden übernommen. Dokumentierte offene Einzelfälle blockieren diesen Schritt nicht.' },
-        { key: 'notification', title: 'Schüler:innen informieren', icon: 'mdi-email-check-outline', count: informed,
+        { key: 'notification', title: 'Schüler:innen informieren', icon: 'mdi-bell-outline', count: informed,
             simulation: Boolean(simulatedNotifications || simulation),
             targetCount: gradingRunComplete ? readyIds.length : total,
             complete: notificationComplete, completedAt: notificationCompletedAt, review: earlier > 0,

@@ -189,6 +189,8 @@ describe('CourseTable manual work completion', () => {
             expect(wrapper.findComponent({ name: 'WorkContextCopy' }).exists()).toBe(true)
             expect(wrapper.get('.work-dialog-status-icons').findComponent({ name: 'WorkFolderStatus' }).exists()).toBe(true)
             expect(wrapper.get('.work-dialog-status-icons').findComponent({ name: 'WorkExerciseStatus' }).exists()).toBe(true)
+            expect(wrapper.get('.work-dialog-status-icons').findComponent({ name: 'WorkEmailPreparation' }).exists()).toBe(false)
+            expect(wrapper.get('.work-dialog-status-icons').findComponent({ name: 'WorkDeliveryStatus' }).exists()).toBe(true)
             expect(opening).toHaveBeenCalledTimes(1)
             expect(creating).not.toHaveBeenCalled()
 

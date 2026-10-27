@@ -3,14 +3,16 @@
         :disabled="disabled" @click.stop="openDialog('prepare')">E-Mails vorbereiten</v-btn>
     <v-btn v-if="available && ready && !sent && !statusOnly" size="small" color="primary" variant="tonal" prepend-icon="mdi-send-outline"
         :disabled="disabled" @click.stop="openDialog('send')">E-Mails versenden</v-btn>
-    <span v-if="statusOnly && (workAutomationEnabled(work) || workHasProgress(work))" class="d-inline-flex" :class="{ 'cursor-pointer': canInspect }"
-        :tabindex="canInspect ? 0 : undefined" :role="canInspect ? 'button' : undefined"
-        :aria-disabled="!canInspect" :aria-haspopup="canInspect ? 'dialog' : undefined" :aria-expanded="canInspect ? infoOpened : undefined"
-        :aria-label="tooltip" :title="tooltip" @click.stop="openInfo"
-        @keydown.enter.stop.prevent="openInfo" @keydown.space.stop.prevent="openInfo">
-        <v-icon :size="size" :color="color" :aria-label="tooltip" :aria-hidden="false" role="img">mdi-email-edit-outline</v-icon>
-        <v-tooltip activator="parent" location="top" :text="tooltip" :open-delay="200" :max-width="420" />
-    </span>
+    <slot v-if="statusOnly && (workAutomationEnabled(work) || workHasProgress(work))" name="status-activator" :open="openInfo" :available="canInspect" :label="tooltip">
+        <span class="d-inline-flex" :class="{ 'cursor-pointer': canInspect }"
+            :tabindex="canInspect ? 0 : undefined" :role="canInspect ? 'button' : undefined"
+            :aria-disabled="!canInspect" :aria-haspopup="canInspect ? 'dialog' : undefined" :aria-expanded="canInspect ? infoOpened : undefined"
+            :aria-label="tooltip" :title="tooltip" @click.stop="openInfo"
+            @keydown.enter.stop.prevent="openInfo" @keydown.space.stop.prevent="openInfo">
+            <v-icon :size="size" :color="color" :aria-label="tooltip" :aria-hidden="false" role="img">mdi-email-edit-outline</v-icon>
+            <v-tooltip activator="parent" location="top" :text="tooltip" :open-delay="200" :max-width="420" />
+        </span>
+    </slot>
     <v-dialog v-if="infoOpened && available && ready && statusOnly" v-model="infoOpened" scrollable :max-width="emailPreview ? 900 : 640">
         <v-card>
             <v-card-title class="text-wrap">Versandbereitschaft · {{ work.title || 'Ohne Titel' }}</v-card-title>

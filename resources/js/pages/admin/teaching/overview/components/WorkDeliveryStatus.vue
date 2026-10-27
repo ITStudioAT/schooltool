@@ -4,7 +4,7 @@
             <v-icon :size="size">mdi-email-edit-outline</v-icon>
         </v-btn>
         <v-btn icon :size="Number(size) > 20 ? 'small' : 'x-small'" :density="Number(size) > 20 ? 'default' : 'compact'" variant="text" :color="sent || manuallyCompleted ? 'success' : 'error'" :aria-label="sendLabel" :title="sendLabel" data-workflow-stage="send" @click.stop="opened = 'send'">
-            <v-icon :size="size">{{ manuallyCompleted && !sent ? 'mdi-check-circle-outline' : sent ? 'mdi-email-check-outline' : 'mdi-email-arrow-right-outline' }}</v-icon>
+            <v-icon :size="size">mdi-send-outline</v-icon>
         </v-btn>
         <v-btn v-for="stage in stages" :key="stage.key" icon :size="Number(size) > 20 ? 'small' : 'x-small'" :density="Number(size) > 20 ? 'default' : 'compact'" variant="text" :color="stage.color"
             :disabled="stage.blocked && !stage.manuallyCompleted" :aria-label="stageLabel(stage)" :title="stageLabel(stage)" :data-workflow-stage="stage.key" :data-workflow-state="stage.state" @click.stop="openStage(stage)">
@@ -50,6 +50,11 @@
                 </template>
             </v-card-text>
             <v-card-actions class="d-flex flex-wrap ga-2" aria-label="Dialogaktionen">
+                <WorkEmailPreparation v-if="opened === 'preparation'" :work="work" :date="date" :state="state" :disabled="savingCompletion" status-only>
+                    <template #status-activator="{ open, available, label }">
+                        <v-btn variant="tonal" prepend-icon="mdi-eye-outline" :disabled="!available" :title="label" @click.stop="open">Versandbereitschaft ansehen</v-btn>
+                    </template>
+                </WorkEmailPreparation>
                 <v-btn v-if="opened === 'send' && (!sent || manuallyCompleted)" variant="tonal" :prepend-icon="manuallyCompleted ? 'mdi-undo' : 'mdi-check'" :loading="savingCompletion" :disabled="savingCompletion" @click="saveCompletion('task_dispatch_completed', !manuallyCompleted)">
                     {{ manuallyCompleted ? 'Markierung aufheben' : 'Als erledigt markieren' }}
                 </v-btn>
@@ -83,6 +88,7 @@ import WorkEvaluationPdf from './WorkEvaluationPdf.vue'
 import WorkSubmissionCollection from './WorkSubmissionCollection.vue'
 import WorkGradingAction from './WorkGradingAction.vue'
 import WorkResultNotification from './WorkResultNotification.vue'
+import WorkEmailPreparation from './WorkEmailPreparation.vue'
 
 const props = defineProps({ work: { type: Object, required: true }, date: { type: String, default: '' }, state: { type: Object, default: null }, size: { type: [Number, String], default: 18 } })
 const admin = useAdminStore()

@@ -9,6 +9,45 @@ import { workManualCompletionFields } from '@/helpers/workProgress'
 
 afterEach(() => { clearWorkDropboxStates(); vi.unstubAllGlobals() })
 
+it.each(['ready', 'missing', 'foreign'])('keeps one preparation control with inspection and manual completion: %s', async status => {
+    const get = vi.fn()
+    const put = vi.fn()
+    vi.stubGlobal('axios', { get, put, post: vi.fn() })
+    const wrapper = mount(WorkDeliveryStatus, {
+        props: {
+            work: { id: 65, teaching_course_id: 16, title: 'E-Mails', status: {} }, date: '2026-10-16',
+            state: { status: 'found', userId: status === 'foreign' ? 8 : 7, workId: 65, courseId: 16,
+                date: '2026-10-16', folder: { id: 'id:exercise', name: 'LF' },
+                emailPreparation: { status: status === 'missing' ? 'missing' : 'ready', recipients_count: 15 } },
+        },
+        global: {
+            plugins: [createTestingPinia({ createSpy: vi.fn, initialState: { AdminAdminStore: { config: { user: { id: 7 } } } } })],
+            stubs: { 'v-btn': { props: ['disabled'], template: '<button :disabled="disabled"><slot /></button>' },
+                'v-dialog': { props: ['modelValue'], template: '<section v-if="modelValue" role="dialog"><slot /></section>' } },
+        },
+    })
+    try {
+        const controls = wrapper.findAll('[data-workflow-stage]')
+        expect(controls).toHaveLength(6)
+        expect(new Set(controls.map(control => control.get('v-icon').text())).size).toBe(6)
+        await wrapper.get('[data-workflow-stage="preparation"]').trigger('click')
+
+        const inspect = wrapper.findAll('button').find(button => button.text() === 'Versandbereitschaft ansehen')!
+        expect(inspect.element.disabled).toBe(status !== 'ready')
+        expect(wrapper.findAll('button').some(button => button.text() === 'Als erledigt markieren')).toBe(true)
+        if (status === 'ready') {
+            await inspect.trigger('click')
+            await flushPromises()
+            expect(wrapper.text()).toContain('Versandbereit – noch nicht versandt.')
+            expect(wrapper.text()).toContain('15')
+            expect(wrapper.findAll('button').some(button => button.text() === 'E-Mail ansehen')).toBe(true)
+        }
+        expect(get).not.toHaveBeenCalled()
+        expect(put).not.toHaveBeenCalled()
+        expect(axios.post).not.toHaveBeenCalled()
+    } finally { wrapper.unmount() }
+})
+
 it('offers reversible manual completion for all six steps and keeps later markings removable after revocation', async () => {
     let work = { id: 64, teaching_course_id: 16, title: 'Übung', groups: [{ student_ids: [1] }], status: {} }
     const put = vi.fn().mockImplementation(async (_url, payload) => {
