@@ -1,12 +1,61 @@
 import { afterEach, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { createTestingPinia } from '@pinia/testing'
 import { createVuetify } from 'vuetify'
 import { VBtn } from 'vuetify/components'
 import WorkDeliveryStatus from '@/pages/admin/teaching/overview/components/WorkDeliveryStatus.vue'
 import { clearWorkDropboxStates, workDropboxStates } from '@/helpers/workDropbox'
 
-afterEach(() => clearWorkDropboxStates())
+afterEach(() => { clearWorkDropboxStates(); vi.unstubAllGlobals() })
+
+it('saves a reversible manual dispatch completion and unlocks collection without claiming sent mail', async () => {
+    const work = { id: 64, teaching_course_id: 16, title: 'Übung', groups: [{ student_ids: [1] }], status: {} }
+    const saved = { ...work, status: { task_dispatch_completed: true } }
+    const put = vi.fn().mockResolvedValueOnce({ data: { data: saved } })
+        .mockResolvedValueOnce({ data: { data: work } })
+    vi.stubGlobal('axios', { put })
+    const wrapper = mount(WorkDeliveryStatus, { props: { work }, global: {
+        plugins: [createTestingPinia({ createSpy: vi.fn }), createVuetify({ components: { VBtn } })],
+        components: { 'v-btn': VBtn }, stubs: { 'v-btn': false, VBtn: false,
+            'v-dialog': { props: ['modelValue'], template: '<section v-if="modelValue" role="dialog"><slot /></section>' } },
+    } })
+    try {
+        expect(wrapper.get('[data-workflow-stage="collection"]').element.disabled).toBe(true)
+        await wrapper.get('[aria-label="E-Mails noch nicht versandt"]').trigger('click')
+        await wrapper.findAll('button').find(button => button.text() === 'Als erledigt markieren')!.trigger('click')
+        await flushPromises()
+        expect(put).toHaveBeenCalledWith('/api/admin/teaching/course_works/64', { task_dispatch_completed: true })
+        expect(wrapper.emitted('saved')).toEqual([[saved]])
+        await wrapper.setProps({ work: saved })
+        expect(wrapper.get('[data-workflow-stage="collection"]').element.disabled).toBe(false)
+        await wrapper.get('[aria-label="E-Mail-Versand: manuell erledigt"]').trigger('click')
+        expect(wrapper.get('[role="dialog"]').text()).toContain('Nächster Schritt: Abgaben einsammeln.')
+        expect(wrapper.get('[role="dialog"]').text()).toContain('bestätigt keinen E-Mail-Versand')
+        expect(wrapper.get('[role="dialog"]').text()).not.toContain('Nachrichten bestätigt')
+        await wrapper.findAll('button').find(button => button.text() === 'Markierung aufheben')!.trigger('click')
+        await flushPromises()
+        expect(put).toHaveBeenLastCalledWith('/api/admin/teaching/course_works/64', { task_dispatch_completed: false })
+        await wrapper.setProps({ work })
+        expect(wrapper.get('[data-workflow-stage="collection"]').element.disabled).toBe(true)
+    } finally { wrapper.unmount() }
+})
+
+it('keeps collection blocked and shows an error when manual completion cannot be saved', async () => {
+    vi.stubGlobal('axios', { put: vi.fn().mockRejectedValue({ response: { data: { message: 'Speichern fehlgeschlagen.' } } }) })
+    const wrapper = mount(WorkDeliveryStatus, { props: { work: { id: 64, title: 'Übung', groups: [{ student_ids: [1] }] } }, global: {
+        plugins: [createTestingPinia({ createSpy: vi.fn }), createVuetify({ components: { VBtn } })],
+        components: { 'v-btn': VBtn }, stubs: { 'v-btn': false, VBtn: false,
+            'v-dialog': { props: ['modelValue'], template: '<section v-if="modelValue"><slot /></section>' } },
+    } })
+    try {
+        await wrapper.get('[aria-label="E-Mails noch nicht versandt"]').trigger('click')
+        await wrapper.findAll('button').find(button => button.text() === 'Als erledigt markieren')!.trigger('click')
+        await flushPromises()
+        expect(wrapper.get('[role="alert"]').text()).toContain('Speichern fehlgeschlagen.')
+        expect(wrapper.emitted('saved')).toBeUndefined()
+        expect(wrapper.get('[data-workflow-stage="collection"]').element.disabled).toBe(true)
+    } finally { wrapper.unmount() }
+})
 
 it('opens results transfer for the existing work rather than requesting a new folder link', async () => {
     const work = { id: 86, teaching_course_id: 16, title: 'E-Mails', groups: [{ student_ids: [492] }], status: {

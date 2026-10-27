@@ -475,7 +475,7 @@ class CourseWorkController extends Controller
             unset($validated['status']['submission_checks']);
             unset($validated['status']['communicated_deadline_at']);
             unset($validated['status']['communicated_deadline_date']);
-            unset($validated['status']['completion_override'], $validated['status']['multiple_choice_tests']);
+            unset($validated['status']['completion_override'], $validated['status']['task_dispatch_completed'], $validated['status']['multiple_choice_tests']);
             unset($validated['status']['provision_events'], $validated['status']['provision_imports']);
             unset($validated['status']['evaluation_pdfs'], $validated['status']['dispatch_logs'], $validated['status']['dispatch_notifications'], $validated['status']['dispatch_attempts'], $validated['status']['folder_import_sources'], $validated['status']['folder_imported_at'], $validated['status']['assessment_json_imports'], $validated['status']['assessment_json_packages']);
         }
@@ -595,7 +595,7 @@ class CourseWorkController extends Controller
             $validated['status']['dispatch_notifications'] = $course_work->status['dispatch_notifications'] ?? [];
             $validated['status']['dispatch_attempts'] = $course_work->status['dispatch_attempts'] ?? [];
             $validated['status']['folder_import_sources'] = $course_work->status['folder_import_sources'] ?? [];
-            foreach (['assessment_json_imports', 'assessment_json_packages', 'submission_checks', 'provision_events', 'provision_imports', 'communicated_deadline_at', 'communicated_deadline_date', 'completion_override', 'multiple_choice_tests'] as $field) {
+            foreach (['assessment_json_imports', 'assessment_json_packages', 'submission_checks', 'provision_events', 'provision_imports', 'communicated_deadline_at', 'communicated_deadline_date', 'completion_override', 'task_dispatch_completed', 'multiple_choice_tests'] as $field) {
                 if (isset($course_work->status[$field])) {
                     $validated['status'][$field] = $course_work->status[$field];
                 } else {
@@ -613,6 +613,11 @@ class CourseWorkController extends Controller
             $validated['status']['completion_override'] = (bool) $validated['completion_override'];
         }
         unset($validated['completion_override']);
+        if (array_key_exists('task_dispatch_completed', $validated)) {
+            $validated['status'] ??= $course_work->status ?? [];
+            $validated['status']['task_dispatch_completed'] = (bool) $validated['task_dispatch_completed'];
+        }
+        unset($validated['task_dispatch_completed']);
         $validated['maximum_plus'] = $maximumPlus;
 
         if (! array_key_exists('groups', $validated)) {
@@ -708,6 +713,7 @@ class CourseWorkController extends Controller
             $rules['teaching_course_id'] = 'required|integer|exists:teaching_courses,id';
         } else {
             $rules['completion_override'] = 'sometimes|boolean';
+            $rules['task_dispatch_completed'] = 'sometimes|boolean';
         }
 
         return $rules;

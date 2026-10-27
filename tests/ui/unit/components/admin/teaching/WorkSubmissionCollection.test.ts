@@ -29,6 +29,21 @@ it('blocks the collection action until a task email has been sent', async () => 
     } finally { wrapper.unmount() }
 })
 
+it('opens the collection order after manual completion even when no task emails were sent', async () => {
+    const get = vi.fn().mockResolvedValue(response('collect'))
+    vi.stubGlobal('axios', { get })
+    const wrapper = mountCollection()
+    try {
+        await wrapper.setProps({ work: { ...work, status: { task_dispatch_completed: true } },
+            dispatch: { status: 'missing', confirmed_count: 0 } })
+        expect(wrapper.get('button').element.disabled).toBe(false)
+        await wrapper.get('button').trigger('click')
+        await flushPromises()
+        expect(get.mock.calls[0][1].params.purpose).toBe('submission_collection')
+        expect(wrapper.get('[role="dialog"]').text()).toContain('KI-Auftrag kopieren')
+    } finally { wrapper.unmount() }
+})
+
 it.each([false, true])('generates the correct collection order and shows a check only after copying: %s', async repeat => {
     const mode = repeat ? 'repeat' : 'collect'
     const get = vi.fn().mockResolvedValue(response(mode))

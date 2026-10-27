@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest'
 import { workProgressNextAction, workProgressStages, workLastCollectionAt, workSimulationCollection, workSimulationEvaluation } from '@/helpers/workProgress'
+import { isInitialWork, workNeedsPreparation } from '@/helpers/workOverview'
 
 function historicalWork() {
     return { id: 64, groups: [{ student_ids: [12, 13] }], status: {
@@ -12,6 +13,16 @@ function historicalWork() {
             sent_at: '2026-10-08T10:00:00Z', log_sha256: 'c'.repeat(64) })),
     } } as any
 }
+
+it('advances manual task dispatch completion to collection while leaving all later stages open', () => {
+    const work = { id: 64, groups: [{ student_ids: [12] }], status: { task_dispatch_completed: true } }
+    expect(workProgressNextAction(work)).toBe('Abgaben einsammeln')
+    expect(workProgressStages(work).every(stage => !stage.complete && stage.state === 'open')).toBe(true)
+    work.status.task_dispatch_completed = false
+    expect(workProgressNextAction(work)).toBe('')
+    expect(isInitialWork(work)).toBe(true)
+    expect(workNeedsPreparation(work, null)).toBe(true)
+})
 
 it('counts confirmed Mailpit result notifications separately and invalidates changed assessments', () => {
     const work = historicalWork()

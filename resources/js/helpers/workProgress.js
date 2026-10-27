@@ -2,10 +2,10 @@ import { workSimulationCollection, workSimulationEvaluation, workSimulationNotif
 export { workSimulationCollection, workSimulationEvaluation } from '@/helpers/workSimulation'
 import { personalWorkAssessment, workCollectionEvidence, workSubmissionStatus } from '@/helpers/workSubmission'
 import { workEvaluationStatus, workCellPendingStatuses } from '@/helpers/workCellStatus'
-import { workDispatchNotifications } from '@/helpers/workDispatch'
+import { workDispatchNotifications, workTaskDispatchCompleted } from '@/helpers/workDispatch'
 
 export function workHasProgress(work) {
-    return Boolean(workSimulationCollection(work)) || ['assessment_json_imports', 'evaluation_pdfs', 'dispatch_notifications', 'submission_checks', 'provision_events']
+    return workTaskDispatchCompleted(work) || Boolean(workSimulationCollection(work)) || ['assessment_json_imports', 'evaluation_pdfs', 'dispatch_notifications', 'submission_checks', 'provision_events']
         .some(key => (work?.status?.[key] || []).length > 0)
 }
 

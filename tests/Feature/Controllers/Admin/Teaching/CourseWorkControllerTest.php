@@ -1333,6 +1333,49 @@ test('work completion override rejects invalid input without changing the saved 
     expect($work->fresh()->status)->toBe($status);
 });
 
+test('manual task dispatch completion persists reversibly without sending mail or changing evidence', function () {
+    $work = prepareWorkDispatchImport($this);
+    $history = ['automation_enabled' => true, 'manual' => 'Keep', 'dispatch_notifications' => [],
+        'dispatch_logs' => [], 'folder_imported_at' => '2026-10-02T10:00:00Z'];
+    $work->update(['status' => $history]);
+    $otherWork = TeachingCourseWork::factory()->create(['teaching_course_id' => $this->course->id, 'status' => ['manual' => 'Other']]);
+    $url = "/api/admin/teaching/course_works/{$work->id}";
+    $groups = $work->fresh()->groups;
+    Mail::fake();
+    Notification::fake();
+
+    foreach ([true, false] as $complete) {
+        $this->putJson($url, ['task_dispatch_completed' => $complete])->assertOk()
+            ->assertJsonPath('data.status.task_dispatch_completed', $complete);
+        $this->getJson($url)->assertOk()->assertJsonPath('data.status.task_dispatch_completed', $complete);
+        expect($work->fresh()->status)->toEqual($history + ['task_dispatch_completed' => $complete]);
+        expect($work->fresh()->groups)->toBe($groups);
+    }
+
+    $this->putJson($url, ['status' => ['task_dispatch_completed' => true]])->assertOk()
+        ->assertJsonPath('data.status.task_dispatch_completed', false);
+    expect($otherWork->fresh()->status)->toBe(['manual' => 'Other']);
+    Mail::assertNothingSent();
+    Notification::assertNothingSent();
+});
+
+test('manual task dispatch completion rejects invalid input without mutation', function () {
+    $work = prepareWorkDispatchImport($this);
+    $status = $work->status;
+    $this->putJson("/api/admin/teaching/course_works/{$work->id}", ['task_dispatch_completed' => 'invalid'])
+        ->assertUnprocessable()->assertJsonValidationErrors('task_dispatch_completed');
+    expect($work->fresh()->status)->toBe($status);
+});
+
+test('manual task dispatch completion rejects unauthorized actors before mutation', function (string $actor) {
+    $work = prepareWorkDispatchImport($this);
+    $status = $work->status;
+    $user = User::factory()->create(['school_id' => $actor === 'foreign' ? School::factory()->create()->id : $this->school->id]);
+    $user->assignRole($actor === 'foreign' ? 'teacher' : 'student');
+    $this->actingAs($user, 'sanctum')->putJson("/api/admin/teaching/course_works/{$work->id}", ['task_dispatch_completed' => true])->assertForbidden();
+    expect($work->fresh()->status)->toBe($status);
+})->with(['student', 'foreign']);
+
 test('work completion override rejects unauthorized or foreign school access before mutation', function (string $actor) {
     $work = prepareWorkDispatchImport($this);
     $status = $work->status;

@@ -1,24 +1,26 @@
 <template>
     <span v-if="workAutomationEnabled(work) || workHasProgress(work)" class="d-inline-flex flex-wrap align-center ga-1" @click.stop @keydown.stop>
-        <v-btn icon :size="Number(size) > 20 ? 'small' : 'x-small'" :density="Number(size) > 20 ? 'default' : 'compact'" variant="text" :color="sent ? 'success' : 'error'" :aria-label="sendLabel" :title="sendLabel" @click.stop="opened = 'send'">
-            <v-icon :size="size">{{ sent ? 'mdi-email-check-outline' : 'mdi-email-arrow-right-outline' }}</v-icon>
+        <v-btn icon :size="Number(size) > 20 ? 'small' : 'x-small'" :density="Number(size) > 20 ? 'default' : 'compact'" variant="text" :color="sent || manuallyCompleted ? 'success' : 'error'" :aria-label="sendLabel" :title="sendLabel" @click.stop="opened = 'send'">
+            <v-icon :size="size">{{ manuallyCompleted && !sent ? 'mdi-check-circle-outline' : sent ? 'mdi-email-check-outline' : 'mdi-email-arrow-right-outline' }}</v-icon>
         </v-btn>
         <v-btn v-for="stage in stages" :key="stage.key" icon :size="Number(size) > 20 ? 'small' : 'x-small'" :density="Number(size) > 20 ? 'default' : 'compact'" variant="text" :color="stage.color"
             :disabled="stage.blocked" :aria-label="stageLabel(stage)" :title="stageLabel(stage)" :data-workflow-stage="stage.key" :data-workflow-state="stage.state" @click.stop="openStage(stage)">
             <v-icon :size="size">{{ stage.icon }}</v-icon>
         </v-btn>
     </span>
-    <v-dialog v-model="dialog" max-width="640" scrollable>
+    <v-dialog v-model="dialog" max-width="640" scrollable :persistent="savingSend">
         <v-card>
             <v-card-title class="text-wrap">{{ opened === 'send' ? 'E-Mail-Versand' : selectedStage?.title }} · {{ work.title }}</v-card-title>
             <v-card-text>
-                <v-alert :type="opened === 'send' ? (sent ? 'success' : 'warning') : (selectedStage?.complete ? 'success' : 'info')" variant="tonal">{{ opened === 'send' ? sendLabel : selectedStage?.label }}</v-alert>
+                <v-alert :type="opened === 'send' ? (sent || manuallyCompleted ? 'success' : 'warning') : (selectedStage?.complete ? 'success' : 'info')" variant="tonal">{{ opened === 'send' ? sendLabel : selectedStage?.label }}</v-alert>
                 <template v-if="opened === 'send'">
+                    <v-alert v-if="sendError" type="error" variant="tonal" class="mt-3" role="alert">{{ sendError }}</v-alert>
+                    <p v-if="manuallyCompleted" class="mt-3">Der Versand ist manuell als erledigt markiert. Diese Markierung bestätigt keinen E-Mail-Versand.</p>
                     <p v-if="sent" class="mt-3">{{ dispatch.confirmed_count }} von {{ dispatch.expected_count }} Nachrichten bestätigt.</p>
                     <p v-if="dispatch.sent_at" class="mt-2">Versandt: {{ assessmentTimeText(dispatch.sent_at) }}</p>
                     <p v-if="sent && dispatch.transport === 'mailpit'" class="text-orange-darken-3 mt-2">Testversand über Mailpit. Die Nachrichten liegen ausschließlich im lokalen Mailpit.</p>
                     <p v-if="dispatch.last_protocol?.run" class="text-caption mt-2">Versandlauf: {{ dispatch.last_protocol.run }}</p>
-                    <p class="mt-3">{{ sent || workHasProgress(work) ? nextActionText : 'Vorbereitete E-Mails versenden und anschließend „Erneut prüfen“ wählen.' }}</p>
+                    <p class="mt-3">{{ sent || workHasProgress(work) ? nextActionText : 'E-Mails versenden oder diesen Schritt als erledigt markieren, wenn kein Versand erforderlich ist. Danach können die Abgaben eingesammelt werden.' }}</p>
                 </template>
                 <template v-else>
                     <p class="mt-3">{{ selectedStage?.count }} von {{ selectedStage?.total }} Personen mit gespeichertem Nachweis.</p>
@@ -41,6 +43,9 @@
                 </template>
             </v-card-text>
             <v-card-actions class="d-flex flex-wrap ga-2" aria-label="Dialogaktionen">
+                <v-btn v-if="opened === 'send' && (!sent || manuallyCompleted)" variant="tonal" :prepend-icon="manuallyCompleted ? 'mdi-undo' : 'mdi-check'" :loading="savingSend" :disabled="savingSend" @click="saveSendCompletion">
+                    {{ manuallyCompleted ? 'Markierung aufheben' : 'Als erledigt markieren' }}
+                </v-btn>
                 <WorkSubmissionCollection v-if="opened === 'collection' && !selectedStage?.simulation" :work="work" :date="date" :dispatch="dispatch" :repeat="selectedStage?.complete || Boolean(lastCollectionAt)" />
                 <v-btn v-if="opened === 'collection' && selectedStage?.simulation" variant="tonal" prepend-icon="mdi-flask-outline" to="/admin/teaching-tools/simulator">Simulator öffnen</v-btn>
                 <WorkGradingAction v-if="opened === 'evaluation'" :work="work" :date="date" :repeat="selectedStage?.complete"
@@ -48,7 +53,7 @@
                 <v-btn v-if="opened === 'publication' && !selectedStage?.complete" variant="tonal" prepend-icon="mdi-account-check-outline" @click="emit('import', work, false, { date }); opened = null">Ergebnisse übernehmen</v-btn>
                 <WorkResultNotification v-if="opened === 'notification'" :work="work" :date="date" @saved="emit('saved', $event)" />
                 <v-spacer />
-                <v-btn @click="opened = null">Schließen</v-btn>
+                <v-btn :disabled="savingSend" @click="opened = null">Schließen</v-btn>
             </v-card-actions>
         </v-card>
     </v-dialog>
@@ -56,12 +61,13 @@
 
 <script setup>
 import { computed, ref, watch } from 'vue'
+import { update } from '@/actions/App/Http/Controllers/Admin/Teaching/CourseWorkController'
 import { sortedPeople } from '@/helpers/personNames'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { workAutomationEnabled } from '@/helpers/workAutomation'
 import { workDropboxKey, workDropboxStates, workExerciseCheck } from '@/helpers/workDropbox'
 import { assessmentTimeText } from '@/helpers/workAssessmentTimes'
-import { workDispatchNotifications } from '@/helpers/workDispatch'
+import { workDispatchNotifications, workTaskDispatchCompleted } from '@/helpers/workDispatch'
 import { workHasProgress, workProgressStages, workProgressNextAction, workLastCollectionAt, workSimulationEvaluation } from '@/helpers/workProgress'
 import WorkEvaluationPdf from './WorkEvaluationPdf.vue'
 import WorkSubmissionCollection from './WorkSubmissionCollection.vue'
@@ -71,6 +77,7 @@ import WorkResultNotification from './WorkResultNotification.vue'
 const props = defineProps({ work: { type: Object, required: true }, date: { type: String, default: '' }, state: { type: Object, default: null }, size: { type: [Number, String], default: 18 } })
 const admin = useAdminStore()
 const emit = defineEmits(['import', 'saved'])
+const manuallyCompleted = computed(() => workTaskDispatchCompleted(props.work))
 const stages = computed(() => workProgressStages(props.work).map(stage => stage.key === 'collection' && !hasSentTasks.value
     ? { ...stage, blocked: true, blockedBy: 'E-Mail-Versand' } : stage))
 const stageLabel = stage => stage.blocked ? `${stage.title}: zuerst „${stage.blockedBy}“ abschließen`
@@ -83,6 +90,8 @@ const selectedStage = computed(() => stages.value.find(stage => stage.key === op
 const nextAction = computed(() => workProgressNextAction(props.work) || 'Abgaben einsammeln')
 const nextActionText = computed(() => nextAction.value === 'Abgeschlossen' ? 'Status: ABGESCHLOSSEN.' : `Nächster Schritt: ${nextAction.value}.`)
 const opened = ref(null)
+const savingSend = ref(false)
+const sendError = ref('')
 const dialog = computed({ get: () => Boolean(opened.value), set: value => { if (!value) opened.value = null } })
 const dispatch = computed(() => {
     if (props.state?.status === 'found' && props.state.userId === admin.config?.user?.id
@@ -102,11 +111,28 @@ const dispatch = computed(() => {
         confirmed_count: count, expected_count: students.size, sent_at: notifications[0]?.sent_at, transport: 'office_outlook' }
 })
 const sent = computed(() => dispatch.value.status === 'sent')
-const hasSentTasks = computed(() => ['sent', 'partial'].includes(dispatch.value.status) && Number(dispatch.value.confirmed_count) > 0)
+const hasSentTasks = computed(() => manuallyCompleted.value || (['sent', 'partial'].includes(dispatch.value.status) && Number(dispatch.value.confirmed_count) > 0))
 watch(stages, value => { if (value.find(stage => stage.key === opened.value)?.blocked) opened.value = null })
 const sendLabel = computed(() => sent.value ? `E-Mails versandt${dispatch.value.transport === 'mailpit' ? ' · Testversand über Mailpit' : ''}`
+    : manuallyCompleted.value ? 'E-Mail-Versand: manuell erledigt'
     : dispatch.value.status === 'partial' ? `E-Mail-Versand unvollständig: ${dispatch.value.confirmed_count} bestätigt`
         : dispatch.value.status === 'unknown' ? 'E-Mail-Versand nicht bestätigt – erneut prüfen' : 'E-Mails noch nicht versandt')
+
+async function saveSendCompletion() {
+    if (savingSend.value) return
+    savingSend.value = true
+    sendError.value = ''
+    try {
+        const response = await axios.put(update.url(props.work.id), { task_dispatch_completed: !manuallyCompleted.value })
+        emit('saved', response.data.data)
+        opened.value = null
+    } catch (error) {
+        sendError.value = Object.values(error.response?.data?.errors || {}).flat()[0]
+            || error.response?.data?.message || 'Die Markierung konnte nicht gespeichert werden.'
+    } finally {
+        savingSend.value = false
+    }
+}
 </script>
 
 <style scoped>

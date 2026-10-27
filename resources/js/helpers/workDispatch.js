@@ -1,3 +1,7 @@
+export function workTaskDispatchCompleted(work) {
+    return work?.status?.task_dispatch_completed === true
+}
+
 export function workDispatchNotifications(work, purpose = 'results') {
     if (!work?.id) return []
     const logs = work.status?.dispatch_logs || []
