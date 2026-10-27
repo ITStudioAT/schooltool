@@ -3325,6 +3325,60 @@ describe('show update destroy', function () {
         expect($work->fresh()->finish_until_time)->toBeNull();
     })->with(['groups.0.comment', 'groups.0.comments.0.comment']);
 
+    test('preserves unchanged historical feedback beyond the input limit when saving work details', function (int $length) {
+        $this->actingAs($this->admin, 'sanctum');
+        $this->course->teachingCourseStudents()->create(['user_id' => $this->student->id]);
+        $feedback = str_repeat('R', $length);
+        $groups = [[
+            'student_ids' => [$this->student->id],
+            'date' => '2026-10-06',
+            'comment' => $feedback,
+            'grade' => '2',
+            'comments' => [['student_id' => $this->student->id, 'comment' => $feedback]],
+        ]];
+        $work = TeachingCourseWork::query()->create([
+            'teaching_course_id' => $this->course->id, 'type' => 'MA', 'groups' => $groups,
+            'status' => ['manual' => 'Keep'],
+        ]);
+
+        $this->putJson('/api/admin/teaching/course_works/'.$work->id, [
+            'title' => 'Updated details', 'finish_until_time' => '20:00', 'groups' => $groups,
+        ])->assertOk()
+            ->assertJsonPath('data.title', 'Updated details')
+            ->assertJsonPath('data.finish_until_time', '20:00')
+            ->assertJsonPath('data.groups.0.comments.0.comment', $feedback);
+        expect($work->fresh()->status)->toBe(['manual' => 'Keep']);
+        $this->assertDatabaseHas('teaching_course_student_entries', [
+            'teaching_course_work_id' => $work->id, 'user_id' => $this->student->id,
+            'description' => $feedback, 'grade' => '2',
+        ]);
+    })->with([3493, 4544]);
+
+    test('does not allow historical long feedback to be changed or assigned to another person', function (string $change) {
+        $this->actingAs($this->admin, 'sanctum');
+        $this->course->teachingCourseStudents()->create(['user_id' => $this->student->id]);
+        $feedback = str_repeat('R', 4500);
+        $groups = [['student_ids' => [$this->student->id], 'comment' => $feedback,
+            'comments' => [['student_id' => $this->student->id, 'comment' => $feedback]]]];
+        $work = TeachingCourseWork::query()->create([
+            'teaching_course_id' => $this->course->id, 'type' => 'MA', 'groups' => $groups,
+        ]);
+        if ($change === 'text') {
+            $groups[0]['comment'] .= 'changed';
+            $groups[0]['comments'][0]['comment'] .= 'changed';
+        } else {
+            $other = User::factory()->create(['school_id' => $this->school->id]);
+            $this->course->teachingCourseStudents()->create(['user_id' => $other->id]);
+            $groups[0]['student_ids'] = [$other->id];
+            $groups[0]['comments'][0]['student_id'] = $other->id;
+        }
+        $this->putJson('/api/admin/teaching/course_works/'.$work->id, [
+            'finish_until_time' => '20:00', 'groups' => $groups,
+        ])->assertUnprocessable()->assertJsonValidationErrors(['groups.0.comment', 'groups.0.comments.0.comment']);
+        expect($work->fresh()->finish_until_time)->toBeNull();
+        expect($work->fresh()->groups[0]['comments'][0]['comment'])->toBe($feedback);
+    })->with(['text', 'person']);
+
     test('destroy deletes work and derived entries', function () {
         $this->actingAs($this->admin, 'sanctum');
         $secondStudent = User::factory()->create(['school_id' => $this->school->id]);

@@ -595,7 +595,12 @@ class CourseWorkController extends Controller
         $gradeRules = $entryService->gradeRulesForCourse($this->teachingCourseActor($auth_user, $course), $course, $request->input('type', $course_work->type));
         $maximumPlus = $this->validatedMaximumPlus($request, $course, $this->teachingCourseActor($auth_user, $course), $entryService, $course_work);
         $this->appendMaximumPlusGradeRule($gradeRules, $maximumPlus);
-        $validated = $request->validate($this->workValidationRules($typeRules, false, $course, $gradeRules));
+        $rules = $this->workValidationRules($typeRules, false, $course, $gradeRules);
+        $rules = $this->preserveStoredFeedbackRules($request, $course_work, $rules);
+        $validated = $request->validate($rules, [
+            'groups.*.comment.max' => 'Neue oder geänderte Rückmeldungen dürfen höchstens 2048 Zeichen enthalten.',
+            'groups.*.comments.*.comment.max' => 'Neue oder geänderte Rückmeldungen dürfen höchstens 2048 Zeichen enthalten.',
+        ]);
         if (array_key_exists('status', $validated)) {
             $validated['status'] ??= [];
             $validated['status']['evaluation_pdfs'] = $course_work->status['evaluation_pdfs'] ?? [];
@@ -725,6 +730,53 @@ class CourseWorkController extends Controller
             $rules['completion_override'] = 'sometimes|boolean';
             foreach (self::ManualCompletionFields as $field) {
                 $rules[$field] = 'sometimes|boolean';
+            }
+        }
+
+        return $rules;
+    }
+
+    /** @param array<string, mixed> $rules
+     * @return array<string, mixed>
+     */
+    private function preserveStoredFeedbackRules(Request $request, TeachingCourseWork $work, array $rules): array
+    {
+        $incomingGroups = $request->input('groups', []);
+        if (! is_array($incomingGroups)) {
+            return $rules;
+        }
+
+        foreach ($incomingGroups as $groupIndex => $group) {
+            if (! is_array($group)) {
+                continue;
+            }
+
+            foreach ($work->groups ?? [] as $storedGroup) {
+                $studentIds = $group['student_ids'] ?? [];
+                $storedStudentIds = $storedGroup['student_ids'] ?? [];
+                if (is_array($studentIds) && is_array($storedStudentIds)) {
+                    $studentIds = array_map('strval', $studentIds);
+                    $storedStudentIds = array_map('strval', $storedStudentIds);
+                    sort($studentIds);
+                    sort($storedStudentIds);
+                    if ($studentIds !== [] && $studentIds === $storedStudentIds
+                        && is_string($group['comment'] ?? null)
+                        && $group['comment'] === ($storedGroup['comment'] ?? null)) {
+                        $rules["groups.{$groupIndex}.comment"] = 'nullable|string';
+                    }
+                }
+
+                foreach (is_array($group['comments'] ?? null) ? $group['comments'] : [] as $commentIndex => $comment) {
+                    if (! is_array($comment) || ! is_string($comment['comment'] ?? null) || ! isset($comment['student_id'])) {
+                        continue;
+                    }
+                    foreach ($storedGroup['comments'] ?? [] as $storedComment) {
+                        if ((string) ($storedComment['student_id'] ?? '') === (string) $comment['student_id']
+                            && $comment['comment'] === ($storedComment['comment'] ?? null)) {
+                            $rules["groups.{$groupIndex}.comments.{$commentIndex}.comment"] = 'nullable|string';
+                        }
+                    }
+                }
             }
         }
 
