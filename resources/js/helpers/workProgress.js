@@ -4,8 +4,13 @@ import { personalWorkAssessment, workCollectionEvidence, workSubmissionStatus } 
 import { workEvaluationStatus, workCellPendingStatuses } from '@/helpers/workCellStatus'
 import { workDispatchNotifications, workTaskDispatchCompleted } from '@/helpers/workDispatch'
 
+export const workManualCompletionFields = {
+    preparation: 'email_preparation_completed', send: 'task_dispatch_completed', collection: 'submission_collection_completed',
+    evaluation: 'evaluation_completed', publication: 'publication_completed', notification: 'notification_completed',
+}
+
 export function workHasProgress(work) {
-    return workTaskDispatchCompleted(work) || Boolean(workSimulationCollection(work)) || ['assessment_json_imports', 'evaluation_pdfs', 'dispatch_notifications', 'submission_checks', 'provision_events']
+    return Object.values(workManualCompletionFields).some(field => work?.status?.[field] === true) || Boolean(workSimulationCollection(work)) || ['assessment_json_imports', 'evaluation_pdfs', 'dispatch_notifications', 'submission_checks', 'provision_events']
         .some(key => (work?.status?.[key] || []).length > 0)
 }
 
@@ -100,15 +105,22 @@ export function workProgressStages(work, now = Date.now()) {
             complete: notificationComplete, completedAt: notificationCompletedAt, review: earlier > 0,
             detail: simulatedNotifications ? `Simulation: ${informed} persönliche Ergebnisbenachrichtigungen in Mailpit bestätigt. ${simulatedNotifications.teacher_count} separate Lehrernachricht(en). Offene oder nicht übernommene Bewertungen bleiben ausständig.`
                 : `Bestätigte persönliche Ergebnisnachrichten mit zugehörigem Versandprotokoll. Tests und Entwürfe zählen nicht als Verständigung.${earlier ? ` Bei ${earlier} Personen liegt die Nachricht vor dem gespeicherten Bewertungsabschluss. Der damalige Versand ist belegt; eine Verständigung über einen später geänderten Bewertungsstand ist damit nicht bestätigt.` : ''}` },
-    ].map((stage, index, all) => ({ ...stage, blocked: all.slice(0, index).some(previous => !previous.complete),
+    ].map(stage => {
+        const completionField = workManualCompletionFields[stage.key]
+        const manuallyCompleted = work?.status?.[completionField] === true
+        return { ...stage, completionField, manuallyCompleted, complete: stage.complete || manuallyCompleted }
+    }).map((stage, index, all) => ({ ...stage, blocked: all.slice(0, index).some(previous => !previous.complete),
         blockedBy: all.slice(0, index).find(previous => !previous.complete)?.title || '',
         total: stage.targetCount ?? total, state: stage.complete ? 'complete' : stage.count > 0 ? 'partial' : 'open',
         color: stage.review ? 'warning' : stage.complete ? 'success' : stage.count > 0 ? 'warning' : 'error',
-        label: `${stage.title}: ${stage.complete ? 'abgeschlossen' : stage.count > 0 ? 'teilweise erledigt' : 'noch offen'}${stage.simulation ? ' · Simulation' : ''}` }))
+        label: `${stage.title}: ${stage.manuallyCompleted ? 'manuell erledigt' : stage.complete ? 'abgeschlossen' : stage.count > 0 ? 'teilweise erledigt' : 'noch offen'}${stage.simulation ? ' · Simulation' : ''}` }))
 }
 
 export function workProgressNextAction(work, now = Date.now()) {
     if (!workHasProgress(work)) return ''
     const stages = workProgressStages(work, now)
+    if (work?.status?.email_preparation_completed === true && !workTaskDispatchCompleted(work)
+        && !workDispatchNotifications(work, 'tasks').length
+        && !stages.some(stage => stage.complete || stage.count > 0)) return 'E-Mails versenden'
     return stages.find(stage => !stage.complete)?.title || 'Abgeschlossen'
 }

@@ -1,8 +1,10 @@
+import { workManualCompletionFields } from '@/helpers/workProgress'
+
 export function isInitialWork(work) {
     const hasValue = value => value !== null && value !== undefined && value !== ''
     const hasStatus = Object.entries(work?.status || {}).some(([key, value]) =>
         !['automation_enabled', 'multiple_choice_tests'].includes(key)
-        && (key !== 'task_dispatch_completed' || value === true)
+        && (!Object.values(workManualCompletionFields).includes(key) || value === true)
         && (Array.isArray(value) ? value.length > 0 : hasValue(value)))
     const hasAssessment = (work?.groups || []).some(group =>
         hasValue(group.grade) || hasValue(group.comment)

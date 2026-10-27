@@ -1333,10 +1333,11 @@ test('work completion override rejects invalid input without changing the saved 
     expect($work->fresh()->status)->toBe($status);
 });
 
-test('manual task dispatch completion persists reversibly without sending mail or changing evidence', function () {
+test('manual workflow completion persists reversibly without sending mail or changing evidence', function (string $field) {
     $work = prepareWorkDispatchImport($this);
     $history = ['automation_enabled' => true, 'manual' => 'Keep', 'dispatch_notifications' => [],
-        'dispatch_logs' => [], 'folder_imported_at' => '2026-10-02T10:00:00Z'];
+        'dispatch_logs' => [], 'submission_checks' => [], 'assessment_json_imports' => [],
+        'assessment_json_packages' => [], 'folder_imported_at' => '2026-10-02T10:00:00Z'];
     $work->update(['status' => $history]);
     $otherWork = TeachingCourseWork::factory()->create(['teaching_course_id' => $this->course->id, 'status' => ['manual' => 'Other']]);
     $url = "/api/admin/teaching/course_works/{$work->id}";
@@ -1345,36 +1346,37 @@ test('manual task dispatch completion persists reversibly without sending mail o
     Notification::fake();
 
     foreach ([true, false] as $complete) {
-        $this->putJson($url, ['task_dispatch_completed' => $complete])->assertOk()
-            ->assertJsonPath('data.status.task_dispatch_completed', $complete);
-        $this->getJson($url)->assertOk()->assertJsonPath('data.status.task_dispatch_completed', $complete);
-        expect($work->fresh()->status)->toEqual($history + ['task_dispatch_completed' => $complete]);
+        $this->putJson($url, [$field => $complete])->assertOk()
+            ->assertJsonPath("data.status.{$field}", $complete);
+        $this->getJson($url)->assertOk()->assertJsonPath("data.status.{$field}", $complete);
+        expect($work->fresh()->status)->toEqual($history + [$field => $complete]);
         expect($work->fresh()->groups)->toBe($groups);
+        $this->putJson($url, ['title' => $work->title])->assertOk()->assertJsonPath("data.status.{$field}", $complete);
     }
 
-    $this->putJson($url, ['status' => ['task_dispatch_completed' => true]])->assertOk()
-        ->assertJsonPath('data.status.task_dispatch_completed', false);
+    $this->putJson($url, ['status' => [$field => true]])->assertOk()
+        ->assertJsonPath("data.status.{$field}", false);
     expect($otherWork->fresh()->status)->toBe(['manual' => 'Other']);
     Mail::assertNothingSent();
     Notification::assertNothingSent();
-});
+})->with(['email_preparation_completed', 'task_dispatch_completed', 'submission_collection_completed', 'evaluation_completed', 'publication_completed', 'notification_completed']);
 
-test('manual task dispatch completion rejects invalid input without mutation', function () {
+test('manual workflow completion rejects invalid input without mutation', function (string $field) {
     $work = prepareWorkDispatchImport($this);
     $status = $work->status;
-    $this->putJson("/api/admin/teaching/course_works/{$work->id}", ['task_dispatch_completed' => 'invalid'])
-        ->assertUnprocessable()->assertJsonValidationErrors('task_dispatch_completed');
+    $this->putJson("/api/admin/teaching/course_works/{$work->id}", [$field => 'invalid'])
+        ->assertUnprocessable()->assertJsonValidationErrors($field);
     expect($work->fresh()->status)->toBe($status);
-});
+})->with(['email_preparation_completed', 'task_dispatch_completed', 'submission_collection_completed', 'evaluation_completed', 'publication_completed', 'notification_completed']);
 
-test('manual task dispatch completion rejects unauthorized actors before mutation', function (string $actor) {
+test('manual workflow completion rejects unauthorized actors before mutation', function (string $actor, string $field) {
     $work = prepareWorkDispatchImport($this);
     $status = $work->status;
     $user = User::factory()->create(['school_id' => $actor === 'foreign' ? School::factory()->create()->id : $this->school->id]);
     $user->assignRole($actor === 'foreign' ? 'teacher' : 'student');
-    $this->actingAs($user, 'sanctum')->putJson("/api/admin/teaching/course_works/{$work->id}", ['task_dispatch_completed' => true])->assertForbidden();
+    $this->actingAs($user, 'sanctum')->putJson("/api/admin/teaching/course_works/{$work->id}", [$field => true])->assertForbidden();
     expect($work->fresh()->status)->toBe($status);
-})->with(['student', 'foreign']);
+})->with(['student', 'foreign'])->with(['email_preparation_completed', 'task_dispatch_completed', 'submission_collection_completed', 'evaluation_completed', 'publication_completed', 'notification_completed']);
 
 test('work completion override rejects unauthorized or foreign school access before mutation', function (string $actor) {
     $work = prepareWorkDispatchImport($this);

@@ -5,8 +5,46 @@ import { createVuetify } from 'vuetify'
 import { VBtn } from 'vuetify/components'
 import WorkDeliveryStatus from '@/pages/admin/teaching/overview/components/WorkDeliveryStatus.vue'
 import { clearWorkDropboxStates, workDropboxStates } from '@/helpers/workDropbox'
+import { workManualCompletionFields } from '@/helpers/workProgress'
 
 afterEach(() => { clearWorkDropboxStates(); vi.unstubAllGlobals() })
+
+it('offers reversible manual completion for all six steps and keeps later markings removable after revocation', async () => {
+    let work = { id: 64, teaching_course_id: 16, title: 'Übung', groups: [{ student_ids: [1] }], status: {} }
+    const put = vi.fn().mockImplementation(async (_url, payload) => {
+        work = { ...work, status: { ...work.status, ...payload } }
+        return { data: { data: work } }
+    })
+    vi.stubGlobal('axios', { put })
+    const wrapper = mount(WorkDeliveryStatus, { props: { work }, global: {
+        plugins: [createTestingPinia({ createSpy: vi.fn })],
+        stubs: { 'v-textarea': true, 'v-btn': { props: ['disabled'], template: '<button :disabled="disabled"><slot /></button>' },
+            'v-dialog': { props: ['modelValue'], template: '<section v-if="modelValue" role="dialog"><slot /></section>' } },
+    } })
+    try {
+        for (const [key, field] of Object.entries(workManualCompletionFields)) {
+            const stage = wrapper.get(`[data-workflow-stage="${key}"]`)
+            expect(stage.element.disabled).toBe(false)
+            await stage.trigger('click')
+            await wrapper.findAll('button').find(button => button.text() === 'Als erledigt markieren')!.trigger('click')
+            await flushPromises()
+            expect(put).toHaveBeenLastCalledWith('/api/admin/teaching/course_works/64', { [field]: true })
+            await wrapper.setProps({ work })
+            await stage.trigger('click')
+            expect(wrapper.get('[role="dialog"]').text()).toContain('manuell')
+            await wrapper.findAll('button').find(button => button.text() === 'Schließen')!.trigger('click')
+        }
+        for (const [key, field] of Object.entries(workManualCompletionFields)) {
+            await wrapper.get(`[data-workflow-stage="${key}"]`).trigger('click')
+            await wrapper.findAll('button').find(button => button.text() === 'Markierung aufheben')!.trigger('click')
+            await flushPromises()
+            expect(put).toHaveBeenLastCalledWith('/api/admin/teaching/course_works/64', { [field]: false })
+            await wrapper.setProps({ work })
+        }
+        expect(wrapper.get('[data-workflow-stage="evaluation"]').element.disabled).toBe(true)
+        expect(wrapper.emitted('saved')).toHaveLength(12)
+    } finally { wrapper.unmount() }
+})
 
 it('saves a reversible manual dispatch completion and unlocks collection without claiming sent mail', async () => {
     const work = { id: 64, teaching_course_id: 16, title: 'Übung', groups: [{ student_ids: [1] }], status: {} }
@@ -54,6 +92,60 @@ it('keeps collection blocked and shows an error when manual completion cannot be
         expect(wrapper.get('[role="alert"]').text()).toContain('Speichern fehlgeschlagen.')
         expect(wrapper.emitted('saved')).toBeUndefined()
         expect(wrapper.get('[data-workflow-stage="collection"]').element.disabled).toBe(true)
+    } finally { wrapper.unmount() }
+})
+
+it('saves and revokes manual collection completion while preserving evidence counts and unlocking grading', async () => {
+    const work = { id: 64, teaching_course_id: 16, title: 'Übung', groups: [{ student_ids: [1] }], status: { task_dispatch_completed: true } }
+    const saved = { ...work, status: { ...work.status, submission_collection_completed: true } }
+    const put = vi.fn().mockResolvedValueOnce({ data: { data: saved } }).mockResolvedValueOnce({ data: { data: work } })
+    vi.stubGlobal('axios', { put })
+    const wrapper = mount(WorkDeliveryStatus, { props: { work }, global: {
+        plugins: [createTestingPinia({ createSpy: vi.fn })],
+        stubs: { 'v-btn': { props: ['disabled'], template: '<button :disabled="disabled"><slot /></button>' },
+            'v-dialog': { props: ['modelValue'], template: '<section v-if="modelValue" role="dialog"><slot /></section>' } },
+    } })
+    try {
+        expect(wrapper.get('[data-workflow-stage="evaluation"]').element.disabled).toBe(true)
+        await wrapper.get('[data-workflow-stage="collection"]').trigger('click')
+        await wrapper.findAll('button').find(button => button.text() === 'Als erledigt markieren')!.trigger('click')
+        await flushPromises()
+        expect(put).toHaveBeenCalledWith('/api/admin/teaching/course_works/64', { submission_collection_completed: true })
+        expect(wrapper.emitted('saved')).toEqual([[saved]])
+        await wrapper.setProps({ work: saved })
+        expect(wrapper.get('[data-workflow-stage="evaluation"]').element.disabled).toBe(false)
+        await wrapper.get('[data-workflow-stage="evaluation"]').trigger('click')
+        const grade = wrapper.get('[aria-label="Dialogaktionen"]').findAll('button').find(button => button.text() === 'Bewerten')!
+        expect(grade.element.disabled).toBe(false)
+        await wrapper.get('[data-workflow-stage="collection"]').trigger('click')
+        const details = wrapper.get('[role="dialog"]').text()
+        expect(details).toContain('Abgaben einsammeln: manuell erledigt')
+        expect(details).toContain('0 von 1 Personen mit gespeichertem Nachweis')
+        expect(details).toContain('bestätigt keine eingegangenen Abgaben und keinen Sammellauf')
+        expect(details).toContain('Zeitpunkt nicht gespeichert')
+        expect(details).toContain('Nächster Schritt: Bewerten.')
+        await wrapper.findAll('button').find(button => button.text() === 'Markierung aufheben')!.trigger('click')
+        await flushPromises()
+        expect(put).toHaveBeenLastCalledWith('/api/admin/teaching/course_works/64', { submission_collection_completed: false })
+        await wrapper.setProps({ work })
+        expect(wrapper.get('[data-workflow-stage="evaluation"]').element.disabled).toBe(true)
+    } finally { wrapper.unmount() }
+})
+
+it('keeps grading blocked when manual collection completion fails to save', async () => {
+    vi.stubGlobal('axios', { put: vi.fn().mockRejectedValue({ response: { data: { message: 'Speichern fehlgeschlagen.' } } }) })
+    const wrapper = mount(WorkDeliveryStatus, { props: { work: { id: 64, title: 'Übung', groups: [{ student_ids: [1] }], status: { task_dispatch_completed: true } } }, global: {
+        plugins: [createTestingPinia({ createSpy: vi.fn }), createVuetify({ components: { VBtn } })],
+        components: { 'v-btn': VBtn }, stubs: { 'v-btn': false, VBtn: false,
+            'v-dialog': { props: ['modelValue'], template: '<section v-if="modelValue" role="dialog"><slot /></section>' } },
+    } })
+    try {
+        await wrapper.get('[data-workflow-stage="collection"]').trigger('click')
+        await wrapper.findAll('button').find(button => button.text() === 'Als erledigt markieren')!.trigger('click')
+        await flushPromises()
+        expect(wrapper.get('[role="alert"]').text()).toContain('Speichern fehlgeschlagen.')
+        expect(wrapper.emitted('saved')).toBeUndefined()
+        expect(wrapper.get('[data-workflow-stage="evaluation"]').element.disabled).toBe(true)
     } finally { wrapper.unmount() }
 })
 
@@ -124,7 +216,7 @@ it('keeps later stages visible but disabled until earlier steps are complete', a
         for (const key of ['evaluation', 'publication', 'notification']) {
             expect(wrapper.get(`[data-workflow-stage="${key}"]`).element.disabled).toBe(true)
         }
-        expect(wrapper.findAll('[data-workflow-stage]')).toHaveLength(4)
+        expect(wrapper.findAll('[data-workflow-stage]')).toHaveLength(6)
     } finally { wrapper.unmount() }
 })
 
@@ -150,9 +242,9 @@ it.each(['missing', 'sent', 'partial', 'unknown'])('shows the saved dispatch sta
         global: { plugins: [createTestingPinia({ createSpy: vi.fn, initialState: { AdminAdminStore: { config: { user: { id: 7 } } } } }), createVuetify({ components: { VBtn } })],
             components: { 'v-btn': VBtn }, stubs: { 'v-btn': false, VBtn: false, 'v-dialog': { props: ['modelValue'], template: '<section v-if="modelValue" role="dialog"><slot /></section>' } } } })
     try {
-        expect(wrapper.findAll('button')).toHaveLength(5)
+        expect(wrapper.findAll('button')).toHaveLength(6)
         expect(wrapper.get('[data-workflow-stage="collection"]').element.disabled).toBe(status !== 'sent')
-        await wrapper.findAll('button')[0].trigger('click')
+        await wrapper.get('[data-workflow-stage="send"]').trigger('click')
         if (status === 'sent') expect(wrapper.get('[role="dialog"]').text()).toContain('15 von 15 Nachrichten bestätigt')
         else expect(wrapper.get('[role="dialog"]').text()).not.toContain('15 von 15 Nachrichten bestätigt')
         if (status === 'missing') {

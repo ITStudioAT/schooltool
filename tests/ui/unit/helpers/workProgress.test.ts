@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { workProgressNextAction, workProgressStages, workLastCollectionAt, workSimulationCollection, workSimulationEvaluation } from '@/helpers/workProgress'
+import { workProgressNextAction, workProgressStages, workLastCollectionAt, workSimulationCollection, workSimulationEvaluation, workManualCompletionFields } from '@/helpers/workProgress'
 import { isInitialWork, workNeedsPreparation } from '@/helpers/workOverview'
 
 function historicalWork() {
@@ -40,6 +40,49 @@ it('counts confirmed Mailpit result notifications separately and invalidates cha
     expect(stage.count).toBe(0)
     work.simulation_notification.rows = []
     expect(workProgressStages(work).find(stage => stage.key === 'notification')!.count).toBe(0)
+})
+
+it('unlocks grading after manual collection without adding evidence or completing later steps', () => {
+    const work = { id: 64, groups: [{ student_ids: [12, 13] }], status: { submission_collection_completed: true } }
+    const original = JSON.stringify(work)
+    expect(workProgressStages(work)[0]).toMatchObject({ complete: true, count: 0, manuallyCompleted: true,
+        label: 'Abgaben einsammeln: manuell erledigt' })
+    expect(workProgressStages(work)[1]).toMatchObject({ complete: false, blocked: false, count: 0 })
+    expect(workProgressStages(work).slice(2).every(stage => stage.blocked && !stage.complete)).toBe(true)
+    expect(workProgressNextAction(work)).toBe('Bewerten')
+    expect(workLastCollectionAt(work)).toBeNull()
+    expect(JSON.stringify(work)).toBe(original)
+    work.status.submission_collection_completed = false
+    expect(workProgressStages(work)[1].blocked).toBe(true)
+    expect(workProgressNextAction(work)).toBe('')
+})
+
+it('retains actual collection evidence when manual collection completion is revoked', () => {
+    const work = historicalWork()
+    work.status.submission_collection_completed = true
+    const before = workProgressStages(work)[0].count
+    work.status.submission_collection_completed = false
+    expect(workProgressStages(work)[0]).toMatchObject({ complete: true, count: before, manuallyCompleted: false })
+    expect(workProgressStages(work)[1].blocked).toBe(false)
+})
+
+it('advances all manual steps without creating downstream evidence and reopens the revoked step', () => {
+    const work = { id: 64, groups: [{ student_ids: [12] }], status: {} } as any
+    const nextActions = ['E-Mails versenden', 'Abgaben einsammeln', 'Bewerten', 'Ergebnisse bereitstellen', 'Schüler:innen informieren', 'Abgeschlossen']
+    Object.values(workManualCompletionFields).forEach((field, index) => {
+        work.status[field] = true
+        expect(workProgressNextAction(work)).toBe(nextActions[index])
+        expect(workProgressStages(work).every(stage => stage.count === 0)).toBe(true)
+        expect(workLastCollectionAt(work)).toBeNull()
+        expect(workProgressStages(work).at(-1)?.completedAt).toBeNull()
+    })
+    work.status.evaluation_completed = false
+    expect(workProgressNextAction(work)).toBe('Bewerten')
+    expect(workProgressStages(work).slice(2).every(stage => stage.blocked && stage.manuallyCompleted)).toBe(true)
+    Object.values(workManualCompletionFields).forEach(field => { work.status[field] = false })
+    expect(isInitialWork(work)).toBe(true)
+    expect(workNeedsPreparation(work, null)).toBe(true)
+    expect(workProgressNextAction(work)).toBe('')
 })
 
 function simulatedWork() {
