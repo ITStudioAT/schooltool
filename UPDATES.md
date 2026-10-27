@@ -2,7 +2,13 @@
 
 ## 3.53.4 !!!
 
+### Unterricht
+
 - Arbeit: Überarbeitung: Icon-Buttons
+
+### Erklärungen
+
+- IP-Adressen, Netze und Routing
 
 ## 3.53.3
 

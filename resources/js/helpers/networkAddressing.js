@@ -37,7 +37,7 @@ export const routerExampleRoutes = [
     { network: '0.0.0.0', prefix: 0, via: 'zum Provider · Standardroute' },
 ]
 
-const paths = {
+export const networkPaths = {
     toRouter: 'M100 165 L300 165 L500 270',
     fromRouter: 'M500 270 L300 165 L100 165',
     toPrinter: 'M100 165 L300 165 L500 65',
@@ -47,6 +47,7 @@ const paths = {
     toWeb: 'M500 270 L690 150 L850 65',
     fromWeb: 'M850 65 L690 150 L500 270',
 }
+const paths = networkPaths
 
 export function packetJourney(scenarioKey = 'internet', configuration = 'dhcp', blocked = false) {
     const scenario = networkScenarios.find(item => item.key === scenarioKey) || networkScenarios[2]
@@ -76,11 +77,11 @@ export function packetJourney(scenarioKey = 'internet', configuration = 'dhcp', 
             'Dafür muss er noch keine Ziel-IP im eigenen Subnetz vergleichen. Ein Router leitet solche Broadcasts nicht einfach in andere VLANs weiter; dafür wäre ein DHCP-Relay nötig.',
             { configured: false, active: 'pc', path: paths.toRouter, concepts: ['DHCP', 'VLAN'], source: '0.0.0.0', destination: '255.255.255.255', sourceMac: 'MAC des PCs', nextMac: 'Broadcast · ff:ff:ff:ff:ff:ff' })
         add('offer', 'DHCP Offer · Ein Konfigurationsvorschlag',
-            'Der DHCP-Server bietet dem PC die Adresse 192.168.10.20 samt Netzwerkeinstellungen an. In diesem Beispiel wird die Antwort als Broadcast gesendet.',
+            'Der DHCP-Server bietet dem PC die Adresse 192.168.10.20 samt Netzwerkeinstellungen an. In diesem Beispiel sendet er das Angebot als Broadcast an alle Geräte im VLAN. Anhand einer Kennung erkennt der PC, dass das Angebot zu seiner Anfrage gehört.',
             'Ein Angebot allein ist noch nicht die abgeschlossene Zuweisung.',
             { configured: false, active: 'router', path: paths.fromRouter, concepts: ['DHCP'] })
         add('request', 'DHCP Request · Dieses Angebot möchte ich nutzen',
-            'Der PC gibt bekannt, welches Angebot er annehmen möchte. Die DHCP-Anfrage bleibt in diesem Beispiel im Unterrichts-VLAN.',
+            'Der PC sendet eine DHCP-Request-Nachricht. Darin nennt er den ausgewählten DHCP-Server und die angebotene IP-Adresse 192.168.10.20. So erfahren die DHCP-Server im Unterrichts-VLAN, welches Angebot er annehmen möchte.',
             'Bei der erstmaligen Zuweisung bestätigt der Client damit seine Auswahl gegenüber den DHCP-Servern.',
             { configured: false, active: 'pc', path: paths.toRouter, concepts: ['DHCP', 'VLAN'] })
         add('ack', 'DHCP ACK · Jetzt sind Adresse und Präfix verfügbar',

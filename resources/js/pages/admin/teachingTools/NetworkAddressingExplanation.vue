@@ -22,7 +22,7 @@
             </div>
             <div class="journey-workbench">
                 <div class="network-scene">
-                    <svg viewBox="0 0 960 390" role="img" :aria-label="`Netzwerkbeispiel: ${current.title}`" class="network-map">
+                    <svg viewBox="0 0 960 390" role="img" :aria-label="`Netzwerkbeispiel: ${current.title}`" class="network-map network-map--wide">
                         <rect x="28" y="18" width="555" height="195" rx="16" class="vlan-zone" /><text x="48" y="44" class="zone-title">Unterricht · VLAN 10 · 192.168.10.0/24</text>
                         <rect x="659" y="242" width="273" height="129" rx="16" class="vlan-zone server-zone" /><text x="679" y="267" class="zone-title">Server · VLAN 20</text>
                         <path d="M100 165 L300 165 L500 65 M300 165 L500 270 L790 300 M500 270 L690 150 L850 65" class="network-links" />
@@ -33,18 +33,34 @@
                         <g :class="{ active: current.active === 'pc' }" class="device"><rect x="52" y="121" width="96" height="65" rx="10"/><text x="100" y="148">PC</text><text x="100" y="170" class="small pc-address">{{ current.configured ? '.10.20' : 'keine IP' }}</text></g>
                         <g :class="{ active: current.active === 'switch' }" class="device"><rect x="247" y="126" width="106" height="60" rx="10"/><text x="300" y="151">Switch</text><text x="300" y="172" class="small">VLAN 10</text></g>
                         <g :class="{ active: current.active === 'printer' || (current.id === 'local-frame' && scenarioKey === 'local') }" class="device"><rect x="447" y="49" width="106" height="62" rx="10"/><text x="500" y="75">Drucker</text><text x="500" y="96" class="small">.10.30</text></g>
-                        <g :class="{ active: current.active === 'router' }" class="device router"><rect x="427" y="240" width="146" height="72" rx="12"/><text x="500" y="266">Router</text><text x="500" y="289" class="small">DHCP · DNS · Firewall</text></g>
-                        <text x="350" y="236" class="interface-label">LAN: .10.1</text><text x="583" y="329" class="interface-label">LAN: .20.1</text>
+                        <g :class="{ active: current.active === 'router' }" class="device router"><rect x="405" y="240" width="190" height="72" rx="12"/><text x="500" y="265">Router</text><text x="500" y="291" class="small">DHCP · DNS · Firewall</text></g>
+                        <text x="300" y="246" class="interface-label">LAN: .10.1</text><text x="560" y="329" class="interface-label">LAN: .20.1</text>
                         <g :class="{ active: current.active === 'server' }" class="device"><rect x="734" y="278" width="112" height="64" rx="10"/><text x="790" y="303">Server</text><text x="790" y="325" class="small">.20.30/24</text></g>
                         <g class="device provider"><rect x="627" y="119" width="126" height="59" rx="26"/><text x="690" y="144">Provider</text><text x="690" y="164" class="small">weitere Router</text></g>
                         <g :class="{ active: current.active === 'web' }" class="device"><rect x="781" y="32" width="142" height="65" rx="10"/><text x="852" y="59">Webserver</text><text x="852" y="81" class="small">203.0.113.80</text></g>
+                    </svg>
+                    <svg viewBox="0 0 500 660" role="img" :aria-label="`Netzwerkbeispiel: ${current.title}`" class="network-map network-map--compact">
+                        <rect x="12" y="12" width="476" height="228" rx="16" class="vlan-zone" /><text x="25" y="40" class="zone-title">Unterricht · VLAN 10 · 192.168.10.0/24</text>
+                        <rect x="300" y="375" width="188" height="125" rx="16" class="vlan-zone server-zone" /><text x="315" y="400" class="zone-title">Server · VLAN 20</text>
+                        <path d="M85 130 L250 130 L415 130 M250 130 L250 325 L295 325 L295 450 L400 450 M250 325 L100 460 L100 585" class="network-links" />
+                        <g v-if="compactPath" :key="`compact-${scenarioKey}-${stepIndex}-${configuration}`">
+                            <path :d="compactPath" class="active-path" />
+                            <circle r="9" class="moving-packet"><animateMotion v-if="!reducedMotion" :path="compactPath" dur="1.25s" fill="freeze" /><set v-else attributeName="opacity" to="0" /></circle>
+                        </g>
+                        <g :class="{ active: current.active === 'pc' }" class="device"><rect x="30" y="96" width="110" height="68" rx="10"/><text x="85" y="124">PC</text><text x="85" y="149" class="small">{{ current.configured ? '.10.20' : 'keine IP' }}</text></g>
+                        <g :class="{ active: current.active === 'switch' }" class="device"><rect x="195" y="96" width="110" height="68" rx="10"/><text x="250" y="124">Switch</text><text x="250" y="149" class="small">VLAN 10</text></g>
+                        <g :class="{ active: current.active === 'printer' || (current.id === 'local-frame' && scenarioKey === 'local') }" class="device"><rect x="359" y="96" width="112" height="68" rx="10"/><text x="415" y="124">Drucker</text><text x="415" y="149" class="small">.10.30</text></g>
+                        <g :class="{ active: current.active === 'router' }" class="device router"><rect x="150" y="290" width="200" height="70" rx="12"/><text x="250" y="318">Router</text><text x="250" y="344" class="small">DHCP · DNS · Firewall</text></g>
+                        <text x="265" y="255" class="interface-label">LAN: .10.1</text><text x="205" y="400" class="interface-label">LAN: .20.1</text>
+                        <g :class="{ active: current.active === 'server' }" class="device"><rect x="340" y="418" width="120" height="68" rx="10"/><text x="400" y="446">Server</text><text x="400" y="471" class="small">.20.30/24</text></g>
+                        <g class="device provider"><rect x="22" y="425" width="156" height="70" rx="26"/><text x="100" y="453">Provider</text><text x="100" y="478" class="small">weitere Router</text></g>
+                        <g :class="{ active: current.active === 'web' }" class="device"><rect x="20" y="550" width="160" height="70" rx="10"/><text x="100" y="578">Webserver</text><text x="100" y="603" class="small">203.0.113.80</text></g>
                     </svg>
                     <p class="diagram-caption">Adressen mit „.10“ bzw. „.20“ beginnen hier mit 192.168. Der Serverzweig steht schematisch für den lokalen Abschnitt im VLAN 20. Die Verbindung zum Provider fasst weitere Router zusammen.</p>
                     <dl class="packet-ledger" aria-label="Adressen im aktuellen Schritt">
                         <div><dt>Quell-IP</dt><dd>{{ current.source || '—' }}</dd></div><div><dt>Ziel-IP</dt><dd>{{ current.destination || '—' }}</dd></div>
                         <div><dt>Quell-MAC auf diesem Abschnitt</dt><dd>{{ current.sourceMac || '—' }}</dd></div><div><dt>Ziel-MAC auf diesem Abschnitt</dt><dd>{{ current.nextMac || '—' }}</dd></div>
                     </dl>
-                    <p v-if="!current.source" class="diagram-caption">In diesem Schritt stehen Konfiguration, Entscheidung oder Nachbarauflösung im Mittelpunkt; die Striche sind keine erfundenen IP-Adressen.</p>
                 </div>
                 <section class="step-explanation" aria-live="polite" aria-atomic="true" :class="{ failure: current.blocked, finished: current.complete }">
                     <div class="step-progress">
@@ -53,11 +69,14 @@
                         <progress :value="stepIndex + 1" :max="steps.length" aria-label="Fortschritt im Ablauf">{{ stepIndex + 1 }} / {{ steps.length }}</progress>
                     </div>
                     <h3>{{ current.title }}</h3><p>{{ current.body }}</p>
+                    <div v-if="currentDefinitions.length" class="term-explanations" aria-label="Fachbegriffe kurz erklärt">
+                        <p v-for="term in currentDefinitions" :key="term.name"><strong>{{ term.name }}:</strong> {{ term.description }}</p>
+                    </div>
                     <div class="reason"><strong>Warum gerade jetzt?</strong><p>{{ current.why }}</p></div>
                     <div class="concepts" aria-label="Jetzt benötigte Begriffe"><span v-for="concept in current.concepts" :key="concept">{{ concept }}</span></div>
                     <div v-if="current.compare" class="net-comparison"><code>192.168.10.20 UND /24 = 192.168.10.0</code><code>{{ current.compare }} UND /24 = {{ ipv4Network(current.compare, 24).network }}</code><strong>{{ ipv4Network(current.compare, 24).network === '192.168.10.0' ? 'Gleiches Subnetz → lokal zustellen' : 'Anderes Subnetz → Routingtabelle prüfen' }}</strong></div>
                     <table v-if="current.routeTarget" class="route-table"><caption>Routingtabelle des Beispielrouters</caption><thead><tr><th>Zielpräfix</th><th>Weg</th></tr></thead><tbody><tr v-for="route in routerExampleRoutes" :key="route.network" :class="{ chosen: matchingRoute(current.routeTarget, routerExampleRoutes) === route }"><td><code>{{ route.network }}/{{ route.prefix }}</code></td><td>{{ route.via }}</td></tr></tbody></table>
-                    <div v-if="current.nat" class="nat-record"><strong>Gespeicherte NAT-/Portzuordnung</strong><code>192.168.10.20:53000 ↔ 198.51.100.7:62001</code><small>Ziel der Verbindung: 203.0.113.80:443</small></div>
+                    <div v-if="current.nat" class="nat-record"><strong>Gespeicherte NAT-/Portzuordnung</strong><code><span>192.168.10.20:53000</span> <span>↔</span> <span>198.51.100.7:62001</span></code><small>Ziel der Verbindung: 203.0.113.80:443</small></div>
                 </section>
             </div>
             <div class="playback-controls" aria-label="Animation steuern">
@@ -101,7 +120,7 @@
 
         <section v-else class="chapter">
             <header class="section-heading"><div><p class="eyebrow">Drei unterschiedliche Aufgaben</p><h2>NAT, VLAN und Firewall</h2></div><p>Adressübersetzung, Netztrennung und Zugriffsregeln wirken zusammen, ersetzen sich aber nicht.</p></header>
-            <div class="knowledge-grid"><section><h3>NAT mit Portübersetzung</h3><p>Beim Internetbeispiel teilt der Router seine öffentliche Beispieladresse zwischen mehreren internen Verbindungen auf. Unterschiedliche Portzuordnungen unterscheiden die Verbindungen.</p><div class="nat-record"><code>192.168.10.20:53000 ↔ 198.51.100.7:62001</code><small>Die Antwort an Port 62001 wird diesem PC und Port 53000 zugeordnet.</small></div><p>Der Router übersetzt beim Hinweg die Quelle und beim Rückweg das zugehörige Ziel. Im lokalen Druckerweg und zwischen den beiden Schulnetzen wird hier kein NAT benötigt.</p></section>
+            <div class="knowledge-grid"><section><h3>NAT mit Portübersetzung</h3><p>Beim Internetbeispiel teilt der Router seine öffentliche Beispieladresse zwischen mehreren internen Verbindungen auf. Unterschiedliche Portzuordnungen unterscheiden die Verbindungen.</p><div class="nat-record"><code><span>192.168.10.20:53000</span> <span>↔</span> <span>198.51.100.7:62001</span></code><small>Die Antwort an Port 62001 wird diesem PC und Port 53000 zugeordnet.</small></div><p>Der Router übersetzt beim Hinweg die Quelle und beim Rückweg das zugehörige Ziel. Im lokalen Druckerweg und zwischen den beiden Schulnetzen wird hier kein NAT benötigt.</p></section>
             <section><h3>VLANs trennen lokale Bereiche</h3><p>Ein geeigneter verwaltbarer Switch kann Anschlüsse für Unterricht, Verwaltung und Gäste logisch trennen. Verbindungen zwischen Switches können VLAN-Informationen über konfigurierte Trunks mitführen.</p><p>VLANs können die Verkabelung teilen und trotzdem getrennte Broadcastbereiche bilden. Im Beispiel gehören VLAN 10 und VLAN 20 zu zwei verschiedenen /24-Subnetzen.</p><p>Ein VLAN ist eine Trennung auf der lokalen Netzebene; das Subnetz beschreibt den IP-Adressbereich. Für die Verbindung zwischen den gezeigten VLANs braucht es Routing.</p></section></div>
             <p class="warning-note"><strong>Firewall:</strong> Sie legt erlaubte Verbindungen fest. NAT und VLANs allein bieten keinen vollständigen Schutz. Passende Regeln, Zugriffsrechte, Updates und sichere Endgeräte bleiben erforderlich.</p>
             <button type="button" class="primary action" @click="scenarioKey = 'subnet'; blocked = true; openChapter('journey'); restart()">Eine blockierte Verbindung im Ablauf ansehen</button>
@@ -113,7 +132,7 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ipv4Network, matchingRoute, networkScenarios, packetJourney, routerExampleRoutes } from '@/helpers/networkAddressing'
+import { ipv4Network, matchingRoute, networkPaths, networkScenarios, packetJourney, routerExampleRoutes } from '@/helpers/networkAddressing'
 
 const chapters = [{ key: 'journey', title: 'Der gesamte Ablauf' }, { key: 'mask', title: 'Netzmaske & Subnetze' }, { key: 'addresses', title: 'IPv4 & IPv6' }, { key: 'routing', title: 'Routing' }, { key: 'dhcp', title: 'DHCP' }, { key: 'separation', title: 'NAT & VLAN' }]
 const dhcpSteps = [{ title: 'Discover', text: 'Der Client sucht im lokalen Netz nach einem DHCP-Server.' }, { title: 'Offer', text: 'Ein Server bietet Adresse und Einstellungen an.' }, { title: 'Request', text: 'Der Client fordert das ausgewählte Angebot an.' }, { title: 'ACK', text: 'Der Server bestätigt die Zuweisung und ihre Lease.' }]
@@ -130,6 +149,28 @@ const routeTarget = ref('192.168.20.30')
 const reducedMotion = ref(false)
 const steps = computed(() => packetJourney(scenarioKey.value, configuration.value, blocked.value && scenarioKey.value !== 'local'))
 const current = computed(() => steps.value[Math.min(stepIndex.value, steps.value.length - 1)])
+const termDefinitions = [
+    { name: 'DHCP', description: 'Dynamic Host Configuration Protocol: Gibt einem Gerät automatisch eine IP-Adresse und weitere Netzwerkeinstellungen.' },
+    { name: 'DNS', description: 'Domain Name System: Findet zu einem Namen wie www.beispiel.test die passende IP-Adresse.' },
+    { name: 'VLAN', description: 'Virtual Local Area Network: Ein logisch abgegrenztes lokales Netzwerk, auch wenn Geräte denselben Switch nutzen.' },
+    { name: 'Broadcast', description: 'Eine Nachricht an alle Geräte im selben lokalen Netzwerk. Der Switch leitet sie an die anderen Anschlüsse dieses VLANs weiter; ein Router leitet sie normalerweise nicht in andere Netze.' },
+    { name: 'Cache', description: 'Ein Zwischenspeicher für bereits bekannte Informationen. Ein Cachetreffer bedeutet: Die gesuchte Information steht schon dort und muss nicht erneut gesucht werden.' },
+]
+const currentDefinitions = computed(() => {
+    const text = [current.value.title, current.value.body, current.value.why, ...current.value.concepts].join(' ')
+    return termDefinitions.filter(term => new RegExp(`\\b${term.name}`, 'i').test(text))
+})
+const compactPaths = {
+    [networkPaths.toRouter]: 'M85 130 L250 130 L250 325',
+    [networkPaths.fromRouter]: 'M250 325 L250 130 L85 130',
+    [networkPaths.toPrinter]: 'M85 130 L250 130 L415 130',
+    [networkPaths.fromPrinter]: 'M415 130 L250 130 L85 130',
+    [networkPaths.toServer]: 'M250 325 L295 325 L295 450 L400 450',
+    [networkPaths.fromServer]: 'M400 450 L295 450 L295 325 L250 325',
+    [networkPaths.toWeb]: 'M250 325 L100 460 L100 585',
+    [networkPaths.fromWeb]: 'M100 585 L100 460 L250 325',
+}
+const compactPath = computed(() => compactPaths[current.value.path] || null)
 const ownNetwork = computed(() => ipv4Network('192.168.10.20', prefix.value))
 const targetNetwork = computed(() => ipv4Network(labTarget.value, prefix.value))
 const sameSubnet = computed(() => ownNetwork.value.network === targetNetwork.value.network)
@@ -180,9 +221,26 @@ button, select, input { font: inherit; }button { cursor: pointer; }button:focus-
 .device-config { display: grid; grid-template-columns: 1fr 1.5fr 1fr 1fr; gap: 8px; margin-bottom: 14px; }.device-config > div { min-width: 0; padding: 9px 12px; border: 1px solid #dce6ef; background: #f5f8fb; border-radius: 8px; }.device-config span { display: block; color: #62768a; font-size: .72rem; }.device-config code { color: #234b71; font-size: .8rem; overflow-wrap: anywhere; }.device-config .relevant { background: #e8f6f2; border-color: #3c917b; }
 .journey-workbench { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 18px; align-items: stretch; }.network-scene { min-width: 0; padding: 13px; border: 1px solid #d9e7f1; border-radius: 12px; background: #f7fafc; }.network-map { display: block; width: 100%; height: auto; }.vlan-zone { fill: #e9f3fb; stroke: #c0d6e8; stroke-dasharray: 6 4; }.server-zone { fill: #eaf5f0; stroke: #b8d8c7; }.zone-title { fill: #4c6e89; font: 600 14px sans-serif; }.network-links { fill: none; stroke: #afc4d6; stroke-width: 3; }.device rect { fill: #fff; stroke: #a6bfd4; stroke-width: 2; }.device text { text-anchor: middle; font: 650 19px sans-serif; fill: #254e72; }.device text.small { font-size: 13px; font-weight: 400; }.device.active rect { fill: #d6edf6; stroke: #2d7aa5; stroke-width: 3; }.router rect { fill: #e6f2ec; stroke: #8cbba7; }.device.router.active rect { fill: #cceadd; stroke: #287a60; }.interface-label { font: 13px sans-serif; fill: #56738a; }.provider rect { fill: #f1edf9; stroke: #bbaccd; }.active-path { fill: none; stroke: #258eaa; stroke-width: 5; stroke-linecap: round; }.moving-packet { fill: #e4a344; stroke: #fff; stroke-width: 3; }.diagram-caption { margin: 5px 0 12px; font-size: .73rem; line-height: 1.45; color: #677d90; }
 .packet-ledger { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 12px 0 8px; }.packet-ledger > div { padding: 8px 10px; background: white; border-left: 3px solid #91b9d8; border-radius: 5px; }.packet-ledger dt { font-size: .7rem; color: #62768a; }.packet-ledger dd { margin: 3px 0 0; color: #244d72; font: 600 .8rem/1.5 monospace; overflow-wrap: anywhere; }
+.network-scene { container-type: inline-size; }
+.journey-workbench { grid-template-columns: 1fr; }
+.network-map--wide { max-width: 1050px; margin-inline: auto; }
+.network-map--compact { display: none; }
+.device text { font-size: 22px; }
+.device text.small, .interface-label, .zone-title { font-size: 17px; }
+.term-explanations { display: grid; gap: 6px; margin-top: 14px; padding: 12px 14px; border-radius: 8px; background: #fff; }
+.term-explanations p { margin: 0; color: #31536f; font-size: .85rem; }
+.term-explanations strong { color: #1c4e7b; }
+.step-explanation .nat-record, .knowledge-grid .nat-record { font-size: .95rem; }
+.nat-record code { display: flex; flex-wrap: wrap; gap: 0 .5em; font-size: 1rem; }
+.nat-record code span { white-space: nowrap; }
+.nat-record small { font-size: .95rem; line-height: 1.5; }
+@container (max-width: 740px) {
+    .network-map--wide { display: none; }
+    .network-map--compact { display: block; }
+}
 .step-explanation { min-width: 0; padding: 20px; border: 1px solid #d5e3ef; border-radius: 12px; background: #f0f6fc; }.step-explanation h3 { margin: 0 0 10px; color: #1c4e7b; font-size: 1.3rem; line-height: 1.3; }.step-explanation > p:not(.eyebrow) { margin: 0; font-size: .94rem; }.reason { padding-top: 14px; margin-top: 14px; border-top: 1px solid #cfdeeb; }.reason strong { color: #2d627f; font-size: .8rem; }.reason p { margin: 5px 0 0; font-size: .86rem; }.concepts { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 14px; }.concepts span { padding: 3px 8px; border-radius: 5px; background: #d9eaf7; color: #285a82; font-size: .72rem; font-weight: 700; }.step-explanation.failure { background: #fff1ed; border-color: #d49a86; }.step-explanation.finished { background: #edf7f1; border-color: #91c1a4; }.net-comparison { display: grid; gap: 5px; margin-top: 15px; padding: 10px; background: #fff; border-radius: 7px; font-size: .76rem; overflow-wrap: anywhere; }.nat-record { display: grid; gap: 6px; margin-top: 15px; padding: 12px; border: 1px solid #dfc99f; border-radius: 8px; background: #fff7e9; font-size: .78rem; }.nat-record code, .nat-record small { overflow-wrap: anywhere; }.playback-controls .primary, .primary.action { background: #296c9b; border-color: #296c9b; color: #fff; }.step-timeline { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px 10px; list-style: none; margin: 16px 0 0; padding: 0; }.step-timeline button { display: flex; align-items: start; gap: 7px; width: 100%; padding: 8px; border: 1px solid transparent; background: transparent; color: #5a7288; text-align: left; font-size: .73rem; border-radius: 6px; }.step-timeline button[aria-current='step'] { color: #174b76; border-color: #8cb6d4; background: #e9f3fa; font-weight: 700; }.step-timeline span { display: grid; place-items: center; min-width: 20px; height: 20px; border-radius: 50%; background: #e1eaf2; font-size: .65rem; }.footnote, .source-note { color: #687d90; font-size: .78rem; }.footnote { margin: 17px 0 0; }
 .mask-value { color: #226b5c; }.bit-lab { padding: 20px; background: #f0f6fa; border: 1px solid #d3e2ed; border-radius: 10px; overflow-x: auto; }.bit-row { display: flex; align-items: center; gap: 12px; min-width: 730px; margin-bottom: 8px; }.bit-row > span { width: 95px; flex: none; color: #46637b; font-size: .8rem; }.bit-row code { display: flex; }.bit-row b { display: block; min-width: 17px; text-align: center; color: #136c5c; background: #d7eee4; font-size: .86rem; }.bit-row b.host { background: #e3e5f6; color: #655397; }.bit-row b.octet-start { margin-left: 8px; }.bit-key { display: flex; gap: 30px; margin: 14px 0 0 105px; font-size: .8rem; color: #30786b; }.bit-key span + span { color: #655397; }.lab-results, .knowledge-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 20px; }.lab-results section, .knowledge-grid section { min-width: 0; padding: 20px; border: 1px solid #d9e5ee; border-radius: 10px; background: #f8fafc; }h3 { margin: 0 0 10px; color: #234f77; font-size: 1.15rem; }h4 { margin: 18px 0 7px; color: #365f7c; }.lab-results p, .knowledge-grid p { font-size: .92rem; margin: 12px 0 0; }.lab-decision { color: #1e725e; font-weight: 700; }.warning-note { margin: 20px 0 0; padding: 14px 18px; border-left: 4px solid #c2954d; background: #fff8eb; color: #685334; font-size: .9rem; }.subnet-demo { margin-top: 24px; }.subnet-demo p { color: #587087; font-size: .88rem; }.subnet-blocks { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }.subnet-blocks > div { display: grid; gap: 6px; padding: 13px; border: 1px solid #b8d3c7; background: #eff7f2; border-radius: 9px; font-size: .78rem; }.subnet-blocks .contains { border: 2px solid #2f8a70; }.subnet-blocks small { color: #59776d; }.big-address { display: block; color: #215981; font-size: 1.2rem; overflow-wrap: anywhere; }.expanded-address { font-size: .85rem; overflow-wrap: anywhere; }table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: .83rem; }th, td { padding: 10px; border-bottom: 1px solid #d3e0e9; text-align: left; }th { color: #315876; background: #e8f1f8; }caption { text-align: left; color: #677e91; font-size: .75rem; margin: 5px 0; }.route-table .chosen { background: #dcf0e7; font-weight: 650; }.route-table td code { white-space: nowrap; }.step-explanation .route-table { font-size: .7rem; }.step-explanation .route-table th, .step-explanation .route-table td { padding: 6px; }.dhcp-sequence { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; padding-left: 0; list-style: none; counter-reset: dhcp; }.dhcp-sequence li { counter-increment: dhcp; padding: 18px; border-top: 3px solid #3980ac; background: #eef5fb; border-radius: 6px; }.dhcp-sequence strong { display: block; color: #245c84; }.dhcp-sequence strong::before { content: counter(dhcp) '. '; }.dhcp-sequence span { display: block; margin-top: 8px; font-size: .9rem; }.action { margin-top: 20px; }.source-note { margin-top: 18px; }.source-note summary { cursor: pointer; }.source-note a { color: #2b6797; }
-@media (max-width: 1000px) { .journey-workbench { grid-template-columns: 1fr; }.network-map { max-height: 350px; }.step-timeline { grid-template-columns: repeat(2, minmax(0, 1fr)); }.lesson-heading > span { display: none; }.device-config { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 1000px) { .journey-workbench { grid-template-columns: 1fr; }.step-timeline { grid-template-columns: repeat(2, minmax(0, 1fr)); }.lesson-heading > span { display: none; }.device-config { grid-template-columns: 1fr 1fr; } }
 @media (max-width: 650px) { .chapter { padding: 16px 12px; }.section-heading { flex-direction: column; align-items: start; gap: 8px; }.scenario-choices { grid-template-columns: 1fr; }.scenario-choices button { display: grid; grid-template-columns: 1fr auto; }.scenario-choices small { grid-column: 1 / -1; }.knowledge-grid, .lab-results { grid-template-columns: 1fr; }.step-timeline { grid-template-columns: 1fr; }.subnet-blocks, .dhcp-sequence { grid-template-columns: 1fr 1fr; }.network-scene { padding: 5px; }.device-config code { font-size: .72rem; }.packet-ledger dd { font-size: .72rem; }.step-explanation { padding: 16px; }.chapter-tabs button { flex: 1 1 30%; font-size: .75rem; padding: 6px; }.route-table { font-size: .73rem; }.subnet-blocks code { font-size: .7rem; } }
 @media (prefers-reduced-motion: reduce) { .moving-packet { display: none; } }
 </style>

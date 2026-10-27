@@ -14,6 +14,28 @@ async function render(query = '') {
 function button(wrapper, text: string) { return wrapper.findAll('button').find(item => item.text().trim() === text)! }
 afterEach(() => { wrappers.splice(0).forEach(wrapper => wrapper.unmount()); vi.useRealTimers() })
 
+it('explains DHCP, DNS and VLAN when they appear in the current step', async () => {
+    const { wrapper } = await render('?preview=1&ipScenario=internet')
+
+    expect(wrapper.get('[aria-label="Fachbegriffe kurz erklärt"]').text()).toContain('Dynamic Host Configuration Protocol')
+    expect(wrapper.get('[aria-label="Fachbegriffe kurz erklärt"]').text()).toContain('Domain Name System')
+    expect(wrapper.get('[aria-label="Fachbegriffe kurz erklärt"]').text()).toContain('Virtual Local Area Network')
+
+    await wrapper.get('[aria-label="Nächster Ablaufschritt"]').trigger('click')
+    expect(wrapper.get('[aria-label="Fachbegriffe kurz erklärt"]').text()).toContain('Dynamic Host Configuration Protocol')
+    expect(wrapper.get('[aria-label="Fachbegriffe kurz erklärt"]').text()).toContain('Eine Nachricht an alle Geräte im selben lokalen Netzwerk')
+    expect(wrapper.get('[aria-label="Fachbegriffe kurz erklärt"]').text()).not.toContain('Domain Name System')
+    await wrapper.get('[aria-label="Nächster Ablaufschritt"]').trigger('click')
+    expect(wrapper.get('.step-explanation').text()).toContain('Anhand einer Kennung erkennt der PC')
+    expect(wrapper.get('[aria-label="Fachbegriffe kurz erklärt"]').text()).toContain('Eine Nachricht an alle Geräte im selben lokalen Netzwerk')
+
+    await wrapper.findAll('.step-timeline button').find(item => item.text().includes('Gateway-MAC ist bereits im Cache'))!.trigger('click')
+    expect(wrapper.get('[aria-label="Fachbegriffe kurz erklärt"]').text()).toContain('Ein Zwischenspeicher für bereits bekannte Informationen')
+
+    await wrapper.findAll('.step-timeline button').find(item => item.text().includes('NAT mit Portübersetzung'))!.trigger('click')
+    expect(wrapper.find('[aria-label="Fachbegriffe kurz erklärt"]').exists()).toBe(false)
+})
+
 it('restores the selected stage and preserves preview parameters while stepping through DHCP', async () => {
     const { wrapper, router } = await render('?preview=1&ipStep=2&other=kept#example')
     expect(wrapper.get('.step-explanation h3').text()).toContain('DHCP Offer')
@@ -34,6 +56,25 @@ it('restores the selected stage and preserves preview parameters while stepping 
     expect(router.currentRoute.value.hash).toBe('#example')
     await wrapper.get('[aria-label="Vorheriger Ablaufschritt"]').trigger('click')
     expect(wrapper.get('.pc-address').text()).toBe('keine IP')
+})
+
+it('shows the correct packet direction in the compact diagram for the outward and return paths', async () => {
+    const { wrapper } = await render('?preview=1&ipScenario=internet&ipStep=1')
+
+    expect(wrapper.get('.network-map--compact .active-path').attributes('d')).toBe('M85 130 L250 130 L250 325')
+    await wrapper.get('[aria-label="Nächster Ablaufschritt"]').trigger('click')
+    expect(wrapper.get('.network-map--compact .active-path').attributes('d')).toBe('M250 325 L250 130 L85 130')
+
+    await wrapper.findAll('.step-timeline button').find(item => item.text().includes('Weitere Router bringen die Anfrage'))!.trigger('click')
+    expect(wrapper.get('.network-map--compact .active-path').attributes('d')).toBe('M250 325 L100 460 L100 585')
+    await wrapper.get('[aria-label="Nächster Ablaufschritt"]').trigger('click')
+    expect(wrapper.get('.network-map--compact .active-path').attributes('d')).toBe('M100 585 L100 460 L250 325')
+
+    await wrapper.findAll('.scenario-choices button')[1].trigger('click')
+    await wrapper.findAll('.step-timeline button').find(item => item.text().includes('Ein neuer Rahmen erreicht'))!.trigger('click')
+    expect(wrapper.get('.network-map--compact .active-path').attributes('d')).toBe('M250 325 L295 325 L295 450 L400 450')
+    await wrapper.get('[aria-label="Nächster Ablaufschritt"]').trigger('click')
+    expect(wrapper.get('.network-map--compact .active-path').attributes('d')).toBe('M400 450 L295 450 L295 325 L250 325')
 })
 
 it('demonstrates how prefixes alter the comparison without joining separate VLANs', async () => {
