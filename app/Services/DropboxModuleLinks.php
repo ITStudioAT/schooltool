@@ -19,6 +19,8 @@ use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 
 class DropboxModuleLinks
 {
+    private const MAX_HANDSHAKE_FILES = 200;
+
     public function __construct(private DropboxWorkImport $dropbox, private ModuleHandshake $handshake) {}
 
     public function installed(): bool
@@ -88,6 +90,7 @@ class DropboxModuleLinks
 
         return ($matches === [] ? ['status' => 'missing', 'folder' => null]
             : ['status' => 'found', 'folder' => $matches[0]['folder'],
+                'assignment_status' => $matches[0]['assignment_status'] ?? 'unknown',
                 'email_preparation' => $matches[0]['email_preparation'] ?? ['status' => 'unknown'],
                 'email_dispatch' => $matches[0]['email_dispatch'] ?? ['status' => 'unknown']]) + $checked;
     }
@@ -158,6 +161,7 @@ class DropboxModuleLinks
                 $match = ['date' => $scheduled, 'folder' => ['id' => $confirmed['id'], 'name' => $confirmed['name'],
                     'path' => $confirmed['path_display'] ?? $confirmed['path_lower']]];
                 if ($includeEmailStatus) {
+                    $match['assignment_status'] = $this->assignmentStatus($connection, $work, $children, $subfolders['Angaben'], $scheduled);
                     $match['email_preparation'] = $this->emailPreparation($connection, $work, $confirmed, $children, $scheduled);
                     $match['email_dispatch'] = $this->emailDispatch($connection, $work, $children);
                 }
@@ -310,6 +314,29 @@ class DropboxModuleLinks
         }
 
         return $results;
+    }
+
+    /** @param list<array<string, mixed>> $children */
+    private function assignmentStatus(DropboxConnection $connection, TeachingCourseWork $work, array $children, string $documentsFolderId, string $date): string
+    {
+        try {
+            $package = $this->exerciseJson($connection, $children, 'Schooltool-Vorbereitung.json');
+            if ($package === null) {
+                return 'missing';
+            }
+            abort_unless(($package['kind'] ?? null) === 'schooltool.preparation' && ($package['schema_version'] ?? null) === 2
+                && ($package['work_id'] ?? null) === $work->id && ($package['course_id'] ?? null) === $work->teaching_course_id
+                && ($package['exercise']['scheduled_date'] ?? null) === $date, 409, 'Der Aufgabenbeleg gehört nicht zu dieser Arbeit.');
+            app(TeachingWorkDispatchImport::class)->parse(json_encode($package, JSON_THROW_ON_ERROR));
+            $files = $this->exerciseChildren($connection, $documentsFolderId);
+            $hash = $this->exerciseFilesBatch($connection, ['assignment' => ['entries' => $files,
+                'name' => $package['assignment']['filename'], 'max_size' => 20 * 1024 * 1024]], hashesOnly: true)['assignment'];
+            abort_unless(is_string($hash) && hash_equals($package['assignment']['sha256'], $hash), 409, 'Die Aufgaben-PDF stimmt nicht mit dem Aufgabenbeleg überein.');
+
+            return 'ready';
+        } catch (ValidationException|HttpExceptionInterface|JsonException $exception) {
+            return 'unknown';
+        }
     }
 
     /**
@@ -669,10 +696,25 @@ class DropboxModuleLinks
     public function locate(DropboxConnection $connection, string $contents): array
     {
         $local = $this->handshake->parse($contents);
+        if ($local['schema_version'] === 2) {
+            $folder = $this->dropbox->metadata($connection, $local['dropbox_folder_id']);
+            abort_unless($folder['id'] === $local['dropbox_folder_id'], 409, 'Der angegebene Dropbox-Ordner konnte nicht bestätigt werden.');
+            $file = $this->dropbox->readModuleApi($connection, 'files/get_metadata', ['path' => $folder['path_lower'].'/handshake.json'])->json();
+            abort_unless(is_string($file['id'] ?? null), 422, 'Die Online-Handshake-Datei konnte nicht bestätigt werden.');
+            $candidate = $this->inspect($connection, $file['id']);
+            abort_unless($candidate['schema_version'] === 2 && $candidate['folder_id'] === $local['dropbox_folder_id']
+                && strcasecmp($candidate['module_id'], $local['module_id']) === 0,
+                409, 'Die Kennung im Dropbox-Ordner stimmt nicht mit der ausgewählten Datei überein.');
+
+            return ['module_id' => $candidate['module_id'], 'candidate' => $candidate];
+        }
         $data = $this->dropbox->readModuleApi($connection, 'files/search_v2', ['query' => 'handshake.json',
             'options' => ['filename_only' => true, 'max_results' => 100, 'file_status' => 'active', 'file_extensions' => ['json']]])->json();
         $entries = [];
         for ($page = 0; ; $page++) {
+            if (! is_array($data['matches'] ?? null) || ! is_bool($data['has_more'] ?? null)) {
+                $this->fail('Die Dropbox-Suche ist noch unvollständig. Bitte erneut versuchen; es wurde nichts verknüpft.');
+            }
             foreach ($data['matches'] ?? [] as $match) {
                 $entry = $match['metadata']['metadata'] ?? [];
                 if (($entry['.tag'] ?? null) === 'file' && strtolower($entry['name'] ?? '') === 'handshake.json'
@@ -681,16 +723,16 @@ class DropboxModuleLinks
                     $entries[$entry['id']] = $entry;
                 }
             }
-            if (! ($data['has_more'] ?? false)) {
+            if (count($entries) > self::MAX_HANDSHAKE_FILES) {
+                $this->fail('Zu viele Handshake-Dateien für eine begrenzte sichere Suche. Es wurde nichts verknüpft.');
+            }
+            if (! $data['has_more']) {
                 break;
             }
-            if ($page >= 2 || count($entries) > 40 || ! is_string($data['cursor'] ?? null)) {
+            if ($page >= 2 || ! is_string($data['cursor'] ?? null) || $data['cursor'] === '') {
                 $this->fail('Die Dropbox-Suche ist noch unvollständig. Bitte erneut versuchen; es wurde nichts verknüpft.');
             }
             $data = $this->dropbox->readModuleApi($connection, 'files/search/continue_v2', ['cursor' => $data['cursor']])->json();
-        }
-        if (count($entries) > 40) {
-            $this->fail('Zu viele Handshake-Dateien für eine begrenzte sichere Suche. Es wurde nichts verknüpft.');
         }
         $roots = [];
         foreach ($entries as $entry) {
@@ -795,7 +837,9 @@ class DropboxModuleLinks
         }
         abort_unless(($pending['user_id'] ?? null) === $connection->user_id && ($pending['connection_id'] ?? null) === $connection->id
             && ($pending['account_id'] ?? null) === $connection->account_id && ($pending['work_id'] ?? null) === $work->id
-            && ($pending['expires'] ?? 0) >= now()->timestamp && strcasecmp($pending['candidate']['module_id'] ?? '', $local['module_id']) === 0,
+            && ($pending['expires'] ?? 0) >= now()->timestamp && strcasecmp($pending['candidate']['module_id'] ?? '', $local['module_id']) === 0
+            && ($pending['candidate']['schema_version'] ?? null) === $local['schema_version']
+            && ($local['schema_version'] !== 2 || ($pending['candidate']['folder_id'] ?? null) === $local['dropbox_folder_id']),
             409, 'Konto, Arbeit oder Bestätigung hat sich geändert. Bitte erneut auswählen.');
         $candidate = $this->inspect($connection, $pending['candidate']['handshake_file_id']);
         abort_unless($candidate === $pending['candidate'], 409, 'Die Online-Datei oder ihr Ordner hat sich geändert. Bitte erneut auswählen.');
@@ -836,6 +880,8 @@ class DropboxModuleLinks
         $parent = substr($path, 0, strrpos($path, '/'));
         abort_if($parent === '', 422, 'Die Handshake-Datei muss in einem Modulordner liegen.');
         $folder = $this->dropbox->metadata($connection, $parent);
+        abort_unless(! isset($parsed['dropbox_folder_id']) || $parsed['dropbox_folder_id'] === $folder['id'],
+            409, 'Die Handshake-Datei verweist auf einen anderen Dropbox-Ordner.');
         $listing = $this->dropbox->readModuleApi($connection, 'files/list_folder', ['path' => $folder['id'], 'recursive' => false, 'limit' => 200])->json();
         $handshakes = [];
         for ($page = 0; ; $page++) {

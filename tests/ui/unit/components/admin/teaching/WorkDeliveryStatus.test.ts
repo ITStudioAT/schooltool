@@ -9,6 +9,21 @@ import { workManualCompletionFields } from '@/helpers/workProgress'
 
 afterEach(() => { clearWorkDropboxStates(); vi.unstubAllGlobals() })
 
+it('disables all workflow controls while the folder is not linked', async () => {
+    const wrapper = mount(WorkDeliveryStatus, { props: { work: { id: 64, title: 'Übung', status: { task_dispatch_completed: true } }, disabled: true }, global: {
+        plugins: [createTestingPinia({ createSpy: vi.fn }), createVuetify({ components: { VBtn } })],
+        components: { 'v-btn': VBtn }, stubs: { 'v-btn': false, VBtn: false,
+            'v-dialog': { props: ['modelValue'], template: '<section v-if="modelValue" role="dialog"><slot /></section>' } },
+    } })
+    try {
+        expect(wrapper.findAll('[data-workflow-stage]').every(button => (button.element as HTMLButtonElement).disabled)).toBe(true)
+        await wrapper.get('[data-workflow-stage="preparation"]').trigger('click')
+        expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+        await wrapper.setProps({ disabled: false })
+        expect((wrapper.get('[data-workflow-stage="preparation"]').element as HTMLButtonElement).disabled).toBe(false)
+    } finally { wrapper.unmount() }
+})
+
 it.each(['ready', 'missing', 'foreign'])('keeps one preparation control with inspection and manual completion: %s', async status => {
     const get = vi.fn()
     const put = vi.fn()
@@ -48,7 +63,7 @@ it.each(['ready', 'missing', 'foreign'])('keeps one preparation control with ins
     } finally { wrapper.unmount() }
 })
 
-it('offers reversible manual completion for all six steps and keeps later markings removable after revocation', async () => {
+it('offers reversible manual completion for all six steps in order', async () => {
     let work = { id: 64, teaching_course_id: 16, title: 'Übung', groups: [{ student_ids: [1] }], status: {} }
     const put = vi.fn().mockImplementation(async (_url, payload) => {
         work = { ...work, status: { ...work.status, ...payload } }
@@ -61,6 +76,8 @@ it('offers reversible manual completion for all six steps and keeps later markin
             'v-dialog': { props: ['modelValue'], template: '<section v-if="modelValue" role="dialog"><slot /></section>' } },
     } })
     try {
+        expect(wrapper.get('[data-workflow-stage="preparation"]').element.disabled).toBe(false)
+        expect(wrapper.findAll('[data-workflow-stage]').slice(1).every(button => button.element.disabled)).toBe(true)
         for (const [key, field] of Object.entries(workManualCompletionFields)) {
             const stage = wrapper.get(`[data-workflow-stage="${key}"]`)
             expect(stage.element.disabled).toBe(false)
@@ -73,7 +90,10 @@ it('offers reversible manual completion for all six steps and keeps later markin
             expect(wrapper.get('[role="dialog"]').text()).toContain('manuell')
             await wrapper.findAll('button').find(button => button.text() === 'Schließen')!.trigger('click')
         }
-        for (const [key, field] of Object.entries(workManualCompletionFields)) {
+        await wrapper.setProps({ work: { ...work, status: { ...work.status, email_preparation_completed: false } } })
+        expect(wrapper.findAll('[data-workflow-stage]').slice(1).every(button => button.element.disabled)).toBe(true)
+        await wrapper.setProps({ work })
+        for (const [key, field] of Object.entries(workManualCompletionFields).reverse()) {
             await wrapper.get(`[data-workflow-stage="${key}"]`).trigger('click')
             await wrapper.findAll('button').find(button => button.text() === 'Markierung aufheben')!.trigger('click')
             await flushPromises()
@@ -86,8 +106,8 @@ it('offers reversible manual completion for all six steps and keeps later markin
 })
 
 it('saves a reversible manual dispatch completion and unlocks collection without claiming sent mail', async () => {
-    const work = { id: 64, teaching_course_id: 16, title: 'Übung', groups: [{ student_ids: [1] }], status: {} }
-    const saved = { ...work, status: { task_dispatch_completed: true } }
+    const work = { id: 64, teaching_course_id: 16, title: 'Übung', groups: [{ student_ids: [1] }], status: { email_preparation_completed: true } }
+    const saved = { ...work, status: { ...work.status, task_dispatch_completed: true } }
     const put = vi.fn().mockResolvedValueOnce({ data: { data: saved } })
         .mockResolvedValueOnce({ data: { data: work } })
     vi.stubGlobal('axios', { put })
@@ -119,7 +139,7 @@ it('saves a reversible manual dispatch completion and unlocks collection without
 
 it('keeps collection blocked and shows an error when manual completion cannot be saved', async () => {
     vi.stubGlobal('axios', { put: vi.fn().mockRejectedValue({ response: { data: { message: 'Speichern fehlgeschlagen.' } } }) })
-    const wrapper = mount(WorkDeliveryStatus, { props: { work: { id: 64, title: 'Übung', groups: [{ student_ids: [1] }] } }, global: {
+    const wrapper = mount(WorkDeliveryStatus, { props: { work: { id: 64, title: 'Übung', groups: [{ student_ids: [1] }], status: { email_preparation_completed: true } } }, global: {
         plugins: [createTestingPinia({ createSpy: vi.fn }), createVuetify({ components: { VBtn } })],
         components: { 'v-btn': VBtn }, stubs: { 'v-btn': false, VBtn: false,
             'v-dialog': { props: ['modelValue'], template: '<section v-if="modelValue"><slot /></section>' } },
@@ -135,7 +155,7 @@ it('keeps collection blocked and shows an error when manual completion cannot be
 })
 
 it('saves and revokes manual collection completion while preserving evidence counts and unlocking grading', async () => {
-    const work = { id: 64, teaching_course_id: 16, title: 'Übung', groups: [{ student_ids: [1] }], status: { task_dispatch_completed: true } }
+    const work = { id: 64, teaching_course_id: 16, title: 'Übung', groups: [{ student_ids: [1] }], status: { email_preparation_completed: true, task_dispatch_completed: true } }
     const saved = { ...work, status: { ...work.status, submission_collection_completed: true } }
     const put = vi.fn().mockResolvedValueOnce({ data: { data: saved } }).mockResolvedValueOnce({ data: { data: work } })
     vi.stubGlobal('axios', { put })
@@ -173,7 +193,7 @@ it('saves and revokes manual collection completion while preserving evidence cou
 
 it('keeps grading blocked when manual collection completion fails to save', async () => {
     vi.stubGlobal('axios', { put: vi.fn().mockRejectedValue({ response: { data: { message: 'Speichern fehlgeschlagen.' } } }) })
-    const wrapper = mount(WorkDeliveryStatus, { props: { work: { id: 64, title: 'Übung', groups: [{ student_ids: [1] }], status: { task_dispatch_completed: true } } }, global: {
+    const wrapper = mount(WorkDeliveryStatus, { props: { work: { id: 64, title: 'Übung', groups: [{ student_ids: [1] }], status: { email_preparation_completed: true, task_dispatch_completed: true } } }, global: {
         plugins: [createTestingPinia({ createSpy: vi.fn }), createVuetify({ components: { VBtn } })],
         components: { 'v-btn': VBtn }, stubs: { 'v-btn': false, VBtn: false,
             'v-dialog': { props: ['modelValue'], template: '<section v-if="modelValue" role="dialog"><slot /></section>' } },
@@ -190,6 +210,7 @@ it('keeps grading blocked when manual collection completion fails to save', asyn
 
 it('opens results transfer for the existing work rather than requesting a new folder link', async () => {
     const work = { id: 86, teaching_course_id: 16, title: 'E-Mails', groups: [{ student_ids: [492] }], status: {
+        email_preparation_completed: true, task_dispatch_completed: true, submission_collection_completed: true,
         assessment_json_imports: [{ student_id: 492, exercise_id: 'exercise', participant_id: 'user:492', record_checksum: 'a'.repeat(64),
             record: { participant_id: 'user:492', record_checksum: 'a'.repeat(64), submission_state: 'received', evaluation_state: 'complete', evaluation_completed_at: '2026-10-24T16:00:00Z' } }],
     } }
@@ -208,6 +229,7 @@ it('opens results transfer for the existing work rather than requesting a new fo
 
 it('offers grading in the evaluation dialog footer after simulator collection and disables it before collection', async () => {
     const work = { id: 86, teaching_course_id: 16, title: 'E-Mails', groups: [{ student_ids: [492] }],
+        status: { email_preparation_completed: true, task_dispatch_completed: true },
         simulation_collection: { origin: 'mailpit_simulation', simulation: true, run_id: 'simulator-run', work_id: 86, course_id: 16,
             student_ids: [492], collected_count: 1, non_submission_count: 0, processed_count: 1, complete: true,
             completed_at: '2026-10-24T15:35:00Z', last_collected_at: '2026-10-24T15:35:00Z' } }
@@ -230,7 +252,7 @@ it('offers grading in the evaluation dialog footer after simulator collection an
 
 it('shows the repeat collection completion in Vienna time without replacing it with the later storage time', async () => {
     const wrapper = mount(WorkDeliveryStatus, { props: { work: { id: 64, teaching_course_id: 16, title: 'E-Mails',
-        groups: [{ student_ids: [1] }], status: { dispatch_logs: [{ origin: 'dispatch_import', purpose: 'tasks', sha256: 'a'.repeat(64) }],
+        groups: [{ student_ids: [1] }], status: { email_preparation_completed: true, dispatch_logs: [{ origin: 'dispatch_import', purpose: 'tasks', sha256: 'a'.repeat(64) }],
             dispatch_notifications: [{ origin: 'dispatch_import', purpose: 'tasks', student_id: 1, sent_at: '2026-10-24T12:00:00Z', log_sha256: 'a'.repeat(64) }] },
         collection_run: { origin: 'dropbox_collection_run', work_id: 64, course_id: 16,
             sha256: 'e'.repeat(64), completed_at: '2026-10-24T13:46:16Z', stored_at: '2026-10-24T13:48:22Z' } } },
@@ -262,7 +284,7 @@ it('keeps later stages visible but disabled until earlier steps are complete', a
 it('enables collection only for confirmed task emails in the selected group', async () => {
     const work = { id: 64, teaching_course_id: 16, title: 'E-Mails', groups: [
         { date: '2026-10-16', student_ids: [1, 2] }, { date: '2026-10-17', student_ids: [3] },
-    ], status: { dispatch_logs: [{ origin: 'dispatch_import', purpose: 'tasks', sha256: 'a'.repeat(64) }],
+    ], status: { email_preparation_completed: true, dispatch_logs: [{ origin: 'dispatch_import', purpose: 'tasks', sha256: 'a'.repeat(64) }],
         dispatch_notifications: [{ origin: 'dispatch_import', purpose: 'tasks', student_id: 1, sent_at: '2026-10-14T12:00:00Z', log_sha256: 'a'.repeat(64) }] } }
     const wrapper = mount(WorkDeliveryStatus, { props: { work, date: '2026-10-16' }, global: {
         plugins: [createTestingPinia({ createSpy: vi.fn }), createVuetify({ components: { VBtn } })], components: { 'v-btn': VBtn },
@@ -276,6 +298,7 @@ it('enables collection only for confirmed task emails in the selected group', as
 
 it.each(['missing', 'sent', 'partial', 'unknown'])('shows the saved dispatch state and opens its details: %s', async status => {
     workDropboxStates.set('7:16:65', { exercise: { status: 'found', folder: { name: '2026-10-16_E-Mails' },
+        email_preparation: { status: 'ready' },
         email_dispatch: { status, confirmed_count: status === 'sent' ? 15 : 0, expected_count: 15, transport: 'mailpit', sent_at: '2026-10-23T22:23:34Z' } } })
     const wrapper = mount(WorkDeliveryStatus, { props: { work: { id: 65, teaching_course_id: 16, title: 'E-Mails', date_for_all_groups: '2026-10-16' } },
         global: { plugins: [createTestingPinia({ createSpy: vi.fn, initialState: { AdminAdminStore: { config: { user: { id: 7 } } } } }), createVuetify({ components: { VBtn } })],

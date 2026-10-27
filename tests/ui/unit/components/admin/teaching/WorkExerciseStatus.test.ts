@@ -7,7 +7,7 @@ import { useAdminStore } from '@/stores/admin/AdminStore'
 import { workDropboxStates } from '@/helpers/workDropbox'
 
 const work = { id: 65, teaching_course_id: 2 }
-const state = { userId: 7, workId: 65, courseId: 2, date: '2026-10-20', folder: { id: 'id:exercise', name: 'Bestätigter Ordner', path: '/Materialien/Prüfung' } }
+const state = { userId: 7, workId: 65, courseId: 2, date: '2026-10-20', assignmentStatus: 'ready', folder: { id: 'id:exercise', name: 'Bestätigter Ordner', path: '/Materialien/Prüfung' } }
 function render(status = 'checking', props = {}) {
     return mount(WorkExerciseStatus, { props: { work, date: state.date, state: { ...state, status }, ...props }, global: {
         plugins: [createTestingPinia({ createSpy: vi.fn, initialState: { AdminAdminStore: { config: { user: { id: 7 } } } } })],
@@ -19,6 +19,27 @@ function render(status = 'checking', props = {}) {
         },
     } })
 }
+
+it('blocks the exercise dialog while folder-dependent actions are disabled', async () => {
+    const wrapper = render('found', { disabled: true })
+    try {
+        expect(wrapper.get('[aria-disabled="true"]').attributes('role')).toBeUndefined()
+        await wrapper.get('[aria-disabled="true"]').trigger('click')
+        expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+        await wrapper.setProps({ disabled: false })
+        await wrapper.get('[role="button"]').trigger('click')
+        expect(wrapper.find('[role="dialog"]').exists()).toBe(true)
+    } finally { wrapper.unmount() }
+})
+
+it('does not claim an assignment exists when only its folder is confirmed', async () => {
+    const wrapper = render('found', { state: { ...state, status: 'found', assignmentStatus: 'missing' } })
+    try {
+        expect(wrapper.get('v-icon').attributes('color')).toBe('warning')
+        await wrapper.get('[role="button"]').trigger('click')
+        expect(wrapper.get('[role="dialog"]').text()).toContain('Aufgabenstellung ist noch nicht bestätigt')
+    } finally { wrapper.unmount() }
+})
 
 it('does not show a missing exercise warning for an existing imported work', () => {
     const wrapper = render('missing', { work: { ...work, status: { folder_imported_at: '2026-10-13T12:54:00Z' } } })

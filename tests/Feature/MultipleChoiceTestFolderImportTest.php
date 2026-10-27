@@ -107,7 +107,7 @@ function mcTestFolderImportContext(): object
         }
         if (in_array($request->url(), ['https://api.dropboxapi.com/2/files/search_v2', 'https://api.dropboxapi.com/2/files/search/continue_v2'], true)) {
             if (str_ends_with($request->url(), '/files/search_v2')) {
-                expect($request['query'])->toBe('handshake.json');
+                expect($request['query'])->toBe($context->searchQuery ?? 'handshake.json');
                 expect($request['options']['filename_only'])->toBeTrue();
             }
 
@@ -196,6 +196,39 @@ function mcTestFolderImportLocator(object $context): array
 
     return ['filename' => 'handshake.json', 'handshake' => $context->handshakeContents];
 }
+
+test('a markdown file resolves its test folder only when the online content matches', function (): void {
+    $context = mcTestFolderImportContext();
+    mcTestFolderImportLocator($context);
+    $context->searchQuery = 'Aufgabe.md';
+    $hash = hash('sha256', hash('sha256', 'Aufgabe', true));
+    $markdown = ['.tag' => 'file', 'id' => 'id:markdown', 'name' => 'Aufgabe.md',
+        'path_lower' => $context->folder['path_lower'].'/aufgabe.md', 'content_hash' => $hash];
+    $context->extraEntries[] = $markdown;
+    $context->searchCandidates = [$markdown];
+    $this->actingAs($context->teacher);
+
+    $this->postJson('/api/admin/multiple-choice/test-folder/resolve', ['filename' => 'Aufgabe.md', 'content_hash' => $hash])
+        ->assertOk()->assertJsonPath('folder_id', $context->folder['id']);
+    $this->postJson('/api/admin/multiple-choice/test-folder/resolve', ['filename' => 'Aufgabe.md', 'content_hash' => str_repeat('0', 64)])
+        ->assertUnprocessable();
+});
+
+test('a markdown file in multiple test folders is not linked ambiguously', function (): void {
+    $context = mcTestFolderImportContext();
+    mcTestFolderImportLocator($context);
+    $context->searchQuery = 'Aufgabe.md';
+    $hash = hash('sha256', hash('sha256', 'Aufgabe', true));
+    $first = ['.tag' => 'file', 'id' => 'id:markdown', 'name' => 'Aufgabe.md',
+        'path_lower' => $context->folder['path_lower'].'/aufgabe.md', 'content_hash' => $hash];
+    $second = [...$first, 'id' => 'id:other-markdown', 'path_lower' => dirname($context->folder['path_lower']).'/another/aufgabe.md'];
+    $context->extraEntries = [$first, $second];
+    $context->searchCandidates = [$first, $second];
+    $this->actingAs($context->teacher);
+
+    $this->postJson('/api/admin/multiple-choice/test-folder/resolve', ['filename' => 'Aufgabe.md', 'content_hash' => $hash])
+        ->assertConflict();
+});
 
 function mcTestFolderImportCanonicalSource(object $context): void
 {

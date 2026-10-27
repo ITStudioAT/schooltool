@@ -13,6 +13,12 @@ test('module handshake preserves the existing UUID spelling', function (): void 
         ->toBe(['schema_version' => 1, 'module_id' => $id]);
 });
 
+test('module handshake supports a direct Dropbox folder identity', function (): void {
+    $value = ['schema_version' => 2, 'module_id' => 'a263b873-4f27-4167-90f0-7d94ea0f67fa', 'dropbox_folder_id' => 'id:folder_123'];
+
+    expect((new ModuleHandshake)->parse(json_encode($value)))->toBe($value);
+});
+
 test('module handshake rejects malformed ambiguous and unsupported documents', function (string $contents): void {
     expect(fn () => (new ModuleHandshake)->parse($contents))->toThrow(ValidationException::class);
 })->with([
@@ -21,6 +27,7 @@ test('module handshake rejects malformed ambiguous and unsupported documents', f
     'missing module' => ['{"schema_version":1}'],
     'wrong UUID' => ['{"schema_version":1,"module_id":"not-a-uuid"}'],
     'wrong version' => ['{"schema_version":2,"module_id":"a263b873-4f27-4167-90f0-7d94ea0f67fa"}'],
+    'invalid Dropbox folder' => ['{"schema_version":2,"module_id":"a263b873-4f27-4167-90f0-7d94ea0f67fa","dropbox_folder_id":"/untrusted/path"}'],
     'string version' => ['{"schema_version":"1","module_id":"a263b873-4f27-4167-90f0-7d94ea0f67fa"}'],
     'extra locator' => ['{"schema_version":1,"module_id":"a263b873-4f27-4167-90f0-7d94ea0f67fa","folder_id":"id:claim"}'],
     'duplicate key' => ['{"schema_version":2,"schema_version":1,"module_id":"a263b873-4f27-4167-90f0-7d94ea0f67fa"}'],

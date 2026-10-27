@@ -305,8 +305,13 @@ class MultipleChoiceController extends Controller
     public function testFolderResolve(Request $request, McTestFolderImport $folders): JsonResponse
     {
         $user = $this->teacher();
-        $data = $request->validate(['filename' => ['required', 'string', 'in:handshake.json'],
-            'handshake' => ['required', 'string', 'max:4096']]);
+        $data = $request->validate(['filename' => ['required', 'string', 'max:255'],
+            'handshake' => ['nullable', 'string', 'max:4096'], 'content_hash' => ['nullable', 'string', 'regex:/\A[0-9a-f]{64}\z/']]);
+
+        if (preg_match('/\A[^\/\\\\\x00-\x1f]+\.md\z/i', $data['filename']) === 1 && isset($data['content_hash'])) {
+            return response()->json($folders->resolveMarkdown($user, $data['filename'], $data['content_hash']))->header('Cache-Control', 'private, no-store');
+        }
+        abort_unless($data['filename'] === 'handshake.json' && isset($data['handshake']), 422, 'Bitte eine handshake.json oder eine Markdown-Datei aus dem Testordner auswählen.');
 
         return response()->json($folders->resolve($user, $data['handshake']))->header('Cache-Control', 'private, no-store');
     }

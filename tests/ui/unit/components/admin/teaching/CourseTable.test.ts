@@ -114,6 +114,35 @@ describe('CourseTable manual work completion', () => {
         return { wrapper, works, courses, date, first, second }
     }
 
+    it('disables the subsequent status actions until the work has a linked folder', async () => {
+        clearWorkDropboxStates()
+        const { wrapper, works, first } = mountCompletionTable()
+        try {
+            useAdminStore().config = { user: { id: 7 } } as never
+            workDropboxStates.set('7:18:65', { connected: true, module_link: null, folder: null })
+            works.courseWorks = [{ ...first, status: { automation_enabled: true } }] as never
+            await flushPromises()
+            await wrapper.get('.course-table-work-summary-title').trigger('click')
+
+            const statuses = wrapper.get('.work-dialog-status-icons')
+            expect(statuses.getComponent({ name: 'WorkExerciseStatus' }).props('disabled')).toBe(true)
+            expect(statuses.getComponent({ name: 'WorkDeliveryStatus' }).props('disabled')).toBe(true)
+
+            workDropboxStates.set('7:18:65', { connected: true, module_link: { folder: { id: 'id:module' } } })
+            await flushPromises()
+            expect(statuses.getComponent({ name: 'WorkExerciseStatus' }).props('disabled')).toBe(false)
+            expect(statuses.getComponent({ name: 'WorkDeliveryStatus' }).props('disabled')).toBe(true)
+
+            ;(wrapper.vm as any).workDialogExerciseStatus = { status: 'found', userId: 7, workId: 65, courseId: 18,
+                date: '2026-10-12', assignmentStatus: 'missing', folder: { id: 'id:exercise', name: 'Leistungsfeststellung' } }
+            await flushPromises()
+            expect(statuses.getComponent({ name: 'WorkDeliveryStatus' }).props('disabled')).toBe(true)
+            ;(wrapper.vm as any).workDialogExerciseStatus.assignmentStatus = 'ready'
+            await flushPromises()
+            expect(statuses.getComponent({ name: 'WorkDeliveryStatus' }).props('disabled')).toBe(false)
+        } finally { wrapper.unmount(); clearWorkDropboxStates() }
+    })
+
     it('offers deletion for the saved work and preserves the draft when confirmation is canceled', async () => {
         const { wrapper, works, first } = mountCompletionTable()
         const vm = wrapper.vm as any

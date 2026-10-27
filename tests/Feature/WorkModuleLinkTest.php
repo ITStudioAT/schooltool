@@ -12,6 +12,7 @@ use App\Services\DropboxModuleLinks;
 use App\Services\DropboxWorkImport;
 use App\Services\ModuleHandshake;
 use App\Services\TeachingWorkDeadlineSync;
+use App\Support\SchooltoolAssessmentJson;
 use GuzzleHttp\Promise\Promise;
 use GuzzleHttp\Promise\Utils;
 use GuzzleHttp\Psr7\Response as PsrResponse;
@@ -60,7 +61,20 @@ function fakeModuleDropbox(object $context): void
         if (str_ends_with($request->url(), '/files/search_v2')) {
             expect($request['options']['filename_only'])->toBeTrue();
 
+            if (isset($context->searchResponse)) {
+                return Http::response($context->searchResponse);
+            }
+            if ($context->searchPaginated ?? false) {
+                return Http::response(['matches' => array_map(fn (array $entry): array => ['metadata' => ['metadata' => $entry]], array_slice($context->online, 0, 30)),
+                    'has_more' => true, 'cursor' => 'handshake-page-2']);
+            }
+
             return Http::response(['matches' => array_map(fn (array $entry): array => ['metadata' => ['metadata' => $entry]], $context->online), 'has_more' => false]);
+        }
+        if (str_ends_with($request->url(), '/files/search/continue_v2')) {
+            expect($request['cursor'])->toBe('handshake-page-2');
+
+            return Http::response(['matches' => array_map(fn (array $entry): array => ['metadata' => ['metadata' => $entry]], array_slice($context->online, 30)), 'has_more' => false]);
         }
         if (str_ends_with($request->url(), '/files/download')) {
             $argument = json_decode($request->header('Dropbox-API-Arg')[0], true);
@@ -94,7 +108,7 @@ function fakeModuleDropbox(object $context): void
                     return Http::response($entry);
                 }
                 $parent = substr($entry['path_lower'], 0, strrpos($entry['path_lower'], '/'));
-                if ($request['path'] === $parent) {
+                if (in_array($request['path'], [$parent, 'id:folder'.basename($parent)], true)) {
                     return Http::response(['.tag' => 'folder', 'id' => 'id:folder'.basename($parent), 'name' => basename($parent),
                         'path_lower' => $parent, 'path_display' => substr($entry['path_display'], 0, strrpos($entry['path_display'], '/')),
                         'sharing_info' => ['parent_shared_folder_id' => '186736344']]);
@@ -162,6 +176,69 @@ test('dropping a handshake resolves an online path without linking or importing'
     expect($this->work->fresh()->getAttributes())->toEqual($before);
     Http::assertNotSent(fn (Request $request): bool => preg_match('#/files/(upload|delete|move|create)#', $request->url()) === 1);
 });
+
+test('a direct folder handshake resolves without searching and rejects a mismatched identity', function (): void {
+    $path = '/schule2020_2027/materialien/lerninhalte/netzwerke/handshake.json';
+    $this->online[0]['path_lower'] = $path;
+    $this->online[0]['path_display'] = $path;
+    $this->handshake = json_encode(['schema_version' => 2, 'module_id' => 'A263B873-4f27-4167-90f0-7d94ea0f67fa',
+        'dropbox_folder_id' => 'id:foldernetzwerke'], JSON_THROW_ON_ERROR);
+    $this->remoteContents = $this->handshake;
+    $this->online[0]['size'] = strlen($this->handshake);
+    fakeModuleDropbox($this);
+    $payload = ['filename' => 'handshake.json', 'handshake' => $this->handshake, 'resolve' => true];
+
+    $this->postJson($this->url.'/folder', $payload)->assertOk()
+        ->assertJsonPath('candidate.folder_id', 'id:foldernetzwerke')->assertJsonPath('module_id', 'A263B873-4f27-4167-90f0-7d94ea0f67fa');
+    Http::assertNotSent(fn (Request $request): bool => str_contains($request->url(), '/files/search'));
+
+    $payload['handshake'] = str_replace('A263B873', 'B263B873', $this->handshake);
+    $this->postJson($this->url.'/folder', $payload)->assertConflict();
+    expect(TeachingWorkModuleLink::query()->count())->toBe(0);
+});
+
+test('module lookup checks more than forty handshakes and still detects copied identities', function (): void {
+    $this->searchPaginated = true;
+    for ($index = 1; $index <= 45; $index++) {
+        $contents = json_encode(['schema_version' => 1,
+            'module_id' => sprintf('00000000-0000-4000-8000-%012d', $index)], JSON_THROW_ON_ERROR);
+        $this->online[] = ['.tag' => 'file', 'id' => 'id:other-'.$index, 'name' => 'handshake.json',
+            'rev' => 'other-revision-'.$index,
+            'path_lower' => '/schule2020_2027/materialien/lerninhalte/other-'.$index.'/handshake.json',
+            'path_display' => '/schule2020_2027/Materialien/Lerninhalte/other-'.$index.'/handshake.json',
+            'size' => strlen($contents)];
+        $this->exerciseDocuments['rev:other-revision-'.$index] = $contents;
+    }
+    fakeModuleDropbox($this);
+    $payload = ['filename' => 'handshake.json', 'handshake' => $this->handshake, 'resolve' => true];
+
+    $this->postJson($this->url.'/folder', $payload)->assertOk()
+        ->assertJsonPath('candidate.folder_path', '/schule2020_2027/Materialien/Lerninhalte/IT_Grundlagen/emails - Kopie');
+
+    $copy = $this->online[0];
+    $copy['id'] = 'id:copy';
+    $copy['rev'] = 'copy-revision';
+    $copy['path_lower'] = '/schule2020_2027/materialien/lerninhalte/copied/handshake.json';
+    $copy['path_display'] = '/schule2020_2027/Materialien/Lerninhalte/copied/handshake.json';
+    $this->online[] = $copy;
+
+    $this->postJson($this->url.'/folder', $payload)->assertOk()
+        ->assertJsonPath('conflict', true)->assertJsonCount(2, 'candidates');
+    expect(TeachingWorkModuleLink::query()->count())->toBe(0);
+});
+
+test('module lookup rejects an incomplete search without linking', function (array $searchResponse): void {
+    $this->searchResponse = $searchResponse;
+    fakeModuleDropbox($this);
+
+    $this->postJson($this->url.'/folder', ['filename' => 'handshake.json', 'handshake' => $this->handshake, 'resolve' => true])
+        ->assertUnprocessable();
+
+    expect(TeachingWorkModuleLink::query()->count())->toBe(0);
+})->with([
+    [['matches' => []]],
+    [['matches' => [], 'has_more' => true]],
+]);
 
 test('module lookup reuses unchanged handshake revisions but still detects newly copied identities', function (): void {
     fakeModuleDropbox($this);
@@ -231,7 +308,8 @@ test('the actual externally created exercise folder is read only and confirmed f
     addExerciseFixture($this);
     $before = $this->work->fresh()->getAttributes();
     $this->getJson($this->url.'?include_exercise=1&date=2026-10-06')->assertOk()
-        ->assertJsonPath('exercise.status', 'found')->assertJsonPath('exercise.folder.name', '2026-10-06_E-Mail_Fach_3B_Gruppe-2');
+        ->assertJsonPath('exercise.status', 'found')->assertJsonPath('exercise.assignment_status', 'missing')
+        ->assertJsonPath('exercise.folder.name', '2026-10-06_E-Mail_Fach_3B_Gruppe-2');
     expect($this->work->fresh()->getAttributes())->toEqual($before);
     Http::assertNotSent(fn (Request $request): bool => preg_match('#/files/(upload|delete|move|create)#', $request->url()) === 1);
 });
@@ -244,6 +322,24 @@ function addEmailPreparationFile(object $context, string $path, string $contents
     $context->online[] = ['.tag' => 'file', 'id' => 'id:'.$revision, 'name' => basename($path), 'path_lower' => strtolower($path),
         'path_display' => $path, 'rev' => $revision, 'size' => strlen($contents)];
 }
+
+test('the assignment is ready only with a matching preparation proof and PDF', function (bool $pdfMatches): void {
+    linkExerciseFixture($this);
+    addExerciseFixture($this);
+    $metadata = collect($this->online)->firstWhere('name', 'Anlage_und_Quellen.json');
+    $path = dirname($metadata['path_display']);
+    $pdf = '%PDF-1.4 test assignment';
+    $package = TeachingWorkDispatchFixture::documentPreparation($this->work->id, $this->course->id);
+    $package['exercise']['scheduled_date'] = '2026-10-06';
+    $package['assignment']['sha256'] = hash('sha256', $pdf);
+    unset($package['preparation_checksum']);
+    $package['preparation_checksum'] = SchooltoolAssessmentJson::digest($package);
+    addEmailPreparationFile($this, $path.'/Schooltool-Vorbereitung.json', json_encode($package, JSON_THROW_ON_ERROR));
+    addEmailPreparationFile($this, $path.'/Angaben/'.$package['assignment']['filename'], $pdfMatches ? $pdf : '%PDF-changed');
+
+    $this->getJson($this->url.'?include_exercise=1&date=2026-10-06')->assertOk()
+        ->assertJsonPath('exercise.status', 'found')->assertJsonPath('exercise.assignment_status', $pdfMatches ? 'ready' : 'unknown');
+})->with([true, false]);
 
 function addEmailPreparationFixture(object $context): string
 {

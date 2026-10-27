@@ -250,7 +250,7 @@
                             <template v-if="!testFolderProof">
                             <v-btn variant="outlined" prepend-icon="mdi-file-link-outline" :loading="testFolderReading"
                                 :disabled="!!busy || testFolderReading" @click="chooseTestFolder">Test mit Dropbox-Ordner verknüpfen</v-btn>
-                            <p class="text-caption text-medium-emphasis mt-2">Wähle die handshake.json aus dem Testordner. Schooltool übernimmt die online geprüften Teilnehmer und speichert die Verbindung beim Erstellen.</p>
+                            <p class="text-caption text-medium-emphasis mt-2">Wähle die handshake.json oder eine Markdown-Datei aus dem Testordner. Schooltool übernimmt die online geprüften Teilnehmer und speichert die Verbindung beim Erstellen.</p>
                             </template>
                             <v-alert v-if="testFolderError" type="error" variant="tonal" class="mt-2">{{ testFolderError }}</v-alert>
                             <v-alert v-if="testFolderWarning" type="warning" variant="tonal" class="mt-2">{{ testFolderWarning }}</v-alert>
@@ -697,16 +697,16 @@
             <v-card aria-label="Dropbox-Testordner zuordnen">
                 <v-card-title>Testordner zuordnen</v-card-title>
                 <v-card-text>
-                    <p class="text-body-2 mb-3">Ziehe die handshake.json des Testordners hierher oder wähle die Datei mit einem Klick aus.</p>
+                    <p class="text-body-2 mb-3">Wähle die handshake.json oder eine Markdown-Datei direkt aus dem Testordner.</p>
                     <FilePond v-if="testFolderDialog" :key="testFolderPondKey" name="mc-test-handshake" :allow-multiple="false" :max-files="1"
                         :instant-upload="false" :allow-process="false" :allow-revert="false" :allow-replace="true"
                         :allow-paste="false" :server="null" :credits="false" :disabled="testFolderReading"
-                        :before-add-file="acceptTestFolderFile" :accepted-file-types="['application/json']"
+                        :before-add-file="acceptTestFolderFile" :accepted-file-types="['application/json', 'text/markdown', '.md']"
                         :file-validate-type-detect-type="detectTestFolderFileType"
-                        label-file-type-not-allowed="Zulässig ist ausschließlich die Datei handshake.json."
-                        label-idle="handshake.json hierher ziehen oder <span class='filepond--label-action'>Datei auswählen</span>"
+                        label-file-type-not-allowed="Zulässig sind handshake.json und Markdown-Dateien."
+                        label-idle="Datei hierher ziehen oder <span class='filepond--label-action'>Datei auswählen</span>"
                         label-button-remove-item="Datei entfernen" @updatefiles="selectTestFolderFiles" />
-                    <p class="text-caption text-medium-emphasis">Nur die kleine Handshake-Datei wird gelesen. Schooltool prüft den Testordner und die Schülerdaten im verbundenen Dropbox-Konto.</p>
+                    <p class="text-caption text-medium-emphasis">Schooltool prüft den Testordner und die Schülerdaten im verbundenen Dropbox-Konto. Bei Markdown wird zum Finden der Datei ein digitaler Fingerabdruck verglichen.</p>
                     <v-progress-linear v-if="testFolderReading" indeterminate color="primary" class="mt-3" aria-label="Dropbox-Testordner wird geprüft" />
                     <v-alert v-if="testFolderError" type="error" variant="tonal" role="alert" class="mt-3">{{ testFolderError }}</v-alert>
                     <div v-if="testFolderPreview" class="mt-4">
@@ -1239,9 +1239,9 @@ const defaultTestDraft = {
     question_count: 10,
     total_points: 10,
     duration_minutes: 20,
-    lead_seconds: 60,
+    lead_seconds: 30,
     exam_mode: false,
-    start_mode: 'common',
+    start_mode: 'individual',
     closes_at: '',
     balance_types: true,
     shuffle_questions: true,
@@ -2164,16 +2164,19 @@ function chooseTestFolder() {
 
 function acceptTestFolderFile(item) {
     const file = item.file
-    if (file?.name?.toLowerCase() !== 'handshake.json' || file.size > 4096) {
+    const isHandshake = file?.name?.toLowerCase() === 'handshake.json'
+    const isMarkdown = /\.md$/i.test(file?.name || '')
+    if ((!isHandshake && !isMarkdown) || file.size > (isHandshake ? 4096 : 1024 * 1024)) {
         testFolderPreview.value = null
-        testFolderError.value = 'Bitte genau eine handshake.json mit höchstens 4 KB auswählen.'
+        testFolderError.value = 'Bitte eine handshake.json (höchstens 4 KB) oder eine Markdown-Datei (höchstens 1 MB) auswählen.'
         return false
     }
     return true
 }
 
 function detectTestFolderFileType(file, type) {
-    return Promise.resolve(file.name?.toLowerCase() === 'handshake.json' ? 'application/json' : type)
+    if (file.name?.toLowerCase() === 'handshake.json') return Promise.resolve('application/json')
+    return Promise.resolve(/\.md$/i.test(file.name || '') ? 'text/markdown' : type)
 }
 
 async function readTestFolderHandshake(file) {
@@ -2207,11 +2210,19 @@ async function selectTestFolderFiles(items) {
     testFolderAbortController = new AbortController()
     testFolderReading.value = true
     try {
-        const handshake = await readTestFolderHandshake(items[0].file)
+        const file = items[0].file
+        let payload
+        if (/\.md$/i.test(file.name)) {
+            const contents = await file.arrayBuffer()
+            const blockHash = contents.byteLength ? await crypto.subtle.digest('SHA-256', contents) : new ArrayBuffer(0)
+            const fileHash = await crypto.subtle.digest('SHA-256', blockHash)
+            const contentHash = Array.from(new Uint8Array(fileHash), byte => byte.toString(16).padStart(2, '0')).join('')
+            payload = { filename: file.name, content_hash: contentHash }
+        } else {
+            payload = { filename: file.name, handshake: await readTestFolderHandshake(file) }
+        }
         if (sequence !== testFolderReadSequence || disposed || !testFolderDialog.value) return
-        const { data } = await axios.post(testFolderResolve.url(), {
-            filename: items[0].file.name, handshake,
-        }, { signal: testFolderAbortController.signal, timeout: 120000 })
+        const { data } = await axios.post(testFolderResolve.url(), payload, { signal: testFolderAbortController.signal, timeout: 120000 })
         if (sequence !== testFolderReadSequence || disposed || !testFolderDialog.value || !preparingTest.value) return
         if (!data.folder_proof || !data.path || !data.directory || !Array.isArray(data.rows)) {
             throw new Error('Der Dropbox-Testordner konnte nicht vollständig bestätigt werden.')
@@ -2255,7 +2266,7 @@ function editRosterCsv() {
     testFolderAbortController?.abort()
     testFolderReading.value = false
     if (testFolderProof.value) {
-        testFolderWarning.value = 'Die Schülerliste wurde geändert. Die vorgemerkte Dropbox-Verknüpfung wurde verworfen. Wähle die handshake.json erneut, wenn dieser Test verknüpft werden soll.'
+        testFolderWarning.value = 'Die Schülerliste wurde geändert. Die vorgemerkte Dropbox-Verknüpfung wurde verworfen. Wähle die Datei erneut, wenn dieser Test verknüpft werden soll.'
     }
     testFolderProof.value = ''
     testFolderInfo.value = null
@@ -2627,6 +2638,8 @@ function openTestSettings() {
     const test = selectedTest.value
     Object.assign(settingsDraft, ...Object.keys(defaultTestDraft).map(key => ({ [key]: test[key] ?? defaultTestDraft[key] })), {
         duration_minutes: test.duration_seconds / 60,
+        lead_seconds: test.lead_seconds ?? 60,
+        start_mode: test.start_mode ?? 'common',
         closes_at: test.closes_at ? localDateTime(test.closes_at) : '',
     })
     settingsError.value = ''

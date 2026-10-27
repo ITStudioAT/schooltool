@@ -269,19 +269,41 @@ it('requires an explicit MC selection and creates a draft only once while repeat
         expect(button(wrapper, action).attributes('disabled')).toBeDefined()
         expect(axios.post).not.toHaveBeenCalled()
         await wrapper.get('select[aria-label="Fragenkatalog auswählen"]').setValue('3')
-        expect(wrapper.findAll('input[type="number"]')).toHaveLength(2)
+        expect(wrapper.findAll('input[type="number"]')).toHaveLength(3)
         expect(wrapper.find('input[aria-label="Maximale MC-Punkte"]').exists()).toBe(false)
-        await wrapper.get('input[aria-label="MC-Punkte"]').setValue('6')
+        await wrapper.get('input[aria-label="MC-Punkte"]').setValue('0')
         expect(button(wrapper, action).attributes('disabled')).toBeDefined()
         await wrapper.get('input[aria-label="MC-Punkte"]').setValue('2')
         expect(wrapper.text()).toContain('2 Punkte MC + 3 Punkte übrige Aufgaben = 5 Punkte gesamt')
         expect(button(wrapper, action).attributes('disabled')).toBeUndefined()
         await button(wrapper, action).trigger('click'); await flushPromises()
         const payload = (axios.post as any).mock.calls[0][1]
-        expect(payload).toMatchObject({ mc_mode: 'new', catalog_id: 3, total_points: 2, mc_points: 2, expected_maximum_points: 5, duration_minutes: 20, expected_test_id: null, date: '2026-10-20' })
+        expect(payload).toMatchObject({ mc_mode: 'new', catalog_id: 3, total_points: 2, mc_points: 2, other_points: 3, expected_maximum_points: 5, duration_minutes: 20, expected_test_id: null, date: '2026-10-20' })
         await button(wrapper, 'Kopiert').trigger('click'); await flushPromises()
         expect(axios.post).toHaveBeenCalledTimes(1)
         expect(navigator.clipboard.writeText).toHaveBeenCalledTimes(2)
+    } finally { wrapper.unmount() }
+})
+
+it('allows 30 points for the remaining tasks and shows the different Schooltool scale', async () => {
+    const get = vi.fn().mockResolvedValue({ data: { data: { work_id: 65, course_id: 2, roster_complete: true, participants_count: 3,
+        text: 'Auftrag mit Punkten', context: { include_multiple_choice: true, multiple_choice_test: { test_id: 10 } } } } })
+    const wrapper = mountExport(get, undefined, undefined, work, { available: true, tests: [], catalogs: [{ id: 3, title: 'Netzwerke' }], linked_test_id: null,
+        configuration: { locked: false, maximum_points: 15 } })
+    try {
+        await flushPromises()
+        await button(wrapper, 'Leistungsfeststellung erstellen').trigger('click')
+        await wrapper.get('input[type="checkbox"]').setValue(true)
+        await flushPromises()
+        await wrapper.get('select[aria-label="Fragenkatalog auswählen"]').setValue('3')
+        await wrapper.get('input[aria-label="MC-Punkte"]').setValue('5')
+        await wrapper.get('input[aria-label="Punkte übrige Aufgaben"]').setValue('30')
+        expect(wrapper.text()).toContain('5 Punkte MC + 30 Punkte übrige Aufgaben = 35 Punkte gesamt')
+        expect(wrapper.text()).toContain('Bewertungsskala in Schooltool beträgt 15 Punkte')
+        await button(wrapper, 'MC-Test erstellen und Übergabetext kopieren').trigger('click')
+        await flushPromises()
+        expect(axios.post).toHaveBeenCalledWith(expect.stringContaining('/prepare-exercise'),
+            expect.objectContaining({ mc_points: 5, other_points: 30, expected_maximum_points: 15 }), expect.any(Object))
     } finally { wrapper.unmount() }
 })
 
@@ -330,7 +352,7 @@ it.each([false, true])('loads a fresh candidate export and copies only the chose
         await button(wrapper, 'Übergabetext kopieren').trigger('click')
         await flushPromises()
         if (mc) expect(axios.post).toHaveBeenCalledExactlyOnceWith('/api/admin/teaching/course_works/65/prepare-exercise', {
-            mc_mode: 'existing', test_id: 9, expected_test_id: 9, mc_points: 2, expected_maximum_points: 5, date: '2026-10-20', request_id: expect.any(String),
+            mc_mode: 'existing', test_id: 9, expected_test_id: 9, mc_points: 2, other_points: 3, expected_maximum_points: 5, date: '2026-10-20', request_id: expect.any(String),
         }, { signal: expect.any(AbortSignal) })
         else expect(get).toHaveBeenCalledExactlyOnceWith('/api/admin/teaching/course_works/65/ai-export', {
             params: { purpose: 'exercise', include_mc: 0, date: '2026-10-20' }, signal: expect.any(AbortSignal),

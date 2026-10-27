@@ -42,7 +42,8 @@ class TeachingWorkMultipleChoice
             'linked_test_id' => ($binding['work_id'] ?? null) === $work->id && $tests->contains('id', $binding['test_id'] ?? null)
                 ? $binding['test_id'] : null,
             'expected_test_id' => isset($binding['test_id']) ? (int) $binding['test_id'] : null,
-            'linked_mc_points' => $binding['points_plan']['mc_points'] ?? null];
+            'linked_mc_points' => $binding['points_plan']['mc_points'] ?? null,
+            'linked_other_points' => $binding['points_plan']['other_points'] ?? null];
     }
 
     /**
@@ -60,11 +61,18 @@ class TeachingWorkMultipleChoice
         abort_unless($maximum !== null && round((float) ($data['expected_maximum_points'] ?? 0), 2) === $maximum,
             409, 'Die LF-Gesamtpunktzahl ist nicht bestätigt oder wurde inzwischen geändert. Bitte die MC-Auswahl erneut öffnen.');
         $mcPoints = $data['mc_points'] ?? null;
-        if ($maximum === null || ! is_numeric($mcPoints) || (float) $mcPoints <= 0 || (float) $mcPoints > $maximum) {
+        $otherPoints = $data['other_points'] ?? null;
+        if ($maximum === null || ! is_numeric($mcPoints) || (float) $mcPoints <= 0
+            || ($otherPoints === null && (float) $mcPoints > $maximum)) {
             throw ValidationException::withMessages(['mc_points' => 'Bitte den MC-Anteil innerhalb der gespeicherten LF-Gesamtpunkte festlegen. Die Gesamtpunktzahl muss positiv und bekannt sein.']);
         }
-        $pointsPlan = ['maximum_points' => $maximum, 'mc_points' => round((float) $mcPoints, 2),
-            'other_points' => round($maximum - (float) $mcPoints, 2), 'requires_criteria_reconciliation' => true];
+        $otherPoints = $otherPoints === null ? round($maximum - (float) $mcPoints, 2) : (float) $otherPoints;
+        $assessmentMaximum = round((float) $mcPoints + $otherPoints, 2);
+        if ($assessmentMaximum > 100000) {
+            throw ValidationException::withMessages(['other_points' => 'Die Gesamtpunktzahl darf höchstens 100000 Punkte betragen.']);
+        }
+        $pointsPlan = ['maximum_points' => $assessmentMaximum, 'mc_points' => round((float) $mcPoints, 2),
+            'other_points' => round($otherPoints, 2), 'schooltool_maximum_points' => $maximum, 'requires_criteria_reconciliation' => true];
         $slot = $this->slot($work, $data['date'] ?? null);
         $binding = $work->status['multiple_choice_tests'][$slot] ?? null;
         $requestHash = hash('sha256', json_encode([$data, array_column($participants, 'schooltool_person_id')], JSON_THROW_ON_ERROR));

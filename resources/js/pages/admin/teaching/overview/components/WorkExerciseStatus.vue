@@ -1,6 +1,6 @@
 <template>
     <span v-if="work?.id && (needsPreparation || historical)" class="d-inline-flex" :class="{ 'cursor-pointer': accessible }"
-        :tabindex="accessible ? 0 : undefined" :role="accessible ? 'button' : undefined"
+        :tabindex="accessible ? 0 : undefined" :role="accessible ? 'button' : undefined" :aria-disabled="disabled"
         :aria-label="tooltip" :title="tooltip" @click.stop="openDialog"
         @keydown.enter.stop.prevent="openDialog" @keydown.space.stop.prevent="openDialog">
         <v-icon :size="size" :color="color" :aria-label="tooltip" :aria-hidden="false" role="img">
@@ -12,7 +12,7 @@
         <v-card>
             <v-card-title class="text-wrap">Leistungsfeststellung · {{ work.title || 'Ohne Titel' }}</v-card-title>
             <v-card-text>
-                <v-alert type="success" variant="tonal" class="mb-4">{{ historical ? 'Bestehende Leistungsfeststellung – gespeicherte Originalnachweise vorhanden.' : 'Leistungsfeststellung erstellt – Prüfungsordner bestätigt.' }}</v-alert>
+                <v-alert :type="historical || assignmentReady ? 'success' : 'warning'" variant="tonal" class="mb-4">{{ historical ? 'Bestehende Leistungsfeststellung – gespeicherte Originalnachweise vorhanden.' : assignmentReady ? 'Aufgabenstellung erstellt – Prüfungsordner bestätigt.' : 'Prüfungsordner bestätigt; die Aufgabenstellung ist noch nicht bestätigt.' }}</v-alert>
                 <p v-if="checkTime" class="text-caption mb-3">Letzter Check: {{ checkTime }}</p>
                 <dl class="exercise-info">
                     <template v-for="item in details" :key="item.label">
@@ -53,14 +53,14 @@ import WorkExercisePdf from './WorkExercisePdf.vue'
 import WorkEvaluationPdf from './WorkEvaluationPdf.vue'
 import WorkFolderBrowser from './WorkFolderBrowser.vue'
 
-const props = defineProps({ work: Object, course: Object, date: { type: String, default: '' }, state: Object, size: { type: [Number, String], default: 30 } })
+const props = defineProps({ work: Object, course: Object, date: { type: String, default: '' }, state: Object, size: { type: [Number, String], default: 30 }, disabled: Boolean })
 const admin = useAdminStore()
 const binding = computed(() => workDropboxStates.get(workDropboxKey(admin.config?.user?.id, props.work)))
 const historical = computed(() => workAutomationEnabled(props.work) && workHasProgress(props.work) && !needsPreparation.value)
 const needsPreparation = computed(() => workNeedsPreparation(props.work,
     binding.value))
 const folder = computed(() => historical.value ? binding.value?.legacy_folders?.exercise || binding.value?.folder : props.state?.folder)
-const accessible = computed(() => historical.value || status.value === 'found')
+const accessible = computed(() => !props.disabled && (historical.value || status.value === 'found'))
 const opened = ref(false)
 const checkTime = computed(() => props.state?.checkedAt ? new Intl.DateTimeFormat('de-AT', {
     timeZone: 'Europe/Vienna', dateStyle: 'short', timeStyle: 'short',
@@ -71,11 +71,15 @@ const status = computed(() => {
         || String(state.courseId) !== String(props.work?.teaching_course_id) || state.date !== props.date) return 'checking'
     return state.status
 })
-const color = computed(() => historical.value || status.value === 'found' ? 'success' : status.value === 'missing' ? 'error' : 'grey')
+const assignmentReady = computed(() => props.state?.assignmentStatus === 'ready')
+const color = computed(() => props.disabled ? 'grey' : historical.value || (status.value === 'found' && assignmentReady.value) ? 'success'
+    : status.value === 'found' ? 'warning' : status.value === 'missing' ? 'error' : 'grey')
 const tooltip = computed(() => {
+    if (props.disabled) return 'Zuerst den Lernmaterialordner verknüpfen'
     if (historical.value) return folder.value?.id ? `Leistungsfeststellung erstellt: ${folder.value.name}`
         : 'Bestehende Leistungsfeststellung – gespeicherte Nachweise ansehen'
-    if (status.value === 'found') return `Leistungsfeststellung erstellt: ${props.state.folder?.name || ''}`
+    if (status.value === 'found') return assignmentReady.value ? `Leistungsfeststellung erstellt: ${props.state.folder?.name || ''}`
+        : 'Prüfungsordner vorhanden; Aufgabenstellung noch nicht bestätigt'
     if (status.value === 'missing') return 'Leistungsfeststellung noch nicht erstellt'
     if (status.value === 'unknown') return 'Leistungsfeststellung konnte nicht geprüft werden'
     return 'Leistungsfeststellung wird geprüft …'
@@ -132,6 +136,7 @@ function openDialog() {
 
 watch(() => [admin.config?.user?.id, props.work?.id, props.work?.teaching_course_id, props.date, status.value, props.state?.folder?.id],
     () => { opened.value = false })
+watch(() => props.disabled, disabled => { if (disabled) opened.value = false })
 </script>
 
 <style scoped>

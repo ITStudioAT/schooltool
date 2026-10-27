@@ -73,6 +73,7 @@ class CourseWorkController extends Controller
             'total_points' => ['required_if:mc_mode,new', 'nullable', 'numeric', 'min:0.01', 'max:100000', 'decimal:0,2'],
             'duration_minutes' => ['required_if:mc_mode,new', 'nullable', 'integer', 'min:1', 'max:1440'],
             'mc_points' => ['required', 'numeric', 'min:0.01', 'max:100000', 'decimal:0,2'],
+            'other_points' => ['sometimes', 'required', 'numeric', 'min:0', 'max:100000', 'decimal:0,2'],
             'expected_maximum_points' => ['required', 'numeric', 'min:0.01', 'max:100000', 'decimal:0,2'],
             'request_id' => ['required', 'uuid'], 'expected_test_id' => ['present', 'nullable', 'integer', 'min:1'],
         ]);

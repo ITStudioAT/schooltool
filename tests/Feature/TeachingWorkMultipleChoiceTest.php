@@ -305,6 +305,30 @@ test('MC creation records an explicit conversion budget without increasing the L
     expect($this->work->fresh()->status['multiple_choice_tests']['2026-10-20']['points_plan']['maximum_points'])->toEqual(5);
 });
 
+test('assessment points can differ from the saved Schooltool scale without changing it', function (): void {
+    workMcFixture($this);
+    $this->course->teachingEntryArea->entryDefinitions()->update(['maximum_points' => 15]);
+    $payload = [...$this->payload, 'mc_points' => 5, 'total_points' => 5, 'other_points' => 30, 'expected_maximum_points' => 15];
+
+    $response = $this->postJson($this->base.'/prepare-exercise', $payload)->assertOk()
+        ->assertJsonPath('data.context.multiple_choice_test.points_plan.maximum_points', 35)
+        ->assertJsonPath('data.context.multiple_choice_test.points_plan.mc_points', 5)
+        ->assertJsonPath('data.context.multiple_choice_test.points_plan.other_points', 30)
+        ->assertJsonPath('data.context.multiple_choice_test.points_plan.schooltool_maximum_points', 15);
+    expect($response->json('data.text'))->toContain('Umrechnung auf die gespeicherte Schooltool-Bewertungsskala vor der Übernahme mit der Lehrperson abstimmen');
+    expect($this->course->teachingEntryArea->entryDefinitions()->first()->maximum_points)->toEqual(15);
+    $this->getJson($this->base.'/exercise-options?date=2026-10-20')->assertOk()
+        ->assertJsonPath('linked_other_points', 30);
+});
+
+test('invalid remaining points do not create a test', function (mixed $otherPoints): void {
+    workMcFixture($this);
+
+    $this->postJson($this->base.'/prepare-exercise', [...$this->payload, 'other_points' => $otherPoints])
+        ->assertUnprocessable()->assertJsonValidationErrors('other_points');
+    expect(McTest::query()->count())->toBe(0);
+})->with([-1, '2.345', 100000]);
+
 test('changed LF totals invalidate an open MC allocation before creating a test', function (): void {
     workMcFixture($this);
     TeachingEntryDefinition::query()->where('teaching_entry_area_id', $this->course->teaching_entry_area_id)->update(['maximum_points' => 4]);

@@ -49,6 +49,21 @@ it('uses FilePond for one file and requires explicit linking after the online pa
     wrapper.unmount()
 })
 
+it('accepts a handshake with a direct Dropbox folder identity', async () => {
+    const direct = JSON.stringify({ schema_version: 2, module_id: 'a263b873-4f27-4167-90f0-7d94ea0f67fa', dropbox_folder_id: 'id:module' })
+    const post = vi.fn().mockResolvedValue({ data: { candidate, proof: 'proof', can_link: true } })
+    const wrapper = mountLink(post)
+    try {
+        await (wrapper.vm as any).openLink(work)
+        selectHandshake(wrapper, direct)
+        await flushPromises()
+
+        expect(post).toHaveBeenCalledExactlyOnceWith('/api/admin/teaching/course_works/65/dropbox/folder',
+            { handshake: direct, filename: 'handshake.json', resolve: true }, expect.objectContaining({ timeout: 120000 }))
+        expect(wrapper.get('[data-testid="module-folder-path"]').text()).toBe('/Materialien/EMails')
+    } finally { wrapper.unmount() }
+})
+
 it('rejects unrelated or oversized files before any request and never browses local folders', async () => {
     const post = vi.fn()
     const wrapper = mountLink(post)

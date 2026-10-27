@@ -335,6 +335,7 @@ describe('MC test folder import through Dropbox', () => {
         await flushPromises()
         await openCatalogTests(wrapper)
         await clickText(wrapper, 'Neuen Test anlegen')
+        await wrapper.find('input[name="mc-start-mode-new"][value="common"]').setValue(true)
         vi.mocked(axios.get).mockClear()
         return wrapper
     }
@@ -390,6 +391,22 @@ describe('MC test folder import through Dropbox', () => {
         expect(wrapper.find('[aria-label="Dropbox-Testordner zuordnen"]').text()).toContain('gültigen Testordner-Vertrag')
         expect(wrapper.find('[aria-label="Testbezeichnung"]').element.value).toBe('Mein Test')
         expect(axios.post).not.toHaveBeenCalled()
+    })
+
+    it('accepts a markdown file and sends only its fingerprint to locate the test folder', async () => {
+        const wrapper = await prepareFolderImport()
+        const digest = vi.fn().mockResolvedValueOnce(new Uint8Array([1]).buffer)
+            .mockResolvedValueOnce(new Uint8Array(32).fill(10).buffer)
+        vi.stubGlobal('crypto', { subtle: { digest } })
+        try {
+            vi.mocked(axios.post).mockResolvedValueOnce({ data: preview })
+            await chooseFolderHandshake(wrapper, 'Aufgabe', 'Aufgabe.md')
+            expect(axios.post).toHaveBeenCalledExactlyOnceWith('/api/admin/multiple-choice/test-folder/resolve',
+                { filename: 'Aufgabe.md', content_hash: '0a'.repeat(32) }, expect.objectContaining({ timeout: 120000 }))
+            expect(wrapper.find('[data-testid="test-folder-path"]').text()).toBe(folderPath)
+        } finally {
+            vi.unstubAllGlobals()
+        }
     })
 
     it('shows online conflicts without changing the test draft', async () => {
@@ -468,6 +485,7 @@ describe('Multiple Choice URL navigation', () => {
         await wrapper.find('[aria-label="Fragen pro Schüler"]').setValue('1')
         await wrapper.find('[aria-label="Erreichbare Gesamtpunkte"]').setValue('99')
         await wrapper.find('[aria-label="Bearbeitungsdauer in Minuten"]').setValue('5')
+        await wrapper.find('input[name="mc-start-mode-new"][value="common"]').setValue(true)
         await wrapper.find('[aria-label="Vorlaufzeit in Sekunden"]').setValue('0')
         await wrapper.find('input[type="checkbox"]').setValue(false)
         await chooseFile(wrapper, new File(['Vorname,Nachname,E-Mail\nTest,Person,test@example.invalid'], 'students.csv'))
@@ -486,7 +504,9 @@ describe('Multiple Choice URL navigation', () => {
         expect(wrapper.find('[aria-label="Fragen pro Schüler"]').element.value).toBe('10')
         expect(wrapper.find('[aria-label="Erreichbare Gesamtpunkte"]').element.value).toBe('10')
         expect(wrapper.find('[aria-label="Bearbeitungsdauer in Minuten"]').element.value).toBe('20')
-        expect(wrapper.find('[aria-label="Vorlaufzeit in Sekunden"]').element.value).toBe('60')
+        expect(wrapper.find('input[name="mc-start-mode-new"][value="individual"]').element.checked).toBe(true)
+        await wrapper.find('input[name="mc-start-mode-new"][value="common"]').setValue(true)
+        expect(wrapper.find('[aria-label="Vorlaufzeit in Sekunden"]').element.value).toBe('30')
         expect(wrapper.findAll('input[type="checkbox"]').filter(item => item.attributes('aria-label') !== 'Prüfungsmodus aktivieren').every((item) => item.element.checked)).toBe(true)
         expect(wrapper.find('[aria-label="Prüfungsmodus aktivieren"]').element.checked).toBe(false)
         expect(wrapper.find('textarea').element.value).toBe('')
@@ -754,11 +774,12 @@ describe('Multiple Choice teacher workflow', () => {
 
     it('publishes a new test for the opened catalog and opens its waiting room only after confirmation', async () => {
         const catalogs = [{ id: 4, title: 'Netzwerke', questions: tenQuestions() }]
-        const test = { id: 7, catalog_id: 4, title: 'Netzwerke – Test', question_count: 1, total_points: 10, duration_seconds: 1200, lead_seconds: 60, status: 'draft' }
+        const test = { id: 7, catalog_id: 4, title: 'Netzwerke – Test', question_count: 1, total_points: 10, duration_seconds: 1200, lead_seconds: 30, status: 'draft' }
         const wrapper = renderWorkspace({ catalogs })
         await flushPromises()
         await openCatalogTests(wrapper)
         await clickText(wrapper, 'Neuen Test anlegen')
+        await wrapper.find('input[name="mc-start-mode-new"][value="common"]').setValue(true)
         expect(wrapper.find('[aria-label="Gespeicherter Fragenkatalog"]').exists()).toBe(false)
         await chooseFile(wrapper, new File(['Vorname,Nachname,E-Mail\nTest,Person,test@example.invalid'], 'students.csv'))
         vi.mocked(axios.post).mockResolvedValueOnce({ data: { valid: true, rows: [{ status: 'matched' }] } })
@@ -772,9 +793,9 @@ describe('Multiple Choice teacher workflow', () => {
         await wrapper.find('[role="dialog"]').findAll('button').find((item) => item.text() === 'Test erstellen').trigger('click')
         await flushPromises()
 
-        expect(axios.post).toHaveBeenLastCalledWith('/api/admin/multiple-choice/tests', expect.objectContaining({ catalog_id: 4, title: 'Netzwerke – Test' }))
+        expect(axios.post).toHaveBeenLastCalledWith('/api/admin/multiple-choice/tests', expect.objectContaining({ catalog_id: 4, title: 'Netzwerke – Test', start_mode: 'common', lead_seconds: 30 }))
         expect(wrapper.find('[aria-label="Tests vorbereiten"]').exists()).toBe(false)
-        expect(wrapper.text()).not.toContain('Countdown starten (60 s)')
+        expect(wrapper.text()).not.toContain('Countdown starten (30 s)')
         expect(wrapper.text()).toContain('Test freigeben')
         expect(wrapper.text()).toContain('noch nicht freigegeben')
         expect(wrapper.text()).toContain('Auswertung')
@@ -1044,6 +1065,7 @@ describe('Multiple Choice teacher workflow', () => {
         await flushPromises()
         await clickText(wrapper, 'Katalog öffnen')
         await startNewTest(wrapper)
+        await wrapper.find('input[name="mc-start-mode-new"][value="common"]').setValue(true)
         await wrapper.find('[aria-label="Testbezeichnung"]').setValue('Test A')
         expect(wrapper.find('[aria-label="Fragen pro Schüler"]').element.value).toBe('10')
         await wrapper.find('textarea').setValue('Vorname,Nachname,E-Mail\nTest,Person,test@example.invalid')
@@ -1063,7 +1085,7 @@ describe('Multiple Choice teacher workflow', () => {
         expect(summary).toContain('1 eindeutig zugeordnet')
         expect(summary).toContain('10 Fragen · 10 Punkte')
         expect(summary).toContain('20 Minuten')
-        expect(summary).toContain('60 Sekunden')
+        expect(summary).toContain('30 Sekunden')
         await wrapper.find('textarea').setValue('Geänderte CSV')
         expect(wrapper.findAll('button').find((item) => item.text() === 'Test erstellen').attributes('disabled')).toBeDefined()
     })
@@ -1497,7 +1519,7 @@ describe('FilePond template selection', () => {
         const wrapper = await openImport()
         await chooseFile(wrapper, new File(['{"schema_version":2,"module_id":"invalid"}'], 'Handshake.json'))
         expect(axios.post).not.toHaveBeenCalled()
-        expect(wrapper.text()).toContain('schema_version: 1')
+        expect(wrapper.text()).toContain('eine unterstützte Modulkennung')
         vi.mocked(axios.post).mockRejectedValueOnce({ response: { data: { message: 'Quelle fehlt' } } })
         await chooseFile(wrapper, new File([handshake], 'handshake.json'))
         expect(wrapper.text()).toContain('Quelle fehlt')
@@ -1970,20 +1992,23 @@ it('edits only one personal closing deadline and can restore the shared default'
 })
 
 
-it('offers personal start with a mandatory deadline when preparing a new test', async () => {
+it('defaults to personal start and offers a 30-second countdown for common start', async () => {
     const wrapper = renderWorkspace({ catalogs: [{ id: 4, title: 'Katalog', questions: [validQuestion()] }] })
     await flushPromises()
     await clickText(wrapper, 'Katalog öffnen')
     await startNewTest(wrapper)
-    expect(wrapper.find('[aria-label="Vorlaufzeit in Sekunden"]').exists()).toBe(true)
-    expect(wrapper.find('[aria-label="Schlussfrist für alle"]').exists()).toBe(false)
+    expect(wrapper.find('input[name="mc-start-mode-new"][value="individual"]').element.checked).toBe(true)
+    expect(wrapper.find('[aria-label="Vorlaufzeit in Sekunden"]').exists()).toBe(false)
+    expect(wrapper.find('[aria-label="Schlussfrist für alle"]').exists()).toBe(true)
     expect(wrapper.findAll('input[name="mc-start-mode-new"]')).toHaveLength(2)
     expect(wrapper.text()).toContain('Die Lehrkraft startet den Countdown.')
     expect(wrapper.text()).toContain('Jede Person startet ihre eigene Bearbeitungszeit.')
-    await wrapper.find('input[name="mc-start-mode-new"][value="individual"]').setValue(true)
-    expect(wrapper.find('[aria-label="Vorlaufzeit in Sekunden"]').exists()).toBe(false)
-    expect(wrapper.find('[aria-label="Schlussfrist für alle"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('Ab dann läuft die Zeit ohne Pause')
+    await wrapper.find('input[name="mc-start-mode-new"][value="common"]').setValue(true)
+    expect(wrapper.find('[aria-label="Vorlaufzeit in Sekunden"]').element.value).toBe('30')
+    expect(wrapper.find('[aria-label="Schlussfrist für alle"]').exists()).toBe(false)
+    await wrapper.find('input[name="mc-start-mode-new"][value="individual"]').setValue(true)
+    expect(wrapper.find('[aria-label="Schlussfrist für alle"]').exists()).toBe(true)
 })
 
 
@@ -2193,6 +2218,8 @@ it('shows protected settings after a test has started', async () => {
     await openExistingTest(wrapper)
     await clickText(wrapper, 'Einstellungen bearbeiten')
     expect(wrapper.find('.mc-settings-fields').element.disabled).toBe(true)
+    expect(wrapper.find('input[name="mc-start-mode-settings"][value="common"]').element.checked).toBe(true)
+    expect(wrapper.find('[aria-label="Countdown in Sekunden"]').element.value).toBe('60')
     expect(wrapper.text()).toContain('Fragen und Bewertungsgrundlagen bleiben geschützt.')
     expect(wrapper.findAll('button').some(button => button.text() === 'Einstellungen speichern')).toBe(false)
     expect(axios.patch).not.toHaveBeenCalled()

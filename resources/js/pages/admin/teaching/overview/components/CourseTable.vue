@@ -1602,13 +1602,14 @@
                                     <WorkEmailPreparation v-if="savedWorkDialogWork" :work="savedWorkDialogWork" :date="workDialog.courseDate?.date || ''" :state="workDialogExerciseStatus" :disabled="workSaving || workDialogTypeEditing || workDialogModeEditing" />
                                     <WorkExerciseExport :work="savedWorkDialogWork || workDialogForm" :course="selected_course" :date="workDialog.courseDate?.date || ''" :active="workDialog.open" :disabled="workSaving || workDialogTypeEditing || workDialogModeEditing" :check-progress="workHasProgress(savedWorkDialogWork)" :deadline-draft="{ date: normalizeDateKey(workDialogForm.finish_until_date), time: workDialogForm.finish_until_time }" hide-folder-name @exercise-status="workDialogExerciseStatus = $event" @deadline-saved="applySavedCourseWork" @check-busy="workSaving = $event" />
                                 </div>
+                                <p v-if="workDialogFolderLinked && workDialogExerciseFolderName && !workDialogExerciseReady" class="text-caption mt-2" role="status">Die Aufgabenstellung ist noch nicht bestätigt. Nach ihrer Erstellung erneut prüfen.</p>
                             </section>
                             <div class="d-flex flex-wrap justify-end ga-2 mt-4">
                                 <span v-if="savedWorkDialogWork" class="work-dialog-status-icons d-flex align-center ga-2 mr-auto align-self-center"
                                     :inert="workSaving" :aria-disabled="workSaving" :class="{ 'opacity-50': workSaving }">
                                     <WorkFolderStatus :work="savedWorkDialogWork" :date="workDialog.courseDate?.date || ''" :size="30" />
-                                    <WorkExerciseStatus :work="savedWorkDialogWork" :course="selected_course" :date="workDialog.courseDate?.date || ''" :state="workDialogExerciseStatus" :size="30" />
-                                    <WorkDeliveryStatus :work="savedWorkDialogWork" :date="workDialog.courseDate?.date || ''" :state="workDialogExerciseStatus" :size="30" @import="openImport" @saved="applySavedCourseWork({ data: $event })" />
+                                    <WorkExerciseStatus :work="savedWorkDialogWork" :course="selected_course" :date="workDialog.courseDate?.date || ''" :state="workDialogExerciseStatus" :size="30" :disabled="!workDialogFolderLinked" />
+                                    <WorkDeliveryStatus :work="savedWorkDialogWork" :date="workDialog.courseDate?.date || ''" :state="workDialogExerciseStatus" :size="30" :disabled="!workDialogFolderLinked || !workDialogExerciseReady" @import="openImport" @saved="applySavedCourseWork({ data: $event })" />
                                 </span>
                                 <v-btn
                                     variant="text"
@@ -2620,7 +2621,7 @@ import WorkFolderStatus from './WorkFolderStatus.vue'
 import WorkDeliveryStatus from './WorkDeliveryStatus.vue'
 import WorkSimulationBadge from './WorkSimulationBadge.vue'
 import WorkSubmissionCollection from './WorkSubmissionCollection.vue'
-import { workHasProgress, workProgressNextAction } from '@/helpers/workProgress'
+import { workHasProgress, workManualCompletionFields, workProgressNextAction } from '@/helpers/workProgress'
 import WorkFolderBrowser from './WorkFolderBrowser.vue'
 import WorkExerciseStatus from './WorkExerciseStatus.vue'
 import WorkEmailPreparation from './WorkEmailPreparation.vue'
@@ -3190,6 +3191,12 @@ export default {
         savedWorkDialogCompletion() {
             return this.savedWorkDialogWork ? this.workCompletionCounts(this.savedWorkDialogWork) : { completed: 0, open: 0 }
         },
+        workDialogFolderLinked() {
+            const state = this.workFolderState(this.savedWorkDialogWork)
+            const folder = state?.module_link?.folder || state?.legacy_folders?.module || state?.folder
+
+            return Boolean(folder?.id)
+        },
         workDialogExerciseFolderName() {
             const state = this.workDialogExerciseStatus
             const work = this.savedWorkDialogWork
@@ -3198,6 +3205,19 @@ export default {
                 || state.date !== (this.workDialog.courseDate?.date || '')) return ''
 
             return state.folder?.name || ''
+        },
+        workDialogExerciseReady() {
+            const work = this.savedWorkDialogWork
+            if (!work) return false
+            const key = workDropboxKey(useAdminStore().config?.user?.id, work)
+            const checked = workExerciseCheck(key, work, this.workDialog.courseDate?.date || '')
+            const status = { ...work.status }
+            Object.values(workManualCompletionFields).forEach(field => { delete status[field] })
+
+            const currentReady = this.workDialogExerciseFolderName && this.workDialogExerciseStatus?.assignmentStatus === 'ready'
+            const cachedReady = checked?.status === 'found' && checked.data?.exercise?.assignment_status === 'ready'
+            return Boolean(currentReady || cachedReady
+                || (workHasProgress({ ...work, status }) && !workNeedsPreparation(work, this.workFolderState(work))))
         },
         workDialogGroups() {
             return Array.isArray(this.workDialogForm.groups) ? this.workDialogForm.groups : []

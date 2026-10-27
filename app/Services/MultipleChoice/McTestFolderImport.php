@@ -25,6 +25,62 @@ class McTestFolderImport
 
     public function __construct(private DropboxWorkImport $dropbox, private McImportService $imports) {}
 
+    /** Resolve an exact online Markdown file and then validate its containing test folder. */
+    public function resolveMarkdown(User $actor, string $filename, string $contentHash): array
+    {
+        $this->authorize($actor);
+        $connection = $this->dropbox->connection($actor);
+        $data = $this->dropbox->readModuleApi($connection, 'files/search_v2', ['query' => $filename,
+            'options' => ['filename_only' => true, 'max_results' => 100, 'file_status' => 'active', 'file_extensions' => ['md']]])->json();
+        $matches = [];
+        $candidates = 0;
+        for ($page = 0; ; $page++) {
+            if (! is_array($data['matches'] ?? null) || ! is_bool($data['has_more'] ?? null)) {
+                $this->fail('Die Dropbox-Suche wurde nicht vollständig bestätigt. Bitte erneut versuchen.');
+            }
+            foreach ($data['matches'] as $match) {
+                $entry = $match['metadata']['metadata'] ?? [];
+                if (($entry['.tag'] ?? null) !== 'file' || strcasecmp($entry['name'] ?? '', $filename) !== 0
+                    || ! $this->isId($entry['id'] ?? null) || ! is_string($entry['path_lower'] ?? null)) {
+                    continue;
+                }
+                $folderPath = dirname($entry['path_lower']);
+                if (! $this->isExerciseHandshakePath($folderPath.'/handshake.json')) {
+                    continue;
+                }
+                if (++$candidates > 200) {
+                    $this->fail('Zu viele passende Markdown-Dateien. Bitte die handshake.json des Testordners auswählen.');
+                }
+                $file = $this->dropbox->readModuleApi($connection, 'files/get_metadata', ['path' => $entry['id']])->json();
+                if (($file['.tag'] ?? null) === 'file' && ($file['id'] ?? null) === $entry['id']
+                    && ($file['path_lower'] ?? null) === $entry['path_lower'] && ($file['content_hash'] ?? null) === $contentHash) {
+                    $matches[$folderPath] = $entry['id'];
+                }
+            }
+            if (! $data['has_more']) {
+                break;
+            }
+            if ($page >= 2 || ! is_string($data['cursor'] ?? null) || $data['cursor'] === '') {
+                $this->fail('Die Dropbox-Suche ist noch unvollständig. Bitte später erneut versuchen.');
+            }
+            $data = $this->dropbox->readModuleApi($connection, 'files/search/continue_v2', ['cursor' => $data['cursor']])->json();
+        }
+        abort_if(count($matches) > 1, 409, 'Diese Markdown-Datei wurde in mehreren Testordnern gefunden. Bitte die handshake.json des gewünschten Ordners auswählen.');
+        if ($matches === []) {
+            $this->fail('Die Markdown-Datei wurde in keinem bestätigten Testordner gefunden. Bitte eine Datei direkt aus dem Testordner oder dessen handshake.json auswählen.');
+        }
+        $folder = $this->dropbox->metadata($connection, array_key_first($matches));
+        abort_unless($folder['path_lower'] === array_key_first($matches) && $this->isId($folder['id']), 409, 'Der Testordner hat sich geändert. Bitte erneut auswählen.');
+
+        $preview = $this->preview($actor, $folder['id']);
+        $file = $this->dropbox->readModuleApi($connection, 'files/get_metadata', ['path' => reset($matches)])->json();
+        abort_unless(($file['.tag'] ?? null) === 'file' && ($file['id'] ?? null) === reset($matches)
+            && dirname($file['path_lower'] ?? '') === $folder['path_lower'] && ($file['content_hash'] ?? null) === $contentHash,
+            409, 'Die Markdown-Datei wurde während der Prüfung geändert. Bitte erneut auswählen.');
+
+        return $preview;
+    }
+
     /** Resolve a local identity against a bounded online search, never local roster data. */
     public function resolve(User $actor, string $contents): array
     {

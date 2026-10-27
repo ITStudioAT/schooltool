@@ -51,11 +51,13 @@
                             <p class="text-caption mt-2">Der neue Test wird als Entwurf erstellt und mit dieser Leistungsfeststellung verknüpft. Die Freigabe erfolgt später im MC-Bereich.</p>
                             <p v-if="!mcOptions.catalogs.length" class="text-caption mt-2">Bitte zuerst unter Unterricht-Tools · Multiple Choice einen Fragenkatalog vorbereiten.</p>
                         </template>
-                        <p class="text-body-2 mt-4">LF gesamt: {{ mcMaximumPoints ?? 'nicht festgelegt' }} Punkte.</p>
-                        <v-text-field v-model.number="mcPoints" label="MC-Punkte" type="number" min="0.01" :max="mcMaximumPoints"
+                        <v-text-field v-model.number="mcPoints" label="MC-Punkte" type="number" min="0.01" max="100000"
                             step="0.01" :disabled="loading || mcOptions.configuration?.locked" class="mt-3" hide-details />
-                        <p v-if="mcPointsValid" class="text-caption mt-2" role="status">{{ mcPoints }} Punkte MC + {{ mcOtherPoints }} Punkte übrige Aufgaben = {{ mcMaximumPoints }} Punkte gesamt.<template v-if="mcMode === 'existing'"> Die Punkte des vorhandenen MC-Tests werden auf diesen Anteil umgerechnet.</template></p>
-                        <p v-else class="text-caption mt-2" role="status">Bitte einen positiven MC-Anteil bis zur LF-Gesamtpunktzahl angeben. Die übrigen Aufgaben und Bewertungskriterien werden anschließend erneut abgestimmt.</p>
+                        <v-text-field v-model.number="mcOtherPoints" label="Punkte übrige Aufgaben" type="number" min="0" max="100000"
+                            step="0.01" :disabled="loading || mcOptions.configuration?.locked" class="mt-3" hide-details />
+                        <p v-if="mcPointsValid" class="text-caption mt-2" role="status">{{ mcPoints }} Punkte MC + {{ mcOtherPoints }} Punkte übrige Aufgaben = {{ assessmentPoints }} Punkte gesamt.<template v-if="mcMode === 'existing'"> Die Punkte des vorhandenen MC-Tests werden auf diesen Anteil umgerechnet.</template></p>
+                        <p v-if="mcPointsValid && assessmentPoints !== Number(mcMaximumPoints)" class="text-caption mt-2">Die Bewertungsskala in Schooltool beträgt {{ mcMaximumPoints }} Punkte. Die Umrechnung für die spätere Übernahme ist noch abzustimmen.</p>
+                        <p v-if="!mcPointsValid" class="text-caption mt-2" role="status">Bitte gültige Punkte für den MC-Test und die übrigen Aufgaben angeben. Insgesamt sind höchstens 100000 Punkte möglich.</p>
                     </template>
                     <v-alert v-else-if="!error" type="warning" variant="tonal">Multiple Choice ist noch nicht verfügbar.</v-alert>
                 </div>
@@ -116,9 +118,17 @@ const selectedMcTest = computed(() => filteredMcTests.value.find(test => String(
 const mcDuration = ref(20)
 const mcPoints = ref(null)
 const mcMaximumPoints = computed(() => mcOptions.value?.configuration?.maximum_points ?? null)
-const mcOtherPoints = computed(() => Math.round((Number(mcMaximumPoints.value) - Number(mcPoints.value)) * 100) / 100)
+const enteredOtherPoints = ref(null)
+const otherPointsEdited = ref(false)
+const mcOtherPoints = computed({
+    get: () => otherPointsEdited.value ? enteredOtherPoints.value
+        : Math.max(0, Math.round((Number(mcMaximumPoints.value) - Number(mcPoints.value)) * 100) / 100),
+    set: value => { otherPointsEdited.value = true; enteredOtherPoints.value = value },
+})
+const assessmentPoints = computed(() => Math.round((Number(mcPoints.value) + Number(mcOtherPoints.value)) * 100) / 100)
 const mcPointsValid = computed(() => Number(mcMaximumPoints.value) > 0 && Number(mcPoints.value) > 0
-    && Number(mcPoints.value) <= Number(mcMaximumPoints.value) && /^\d+(?:\.\d{1,2})?$/.test(String(mcPoints.value)))
+    && /^\d+(?:\.\d{1,2})?$/.test(String(mcPoints.value)) && mcOtherPoints.value !== null
+    && /^\d+(?:\.\d{1,2})?$/.test(String(mcOtherPoints.value)) && assessmentPoints.value <= 100000)
 const mcDispatchLocked = ref(false)
 const mcReady = computed(() => !includeMc.value || (!mcLoading.value && !mcDispatchLocked.value && !mcOptions.value?.configuration?.locked
     && mcPointsValid.value && mcOptions.value?.available && (mcMode.value === 'existing'
@@ -163,9 +173,9 @@ async function checkExercise(fresh = false) {
     const cached = !fresh && props.active && current.value && needsPreparation.value ? workExerciseCheck(key, props.work, props.date) : null
     exerciseChecking.value = props.active && current.value && needsPreparation.value && !cached
     const context = { userId: admin.config?.user?.id, workId: props.work?.id, courseId: props.course?.id, date: props.date }
-    const publish = (status, folder = null, emailPreparation = null, emailDispatch = null) => {
+    const publish = (status, folder = null, emailPreparation = null, emailDispatch = null, assignmentStatus = null) => {
         checkedStatus.value = status
-        emit('exercise-status', { ...context, status, folder, emailPreparation, emailDispatch, checkedAt: checkedAt.value, checking: exerciseChecking.value })
+        emit('exercise-status', { ...context, status, folder, emailPreparation, emailDispatch, assignmentStatus, checkedAt: checkedAt.value, checking: exerciseChecking.value })
     }
     if (cached) {
         checkedAt.value = cached.checkedAt
@@ -177,7 +187,7 @@ async function checkExercise(fresh = false) {
     const displayed = cached || (previous?.status === 'found' ? previous : null)
     if (displayed) checkedAt.value = displayed.checkedAt
     publish(displayed ? displayed.status : exerciseChecking.value ? 'checking' : 'unknown', displayed?.folder,
-        displayed?.data?.exercise?.email_preparation, displayed?.data?.exercise?.email_dispatch)
+        displayed?.data?.exercise?.email_preparation, displayed?.data?.exercise?.email_dispatch, displayed?.data?.exercise?.assignment_status)
     if (!props.active || !current.value || !needsPreparation.value) return
     const progressId = fresh ? crypto.randomUUID() : null
     let progressOperation = null
@@ -211,7 +221,7 @@ async function checkExercise(fresh = false) {
         if (data.connected && data.module_link?.folder?.id && data.exercise?.status === 'found'
             && typeof data.exercise.folder?.name === 'string' && data.exercise.folder.name.trim()) {
             exerciseFolder.value = data.exercise.folder
-            publish('found', data.exercise.folder, data.exercise.email_preparation, data.exercise.email_dispatch)
+            publish('found', data.exercise.folder, data.exercise.email_preparation, data.exercise.email_dispatch, data.exercise.assignment_status)
             opened.value = false
             exerciseMessage.value = data.deadline_sync?.message || ''
         } else {
@@ -256,6 +266,8 @@ function openDialog() {
     mcCatalogId.value = null
     mcExistingCatalogId.value = null
     mcPoints.value = null
+    enteredOtherPoints.value = null
+    otherPointsEdited.value = false
     mcMode.value = 'existing'
     mcPayload = null
     expectedTestId = null
@@ -281,6 +293,8 @@ async function loadMcOptions() {
         const linkedTest = mcOptions.value.tests.find(test => String(test.id) === String(mcTestId.value))
         mcExistingCatalogId.value = linkedTest ? Number(linkedTest.catalog_id || 0) : null
         mcPoints.value = data.linked_mc_points ?? null
+        enteredOtherPoints.value = data.linked_other_points ?? null
+        otherPointsEdited.value = data.linked_other_points !== null && data.linked_other_points !== undefined
         mcMode.value = mcTestId.value || data.tests.length ? 'existing' : 'new'
     } catch (failure) {
         if (operation === mcSequence) error.value = failure.response?.data?.message || failure.message || 'Die MC-Auswahl konnte nicht geladen werden.'
@@ -310,7 +324,7 @@ async function copyExport() {
     loading.value = true
     try {
         if (mc && !mcPayload) {
-            mcPayload = { mc_mode: mcMode.value, mc_points: Number(mcPoints.value), expected_maximum_points: Number(mcMaximumPoints.value), expected_test_id: expectedTestId, request_id: crypto.randomUUID(),
+            mcPayload = { mc_mode: mcMode.value, mc_points: Number(mcPoints.value), other_points: Number(mcOtherPoints.value), expected_maximum_points: Number(mcMaximumPoints.value), expected_test_id: expectedTestId, request_id: crypto.randomUUID(),
                 ...(props.date ? { date: props.date } : {}), ...(mcMode.value === 'existing' ? { test_id: mcTestId.value }
                     : { catalog_id: mcCatalogId.value, total_points: Number(mcPoints.value), duration_minutes: mcDuration.value }) }
         }
@@ -380,7 +394,7 @@ watch(includeMc, value => {
 watch(mcExistingCatalogId, () => {
     if (!selectedMcTest.value) mcTestId.value = null
 })
-watch(() => [mcMode.value, mcTestId.value, mcCatalogId.value, mcDuration.value, mcPoints.value], () => { clear(); mcPayload = null })
+watch(() => [mcMode.value, mcTestId.value, mcCatalogId.value, mcDuration.value, mcPoints.value, mcOtherPoints.value], () => { clear(); mcPayload = null })
 watch(() => [admin.config?.user?.id, props.work?.id, props.course?.id, props.date, props.active, bindingVersion.value, needsPreparation.value,
     props.work?.finish_until_date, props.work?.finish_until_time, JSON.stringify(props.work?.communicated_deadline)], () => checkExercise(), { immediate: true })
 onBeforeUnmount(() => { clear(); resetProgressPolling(); exerciseSequence++; mcSequence++ })

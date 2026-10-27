@@ -1,13 +1,13 @@
 <template>
     <span v-if="workAutomationEnabled(work) || workHasProgress(work)" class="d-inline-flex flex-wrap align-center ga-1" @click.stop @keydown.stop>
-        <v-btn icon :size="Number(size) > 20 ? 'small' : 'x-small'" :density="Number(size) > 20 ? 'default' : 'compact'" variant="text" :color="preparation.complete ? 'success' : 'error'" :aria-label="preparation.label" :title="preparation.label" data-workflow-stage="preparation" @click.stop="opened = 'preparation'">
+        <v-btn icon :size="Number(size) > 20 ? 'small' : 'x-small'" :density="Number(size) > 20 ? 'default' : 'compact'" variant="text" :color="preparation.complete ? 'success' : 'error'" :disabled="disabled" :aria-label="preparation.label" :title="preparation.label" data-workflow-stage="preparation" @click.stop="opened = 'preparation'">
             <v-icon :size="size">mdi-email-edit-outline</v-icon>
         </v-btn>
-        <v-btn icon :size="Number(size) > 20 ? 'small' : 'x-small'" :density="Number(size) > 20 ? 'default' : 'compact'" variant="text" :color="sent || manuallyCompleted ? 'success' : 'error'" :aria-label="sendLabel" :title="sendLabel" data-workflow-stage="send" @click.stop="opened = 'send'">
+        <v-btn icon :size="Number(size) > 20 ? 'small' : 'x-small'" :density="Number(size) > 20 ? 'default' : 'compact'" variant="text" :color="sent || manuallyCompleted ? 'success' : 'error'" :disabled="disabled || sendBlocked" :aria-label="sendLabel" :title="sendBlocked ? 'Zuerst die E-Mail-Vorbereitung abschließen' : sendLabel" data-workflow-stage="send" @click.stop="opened = 'send'">
             <v-icon :size="size">mdi-send-outline</v-icon>
         </v-btn>
         <v-btn v-for="stage in stages" :key="stage.key" icon :size="Number(size) > 20 ? 'small' : 'x-small'" :density="Number(size) > 20 ? 'default' : 'compact'" variant="text" :color="stage.color"
-            :disabled="stage.blocked && !stage.manuallyCompleted" :aria-label="stageLabel(stage)" :title="stageLabel(stage)" :data-workflow-stage="stage.key" :data-workflow-state="stage.state" @click.stop="openStage(stage)">
+            :disabled="disabled || stage.blocked" :aria-label="stageLabel(stage)" :title="stageLabel(stage)" :data-workflow-stage="stage.key" :data-workflow-state="stage.state" @click.stop="openStage(stage)">
             <v-icon :size="size">{{ stage.icon }}</v-icon>
         </v-btn>
     </span>
@@ -58,7 +58,7 @@
                 <v-btn v-if="opened === 'send' && (!sent || manuallyCompleted)" variant="tonal" :prepend-icon="manuallyCompleted ? 'mdi-undo' : 'mdi-check'" :loading="savingCompletion" :disabled="savingCompletion" @click="saveCompletion('task_dispatch_completed', !manuallyCompleted)">
                     {{ manuallyCompleted ? 'Markierung aufheben' : 'Als erledigt markieren' }}
                 </v-btn>
-                <v-btn v-if="selectedStage?.completionField" variant="tonal" :prepend-icon="selectedStage?.manuallyCompleted ? 'mdi-undo' : 'mdi-check'" :loading="savingCompletion" :disabled="savingCompletion || (selectedStage.blocked && !selectedStage.manuallyCompleted)" @click="saveCompletion(selectedStage.completionField, !selectedStage.manuallyCompleted)">
+                <v-btn v-if="selectedStage?.completionField" variant="tonal" :prepend-icon="selectedStage?.manuallyCompleted ? 'mdi-undo' : 'mdi-check'" :loading="savingCompletion" :disabled="savingCompletion || selectedStage.blocked" @click="saveCompletion(selectedStage.completionField, !selectedStage.manuallyCompleted)">
                     {{ selectedStage?.manuallyCompleted ? 'Markierung aufheben' : 'Als erledigt markieren' }}
                 </v-btn>
                 <WorkSubmissionCollection v-if="opened === 'collection' && !selectedStage?.simulation" :work="work" :date="date" :dispatch="dispatch" :repeat="(!selectedStage?.manuallyCompleted && selectedStage?.complete) || Boolean(lastCollectionAt)" :disabled="savingCompletion" />
@@ -90,15 +90,16 @@ import WorkGradingAction from './WorkGradingAction.vue'
 import WorkResultNotification from './WorkResultNotification.vue'
 import WorkEmailPreparation from './WorkEmailPreparation.vue'
 
-const props = defineProps({ work: { type: Object, required: true }, date: { type: String, default: '' }, state: { type: Object, default: null }, size: { type: [Number, String], default: 18 } })
+const props = defineProps({ work: { type: Object, required: true }, date: { type: String, default: '' }, state: { type: Object, default: null }, size: { type: [Number, String], default: 18 }, disabled: Boolean })
 const admin = useAdminStore()
 const emit = defineEmits(['import', 'saved'])
 const manuallyCompleted = computed(() => workTaskDispatchCompleted(props.work))
-const stages = computed(() => workProgressStages(props.work).map(stage => stage.key === 'collection' && !hasSentTasks.value
-    ? { ...stage, blocked: true, blockedBy: 'E-Mail-Versand' } : stage))
+const stages = computed(() => workProgressStages(props.work).map(stage => !preparation.value.complete
+    ? { ...stage, blocked: true, blockedBy: 'E-Mail-Vorbereitung' }
+    : !hasSentTasks.value ? { ...stage, blocked: true, blockedBy: 'E-Mail-Versand' } : stage))
 const stageLabel = stage => stage.blocked ? `${stage.label} · zuerst „${stage.blockedBy}“ abschließen`
     : stage.completedAt ? `${stage.label} · ${assessmentTimeText(stage.completedAt)}` : stage.label
-const openStage = stage => { if (!stage.blocked || stage.manuallyCompleted) opened.value = stage.key }
+const openStage = stage => { if (!props.disabled && !stage.blocked) opened.value = stage.key }
 const lastCollectionAt = computed(() => workLastCollectionAt(props.work))
 const simulationEvaluation = computed(() => workSimulationEvaluation(props.work))
 const sortedSimulationRows = computed(() => sortedPeople(simulationEvaluation.value?.rows))
@@ -116,6 +117,7 @@ const preparation = computed(() => {
     return { title: 'E-Mail-Vorbereitung', completionField: workManualCompletionFields.preparation, manuallyCompleted,
         complete: manuallyCompleted || ready, label: `E-Mail-Vorbereitung: ${manuallyCompleted ? 'manuell erledigt' : ready ? 'vorbereitet' : 'noch offen'}` }
 })
+const sendBlocked = computed(() => !preparation.value.complete)
 const selectedStage = computed(() => opened.value === 'preparation' ? preparation.value : stages.value.find(stage => stage.key === opened.value))
 const nextAction = computed(() => workProgressNextAction(props.work) || (preparation.value.complete ? 'E-Mails versenden' : opened.value === 'preparation' ? 'E-Mails vorbereiten' : 'Abgaben einsammeln'))
 const nextActionText = computed(() => nextAction.value === 'Abgeschlossen' ? 'Status: ABGESCHLOSSEN.' : `Nächster Schritt: ${nextAction.value}.`)
@@ -142,13 +144,15 @@ const dispatch = computed(() => {
 })
 const sent = computed(() => dispatch.value.status === 'sent')
 const hasSentTasks = computed(() => manuallyCompleted.value || (['sent', 'partial'].includes(dispatch.value.status) && Number(dispatch.value.confirmed_count) > 0))
-watch(stages, value => { if (value.find(stage => stage.key === opened.value)?.blocked && !selectedStage.value?.manuallyCompleted) opened.value = null })
+watch(stages, value => { if (value.find(stage => stage.key === opened.value)?.blocked) opened.value = null })
+watch(sendBlocked, blocked => { if (blocked && opened.value === 'send') opened.value = null })
 const sendLabel = computed(() => sent.value ? `E-Mails versandt${dispatch.value.transport === 'mailpit' ? ' · Testversand über Mailpit' : ''}`
     : manuallyCompleted.value ? 'E-Mail-Versand: manuell erledigt'
     : dispatch.value.status === 'partial' ? `E-Mail-Versand unvollständig: ${dispatch.value.confirmed_count} bestätigt`
         : dispatch.value.status === 'unknown' ? 'E-Mail-Versand nicht bestätigt – erneut prüfen' : 'E-Mails noch nicht versandt')
 
 watch(opened, () => { completionError.value = '' })
+watch(() => props.disabled, disabled => { if (disabled) opened.value = null })
 
 async function saveCompletion(field, completed) {
     if (savingCompletion.value) return
