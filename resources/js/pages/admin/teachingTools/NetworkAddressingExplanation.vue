@@ -30,7 +30,7 @@
                             <path :d="current.path" class="active-path" />
                             <circle r="9" class="moving-packet"><animateMotion v-if="!reducedMotion" :path="current.path" dur="1.25s" fill="freeze" /><set v-else attributeName="opacity" to="0" /></circle>
                         </g>
-                        <g :class="{ active: current.active === 'pc' }" class="device"><rect x="52" y="121" width="96" height="65" rx="10"/><text x="100" y="148">PC</text><text x="100" y="170" class="small">.10.20</text></g>
+                        <g :class="{ active: current.active === 'pc' }" class="device"><rect x="52" y="121" width="96" height="65" rx="10"/><text x="100" y="148">PC</text><text x="100" y="170" class="small pc-address">{{ current.configured ? '.10.20' : 'keine IP' }}</text></g>
                         <g :class="{ active: current.active === 'switch' }" class="device"><rect x="247" y="126" width="106" height="60" rx="10"/><text x="300" y="151">Switch</text><text x="300" y="172" class="small">VLAN 10</text></g>
                         <g :class="{ active: current.active === 'printer' || (current.id === 'local-frame' && scenarioKey === 'local') }" class="device"><rect x="447" y="49" width="106" height="62" rx="10"/><text x="500" y="75">Drucker</text><text x="500" y="96" class="small">.10.30</text></g>
                         <g :class="{ active: current.active === 'router' }" class="device router"><rect x="427" y="240" width="146" height="72" rx="12"/><text x="500" y="266">Router</text><text x="500" y="289" class="small">DHCP · DNS · Firewall</text></g>
@@ -47,7 +47,12 @@
                     <p v-if="!current.source" class="diagram-caption">In diesem Schritt stehen Konfiguration, Entscheidung oder Nachbarauflösung im Mittelpunkt; die Striche sind keine erfundenen IP-Adressen.</p>
                 </div>
                 <section class="step-explanation" aria-live="polite" aria-atomic="true" :class="{ failure: current.blocked, finished: current.complete }">
-                    <p class="eyebrow">Schritt {{ stepIndex + 1 }} von {{ steps.length }}</p><h3>{{ current.title }}</h3><p>{{ current.body }}</p>
+                    <div class="step-progress">
+                        <span>Aktueller Schritt</span>
+                        <strong>Schritt {{ stepIndex + 1 }} / {{ steps.length }}</strong>
+                        <progress :value="stepIndex + 1" :max="steps.length" aria-label="Fortschritt im Ablauf">{{ stepIndex + 1 }} / {{ steps.length }}</progress>
+                    </div>
+                    <h3>{{ current.title }}</h3><p>{{ current.body }}</p>
                     <div class="reason"><strong>Warum gerade jetzt?</strong><p>{{ current.why }}</p></div>
                     <div class="concepts" aria-label="Jetzt benötigte Begriffe"><span v-for="concept in current.concepts" :key="concept">{{ concept }}</span></div>
                     <div v-if="current.compare" class="net-comparison"><code>192.168.10.20 UND /24 = 192.168.10.0</code><code>{{ current.compare }} UND /24 = {{ ipv4Network(current.compare, 24).network }}</code><strong>{{ ipv4Network(current.compare, 24).network === '192.168.10.0' ? 'Gleiches Subnetz → lokal zustellen' : 'Anderes Subnetz → Routingtabelle prüfen' }}</strong></div>
@@ -162,6 +167,13 @@ onMounted(() => { reducedMotion.value = window.matchMedia?.('(prefers-reduced-mo
 
 <style scoped>
 .addressing-lesson { max-width: 1320px; margin: auto; color: #20364d; font-size: 1rem; line-height: 1.55; }
+.step-progress { display: grid; gap: 4px; margin-bottom: 16px; }
+.step-progress span { color: #4b6b83; font-size: .78rem; font-weight: 650; }
+.step-progress strong { color: #174c76; font-size: 1.3rem; line-height: 1.2; }
+.step-progress progress { width: 100%; height: 8px; margin-top: 4px; appearance: none; border: 0; border-radius: 999px; overflow: hidden; background: #d5e4ef; color: #287ca9; }
+.step-progress progress::-webkit-progress-bar { background: #d5e4ef; }
+.step-progress progress::-webkit-progress-value { background: #287ca9; border-radius: 999px; }
+.step-progress progress::-moz-progress-bar { background: #287ca9; border-radius: 999px; }
 .lesson-heading, .section-heading { display: flex; justify-content: space-between; align-items: end; gap: 24px; margin-bottom: 18px; }.lesson-heading h1 { margin: 0; color: #193c68; font-size: clamp(1.45rem, 2.5vw, 2rem); line-height: 1.2; }.lesson-heading > span { color: #61788e; font-size: .8rem; white-space: nowrap; }.eyebrow { margin: 0 0 5px; color: #3870a1; font-size: .76rem; font-weight: 700; }.section-heading h2 { margin: 0; color: #193c68; font-size: 1.6rem; line-height: 1.2; }.section-heading > p { max-width: 47ch; margin: 0; color: #5b7288; font-size: .88rem; }
 button, select, input { font: inherit; }button { cursor: pointer; }button:focus-visible, select:focus-visible, input:focus-visible, .bit-lab:focus-visible { outline: 3px solid #397db8; outline-offset: 3px; }button:disabled { cursor: default; opacity: .45; }.chapter-tabs { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 14px; }.chapter-tabs button, .playback-controls button, .action { min-height: 40px; padding: 8px 14px; border: 1px solid #c7d8e7; border-radius: 8px; background: white; color: #285a85; font-weight: 650; }.chapter-tabs button[aria-pressed='true'] { background: #e5f0fa; border-color: #387db4; color: #174c7b; box-shadow: inset 0 -2px #387db4; }.chapter { padding: 24px; border: 1px solid #d8e3ed; border-radius: 16px; background: #fff; }.scenario-choices { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }.scenario-choices button { display: flex; flex-direction: column; gap: 3px; padding: 12px 15px; border: 1px solid #cbdbe8; border-radius: 10px; background: #f9fbfd; color: #2a4e70; text-align: left; }.scenario-choices button[aria-pressed='true'] { background: #e9f4fa; border: 2px solid #377ca4; padding: 11px 14px; }.scenario-choices small { color: #56748c; font-size: .75rem; }.scenario-choices code { font-size: .85rem; }
 .journey-options, .lab-controls, .playback-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; margin: 15px 0; }.journey-options label, .lab-controls label, .playback-controls label, .route-picker { color: #4b647b; font-size: .83rem; }select { margin-left: 6px; min-height: 36px; padding: 5px 27px 5px 9px; border: 1px solid #bfcfdd; border-radius: 6px; color: #204a70; background: #fff; appearance: auto; }.check-option { display: flex; align-items: center; gap: 7px; }.check-option input { width: 17px; height: 17px; accent-color: #296c9b; }

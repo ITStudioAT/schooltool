@@ -17,14 +17,23 @@ afterEach(() => { wrappers.splice(0).forEach(wrapper => wrapper.unmount()); vi.u
 it('restores the selected stage and preserves preview parameters while stepping through DHCP', async () => {
     const { wrapper, router } = await render('?preview=1&ipStep=2&other=kept#example')
     expect(wrapper.get('.step-explanation h3').text()).toContain('DHCP Offer')
+    expect(wrapper.get('.step-progress strong').text()).toContain('Schritt 3 / ')
+    expect(wrapper.get('[aria-label="Fortschritt im Ablauf"]').attributes('value')).toBe('3')
     expect(wrapper.get('[aria-label="Aktuelle Einstellungen des PCs"]').text()).toContain('noch nicht eingerichtet')
+    expect(wrapper.get('.pc-address').text()).toBe('keine IP')
     await wrapper.get('[aria-label="Nächster Ablaufschritt"]').trigger('click')
+    expect(wrapper.get('.pc-address').text()).toBe('keine IP')
     await wrapper.get('[aria-label="Nächster Ablaufschritt"]').trigger('click')
     await flushPromises()
     expect(wrapper.get('.step-explanation h3').text()).toContain('DHCP ACK')
+    expect(wrapper.get('.step-progress strong').text()).toContain('Schritt 5 / ')
+    expect(wrapper.get('[aria-label="Fortschritt im Ablauf"]').attributes('value')).toBe('5')
     expect(wrapper.get('[aria-label="Aktuelle Einstellungen des PCs"]').text()).toContain('255.255.255.0')
+    expect(wrapper.get('.pc-address').text()).toBe('.10.20')
     expect(router.currentRoute.value.query).toMatchObject({ preview: '1', other: 'kept', ipStep: '4' })
     expect(router.currentRoute.value.hash).toBe('#example')
+    await wrapper.get('[aria-label="Vorheriger Ablaufschritt"]').trigger('click')
+    expect(wrapper.get('.pc-address').text()).toBe('keine IP')
 })
 
 it('demonstrates how prefixes alter the comparison without joining separate VLANs', async () => {
