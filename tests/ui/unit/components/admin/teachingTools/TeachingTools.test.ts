@@ -182,15 +182,18 @@ describe('Teaching tools games navigation', () => {
 
     it('opens the network learning area, student preview and sharing setup', async () => {
         const { wrapper } = await renderTools('/admin/teaching-tools/explanations')
-        expect(wrapper.get('[aria-label="Netzwerke öffnen"]').text()).toContain('4 Erklärungen')
+        expect(wrapper.get('[aria-label="Netzwerke öffnen"]').text()).toContain('7 Erklärungen')
         expect(wrapper.get('[aria-label="Verfügbare Kategorien"]').find('.explanation-tile__preview').exists()).toBe(false)
         await wrapper.get('[aria-label="Netzwerke öffnen"]').trigger('click')
         await flushPromises()
         expect(wrapper.get('h1').text()).toBe('Netzwerke')
-        expect(wrapper.get('[aria-label="Verfügbare Erklärungen"]').findAll('a')).toHaveLength(4)
+        expect(wrapper.get('[aria-label="Verfügbare Erklärungen"]').findAll('a')).toHaveLength(7)
         expect(wrapper.get('[aria-label="Übertragungsmedien, LAN und WLAN öffnen"]').attributes('href')).toBe('/admin/teaching-tools/explanations/network-media')
         expect(wrapper.get('[aria-label="Datenkommunikation und Internet öffnen"]').attributes('href')).toBe('/admin/teaching-tools/explanations/network-communication')
         expect(wrapper.get('[aria-label="IP-Adressen, Netze und Routing öffnen"]').attributes('href')).toBe('/admin/teaching-tools/explanations/network-addressing')
+        expect(wrapper.get('[aria-label="Netzwerkprotokolle und Dienste öffnen"]').attributes('href')).toBe('/admin/teaching-tools/explanations/network-protocols')
+        expect(wrapper.get('[aria-label="Netzwerksicherheit und Datenschutz öffnen"]').attributes('href')).toBe('/admin/teaching-tools/explanations/network-security')
+        expect(wrapper.get('[aria-label="Netzwerke planen, betreiben und Störungen erkennen öffnen"]').attributes('href')).toBe('/admin/teaching-tools/explanations/network-operations')
         expect(wrapper.get('.explanations__back').attributes('href')).toBe('/admin/teaching-tools/explanations')
         await wrapper.get('[aria-label="Netzwerkgrundlagen und Geräte öffnen"]').trigger('click')
         await flushPromises()
@@ -208,6 +211,42 @@ describe('Teaching tools games navigation', () => {
         await flushPromises()
         expect(window.axios.post).toHaveBeenCalledWith('/api/admin/teaching-explanations/network-fundamentals/publication', { access_mode: 'public' })
         expect(wrapper.get('.explanation-detail__link input').element.value).toBe('https://schooltool.example/explanations/network')
+    })
+
+    it('opens network protocols and loads the interactive student preview without publishing', async () => {
+        const { wrapper, router } = await renderTools('/admin/teaching-tools/explanations/networks')
+        await wrapper.get('[aria-label="Netzwerkprotokolle und Dienste öffnen"]').trigger('click')
+        await flushPromises()
+        expect(router.currentRoute.value.path).toBe('/admin/teaching-tools/explanations/network-protocols')
+        expect(window.axios.get).toHaveBeenCalledWith('/api/admin/teaching-explanations/network-protocols')
+        await wrapper.findAll('button').find(button => button.text() === 'Schüleransicht testen').trigger('click')
+        await vi.waitFor(() => expect(wrapper.get('[role="dialog"] .protocols-lesson h1').text()).toBe('Netzwerkprotokolle und Dienste'))
+        expect(wrapper.get('[role="dialog"]').text()).toContain('Client und Server')
+        expect(window.axios.post).not.toHaveBeenCalled()
+    })
+
+    it('opens network security and loads its student preview without publishing', async () => {
+        const { wrapper, router } = await renderTools('/admin/teaching-tools/explanations/networks')
+        await wrapper.get('[aria-label="Netzwerksicherheit und Datenschutz öffnen"]').trigger('click')
+        await flushPromises()
+        expect(router.currentRoute.value.path).toBe('/admin/teaching-tools/explanations/network-security')
+        expect(window.axios.get).toHaveBeenCalledWith('/api/admin/teaching-explanations/network-security')
+        await wrapper.findAll('button').find(button => button.text() === 'Schüleransicht testen').trigger('click')
+        await vi.waitFor(() => expect(wrapper.get('[role="dialog"] .security-lesson h1').text()).toBe('Netzwerksicherheit und Datenschutz'))
+        expect(wrapper.get('[role="dialog"]').text()).toContain('Vertraulichkeit')
+        expect(window.axios.post).not.toHaveBeenCalled()
+    })
+
+    it('opens network operations and loads its student preview without publishing', async () => {
+        const { wrapper, router } = await renderTools('/admin/teaching-tools/explanations/networks')
+        await wrapper.get('[aria-label="Netzwerke planen, betreiben und Störungen erkennen öffnen"]').trigger('click')
+        await flushPromises()
+        expect(router.currentRoute.value.path).toBe('/admin/teaching-tools/explanations/network-operations')
+        expect(window.axios.get).toHaveBeenCalledWith('/api/admin/teaching-explanations/network-operations')
+        await wrapper.findAll('button').find(button => button.text() === 'Schüleransicht testen').trigger('click')
+        await vi.waitFor(() => expect(wrapper.get('[role="dialog"] .operations-lesson h1').text()).toBe('Netzwerke planen, betreiben und Störungen erkennen'))
+        expect(wrapper.get('[role="dialog"]').text()).toContain('Nutzung und Dienste')
+        expect(window.axios.post).not.toHaveBeenCalled()
     })
 
     it('opens IP addressing from the network overview and renders its packet journey in the student preview', async () => {

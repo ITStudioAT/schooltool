@@ -58,6 +58,21 @@ class TeachingExplanationCatalog
                 'title' => 'IP-Adressen, Netze und Routing',
                 'category' => 'Netzwerke',
             ],
+            'network-protocols' => [
+                'key' => 'network-protocols',
+                'title' => 'Netzwerkprotokolle und Dienste',
+                'category' => 'Netzwerke',
+            ],
+            'network-security' => [
+                'key' => 'network-security',
+                'title' => 'Netzwerksicherheit und Datenschutz',
+                'category' => 'Netzwerke',
+            ],
+            'network-operations' => [
+                'key' => 'network-operations',
+                'title' => 'Netzwerke planen, betreiben und Störungen erkennen',
+                'category' => 'Netzwerke',
+            ],
         ];
     }
 

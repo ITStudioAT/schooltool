@@ -82,7 +82,7 @@
                     <RouterLink :to="`/admin/teaching-tools/explanations/${item.key}`" class="explanation-tile" :aria-label="`${item.title} öffnen`">
                         <div v-if="item.category === 'number-systems'" class="explanation-tile__preview" aria-hidden="true"><span>{{ item.sourceNotation.prefix }}{{ item.example }}<sub v-if="item.sourceNotation.subscript">{{ item.sourceNotation.subscript }}</sub></span><span class="explanation-tile__arrow">→</span><span>{{ item.prefix }}{{ item.result }}<sub v-if="item.subscript">{{ item.subscript }}</sub></span></div>
                         <div v-else class="explanation-tile__preview" aria-hidden="true"><v-icon icon="mdi-lan-connect" size="64" /></div>
-                        <div class="explanation-tile__copy"><v-icon :icon="currentCategory.icon" size="26" aria-hidden="true" /><h2>{{ item.title }}</h2>
+                        <div class="explanation-tile__copy"><div><v-icon :icon="currentCategory.icon" size="26" aria-hidden="true" /><h2>{{ item.title }}</h2></div>
                             <p>{{ item.description }}</p>
                             <span class="explanation-tile__open">Erklärung öffnen <span aria-hidden="true">↗</span></span>
                         </div>
@@ -278,7 +278,10 @@ watch(accessMode, () => { successMessage.value = '' })
 .explanation-card__availability { position: absolute; top: 14px; right: 14px; z-index: 1; width: 14px; height: 14px; border: 2px solid #fff; border-radius: 50%; background: #778798; box-shadow: 0 0 0 1px #778798; pointer-events: none; }
 .explanation-card__availability--available { background: #16864a; box-shadow: 0 0 0 1px #16864a, 0 0 9px #16864a66; }
 .explanation-card__availability--unavailable { background: #c33434; box-shadow: 0 0 0 1px #c33434, 0 0 9px #c3343455; }
-.explanation-card > .explanation-tile { flex: 1; border: 0; border-radius: 0; }
+.explanation-card > .explanation-tile { display: flex; flex: 1; flex-direction: column; border: 0; border-radius: 0; }
+.explanation-card .explanation-tile__copy { display: flex; flex: 1; flex-direction: column; }
+.explanation-card .explanation-tile__copy p { margin-bottom: 24px; }
+.explanation-card .explanation-tile__open { margin-top: auto; }
 .explanation-card > .explanation-tile:focus-visible { outline-offset: -3px; }
 .explanation-card__sharing { padding: 16px 22px; border-top: 1px solid #e0e7ef; }
 .explanation-card__sharing .explanation-action { width: 100%; }

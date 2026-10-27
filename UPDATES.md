@@ -9,6 +9,9 @@
 ### Erklärungen
 
 - IP-Adressen, Netze und Routing
+- Netzwerkprotokolle und Dienste
+- Netzwerksicherheit und Datenschutz
+- Netzwerke planen, betreiben und Störungen erkennen
 
 ## 3.53.3
 

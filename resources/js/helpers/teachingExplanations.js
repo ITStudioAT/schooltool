@@ -12,6 +12,9 @@ const explanationComponents = {
     'network-media': defineAsyncComponent(() => import('@/pages/admin/teachingTools/NetworkMediaExplanation.vue')),
     'network-communication': defineAsyncComponent(() => import('@/pages/admin/teachingTools/NetworkCommunicationExplanation.vue')),
     'network-addressing': defineAsyncComponent(() => import('@/pages/admin/teachingTools/NetworkAddressingExplanation.vue')),
+    'network-protocols': defineAsyncComponent(() => import('@/pages/admin/teachingTools/NetworkProtocolsExplanation.vue')),
+    'network-security': defineAsyncComponent(() => import('@/pages/admin/teachingTools/NetworkSecurityExplanation.vue')),
+    'network-operations': defineAsyncComponent(() => import('@/pages/admin/teachingTools/NetworkOperationsExplanation.vue')),
 }
 
 export const teachingExplanationCategories = [
@@ -30,6 +33,9 @@ export const teachingExplanations = [
     { key: 'network-media', category: 'networks', title: 'Übertragungsmedien, LAN und WLAN', description: 'Entdecke, wie Daten über Kabel, Glasfaser und Funk übertragen werden und wie LAN und WLAN zusammenarbeiten.' },
     { key: 'network-communication', category: 'networks', title: 'Datenkommunikation und Internet', description: 'Entdecke, wie Daten zwischen Geräten und über das Internet ausgetauscht werden.' },
     { key: 'network-addressing', category: 'networks', title: 'IP-Adressen, Netze und Routing', description: 'Begleite ein Paket vom ersten DHCP-Austausch bis zur Antwort. Probiere Netzmasken, Präfixe, Subnetze, Routing, NAT und VLANs aus.' },
+    { key: 'network-protocols', category: 'networks', title: 'Netzwerkprotokolle und Dienste', description: 'Entdecke, wie Protokolle und Dienste zusammenarbeiten. Vergleiche Ports, DNS und DHCP, Web und E-Mail, Dateiübertragung und Zugriffsrechte.' },
+    { key: 'network-security', category: 'networks', title: 'Netzwerksicherheit und Datenschutz', description: 'Entdecke, wie Schutzziele, MFA, Firewall und Verschlüsselung zusammenwirken. Erkenne typische Angriffe und gehe im Schulnetz sorgsam mit Daten um.' },
+    { key: 'network-operations', category: 'networks', title: 'Netzwerke planen, betreiben und Störungen erkennen', description: 'Vergleiche Netzwerktopologien, plane Verbindungen im Gebäude und grenze Störungen ein. Lerne Leistungsbegriffe und Diagnosewerkzeuge mit ihren Grenzen kennen.' },
 ].map(item => item.category === 'number-systems'
     ? { sourceSystem: 'Dezimal', ...item, ...numberSystemNotation(item.base), sourceNotation: numberSystemNotation(item.sourceBase || 10) }
     : item)

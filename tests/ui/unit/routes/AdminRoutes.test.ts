@@ -8,6 +8,9 @@ describe('admin routes', () => {
         ['/admin/teaching-tools/explanations', { section: 'explanations' }],
         ['/admin/teaching-tools/explanations/number-systems', { section: 'explanations', category: 'number-systems' }],
         ['/admin/teaching-tools/explanations/decimal-to-binary', { section: 'explanations', explanation: 'decimal-to-binary' }],
+        ['/admin/teaching-tools/explanations/network-protocols', { section: 'explanations', explanation: 'network-protocols' }],
+        ['/admin/teaching-tools/explanations/network-security', { section: 'explanations', explanation: 'network-security' }],
+        ['/admin/teaching-tools/explanations/network-operations', { section: 'explanations', explanation: 'network-operations' }],
         ['/admin/teaching-tools/games/number-systems', { section: 'games', game: 'number-systems' }],
     ])('opens %s with the existing teaching capability', (path, props) => {
         const resolvedRoute = router.resolve(path)
