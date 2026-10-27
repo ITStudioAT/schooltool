@@ -182,14 +182,15 @@ describe('Teaching tools games navigation', () => {
 
     it('opens the network learning area, student preview and sharing setup', async () => {
         const { wrapper } = await renderTools('/admin/teaching-tools/explanations')
-        expect(wrapper.get('[aria-label="Netzwerke öffnen"]').text()).toContain('3 Erklärungen')
+        expect(wrapper.get('[aria-label="Netzwerke öffnen"]').text()).toContain('4 Erklärungen')
         expect(wrapper.get('[aria-label="Verfügbare Kategorien"]').find('.explanation-tile__preview').exists()).toBe(false)
         await wrapper.get('[aria-label="Netzwerke öffnen"]').trigger('click')
         await flushPromises()
         expect(wrapper.get('h1').text()).toBe('Netzwerke')
-        expect(wrapper.get('[aria-label="Verfügbare Erklärungen"]').findAll('a')).toHaveLength(3)
+        expect(wrapper.get('[aria-label="Verfügbare Erklärungen"]').findAll('a')).toHaveLength(4)
         expect(wrapper.get('[aria-label="Übertragungsmedien, LAN und WLAN öffnen"]').attributes('href')).toBe('/admin/teaching-tools/explanations/network-media')
         expect(wrapper.get('[aria-label="Datenkommunikation und Internet öffnen"]').attributes('href')).toBe('/admin/teaching-tools/explanations/network-communication')
+        expect(wrapper.get('[aria-label="IP-Adressen, Netze und Routing öffnen"]').attributes('href')).toBe('/admin/teaching-tools/explanations/network-addressing')
         expect(wrapper.get('.explanations__back').attributes('href')).toBe('/admin/teaching-tools/explanations')
         await wrapper.get('[aria-label="Netzwerkgrundlagen und Geräte öffnen"]').trigger('click')
         await flushPromises()
@@ -207,6 +208,18 @@ describe('Teaching tools games navigation', () => {
         await flushPromises()
         expect(window.axios.post).toHaveBeenCalledWith('/api/admin/teaching-explanations/network-fundamentals/publication', { access_mode: 'public' })
         expect(wrapper.get('.explanation-detail__link input').element.value).toBe('https://schooltool.example/explanations/network')
+    })
+
+    it('opens IP addressing from the network overview and renders its packet journey in the student preview', async () => {
+        const { wrapper, router } = await renderTools('/admin/teaching-tools/explanations/networks')
+        await wrapper.get('[aria-label="IP-Adressen, Netze und Routing öffnen"]').trigger('click')
+        await flushPromises()
+        expect(router.currentRoute.value.path).toBe('/admin/teaching-tools/explanations/network-addressing')
+        expect(window.axios.get).toHaveBeenCalledWith('/api/admin/teaching-explanations/network-addressing')
+        await wrapper.findAll('button').find(button => button.text() === 'Schüleransicht testen').trigger('click')
+        await vi.waitFor(() => expect(wrapper.get('[role="dialog"] .addressing-lesson h1').text()).toBe('IP-Adressen, Netze und Routing'))
+        expect(wrapper.get('[role="dialog"]').text()).toContain('Was passiert wann?')
+        expect(window.axios.post).not.toHaveBeenCalled()
     })
 
     it('opens the transmission media explanation from the network overview', async () => {

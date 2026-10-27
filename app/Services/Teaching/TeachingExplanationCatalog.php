@@ -53,6 +53,11 @@ class TeachingExplanationCatalog
                 'title' => 'Datenkommunikation und Internet',
                 'category' => 'Netzwerke',
             ],
+            'network-addressing' => [
+                'key' => 'network-addressing',
+                'title' => 'IP-Adressen, Netze und Routing',
+                'category' => 'Netzwerke',
+            ],
         ];
     }
 
