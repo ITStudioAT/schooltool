@@ -76,6 +76,44 @@ test('curriculum assignments store stable registered keys and have distinct prot
     $this->getJson($firstUrl)->assertUnauthorized();
 });
 
+test('explanation choices exclude assignments throughout this curriculum and return after the last removal', function (): void {
+    $otherUnitEndpoint = str_replace('/dual', '/practice', $this->unitEndpoint);
+    $this->getJson($otherUnitEndpoint.'/files')->assertOk()
+        ->assertJsonMissing(['key' => 'decimal-to-binary'])
+        ->assertJsonFragment(['key' => 'decimal-to-hexadecimal']);
+
+    $otherCurriculum = TeachingCurriculum::create([
+        'school_id' => $this->school->id, 'schoolyear_id' => $this->year->id,
+        'user_id' => $this->teacher->id, 'title' => 'Weiteres Curriculum',
+        'topics' => $this->curriculum->topics,
+    ]);
+    $this->getJson("/api/admin/teaching/curricula/{$otherCurriculum->id}/topics/numbers/units/dual/files")
+        ->assertOk()->assertJsonFragment(['key' => 'decimal-to-binary']);
+
+    $duplicateId = $this->postJson($otherUnitEndpoint.'/explanations', ['explanation_key' => 'decimal-to-binary'])
+        ->assertCreated()->json('data.id');
+    $this->deleteJson($this->unitEndpoint.'/files/'.$this->file->id)->assertNoContent();
+    $this->getJson($this->unitEndpoint.'/files')->assertOk()->assertJsonMissing(['key' => 'decimal-to-binary']);
+    $this->deleteJson($otherUnitEndpoint.'/files/'.$duplicateId)->assertNoContent();
+    $this->getJson($this->unitEndpoint.'/files')->assertOk()->assertJsonFragment(['key' => 'decimal-to-binary']);
+});
+
+test('new explanations appear at the bottom in the dialog and reloaded curriculum', function (): void {
+    $secondId = $this->postJson($this->unitEndpoint.'/explanations', ['explanation_key' => 'decimal-to-hexadecimal'])
+        ->assertCreated()->json('data.id');
+    $thirdId = $this->postJson($this->unitEndpoint.'/explanations', ['explanation_key' => 'binary-to-decimal'])
+        ->assertCreated()->json('data.id');
+
+    $this->getJson($this->unitEndpoint.'/files')->assertOk()
+        ->assertJsonPath('data.0.id', $this->file->id)
+        ->assertJsonPath('data.1.id', $secondId)
+        ->assertJsonPath('data.2.id', $thirdId);
+    $this->getJson('/api/admin/teaching/curricula/'.$this->curriculum->id)->assertOk()
+        ->assertJsonPath('data.unit_files.numbers.dual.0.id', $this->file->id)
+        ->assertJsonPath('data.unit_files.numbers.dual.1.id', $secondId)
+        ->assertJsonPath('data.unit_files.numbers.dual.2.id', $thirdId);
+});
+
 test('visible teaching material works without a publication and stays accessible after share revocation', function (): void {
     $this->putJson($this->visibilityUrl, ['student_visible' => true])->assertOk()->assertJsonPath('data.shared_curriculum_attachments_count', 1);
     $attachment = $this->date->materials()->sole()->attachments()->sole();

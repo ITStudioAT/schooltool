@@ -60,7 +60,7 @@ describe('CurriculumUnitFilesDialog', () => {
         const saved = { id: 7, name: 'Dezimal auf Hexadezimal', explanation_key: 'decimal-to-hexadecimal', preview_url: '/learning-materials/curriculum/7', download_url: null }
         const explanations = [{ key: 'decimal-to-hexadecimal', title: saved.name, category: 'Zahlensysteme' }]
         const post = vi.fn().mockResolvedValue({ data: { data: saved } })
-        ;(globalThis as any).axios = { get: vi.fn().mockResolvedValueOnce({ data: { data: [], explanations } }).mockResolvedValue({ data: { data: [saved], explanations } }), post }
+        ;(globalThis as any).axios = { get: vi.fn().mockResolvedValueOnce({ data: { data: [], explanations } }).mockResolvedValue({ data: { data: [saved], explanations: [] } }), post }
         const wrapper = mountDialog()
         await wrapper.setProps({ explanationMode: true })
         await vi.waitFor(() => expect((wrapper.vm as any).explanationCategories).toEqual(['Zahlensysteme']))
@@ -70,7 +70,25 @@ describe('CurriculumUnitFilesDialog', () => {
         await (wrapper.vm as any).saveExplanation()
         expect(post).toHaveBeenCalledWith('/api/admin/teaching/curricula/15/topics/topic-1/units/unit-1/explanations', { explanation_key: 'decimal-to-hexadecimal' })
         expect(wrapper.emitted('changed')).toEqual([[[saved]]])
+        expect((wrapper.vm as any).categoryExplanations).toEqual([])
         expect(wrapper.find('[title="Herunterladen"]').exists()).toBe(false)
+    })
+
+    it('reloads explanation choices after removing an assignment', async () => {
+        const saved = { id: 7, name: 'Dezimal auf Hexadezimal', explanation_key: 'decimal-to-hexadecimal' }
+        const explanations = [{ key: saved.explanation_key, title: saved.name, category: 'Zahlensysteme' }]
+        const get = vi.fn()
+            .mockResolvedValueOnce({ data: { data: [saved], explanations: [] } })
+            .mockResolvedValueOnce({ data: { data: [], explanations } })
+        ;(globalThis as any).axios = { get, delete: vi.fn().mockResolvedValue({}) }
+        const wrapper = mountDialog()
+        await wrapper.setProps({ explanationMode: true })
+        await vi.waitFor(() => expect((wrapper.vm as any).files).toEqual([saved]))
+        await wrapper.setData({ selectedCategory: 'Zahlensysteme', fileToDelete: saved })
+        await (wrapper.vm as any).deleteFile()
+
+        expect((wrapper.vm as any).categoryExplanations).toEqual(explanations)
+        expect(wrapper.emitted('changed')).toEqual([[[]]])
     })
     afterEach(() => {
         vi.restoreAllMocks()

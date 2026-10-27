@@ -75,6 +75,7 @@ class CurriculumUnitFileService
     {
         $files = $curriculum->documents()
             ->whereIn('source_type', ['unit_file', 'explanation'])
+            ->orderByRaw('CASE WHEN source_type = ? THEN id END', ['explanation'])
             ->latest('id')
             ->get();
         $unitFiles = [];

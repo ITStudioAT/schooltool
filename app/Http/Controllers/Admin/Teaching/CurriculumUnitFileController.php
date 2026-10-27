@@ -14,6 +14,7 @@ use App\Services\Teaching\TeachingExplanationCatalog;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Storage;
 use Symfony\Component\HttpFoundation\HeaderUtils;
 use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
@@ -34,11 +35,17 @@ class CurriculumUnitFileController extends Controller
             ->whereIn('source_type', ['unit_file', 'explanation'])
             ->where('topic_id', $topicId)
             ->where('unit_id', $unitId)
+            ->orderByRaw('CASE WHEN source_type = ? THEN id END', ['explanation'])
             ->latest('id')
             ->get();
 
+        $assignedExplanationKeys = $curriculum->documents()
+            ->where('source_type', 'explanation')
+            ->pluck('explanation_key')
+            ->all();
+
         return response()->json([
-            'explanations' => array_values(TeachingExplanationCatalog::all()),
+            'explanations' => array_values(Arr::except(TeachingExplanationCatalog::all(), $assignedExplanationKeys)),
             'data' => $files
                 ->map(fn (TeachingCurriculumDocument $file): array => $service->payload($curriculum, $topicId, $unitId, $file))
                 ->all(),

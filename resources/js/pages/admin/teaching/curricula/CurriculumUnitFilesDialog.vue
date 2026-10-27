@@ -287,8 +287,12 @@ export default {
 
             try {
                 await axios.delete(`${this.endpoint}/${this.fileToDelete.id}`)
+                const wasExplanation = Boolean(this.fileToDelete.explanation_key)
                 this.files = this.files.filter((file) => file.id !== this.fileToDelete.id)
                 this.fileToDelete = null
+                if (wasExplanation) {
+                    await this.loadFiles()
+                }
                 this.$emit('changed', this.files)
             } catch (error) {
                 this.errorMessage = this.requestError(error, 'Die Datei konnte nicht gelöscht werden.')
