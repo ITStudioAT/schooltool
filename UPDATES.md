@@ -1,6 +1,6 @@
 # UPDATES
 
-## 3.53.4 !!!
+## 3.53.4
 
 ### Unterricht
 
@@ -12,6 +12,7 @@
 - Netzwerkprotokolle und Dienste
 - Netzwerksicherheit und Datenschutz
 - Netzwerke planen, betreiben und Störungen erkennen
+- Wie ein neuronales Netz lernt
 
 ## 3.53.3
 

@@ -31,6 +31,7 @@ async function renderTools(path, deliveryMode = 'mailpit') {
     await router.push(path)
     await router.isReady()
     const wrapper = mount(RouterView, {
+        attachTo: document.body,
         global: { plugins: [router, createTestingPinia({ createSpy: vi.fn, initialState: {
             AdminAdminStore: { config: { teaching_email_delivery: { mode: deliveryMode } } },
         } })], stubs: { AdminPageHeader: true, 'v-btn': navigationButton,
@@ -87,7 +88,7 @@ describe('Teaching tools games navigation', () => {
         expect(wrapper.get('a[href="/admin/teaching-tools/explanations"]').attributes('aria-pressed')).toBe('true')
         expect(wrapper.get('h1').text()).toBe('Erklärungen')
         expect(wrapper.find('[aria-label="Dezimal auf Dual öffnen"]').exists()).toBe(false)
-        expect(wrapper.get('[aria-label="Verfügbare Kategorien"]').findAll('a')).toHaveLength(2)
+        expect(wrapper.get('[aria-label="Verfügbare Kategorien"]').findAll('a')).toHaveLength(3)
         await wrapper.get('[aria-label="Zahlensysteme öffnen"]').trigger('click')
         await flushPromises()
         expect(router.currentRoute.value.path).toBe('/admin/teaching-tools/explanations/number-systems')
@@ -155,6 +156,37 @@ describe('Teaching tools games navigation', () => {
         expect(wrapper.get('[aria-label="Hexadezimal auf Dezimal öffnen"]').attributes('href')).toBe('/admin/teaching-tools/explanations/hexadecimal-to-decimal')
         expect(wrapper.get('.explanations__back').attributes('href')).toBe('/admin/teaching-tools/explanations')
         expect(window.axios.post).not.toHaveBeenCalled()
+    })
+
+    it('opens the artificial intelligence category and its interactive student preview without publishing', async () => {
+        const { wrapper, router } = await renderTools('/admin/teaching-tools/explanations')
+
+        expect(wrapper.get('[aria-label="Künstliche Intelligenz öffnen"]').text()).toContain('1 Erklärung')
+        await wrapper.get('[aria-label="Künstliche Intelligenz öffnen"]').trigger('click')
+        await flushPromises()
+        expect(router.currentRoute.value.path).toBe('/admin/teaching-tools/explanations/artificial-intelligence')
+        await wrapper.get('[aria-label="Wie ein neuronales Netz lernt öffnen"]').trigger('click')
+        await flushPromises()
+        expect(wrapper.get('h1').text()).toBe('Wie ein neuronales Netz lernt')
+        expect(wrapper.get('.explanations__back').attributes('href')).toBe('/admin/teaching-tools/explanations/artificial-intelligence')
+        expect(window.axios.get).toHaveBeenCalledWith('/api/admin/teaching-explanations/neural-network-learning')
+
+        await wrapper.findAll('button').find(button => button.text() === 'Schüleransicht testen').trigger('click')
+        await vi.waitFor(() => expect(wrapper.get('[role="dialog"] iframe').attributes('title')).toBe('Wie ein neuronales Netz lernt'))
+        expect(wrapper.get('[role="dialog"] iframe').attributes('sandbox')).toBe('allow-scripts')
+        expect(window.axios.post).not.toHaveBeenCalled()
+    })
+
+    it('keeps the student preview and other URL state when the learning step changes', async () => {
+        const { wrapper, router } = await renderTools('/admin/teaching-tools/explanations/neural-network-learning?preview=1&other=kept#section')
+        await vi.waitFor(() => expect(wrapper.find('[role="dialog"] iframe').exists()).toBe(true))
+        const frame = wrapper.get('[role="dialog"] iframe')
+        window.dispatchEvent(new MessageEvent('message', { source: frame.element.contentWindow, data: { type: 'schooltool-neural-network-step', step: 12 } }))
+        await vi.waitFor(() => expect(router.currentRoute.value.query.lernschritt).toBe('12'))
+        expect(router.currentRoute.value.query.preview).toBe('1')
+        expect(router.currentRoute.value.query.other).toBe('kept')
+        expect(router.currentRoute.value.hash).toBe('#section')
+        expect(wrapper.find('[role="dialog"] iframe').exists()).toBe(true)
     })
 
     it('shows the confirmed availability and an unknown status when the status refresh fails', async () => {

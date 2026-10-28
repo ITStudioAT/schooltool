@@ -73,6 +73,11 @@ class TeachingExplanationCatalog
                 'title' => 'Netzwerke planen, betreiben und Störungen erkennen',
                 'category' => 'Netzwerke',
             ],
+            'neural-network-learning' => [
+                'key' => 'neural-network-learning',
+                'title' => 'Wie ein neuronales Netz lernt',
+                'category' => 'Künstliche Intelligenz',
+            ],
         ];
     }
 

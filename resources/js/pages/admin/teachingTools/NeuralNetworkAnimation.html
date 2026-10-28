@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wie ein neuronales Netz lernt</title>
+<style>
+:root { color-scheme: light; --ink:#182c38; --muted:#526977; --line:#d3e3e7; --surface:#fff; --paper:#f3f8f7; --sea:#086d70; --sea-light:#d9f2ed; --blue:#2c65a6; --blue-light:#e1edf9; --amber:#ab5d14; --amber-light:#fff1db; --red:#ac3547; --shadow:0 15px 45px rgba(24,57,65,.08); }
+*{box-sizing:border-box} body{margin:0;background:var(--paper);color:var(--ink);font-family:Segoe UI,Arial,sans-serif;line-height:1.5} button{font:inherit} button:focus-visible{outline:3px solid #e59d42;outline-offset:3px} .wrap{max-width:1440px;margin:auto;padding:34px clamp(18px,3vw,48px) 52px} header{display:flex;justify-content:space-between;gap:20px;align-items:end;margin-bottom:24px} h1{font-size:clamp(30px,3.2vw,44px);line-height:1.12;letter-spacing:-.035em;margin:0 0 8px} .subtitle{margin:0;color:var(--muted);max-width:760px;font-size:16px} .badge{background:#deeeea;color:#285b51;border-radius:30px;padding:7px 13px;font-size:13px;white-space:nowrap} .layout{display:grid;grid-template-columns:minmax(0,1fr) 345px;gap:20px;align-items:start} .board,.side{background:var(--surface);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow)} .board{padding:24px;overflow:hidden} .side{padding:23px;position:sticky;top:20px} .section-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}.section-head h2{margin:0;font-size:19px}.eyebrow{color:var(--sea);font-weight:700;font-size:13px}.choices{display:flex;gap:8px;margin-top:15px;flex-wrap:wrap} .choice{background:#f7faf9;border:1px solid #c8dedb;border-radius:10px;color:#36515a;padding:8px 14px;cursor:pointer} .choice[aria-pressed=true]{background:var(--sea);color:#fff;border-color:var(--sea)} .feature-line{margin:13px 0 0;color:var(--muted);font-size:14px} .feature-line strong{color:var(--ink)} .svg-wrap{margin-top:18px;border-top:1px solid #e5efed;border-bottom:1px solid #e5efed;padding:16px 0 8px;overflow-x:auto} svg{display:block;width:100%;min-width:610px;height:auto} .column-label{font-size:15px;font-weight:700;fill:#385260}.column-note{font-size:12px;fill:#6b818c}.edge{stroke:#b9d1d4;stroke-width:2;transition:stroke .45s,stroke-width .45s,opacity .45s}.edge.focus{stroke:#328d92;stroke-width:3.4}.edge.updated{stroke:#d58435;stroke-width:3}.node{stroke:#fff;stroke-width:3;transition:fill .5s,filter .5s}.node.input{fill:#d2eee6}.node.hidden{fill:#dceaf5}.node.output{fill:#f8e5c8}.node.active{filter:drop-shadow(0 0 9px rgba(16,139,132,.36))}.node-text{font-size:13px;font-weight:700;fill:#173b46;text-anchor:middle}.node-val{font-size:13px;fill:#365663;text-anchor:middle;font-variant-numeric:tabular-nums}.svg-note{font-size:12px;fill:#5b7079}.controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:19px} .button{border:1px solid #bdcfce;border-radius:10px;background:white;color:var(--ink);padding:10px 16px;font-weight:650;cursor:pointer}.button.primary{background:var(--sea);color:white;border-color:var(--sea)}.button:disabled{opacity:.4;cursor:not-allowed}.button.quiet{border-color:transparent;color:#44656d}.spacer{flex:1}.phase-nav{display:flex;gap:6px;margin-top:16px}.phase-dot{height:5px;flex:1;border-radius:8px;background:#d6e6e4}.phase-dot.active{background:#187f7a}.phase-dot.done{background:#8cbeb6}.step-indicator{color:var(--muted);font-size:13px}.side h2{font-size:22px;line-height:1.2;margin:4px 0 12px}.side p{font-size:15px;color:#3d5661;margin:0 0 14px}.callout{background:#edf7f4;border-left:4px solid #2a8a7c;padding:13px 15px;border-radius:0 9px 9px 0;margin:17px 0;color:#315750;font-size:14px}.fact-list{border-top:1px solid #e2eceb;padding-top:14px;margin-top:15px}.fact{display:flex;justify-content:space-between;gap:14px;margin:8px 0;font-size:14px}.fact span{color:var(--muted)} .fact strong{font-variant-numeric:tabular-nums;text-align:right}.weights{margin-top:20px;border-top:1px solid #e4eeec;padding-top:17px}.weights h3{margin:0 0 7px;font-size:15px}.weights p{font-size:13px;color:var(--muted);margin:0 0 10px}.weight-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}.weight{border-radius:8px;background:#f2f7f7;padding:7px 6px;font-size:12px;color:#50646d;text-align:center;font-variant-numeric:tabular-nums}.weight strong{display:block;color:#243e48;font-size:14px}.weight.changed{background:var(--amber-light)} .footer-note{font-size:13px;color:var(--muted);margin:17px 1px 0;max-width:950px}.sr-only{position:absolute;left:-9999px}.changed-label{color:var(--amber)} @media(max-width:940px){.layout{grid-template-columns:1fr}.side{position:static}header{align-items:start;flex-direction:column}.badge{white-space:normal}} @media(max-width:600px){.wrap{padding:23px 13px 35px}.board,.side{padding:17px}.controls .spacer{display:none}.button{padding:9px 12px}.section-head{align-items:start}.weight-grid{grid-template-columns:repeat(2,minmax(0,1fr))}} @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+@keyframes signal{to{stroke-dashoffset:-28}}@keyframes rueckmeldung{to{stroke-dashoffset:28}}.edge.focus{stroke-dasharray:8 6;animation:signal 1s linear 3}.edge.feedback{stroke:#bd4055;stroke-width:3;stroke-dasharray:6 6;animation:rueckmeldung 1s linear 3}.edge.updated{stroke-dasharray:6 6;animation:rueckmeldung 1s linear 3}.calculation h3{font-size:22px}.calculation p{font-size:16px;line-height:1.6;color:var(--ink)}.calculation-example{padding:16px 18px;margin:16px 0;background:#edf7f4;border-left:4px solid var(--sea);border-radius:0 10px 10px 0}.calculation-example strong{color:#075e61}.calculation-table{width:100%;border-collapse:collapse;margin:12px 0 18px;font-size:16px;font-variant-numeric:tabular-nums}.calculation-table th,.calculation-table td{padding:10px 8px;text-align:left;border-bottom:1px solid var(--line)}.calculation-table th{color:#415e68;font-size:14px}.calculation h4{font-size:18px;margin:20px 0 4px}.calculation-total{font-size:17px;font-weight:700;color:var(--sea)}@media(max-width:940px){.layout{display:flex;flex-direction:column}.board,.side{width:100%}.side{order:-1}}@media(max-width:600px){svg{min-width:0}.svg-wrap{overflow:visible}.mobile-diagram .node-text{font-size:17px}.mobile-diagram .node-val{font-size:17px}.mobile-diagram .column-label{font-size:18px;paint-order:stroke;stroke:#fff;stroke-width:8px;stroke-linejoin:round}.mobile-diagram .column-note{font-size:15px}.calculation-table{font-size:14px}.calculation-table th{font-size:12px}.calculation-table th,.calculation-table td{padding:8px 3px}}
+[hidden]{display:none!important}.round-label{display:inline-block;margin:14px 0 0;padding:8px 13px;border-radius:9px;background:#e1f1ed;color:#075e61;font-size:15px;font-weight:700}.results-slide{margin:18px 0 4px;padding:clamp(18px,3vw,30px);border:1px solid #b9dcd5;border-radius:16px;background:#f1faf7}.results-slide h3{margin:0 0 8px;font-size:clamp(22px,2.4vw,30px);line-height:1.2;color:#174e4e}.results-slide p{margin:0 0 14px;color:#365b60;font-size:15px}.results-cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.result-card{padding:18px;border:1px solid #cce3dc;border-radius:12px;background:#fff}.result-card h4{margin:0 0 8px;font-size:17px}.result-value{font-size:clamp(27px,3vw,38px);font-weight:750;color:#075e61;line-height:1.1}.result-caption{display:block;margin-top:5px;color:#526977;font-size:14px}.result-bar{height:12px;margin-top:12px;background:#e1ece9;border-radius:12px;overflow:hidden}.result-bar span{display:block;height:100%;background:#168779;border-radius:12px}.future-results{margin-top:18px;padding-top:14px;border-top:1px solid #cce3dc}.future-results h4{font-size:18px;margin:0 0 5px}.future-results table{width:100%;border-collapse:collapse;font-size:15px}.future-results th,.future-results td{padding:8px 5px;text-align:left;border-bottom:1px solid #d4e8e2}.future-results th{font-size:13px;color:#45666a}@media(max-width:600px){.results-cards{grid-template-columns:1fr}.future-results table{font-size:14px}}
+</style>
+</head>
+<body>
+<main class="wrap">
+<header><div><h1>Wie ein neuronales Netz lernt</h1><p class="subtitle">Ein einfaches Beispiel: Das Netz lernt, eine Katze zu erkennen.</p></div><div class="badge">Ein vereinfachtes Modell</div></header>
+<div class="layout">
+<section class="board" aria-labelledby="board-title">
+  <div class="section-head"><div><div class="eyebrow">Unser Beispiel</div><h2 id="board-title">Das Tier ist eine Katze 🐱</h2></div></div>
+  <div class="round-label" id="round-label"></div>
+  <div class="phase-nav" id="phase-nav" aria-hidden="true"></div>
+  <div class="controls"><button type="button" id="back" class="button">Zurück</button><button type="button" id="next" class="button primary">Weiter</button><button type="button" id="restart" class="button">Neustart</button><span class="spacer"></span><span id="step" class="step-indicator"></span></div>
+  <section class="results-slide" id="results-slide" aria-live="polite" hidden></section>
+  <p class="feature-line">Das Netz erhält zwei Merkmale: <strong>spitze Ohren</strong> und <strong>lange Schnauze</strong>. Die Zahlen zeigen, wie stark diese Merkmale ausgeprägt sind: 0 bedeutet wenig, 1 bedeutet stark. Sie sind für dieses Beispiel erfunden.</p>
+  <div class="svg-wrap"><svg id="network" viewBox="0 0 820 350" role="img" aria-labelledby="network-title network-desc"><title id="network-title">Neuronales Netz mit zwei Eingaben, vier inneren Neuronen und zwei Ausgaben</title><desc id="network-desc">Vier Neuronen verarbeiten zwei Merkmale. Das Netz gibt eine Einschätzung für Katze und Hund ab.</desc><g id="diagram"></g></svg></div>
+  <p class="feature-line">N1 bis N4 sind die vier Neuronen. Die Zahlen in den Kreisen zeigen ihre berechneten Werte.</p>
+  <div class="weights calculation" id="input-calculation" hidden><h3>Was bedeuten die Gewichte und der Grundwert?</h3><p><strong>Gewicht E1:</strong> Diese Zahl bestimmt, wie stark das erste Merkmal – die Ohren – auf das jeweilige Neuron wirkt.</p><p><strong>Gewicht E2:</strong> Diese Zahl bestimmt, wie stark das zweite Merkmal – die Schnauze – auf das jeweilige Neuron wirkt.</p><p><strong>Grundwert:</strong> Diese zusätzliche Zahl wird beim Neuron zur Rechnung dazugezählt. Jedes Neuron hat eigene Gewichte und einen eigenen Grundwert.</p><h3>So rechnen die vier Neuronen</h3><p>Jedes Neuron multipliziert E1 und E2 mit seinen Gewichten. Danach addiert es beide Ergebnisse und den Grundwert. Die Anzeige ist gerundet; intern wird genauer gerechnet.</p><div id="input-calculation-example"></div><div id="input-calculation-values"></div></div>
+  <div class="weights calculation" id="calculation" hidden><h3>So entsteht der Tipp</h3><p>Die vier Neuronenwerte sind im vorherigen Schritt aus E1 und E2 entstanden. Jede Verbindung zur Ausgabe „Katze“ hat ein eigenes Gewicht. Wert und Gewicht werden miteinander multipliziert: So erhält man den Beitrag dieser Verbindung.</p><div id="calculation-example" class="calculation-example"></div><p>Mit den anderen drei Verbindungen wird genauso gerechnet. Danach werden alle Beiträge und ein zusätzlicher Grundwert addiert. Für „Hund“ gibt es eigene Gewichte.</p><div id="calculation-values"></div><h3>Von den Ergebnissen zu Prozent</h3><p>Die beiden Zwischenergebnisse sind noch keine Prozentwerte und können negativ sein. Deshalb wandelt sie das Netz zunächst in positive Zahlen um. Dafür verwendet es „e hoch“; e ist eine feste Zahl, ungefähr 2,718. Anschließend berechnet es, welchen Anteil jede Zahl an der gemeinsamen Summe hat. Diese Umrechnung heißt <strong>Softmax</strong>.</p><p>Alle angezeigten Zahlen sind gerundet; das Netz rechnet mit den genaueren Werten weiter.</p><div id="calculation-percentages"></div></div>
+  <div class="weights calculation" id="weight-example" hidden><h3>Wie werden die Gewichte angepasst?</h3><p>Das Netz vergleicht seinen Tipp mit der richtigen Lösung. Aus diesem Unterschied rechnet es zurück, wie sich jedes Gewicht ändern soll. Zuerst betrachten wir die Verbindung von E1 zu N1.</p><div id="weights"></div><div id="weight-changes"></div></div>
+  <p class="footer-note">Das Beispiel ist stark vereinfacht: Ein echtes Bilderkennungsnetz verarbeitet Bildpunkte und hat viel mehr Neuronen. Hier wird kein echtes Foto untersucht.</p>
+</section>
+<aside class="side" aria-live="polite"><div class="eyebrow" id="stage-label"></div><h2 id="stage-title"></h2><p id="stage-text"></p><div class="callout" id="stage-callout"></div><div class="fact-list" id="facts"></div></aside>
+</div>
+</main>
+<script>
+'use strict';
+const samples = [
+    { name: 'Katze', target: [1, 0], features: [0.90, 0.20] },
+    { name: 'Hund', target: [0, 1], features: [0.25, 0.85] },
+];
+const initial = {
+    inputWeights: [[0.32, -0.24], [-0.18, 0.36], [0.25, 0.18], [-0.30, -0.14]],
+    hiddenBias: [0.03, -0.04, 0.02, 0.05],
+    outputWeights: [[-0.20, 0.32, -0.14, 0.28], [0.24, -0.23, 0.18, -0.12]],
+    outputBias: [-0.05, 0.08],
+};
+const state = { model: copyModel(initial), phase: 0 };
+const rate = 0.7;
+const practiceRounds = [0, 2, 4, 8, 12];
+const phases = [
+    'Die Katze', 'Die Merkmale', 'Das Netz rechnet', 'Der erste Tipp', 'Der Vergleich', 'Die Rückmeldung',
+    'Die Anpassung', 'Die Katze erneut', 'Der Hund', 'Das Netz rechnet', 'Der nächste Tipp', 'Der Vergleich',
+    'Die Rückmeldung', 'Die Anpassung', 'Der Hund erneut', 'Beide Beispiele', 'Weiterlernen', 'Weiterlernen',
+    'Weiterlernen', 'Weiterlernen', 'Abschluss',
+];
+const $ = id => document.getElementById(id);
+const fmt = value => value.toFixed(2).replace('.', ',');
+const fmt3 = value => value.toFixed(3).replace('.', ',');
+const fmt4 = value => value.toFixed(4).replace('.', ',');
+const pct = value => `${Math.round(value * 100)} %`;
+const pctDetailed = value => value < 1 && value >= 0.99995 ? 'über 99,99 %' : `${fmt(value * 100)} %`;
+
+function copyModel(model) {
+    return { inputWeights: model.inputWeights.map(row => [...row]), hiddenBias: [...model.hiddenBias],
+        outputWeights: model.outputWeights.map(row => [...row]), outputBias: [...model.outputBias] };
+}
+function calculate(model, sample) {
+    const sums = model.inputWeights.map((weights, i) => weights.reduce(
+        (sum, weight, j) => sum + weight * sample.features[j], model.hiddenBias[i]));
+    const hidden = sums;
+    const scores = model.outputWeights.map((weights, i) => weights.reduce(
+        (sum, weight, j) => sum + weight * hidden[j], model.outputBias[i]));
+    const exp = scores.map(score => Math.exp(score - Math.max(...scores)));
+    const probabilities = exp.map(value => value / exp.reduce((a, b) => a + b, 0));
+    const loss = -Math.log(Math.max(probabilities[sample.target.indexOf(1)], 1e-9));
+    return { hidden, sums, scores, probabilities, loss };
+}
+function updateModel(model, sample, before) {
+    const updated = copyModel(model);
+    const outputDelta = before.probabilities.map((value, i) => value - sample.target[i]);
+    const hiddenDelta = before.hidden.map((_, j) => outputDelta.reduce(
+        (sum, delta, i) => sum + model.outputWeights[i][j] * delta, 0));
+    updated.outputWeights = model.outputWeights.map((row, i) => row.map(
+        (weight, j) => weight - rate * outputDelta[i] * before.hidden[j]));
+    updated.outputBias = model.outputBias.map((bias, i) => bias - rate * outputDelta[i]);
+    updated.inputWeights = model.inputWeights.map((row, i) => row.map(
+        (weight, j) => weight - rate * hiddenDelta[i] * sample.features[j]));
+    updated.hiddenBias = model.hiddenBias.map((bias, i) => bias - rate * hiddenDelta[i]);
+    return updated;
+}
+function createSvg(name, attrs, text = '') {
+    const element = document.createElementNS('http://www.w3.org/2000/svg', name);
+    Object.entries(attrs).forEach(([key, value]) => element.setAttribute(key, String(value)));
+    if (text) element.textContent = text;
+    return element;
+}
+function render() {
+    const cat = samples[0];
+    const dog = samples[1];
+    const catBefore = calculate(state.model, cat);
+    const afterCat = updateModel(state.model, cat, catBefore);
+    const dogBefore = calculate(afterCat, dog);
+    const afterDog = updateModel(afterCat, dog, dogBefore);
+    const practiceModels = [afterDog];
+    for (let round = 0; round < 100; round++) {
+        const prior = practiceModels[round];
+        const trainedCat = updateModel(prior, cat, calculate(prior, cat));
+        practiceModels.push(updateModel(trainedCat, dog, calculate(trainedCat, dog)));
+    }
+    const dogExample = state.phase >= 8 && state.phase <= 14;
+    const sample = dogExample ? dog : cat;
+    const beforeModel = dogExample ? afterCat : state.model;
+    const updated = dogExample ? afterDog : afterCat;
+    const before = calculate(beforeModel, sample);
+    const after = calculate(updated, sample);
+    const practiceRound = state.phase >= 15 ? practiceRounds[Math.min(state.phase - 15, practiceRounds.length - 1)] : 0;
+    const practiced = practiceModels[practiceRound];
+    const modelForDisplay = state.phase >= 15 ? practiced : (state.phase === 7 || state.phase === 14 ? updated : beforeModel);
+    const shown = calculate(modelForDisplay, sample);
+    const resultsVisible = (state.phase >= 3 && state.phase <= 5) || state.phase === 7 ||
+        (state.phase >= 10 && state.phase <= 12) || state.phase === 14 || state.phase >= 15;
+    const signalsVisible = state.phase >= 2 && state.phase !== 6 && state.phase !== 8 && state.phase !== 13;
+    const feedback = state.phase === 5 || state.phase === 12;
+    const adjusted = state.phase === 6 || state.phase === 13 || state.phase >= 16;
+    const summary = state.phase === phases.length - 1;
+    $('board-title').textContent = summary ? 'Die Ergebnisse im Überblick' : state.phase >= 15 ? 'Im Netz: das Katzenbeispiel 🐱' : `Das Tier ist ${dogExample ? 'ein Hund 🐶' : 'eine Katze 🐱'}`;
+    $('round-label').textContent = state.phase >= 15 ? (practiceRound === 0 ? 'Nach dem ersten Lernen: noch keine zusätzlichen Runden' : `Nach ${practiceRound} zusätzlichen Lernrunden`) : dogExample ? 'Lernen mit dem Hundebeispiel' : 'Lernen mit dem Katzenbeispiel';
+    $('round-label').hidden = summary;
+    document.querySelectorAll('.board > .feature-line, .board > .svg-wrap').forEach(element => { element.hidden = summary; });
+    $('step').textContent = `Schritt ${state.phase + 1} von ${phases.length}`;
+    $('back').disabled = state.phase === 0;
+    $('next').disabled = state.phase === phases.length - 1;
+    $('phase-nav').innerHTML = phases.map((_, index) => `<span class="phase-dot ${index === state.phase ? 'active' : index < state.phase ? 'done' : ''}"></span>`).join('');
+
+    const stageText = [
+        ['Die Katze', 'Wir wissen bereits: Das Tier ist eine Katze. Das Netz soll es erkennen.', 'Die richtige Lösung ist beim Lernen bekannt.'],
+        ['Die Merkmale', 'Das Netz erhält zwei Zahlen: eine für die Ohren und eine für die Schnauze.', 'Die Werte sind erfunden und vereinfachen ein Bild stark.'],
+        ['Alle inneren Neuronen rechnen', 'Die vier Neuronen sind kleine Rechenstationen. Jedes verarbeitet beide Merkmale und gibt eine Zahl weiter.', 'Alle vier rechnen mit – auch bei kleinen oder negativen Werten.'],
+        ['Der erste Tipp', 'Das Netz gibt seine Einschätzung ab. Es hält einen Hund für wahrscheinlicher.', 'Der Tipp ist falsch: Tatsächlich ist es eine Katze.'],
+        ['Der Tipp wird überprüft', 'Das Netz tippt auf Hund, aber die bekannte Lösung lautet Katze. Es vergleicht beides miteinander.', 'Seine Einschätzung für Katze ist zu niedrig.'],
+        ['Die Rückmeldung läuft zurück', 'Aus dem Unterschied wird berechnet, wie die Verbindungen verändert werden sollen.', 'Die roten Linien zeigen die Rückrechnung durch das ganze Netz.'],
+        ['Die Verbindungen ändern sich', 'Das Netz passt die Gewichte seiner Verbindungen an. Die neue Einschätzung wird erst im nächsten Schritt berechnet.', 'Orange zeigt die Änderungen – alle Verbindungen werden berücksichtigt.'],
+        ['Die Katze noch einmal', 'Dasselbe Katzenbeispiel läuft erneut durch das angepasste Netz.', 'Jetzt ist die Einschätzung für Katze höher. Ein einzelnes Beispiel beweist noch nicht, dass das Netz allgemein gut ist.'],
+        ['Ein neues Beispiel: Hund', 'Nun erhält das Netz ein anderes Beispiel. Die bekannte Lösung ist Hund.', 'Die zuvor angepassten Verbindungen bleiben erhalten.'],
+        ['Alle inneren Neuronen rechnen', 'Alle vier Neuronen verarbeiten nun die Merkmale des Hundes.', 'Wieder wird kein Teil des Netzes ausgelassen.'],
+        ['Der nächste Tipp', 'Das Netz gibt eine Einschätzung für das Hundebeispiel ab.', 'Diesmal hält es eine Katze für wahrscheinlicher – der Tipp ist also falsch.'],
+        ['Der Tipp wird überprüft', 'Das Netz vergleicht den Tipp mit der bekannten Lösung Hund.', 'Seine Einschätzung für Hund ist zu niedrig.'],
+        ['Die Rückmeldung läuft zurück', 'Der Unterschied zur Lösung wird durch das Netz zurückgerechnet.', 'Die roten Linien zeigen die Rückrechnung durch alle Verbindungen.'],
+        ['Die Verbindungen ändern sich', 'Die Gewichte werden für das Hundebeispiel angepasst.', 'Das Netz hat jetzt mit zwei Beispielen gelernt.'],
+        ['Der Hund noch einmal', 'Das Hundebeispiel läuft erneut durch das angepasste Netz.', 'Die Einschätzung für Hund ist nun höher.'],
+        ['Beide Beispiele ansehen', 'Im Netz siehst du die Katze. Hier stehen die Einschätzungen für beide bekannten Beispiele.', 'Das Ergebnis für die Katze kann sich dabei auch verschlechtern. Ein einzelner Lernschritt verbessert nicht automatisch alles.'],
+        ...practiceRounds.slice(1).map(round => [`Weiterlernen: ${round} Runden`, `Das Netz hat Katze und Hund jeweils ${round}-mal zusätzlich zum Lernen erhalten. Im Netz siehst du die Katze; hier stehen beide Ergebnisse.`, 'Die Werte können zwischendurch schwanken. Für einen zuverlässigen Test braucht man weitere, bisher unbekannte Beispiele.']),
+        ['Abschluss: die Ergebnisse', 'Hier siehst du, wie sich die Einschätzungen für beide Übungsbeispiele mit weiteren Lernrunden verändern.', 'Das Netz übt immer mit denselben zwei Beispielen. Ob es neue Tiere erkennt, müsste man gesondert prüfen.'],
+    ];
+    $('stage-label').textContent = `Schritt ${state.phase + 1} · ${phases[state.phase]}`;
+    $('stage-title').textContent = stageText[state.phase][0];
+    $('stage-text').textContent = stageText[state.phase][1];
+    $('stage-callout').textContent = stageText[state.phase][2];
+    const facts = state.phase >= 15 ? [
+        ['Katze beim Katzenbeispiel', pct(calculate(practiced, cat).probabilities[0])],
+        ['Hund beim Hundebeispiel', pct(calculate(practiced, dog).probabilities[1])],
+        ['Zusätzliche Lernrunden', String(Math.max(0, practiceRound))],
+    ] : [['Richtige Lösung', sample.name]];
+    if (resultsVisible && state.phase < 15) facts.push(['Tipp des Netzes', shown.probabilities[0] >= shown.probabilities[1] ? 'Katze' : 'Hund']);
+    if (state.phase === 7 || state.phase === 14) {
+        const targetIndex = sample.target.indexOf(1);
+        facts.push([`Einschätzung für ${sample.name}`, `${pct(before.probabilities[targetIndex])} → ${pct(after.probabilities[targetIndex])}`]);
+    }
+    $('facts').innerHTML = facts.map(([label, value]) => `<div class="fact"><span>${label}</span><strong>${value}</strong></div>`).join('');
+    $('results-slide').hidden = !summary;
+    const catResult = calculate(practiced, cat).probabilities;
+    const dogResult = calculate(practiced, dog).probabilities;
+    const resultCard = (title, correct, otherName, other) => `<div class="result-card"><h4>${title}</h4><div class="result-value">${pct(correct)}</div><span class="result-caption">für die richtige Lösung · ${otherName}: ${pct(other)}</span><div class="result-bar" aria-hidden="true"><span style="width:${correct * 100}%"></span></div></div>`;
+    const futureRows = [0, 2, 4, 8, 12, 50, 100].map(round => {
+        const catScore = calculate(practiceModels[round], cat).probabilities[0];
+        const dogScore = calculate(practiceModels[round], dog).probabilities[1];
+        return `<tr><td>${round}</td><td>${pctDetailed(catScore)}</td><td>${pctDetailed(dogScore)}</td></tr>`;
+    }).join('');
+    $('results-slide').innerHTML = `<h3>Ergebnis nach ${practiceRound} zusätzlichen Lernrunden</h3><p>Eine zusätzliche Lernrunde bedeutet: Das Netz lernt einmal mit der Katze und einmal mit dem Hund. Die beiden Karten zeigen zwei verschiedene Beispiele.</p><div class="results-cards">${resultCard('🐱 Katzenbeispiel: Katze', catResult[0], 'Hund', catResult[1])}${resultCard('🐶 Hundebeispiel: Hund', dogResult[1], 'Katze', dogResult[0])}</div><div class="future-results"><h4>So verändern sich die Ergebnisse</h4><p>Nach 50 und 100 zusätzlichen Runden zeigen wir einen berechneten Ausblick auf weiteres Lernen mit denselben Beispielen.</p><table><thead><tr><th>Zusätzliche Runden</th><th>Katze beim Katzenbeispiel</th><th>Hund beim Hundebeispiel</th></tr></thead><tbody>${futureRows}</tbody></table><p>Die Prozentwerte sind gerundet. Auch ein hoher Wert ist kein Test mit neuen Beispielen.</p></div>`;
+    $('input-calculation').hidden = state.phase !== 2 && state.phase !== 9;
+    function neuronCalculation(index) {
+        const weights = modelForDisplay.inputWeights[index];
+        const first = sample.features[0] * weights[0];
+        const second = sample.features[1] * weights[1];
+        const bias = modelForDisplay.hiddenBias[index];
+        return `<div class="calculation-example"><p><strong>Neuron N${index + 1}</strong></p><p>E1 × Gewicht E1: ${fmt(sample.features[0])} × ${fmt(weights[0])} ≈ ${fmt3(first)}</p><p>E2 × Gewicht E2: ${fmt(sample.features[1])} × ${fmt(weights[1])} ≈ ${fmt3(second)}</p><p>Beide Beiträge + Grundwert: ${fmt3(first)} + (${fmt3(second)}) + (${fmt3(bias)}) ≈ <strong>${fmt3(shown.sums[index])}</strong></p><p>Der Wert von N${index + 1} ist also <strong>${fmt3(shown.hidden[index])} ≈ ${fmt(shown.hidden[index])}</strong>.</p></div>`;
+    }
+    $('input-calculation-example').innerHTML = neuronCalculation(0);
+    $('input-calculation-values').innerHTML = `<h4>Die anderen drei Neuronen</h4>${[1, 2, 3].map(neuronCalculation).join('')}`;
+    $('calculation').hidden = state.phase !== 3 && state.phase !== 10;
+    const categoryNames = ['Katze', 'Hund'];
+    const firstWeight = modelForDisplay.outputWeights[0][0];
+    const firstValue = shown.hidden[0];
+    $('calculation-example').innerHTML = `<p><strong>Ein Beispiel: Neuron N1 → Katze</strong></p><p>Neuron N1 gibt den Wert <strong>${fmt(firstValue)}</strong> weiter. Das Gewicht der Verbindung zur Ausgabe Katze ist <strong>${fmt(firstWeight)}</strong>.</p><p>Wert × Gewicht: <strong>${fmt(firstValue)} × ${fmt(firstWeight)} ≈ ${fmt(firstValue * firstWeight)}</strong></p><p>Das Gewicht ist eine Zahl des Modells: In diesem Beispiel wurde ein Startwert festgelegt. Beim Lernen kann er sich ändern. Ein negatives Gewicht kehrt das Vorzeichen des Neuronenwerts um.</p>`;
+    $('calculation-values').innerHTML = categoryNames.map((name, index) => {
+        const contributions = shown.hidden.map((value, neuron) => value * modelForDisplay.outputWeights[index][neuron]);
+        const rows = shown.hidden.map((value, neuron) => `<tr><td>N${neuron + 1}</td><td>${fmt3(value)}</td><td>${fmt3(modelForDisplay.outputWeights[index][neuron])}</td><td>${fmt3(contributions[neuron])}</td></tr>`).join('');
+        const addition = [...contributions, modelForDisplay.outputBias[index]].map(value => `(${fmt3(value)})`).join(' + ');
+        return `<h4>Zwischenergebnis für ${name}</h4><table class="calculation-table"><thead><tr><th>Neuron</th><th>Wert</th><th>Gewicht</th><th>Beitrag</th></tr></thead><tbody>${rows}<tr><td>Grundwert</td><td>–</td><td>–</td><td>${fmt3(modelForDisplay.outputBias[index])}</td></tr></tbody></table><p>Wir addieren die vier Beiträge und den Grundwert:</p><p class="calculation-total">${addition} ≈ ${fmt3(shown.scores[index])}</p>`;
+    }).join('');
+    const positive = shown.scores.map(score => Math.exp(score));
+    const total = positive[0] + positive[1];
+    $('calculation-percentages').innerHTML = `<div class="calculation-example"><h4>1. Positive Zahlen berechnen</h4><p>Katze: e hoch (${fmt3(shown.scores[0])}) ≈ <strong>${fmt3(positive[0])}</strong></p><p>Hund: e hoch (${fmt3(shown.scores[1])}) ≈ <strong>${fmt3(positive[1])}</strong></p><h4>2. Beide Zahlen addieren</h4><p>${fmt3(positive[0])} + ${fmt3(positive[1])} ≈ <strong>${fmt3(total)}</strong></p><h4>3. Den Anteil jeder Zahl berechnen</h4><p>Katze: ${fmt3(positive[0])} ÷ ${fmt3(total)} ≈ ${fmt4(shown.probabilities[0])}</p><p>Hund: ${fmt3(positive[1])} ÷ ${fmt3(total)} ≈ ${fmt4(shown.probabilities[1])}</p><h4>4. Die Anteile in Prozent umrechnen</h4><p>Katze: ${fmt4(shown.probabilities[0])} × 100 ≈ ${fmt(shown.probabilities[0] * 100)} % ≈ <strong>${pct(shown.probabilities[0])}</strong></p><p>Hund: ${fmt4(shown.probabilities[1])} × 100 ≈ ${fmt(shown.probabilities[1] * 100)} % ≈ <strong>${pct(shown.probabilities[1])}</strong></p><p>Vor dem Runden ergeben die beiden Anteile zusammen 100 %. Das Netz tippt auf die Kategorie mit dem höheren Anteil.</p></div>`;
+    $('weight-example').hidden = state.phase !== 6 && state.phase !== 13;
+    const outputDelta = before.probabilities.map((probability, index) => probability - sample.target[index]);
+    const hiddenDelta = outputDelta.reduce((sum, delta, index) => sum + delta * beforeModel.outputWeights[index][0], 0);
+    const gradient = hiddenDelta * sample.features[0];
+    const adjustment = rate * gradient;
+    $('weights').innerHTML = `<div class="calculation-example"><h4>Beispiel: E1 → N1</h4><p>Gewicht vorher: <strong>${fmt3(beforeModel.inputWeights[0][0])}</strong> · Gewicht nachher: <strong>${fmt3(updated.inputWeights[0][0])}</strong></p><p><strong>1. Unterschied zur Lösung:</strong> Das Netz zieht den Sollwert vom berechneten Anteil ab. Für die richtige Kategorie ist der Sollwert 1, für die andere 0.</p><p>Katze: ${fmt4(before.probabilities[0])} − ${sample.target[0]} = ${fmt4(outputDelta[0])}</p><p>Hund: ${fmt4(before.probabilities[1])} − ${sample.target[1]} = ${fmt4(outputDelta[1])}</p><p><strong>2. Rückrechnung zu N1:</strong> Beide Unterschiede werden mit dem jeweiligen Gewicht von N1 zur Ausgabe multipliziert und addiert.</p><p>(${fmt4(outputDelta[0])} × ${fmt3(beforeModel.outputWeights[0][0])}) + (${fmt4(outputDelta[1])} × ${fmt3(beforeModel.outputWeights[1][0])}) ≈ ${fmt4(hiddenDelta)}</p><p><strong>3. Einfluss der Verbindung E1 → N1:</strong> Das Ergebnis wird mit dem Eingabewert E1 multipliziert.</p><p>${fmt4(hiddenDelta)} × ${fmt(sample.features[0])} ≈ ${fmt4(gradient)}</p><p><strong>4. Anpassung berechnen:</strong> Die Lernrate ${fmt(rate)} bestimmt die Schrittgröße.</p><p>${fmt4(gradient)} × ${fmt(rate)} ≈ ${fmt4(adjustment)}</p><p><strong>5. Gewicht ändern:</strong> Das Netz zieht die berechnete Anpassung vom alten Gewicht ab.</p><p>${fmt3(beforeModel.inputWeights[0][0])} − (${fmt4(adjustment)}) ≈ <strong>${fmt3(updated.inputWeights[0][0])} ≈ ${fmt(updated.inputWeights[0][0])}</strong></p><p>Die Zahlen sind gerundet; intern rechnet das Netz genauer.</p></div>`;
+    const changeRow = (label, previous, current) => `<tr><td>${label}</td><td>${fmt3(previous)}</td><td>${fmt3(current)}</td></tr>`;
+    const inputRows = beforeModel.inputWeights.flatMap((row, neuron) => row.map((value, input) => changeRow(`E${input + 1} → N${neuron + 1}`, value, updated.inputWeights[neuron][input]))).join('');
+    const outputRows = beforeModel.outputWeights.flatMap((row, output) => row.map((value, neuron) => changeRow(`N${neuron + 1} → ${categoryNames[output]}`, value, updated.outputWeights[output][neuron]))).join('');
+    const biasRows = beforeModel.hiddenBias.map((value, neuron) => changeRow(`N${neuron + 1}`, value, updated.hiddenBias[neuron])).join('') + beforeModel.outputBias.map((value, output) => changeRow(categoryNames[output], value, updated.outputBias[output])).join('');
+    const changesTable = (rows, firstColumn = 'Verbindung') => `<table class="calculation-table"><thead><tr><th>${firstColumn}</th><th>Vorher</th><th>Nachher</th></tr></thead><tbody>${rows}</tbody></table>`;
+    $('weight-changes').innerHTML = `<h4>Alle Gewichte: vorher und nachher</h4><p>Auch die anderen Verbindungen werden mit ihrer jeweils eigenen Rückrechnung angepasst.</p><h4>Von den Eingaben zu den Neuronen</h4>${changesTable(inputRows)}<h4>Von den Neuronen zu Katze und Hund</h4>${changesTable(outputRows)}<h4>Grundwerte</h4>${changesTable(biasRows, 'Für')}`;
+
+    const diagram = $('diagram');
+    diagram.replaceChildren();
+    const mobile = window.matchMedia('(max-width: 600px)').matches;
+    $('network').setAttribute('viewBox', mobile ? '0 0 540 430' : '0 0 820 350');
+    $('network').classList.toggle('mobile-diagram', mobile);
+    const input = mobile ? [[130, 105], [410, 105]] : [[130, 125], [130, 245]];
+    const inner = mobile ? [[75, 225], [205, 225], [335, 225], [465, 225]] : [[410, 70], [410, 135], [410, 200], [410, 265]];
+    const output = mobile ? [[130, 355], [410, 355]] : [[680, 125], [680, 245]];
+    const labels = mobile ? [['Eingabe', 270, 30], ['Innere Schicht', 270, 165], ['Ausgabe', 270, 295]] : [['Eingabe', 130, 22], ['Innere Schicht', 410, 22], ['Ausgabe', 680, 22]];
+    input.forEach(([x1, y1]) => inner.forEach(([x2, y2]) => diagram.appendChild(createSvg('line', { x1, y1, x2, y2, class: `edge ${feedback ? 'feedback' : adjusted ? 'updated' : (state.phase === 2 || state.phase === 9) ? 'focus' : ''}` }))));
+    inner.forEach(([x1, y1]) => output.forEach(([x2, y2]) => diagram.appendChild(createSvg('line', { x1, y1, x2, y2, class: `edge ${feedback ? 'feedback' : adjusted ? 'updated' : (state.phase === 3 || state.phase === 10 || state.phase === 7 || state.phase === 14) ? 'focus' : ''}` }))));
+    labels.forEach(([text, x, y]) => diagram.appendChild(createSvg('text', { x, y, class: 'column-label', 'text-anchor': 'middle' }, text)));
+    if (!mobile) [['2 Merkmale', 130], ['4 Neuronen', 410], ['2 Einschätzungen', 680]].forEach(([text, x]) => diagram.appendChild(createSvg('text', { x, y: 42, class: 'column-note', 'text-anchor': 'middle' }, text)));
+    function node(position, type, label, value, active) {
+        const [x, y] = position;
+        diagram.appendChild(createSvg('circle', { cx: x, cy: y, r: mobile ? 34 : 26, class: `node ${type} ${active ? 'active' : ''}` }));
+        diagram.appendChild(createSvg('text', { x, y: y - 1, class: 'node-text' }, label));
+        diagram.appendChild(createSvg('text', { x, y: y + 17, class: 'node-val' }, value));
+    }
+    input.forEach((position, index) => node(position, 'input', `E${index + 1}`, fmt(sample.features[index]), state.phase === 1 || state.phase === 8));
+    inner.forEach((position, index) => node(position, 'hidden', `N${index + 1}`, signalsVisible ? fmt(shown.hidden[index]) : '–', state.phase === 2 || state.phase === 9 || feedback || adjusted));
+    output.forEach((position, index) => node(position, 'output', index === 0 ? 'Katze' : 'Hund', resultsVisible ? pct(shown.probabilities[index]) : '–', state.phase === 3 || state.phase === 7 || state.phase === 10 || state.phase === 14));
+    if (!mobile) {
+        diagram.appendChild(createSvg('text', { x: 130, y: 321, class: 'svg-note', 'text-anchor': 'middle' }, 'E1 spitze Ohren · E2 lange Schnauze'));
+        diagram.appendChild(createSvg('text', { x: 410, y: 321, class: 'svg-note', 'text-anchor': 'middle' }, 'N1 bis N4: berechnete Werte'));
+    }
+}
+function changeStep(phase) {
+    state.phase = phase;
+    render();
+    if (window.parent !== window) window.parent.postMessage({ type: 'schooltool-neural-network-step', step: phase + 1 }, '*');
+}
+$('next').addEventListener('click', () => changeStep(Math.min(phases.length - 1, state.phase + 1)));
+$('back').addEventListener('click', () => changeStep(Math.max(0, state.phase - 1)));
+$('restart').addEventListener('click', () => { state.model = copyModel(initial); changeStep(0); });
+window.addEventListener('message', event => {
+    if (event.source !== window.parent || event.data?.type !== 'schooltool-neural-network-show-step') return;
+    if (!Number.isInteger(event.data.step) || event.data.step < 1 || event.data.step > phases.length) return;
+    state.phase = event.data.step - 1;
+    render();
+});
+window.matchMedia('(max-width: 600px)').addEventListener('change', render);
+render();
+</script>
+<script>
+if (window.parent !== window) {
+    const reportHeight = () => window.parent.postMessage({ type: 'schooltool-neural-network-height', height: document.body.scrollHeight }, '*');
+    window.addEventListener('load', reportHeight);
+    window.addEventListener('resize', reportHeight);
+    if ('ResizeObserver' in window) new ResizeObserver(reportHeight).observe(document.body);
+}
+</script>
+</body>
+</html>
+

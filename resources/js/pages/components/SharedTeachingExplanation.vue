@@ -42,7 +42,7 @@ async function load() {
         error.value = failure.response?.status === 401 ? 'Bitte melde dich mit deinem Schooltool-Konto an und öffne den Link erneut.' : props.materialContext ? 'Dieses Unterrichtsmaterial ist für dich nicht verfügbar.' : 'Diese Freigabe ist nicht mehr verfügbar.'
     } finally { if (currentVersion === loadVersion) loading.value = false }
 }
-watch(() => [route.params.token, route.params.material, props.materialContext], load, { immediate: true })
+watch([() => route.params.token, () => route.params.material, () => props.materialContext], load, { immediate: true })
 </script>
 
 <style scoped>

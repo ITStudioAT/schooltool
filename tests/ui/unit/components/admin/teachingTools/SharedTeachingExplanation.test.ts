@@ -6,11 +6,11 @@ import SharedTeachingExplanation from '@/pages/components/SharedTeachingExplanat
 const wrappers = []
 afterEach(() => { wrappers.splice(0).forEach(wrapper => wrapper.unmount()); vi.unstubAllGlobals() })
 
-async function renderShared() {
+async function renderShared(suffix = '') {
     const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/explanations/:token', component: SharedTeachingExplanation }] })
-    await router.push(`/explanations/${'a'.repeat(48)}`)
+    await router.push(`/explanations/${'a'.repeat(48)}${suffix}`)
     await router.isReady()
-    const wrapper = mount(RouterView, { global: { plugins: [router] } })
+    const wrapper = mount(RouterView, { attachTo: document.body, global: { plugins: [router] } })
     wrappers.push(wrapper)
     await flushPromises()
     return { wrapper, router }
@@ -42,6 +42,75 @@ it.each([
     await vi.waitFor(() => expect(wrapper.get('h1').text()).toBe(title))
     expect(wrapper.text()).not.toContain('Veröffentlichen')
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+})
+
+it('renders the authorized neural network explanation in an isolated interactive frame', async () => {
+    vi.stubGlobal('axios', { get: vi.fn().mockResolvedValue({ data: { explanation: 'neural-network-learning' } }) })
+    const { wrapper } = await renderShared()
+    await vi.waitFor(() => expect(wrapper.get('iframe').attributes('title')).toBe('Wie ein neuronales Netz lernt'))
+    expect(wrapper.get('iframe').attributes('sandbox')).toBe('allow-scripts')
+    expect(wrapper.get('iframe').attributes('srcdoc')).toContain('Alle inneren Neuronen rechnen')
+    expect(wrapper.text()).not.toContain('Veröffentlichen')
+})
+
+it('accepts frame size updates only from the explanation itself', async () => {
+    vi.stubGlobal('axios', { get: vi.fn().mockResolvedValue({ data: { explanation: 'neural-network-learning' } }) })
+    const { wrapper } = await renderShared()
+    await vi.waitFor(() => expect(wrapper.find('iframe').exists()).toBe(true))
+    const frame = wrapper.get('iframe')
+    expect(frame.element.contentWindow).not.toBeNull()
+
+    window.dispatchEvent(new MessageEvent('message', { data: { type: 'schooltool-neural-network-height', height: 2100 } }))
+    await flushPromises()
+    expect(frame.element.style.height).toBe('1400px')
+
+    window.dispatchEvent(new MessageEvent('message', { source: frame.element.contentWindow, data: { type: 'schooltool-neural-network-height', height: 2100 } }))
+    await flushPromises()
+    expect(frame.element.style.height).toBe('2100px')
+})
+
+it('restores the requested step and keeps other URL state while navigating', async () => {
+    vi.stubGlobal('axios', { get: vi.fn().mockResolvedValue({ data: { explanation: 'neural-network-learning' } }) })
+    const { wrapper, router } = await renderShared('?lernschritt=8&other=kept#section')
+    await vi.waitFor(() => expect(wrapper.find('iframe').exists()).toBe(true))
+    const frame = wrapper.get('iframe')
+    const postMessage = vi.spyOn(frame.element.contentWindow, 'postMessage')
+
+    await frame.trigger('load')
+    expect(postMessage).toHaveBeenCalledWith({ type: 'schooltool-neural-network-show-step', step: 8 }, '*')
+
+    window.dispatchEvent(new MessageEvent('message', { source: frame.element.contentWindow, data: { type: 'schooltool-neural-network-step', step: 9 } }))
+    await vi.waitFor(() => expect(router.currentRoute.value.query.lernschritt).toBe('9'))
+    expect(router.currentRoute.value.query.other).toBe('kept')
+    expect(router.currentRoute.value.hash).toBe('#section')
+    expect(window.axios.get).toHaveBeenCalledTimes(1)
+
+    window.dispatchEvent(new MessageEvent('message', { data: { type: 'schooltool-neural-network-step', step: 5 } }))
+    window.dispatchEvent(new MessageEvent('message', { source: frame.element.contentWindow, data: { type: 'schooltool-neural-network-step', step: 22 } }))
+    await flushPromises()
+    expect(router.currentRoute.value.query.lernschritt).toBe('9')
+
+    await router.push({ query: { ...router.currentRoute.value.query, lernschritt: '4' }, hash: '#section' })
+    await vi.waitFor(() => expect(postMessage).toHaveBeenCalledWith({ type: 'schooltool-neural-network-show-step', step: 4 }, '*'))
+    window.dispatchEvent(new MessageEvent('message', { source: frame.element.contentWindow, data: { type: 'schooltool-neural-network-step', step: 21 } }))
+    await vi.waitFor(() => expect(router.currentRoute.value.query.lernschritt).toBe('21'))
+
+    const restored = await renderShared(router.currentRoute.value.fullPath.split('a'.repeat(48))[1])
+    await vi.waitFor(() => expect(restored.wrapper.find('iframe').exists()).toBe(true))
+    const restoredFrame = restored.wrapper.get('iframe')
+    const restoredMessage = vi.spyOn(restoredFrame.element.contentWindow, 'postMessage')
+    await restoredFrame.trigger('load')
+    expect(restoredMessage).toHaveBeenCalledWith({ type: 'schooltool-neural-network-show-step', step: 21 }, '*')
+})
+
+it.each(['0', '22', '-1', '1.5', 'abc'])('starts at the first step for invalid URL value %s', async invalidStep => {
+    vi.stubGlobal('axios', { get: vi.fn().mockResolvedValue({ data: { explanation: 'neural-network-learning' } }) })
+    const { wrapper } = await renderShared(`?lernschritt=${invalidStep}`)
+    await vi.waitFor(() => expect(wrapper.find('iframe').exists()).toBe(true))
+    const frame = wrapper.get('iframe')
+    const postMessage = vi.spyOn(frame.element.contentWindow, 'postMessage')
+    await frame.trigger('load')
+    expect(postMessage).toHaveBeenCalledWith({ type: 'schooltool-neural-network-show-step', step: 1 }, '*')
 })
 
 it.each([401, 404])('does not render the explanation when access is refused with %s', async status => {

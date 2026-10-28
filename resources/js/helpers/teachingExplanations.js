@@ -15,11 +15,13 @@ const explanationComponents = {
     'network-protocols': defineAsyncComponent(() => import('@/pages/admin/teachingTools/NetworkProtocolsExplanation.vue')),
     'network-security': defineAsyncComponent(() => import('@/pages/admin/teachingTools/NetworkSecurityExplanation.vue')),
     'network-operations': defineAsyncComponent(() => import('@/pages/admin/teachingTools/NetworkOperationsExplanation.vue')),
+    'neural-network-learning': defineAsyncComponent(() => import('@/pages/admin/teachingTools/NeuralNetworkExplanation.vue')),
 }
 
 export const teachingExplanationCategories = [
     { key: 'number-systems', title: 'Zahlensysteme', icon: 'mdi-numeric-2-box-multiple-outline' },
     { key: 'networks', title: 'Netzwerke', icon: 'mdi-lan' },
+    { key: 'artificial-intelligence', title: 'Künstliche Intelligenz', icon: 'mdi-brain' },
 ]
 
 export const teachingExplanations = [
@@ -36,6 +38,7 @@ export const teachingExplanations = [
     { key: 'network-protocols', category: 'networks', title: 'Netzwerkprotokolle und Dienste', description: 'Entdecke, wie Protokolle und Dienste zusammenarbeiten. Vergleiche Ports, DNS und DHCP, Web und E-Mail, Dateiübertragung und Zugriffsrechte.' },
     { key: 'network-security', category: 'networks', title: 'Netzwerksicherheit und Datenschutz', description: 'Entdecke, wie Schutzziele, MFA, Firewall und Verschlüsselung zusammenwirken. Erkenne typische Angriffe und gehe im Schulnetz sorgsam mit Daten um.' },
     { key: 'network-operations', category: 'networks', title: 'Netzwerke planen, betreiben und Störungen erkennen', description: 'Vergleiche Netzwerktopologien, plane Verbindungen im Gebäude und grenze Störungen ein. Lerne Leistungsbegriffe und Diagnosewerkzeuge mit ihren Grenzen kennen.' },
+    { key: 'neural-network-learning', category: 'artificial-intelligence', title: 'Wie ein neuronales Netz lernt', description: 'Verfolge, wie ein neuronales Netz ein Beispiel verarbeitet, seine Ausgabe vergleicht und seine Verbindungen anpasst.' },
 ].map(item => item.category === 'number-systems'
     ? { sourceSystem: 'Dezimal', ...item, ...numberSystemNotation(item.base), sourceNotation: numberSystemNotation(item.sourceBase || 10) }
     : item)

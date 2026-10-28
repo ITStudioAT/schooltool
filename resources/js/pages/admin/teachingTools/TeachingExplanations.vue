@@ -19,7 +19,7 @@
                         <span class="explanation-preview__connector" aria-hidden="true"><v-icon icon="mdi-arrow-down" size="22" /></span>
                         <div class="explanation-preview__binary"><span>{{ currentExplanation.system }}</span><div><span v-if="currentExplanation.prefix" class="explanation-preview__prefix">{{ currentExplanation.prefix }}</span><b v-for="(digit, index) in currentExplanation.result" :key="index">{{ digit }}</b><sub v-if="currentExplanation.subscript">{{ currentExplanation.subscript }}</sub></div></div>
                     </div>
-                    <div v-else class="explanation-preview__network" aria-hidden="true"><v-icon icon="mdi-lan-connect" size="96" /></div>
+                    <div v-else class="explanation-preview__network" aria-hidden="true"><v-icon :icon="currentExplanation.category === 'artificial-intelligence' ? 'mdi-brain' : 'mdi-lan-connect'" size="96" /></div>
                     <div class="explanation-preview__copy"><h2 id="explanation-preview-title">{{ currentExplanation.category === 'networks' ? 'Schüleransicht ansehen' : 'Erst selbst ausprobieren' }}</h2>
                         <p>Teste die Erklärung so, wie deine Schüler:innen sie sehen.</p>
                         <button type="button" class="explanation-action explanation-preview__button" @click="previewOpened = true"><v-icon icon="mdi-eye-outline" size="20" aria-hidden="true" />Schüleransicht testen</button>
@@ -81,7 +81,7 @@
                     <span class="explanation-card__availability" :class="`explanation-card__availability--${cardAvailability(cardShares[item.key]?.sharing)}`" role="img" :aria-label="`${item.title}: ${cardAvailabilityLabel(cardShares[item.key]?.sharing)}`" :title="cardAvailabilityLabel(cardShares[item.key]?.sharing)"></span>
                     <RouterLink :to="`/admin/teaching-tools/explanations/${item.key}`" class="explanation-tile" :aria-label="`${item.title} öffnen`">
                         <div v-if="item.category === 'number-systems'" class="explanation-tile__preview" aria-hidden="true"><span>{{ item.sourceNotation.prefix }}{{ item.example }}<sub v-if="item.sourceNotation.subscript">{{ item.sourceNotation.subscript }}</sub></span><span class="explanation-tile__arrow">→</span><span>{{ item.prefix }}{{ item.result }}<sub v-if="item.subscript">{{ item.subscript }}</sub></span></div>
-                        <div v-else class="explanation-tile__preview" aria-hidden="true"><v-icon icon="mdi-lan-connect" size="64" /></div>
+                        <div v-else class="explanation-tile__preview" aria-hidden="true"><v-icon :icon="item.category === 'artificial-intelligence' ? 'mdi-brain' : 'mdi-lan-connect'" size="64" /></div>
                         <div class="explanation-tile__copy"><div><v-icon :icon="currentCategory.icon" size="26" aria-hidden="true" /><h2>{{ item.title }}</h2></div>
                             <p>{{ item.description }}</p>
                             <span class="explanation-tile__open">Erklärung öffnen <span aria-hidden="true">↗</span></span>
