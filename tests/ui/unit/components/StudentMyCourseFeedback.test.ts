@@ -194,6 +194,38 @@ describe('student combined performance and behaviour page', () => {
         expect(reload.find('.student-points-progress').exists()).toBe(true)
     })
 
+    it('shows corrected points and the bounded change in the student progress', async () => {
+        const wrapper = await mountFeedback({ url: '/student/course/18?panel=entries', courseOverrides: { show_points_progress: true },
+            pointsProgress: { course_id: 18, parts: [{ id: 7, name: 'Basis', semester: 1, status: 'complete', sum: 20, maximum: 20,
+                adjustment: { source: 'Mitarbeit', original: 19, change: 1, requested_change: 5 } }] } })
+        expect(wrapper.get('.student-points-progress').text()).toContain('Erreicht: 20 Punkte')
+        expect(wrapper.get('.student-points-progress').text()).toContain('Vorher: 19 Punkte · Mitarbeit: +1 Punkte (berechnet +5, begrenzt)')
+        expect(wrapper.get('.student-points-progress-percent').text()).toBe('100 %')
+    })
+
+    it.each([
+        [5.65, 6.65, 1, 'positive', 56.5, 10],
+        [3.15, 2.65, -0.5, 'negative', 26.5, 5],
+    ])('marks the actual change from %s to %s on the progress bar', async (original, sum, change, direction, left, width) => {
+        const wrapper = await mountFeedback({ url: '/student/course/18?panel=entries', courseOverrides: { show_points_progress: true },
+            pointsProgress: { course_id: 18, parts: [{ id: 7, name: 'Basis', semester: 1, status: 'complete', sum, maximum: 10,
+                adjustment: { source: 'Mitarbeit', original, change, requested_change: change } }] } })
+        const segment = wrapper.get('.student-points-adjustment')
+        expect(segment.classes()).toContain(`student-points-adjustment--${direction}`)
+        expect(parseFloat((segment.element as HTMLElement).style.left)).toBeCloseTo(left)
+        expect(parseFloat((segment.element as HTMLElement).style.width)).toBeCloseTo(width)
+        expect(parseFloat((wrapper.get('.student-points-adjustment-start').element as HTMLElement).style.left)).toBeCloseTo(original / 10 * 100)
+        expect(wrapper.get('.student-points-progress v-progress-linear').attributes('aria-valuetext')).toContain(`vorher ${String(original).replace('.', ',')} Punkte`)
+    })
+
+    it('does not mark a correction when the actual change is zero', async () => {
+        const wrapper = await mountFeedback({ url: '/student/course/18?panel=entries', courseOverrides: { show_points_progress: true },
+            pointsProgress: { course_id: 18, parts: [{ id: 7, name: 'Basis', semester: 1, status: 'complete', sum: 10, maximum: 10,
+                adjustment: { source: 'Mitarbeit', original: 10, change: 0, requested_change: 5 } }] } })
+        expect(wrapper.find('.student-points-adjustment').exists()).toBe(false)
+        expect(wrapper.find('.student-points-adjustment-start').exists()).toBe(false)
+    })
+
     it('shows points exclusively in the performance tab across navigation and reloads', async () => {
         const options = { courseOverrides: { show_points_progress: true },
             pointsProgress: { course_id: 18, parts: [{ id: 7, name: 'Basis', semester: 1, status: 'complete', sum: 7.75, maximum: 10 }] } }

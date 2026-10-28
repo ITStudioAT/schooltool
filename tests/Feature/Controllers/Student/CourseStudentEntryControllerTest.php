@@ -293,6 +293,34 @@ test('student points progress is opt in course scoped and projects only personal
         ->assertJsonPath('data.semester', 1)->assertJsonPath('data.semester_count', 1);
 });
 
+test('student points progress exposes only personal corrected values and respects visibility', function () {
+    $this->schoolyear->update(['from' => '2026-09-01', 'until' => '2027-07-01']);
+    $scope = ['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id, 'user_id' => $this->teacher->id];
+    $area = TeachingEntryArea::factory()->create($scope + ['semester_count' => 1]);
+    $this->course->update(['teaching_entry_area_id' => $area->id, 'teaching_student_grade_columns' => ['show_points_progress' => true]]);
+    $base = TeachingEntryGradingPart::factory()->create($scope + ['teaching_entry_area_id' => $area->id, 'name' => 'Basis', 'points_assessment_mode' => 'sum_percent']);
+    $signs = TeachingEntryGradingPart::factory()->create($scope + ['teaching_entry_area_id' => $area->id, 'name' => 'Mitarbeit', 'points_assessment_mode' => 'sign_points', 'sign_adjustment' => ['mode' => 'fixed', 'value' => '5']]);
+    foreach ([['P', $base, 'points', 20], ['MA', $signs, 'plus_minus', null]] as [$type, $part, $mode, $maximum]) {
+        TeachingEntryDefinition::factory()->create($scope + ['teaching_entry_area_id' => $area->id, 'teaching_entry_grading_part_id' => $part->id,
+            'short_name' => $type, 'category' => 'Benotung', 'has_properties' => true, 'properties_mode' => $mode, 'maximum_points' => $maximum]);
+    }
+    foreach ([[$this->student->id, 'P', '19'], [$this->student->id, 'MA', '+'], [$this->peer->id, 'P', '3'], [$this->peer->id, 'MA', '-']] as [$id, $type, $grade]) {
+        TeachingCourseStudentEntry::query()->create(['teaching_course_id' => $this->course->id, 'user_id' => $id, 'type' => $type, 'grade' => $grade, 'date' => '2026-10-01']);
+    }
+    $url = "/api/homepage/student/courses/{$this->course->id}/entries";
+    $this->actingAs($this->student)->getJson($url)->assertOk()
+        ->assertJsonPath('points_progress.parts.0.sum', 20)->assertJsonPath('points_progress.parts.0.adjustment.original', 19)
+        ->assertJsonPath('points_progress.parts.0.adjustment.change', 1)->assertJsonPath('points_progress.parts.0.adjustment.requested_change', 5);
+    $this->actingAs($this->peer)->getJson($url)->assertOk()
+        ->assertJsonPath('points_progress.parts.0.sum', 0)->assertJsonPath('points_progress.parts.0.adjustment.original', 3)
+        ->assertJsonPath('points_progress.parts.0.adjustment.change', -3);
+    $signs->update(['sign_adjustment' => null]);
+    $this->actingAs($this->student)->getJson($url)->assertOk()->assertJsonPath('points_progress.parts.0.status', 'incomplete')
+        ->assertJsonPath('points_progress.parts.0.sum', null)->assertJsonMissingPath('points_progress.parts.0.adjustment');
+    $this->course->update(['teaching_student_grade_columns' => ['show_points_progress' => false]]);
+    $this->getJson($url)->assertOk()->assertJsonPath('points_progress', null);
+});
+
 test('student points progress preserves every independent point to grade basis without combining them', function () {
     $scope = ['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id, 'user_id' => $this->teacher->id];
     $area = TeachingEntryArea::factory()->create($scope);

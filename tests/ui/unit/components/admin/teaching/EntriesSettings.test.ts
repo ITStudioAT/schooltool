@@ -82,6 +82,64 @@ describe('Teaching entries settings', () => {
         expect(simulationStructure([base, adjustment], [], null, { 1: ['4.6'], 2: ['+'] }).total).toBeNull()
     })
 
+    it('simulates point adjustments with the original maximum and grade boundaries', () => {
+        const base = { id: 1, is_required: true, points_assessment_mode: 'sum_percent', entries: [entryFixture({ properties_mode: 'points', maximum_points: 20 })] }
+        const adjustment = { id: 2, is_required: true, points_assessment_mode: 'sign_points', entries: [entryFixture({ id: 2, properties_mode: 'plus_minus' })], sign_adjustment: { improvement_factor: '5', deterioration_factor: '5' } }
+        expect(simulationStructure([base, adjustment], [], null, { 1: ['12'], 2: ['+'] }).total).toBe('2')
+        expect(simulationStructure([base, adjustment], [], null, { 1: ['19'], 2: ['+'] }).partSteps[2]).toContain('20 / 20 Punkte')
+        expect(simulationStructure([base, adjustment], [], null, { 1: ['2'], 2: ['-'] }).partSteps[2]).toContain('0 / 20 Punkte')
+        expect(simulationStructure([base, adjustment], [], null, { 1: ['12'], 2: ['~'] }).total).toBe('3')
+        expect(simulationStructure([{ ...base, points_assessment_mode: 'individual' }, adjustment], [], null, { 1: ['12'], 2: ['+'] }).total).toBeNull()
+        expect(simulationStructure([{ ...base, points_assessment_mode: 'overall', overall_points_grade_thresholds: { 1: 19, 2: 16, 3: 14, 4: 9 } }, adjustment], [], null, { 1: ['12'], 2: ['+'] }).total).toBe('2')
+        expect(gradingAdjustmentChangeError([], [base, adjustment], [], [{ ...base, points_assessment_mode: 'individual' }, adjustment])).toContain('direkten Benotungsteil')
+    })
+
+    it('shows adjusted points as the single grade without a one-item weighted average', () => {
+        const points = { id: 1, is_required: true, points_assessment_mode: 'sum_percent', entries: [entryFixture({ properties_mode: 'points', maximum_points: 20 })] }
+        const participation = { id: 2, is_required: true, points_assessment_mode: 'sign_points', entries: [entryFixture({ id: 2, properties_mode: 'plus_minus' })], sign_adjustment: { improvement_factor: '5', deterioration_factor: '5' } }
+        const groups = [{ id: 'basis', part_ids: [1, 2] }]
+        const result = simulationStructure([points, participation], groups, [{ group_id: 'basis', weight: 2 }], { 1: ['15.45'], 2: ['++'] })
+        expect(result.pointSummaries[1]).toBe('20 / 20 Punkte · 100 % · Note 1')
+        expect(result.partSteps[2]).toContain('Saldo 2 × 5 = 10')
+        expect(result.total).toBe('1')
+        expect(result.totalStep).toBe('')
+    })
+
+    it('uses one symmetric factor as fixed points or a percentage of the maximum', () => {
+        const points = { id: 1, is_required: true, points_assessment_mode: 'sum_percent', entries: [entryFixture({ properties_mode: 'points', maximum_points: 20 })] }
+        const signs = { id: 2, is_required: true, points_assessment_mode: 'sign_points', entries: [entryFixture({ id: 2, properties_mode: 'plus_minus' })], sign_adjustment: { mode: 'percentage', value: '10' } }
+        expect(simulationStructure([points, signs], [], null, { 1: ['12'], 2: ['+'] }).pointSummaries[1]).toContain('14 / 20 Punkte')
+        expect(simulationStructure([points, signs], [], null, { 1: ['12'], 2: ['-'] }).pointSummaries[1]).toContain('10 / 20 Punkte')
+        expect(simulationStructure([points, signs], [], null, { 1: ['12'], 2: ['~'] }).pointSummaries[1]).toContain('13 / 20 Punkte')
+        signs.sign_adjustment = { mode: 'fixed', value: '5' }
+        expect(simulationStructure([points, signs], [], null, { 1: ['12'], 2: ['-'] }).pointSummaries[1]).toContain('7 / 20 Punkte')
+    })
+
+    it('preserves existing point rules until the teacher saves a single new value', async () => {
+        const methods = (Entries as any).methods
+        const original = { id: 20, gradingPartId: 20, name: 'Mitarbeit', teaching_entry_area_id: 10, points_assessment_mode: 'sign_points',
+            sign_adjustment: { improvement_factor: '5', deterioration_factor: '3' }, entries: [entryFixture({ properties_mode: 'plus_minus' })] }
+        const target = { id: 21, name: 'Punkte', teaching_entry_area_id: 10, points_assessment_mode: 'sum_percent' }
+        const put = vi.fn().mockResolvedValue({ data: { data: original } })
+        vi.stubGlobal('axios', { put })
+        try {
+            const ctx: any = { activeAreaId: 10, gradingParts: [original, target], gradingGroups: [], calculationEntries: [],
+                gradingPartFormErrors: {}, closeGradingPartDialog: vi.fn(), notifyError: vi.fn() }
+            methods.openEditGradingPartDialog.call(ctx, original)
+            expect(ctx.gradingPartPointsLegacyDifferent).toBe(true)
+            expect(ctx.gradingPartPointsValue).toBeNull()
+            await methods.saveGradingPart.call(ctx, true)
+            expect(put).not.toHaveBeenCalled()
+            ctx.gradingPartPointsMode = 'percentage'
+            ctx.gradingPartPointsValue = '2,5'
+            await methods.saveGradingPart.call(ctx, true)
+            expect(put).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ sign_adjustment: { mode: 'percentage', value: '2.5' } }))
+            methods.openEditGradingPartDialog.call(ctx, { ...original, sign_adjustment: { improvement_factor: '5', deterioration_factor: '5.0' } })
+            expect(ctx.gradingPartPointsValue).toBe('5')
+            expect(ctx.gradingPartPointsLegacyDifferent).toBe(false)
+        } finally { vi.unstubAllGlobals() }
+    })
+
     it('keeps simulated points and final grades unchanged when an additional point type is still untouched', () => {
         const part = { id: 1, is_required: true, points_assessment_mode: 'sum_percent', entries: [entryFixture({ properties_mode: 'points', maximum_points: 5 })] }
         const values = { 1: ['4.1'] }
@@ -147,7 +205,7 @@ describe('Teaching entries settings', () => {
         const weights = [{ part_id: 1, weight: 2 }, { part_id: 2, weight: 1 }]
         const evaluate = (values = { 2: ['3'] }, groups = [], rootWeights = weights) => simulationStructure([optional, exam], groups, rootWeights, values)
         expect(evaluate().total).toBe('3')
-        expect(evaluate().totalStep).toBe('(1 × 3) / 1 = 3 / 1 = 3; kaufmännisch → Note 3')
+        expect(evaluate().totalStep).toBe('')
         expect(evaluate({ 1: ['1'], 2: ['3'] }).total).toBe('2')
         for (const invalid of ['11', '', 'F']) expect(evaluate({ 1: [invalid], 2: ['3'] }).total).toBeNull()
         expect(evaluate({} as any).total).toBeNull()
@@ -3368,7 +3426,7 @@ describe('Teaching entries settings', () => {
         } finally { wrapper.unmount() }
     })
 
-    it.each([['plus_minus', null], ['sign_grade', 'sign_grade'], ['sign_adjust', 'sign_adjust']])('opens saved sign mode %s with its explicit purpose and no automatic conversion', async (mode, purpose) => {
+    it.each([['plus_minus', null], ['sign_grade', 'sign_grade'], ['sign_adjust', 'sign_adjust'], ['sign_points', 'sign_points']])('opens saved sign mode %s with its explicit purpose and no automatic conversion', async (mode, purpose) => {
         const wrapper = shallowMount({ ...Entries, beforeMount() {} }, {
             global: { stubs: { ItsGridBox: { template: '<div><slot /></div>' }, 'v-tabs': true, 'v-tab': true,
                 'v-checkbox': true, 'v-switch': true, 'v-textarea': true, 'v-combobox': true } },
@@ -3386,6 +3444,9 @@ describe('Teaching entries settings', () => {
                 expect(section.text()).toContain('Note verbessern')
                 expect(section.text()).toContain('Notenwert beibehalten')
                 expect(section.text()).toContain('Note verschlechtern')
+            } else if (mode === 'sign_points') {
+                expect(section.text()).toContain('Fixe Punkte')
+                expect(section.text()).toContain('% der Gesamtpunkte')
             } else {
                 expect(section.text()).toContain(mode === 'sign_grade' ? 'Mindest-Saldo' : 'keine Note wird berechnet oder angepasst')
             }

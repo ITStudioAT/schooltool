@@ -7,18 +7,20 @@ export function gradingAdjustmentState(groups, parts) {
     for (const group of groups) add(group.parent_group_id ?? 'root', { key: `group:${group.id}`, name: group.name })
     for (const part of parts) {
         const parent = groups.find((group) => group.part_ids.includes(part.id))?.id ?? 'root'
-        add(parent, { key: `part:${part.id}`, id: part.id, name: part.name, adjustment: part.points_assessment_mode === 'sign_adjust' })
+        add(parent, { key: `part:${part.id}`, id: part.id, name: part.name, mode: part.points_assessment_mode, adjustment: ['sign_adjust', 'sign_points'].includes(part.points_assessment_mode) })
     }
     const state = {}
     for (const [context, siblings] of contexts) {
         const adjustments = siblings.filter((child) => child.adjustment)
         for (const part of adjustments) {
             const target = siblings.length === 2 && adjustments.length === 1 ? siblings.find((child) => child !== part) : null
-            const message = target ? '' : adjustments.length > 1
+            const message = target && part.mode === 'sign_points' && !['sum_percent', 'overall'].includes(target.mode)
+                ? '„Bestehende Punkte anpassen“ benötigt auf derselben Ebene einen direkten Benotungsteil mit addierten Punkten.'
+                : target ? '' : adjustments.length > 1
                 ? 'Zwei Anpassungs-Benotungsteile können einander nicht als Ziel verwenden. Auf dieser Ebene braucht die Anpassung genau einen anderen Baustein ohne den Zweck „Bestehende Note anpassen“.'
                 : '„Bestehende Note anpassen“ braucht auf derselben Ebene genau einen weiteren Baustein als Ziel: insgesamt genau zwei direkte Bausteine. Eine Untergruppe zählt als ein Baustein.'
             state[part.id] = { message, target: target?.name, context, siblingCount: siblings.length, adjustmentCount: adjustments.length,
-                signature: JSON.stringify([context, siblings.map((child) => child.key).sort(), adjustments.map((child) => child.id).sort((a, b) => a - b)]) }
+                signature: JSON.stringify([context, siblings.map((child) => `${child.key}:${child.mode ?? ''}`).sort(), adjustments.map((child) => child.id).sort((a, b) => a - b)]) }
         }
     }
     return state

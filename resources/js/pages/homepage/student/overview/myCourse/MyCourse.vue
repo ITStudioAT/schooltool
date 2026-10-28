@@ -245,10 +245,16 @@
                                     <div class="student-points-progress-heading"><strong>{{ part.name }}</strong><span v-if="hasTwoSemesters">{{ part.semester }}. Semester</span></div>
                                     <template v-if="part.percent !== null">
                                         <div class="student-points-progress-values">Erreicht: {{ formatEntryValue(part.sum) }} Punkte · Maximal möglich: {{ formatEntryValue(part.maximum) }} Punkte</div>
+                                        <div v-if="part.adjustment" class="student-points-progress-values">Vorher: {{ formatEntryValue(part.adjustment.original) }} Punkte · {{ part.adjustment.source }}: {{ part.adjustment.change > 0 ? '+' : '' }}{{ formatEntryValue(part.adjustment.change) }} Punkte<span v-if="part.adjustment.requested_change !== part.adjustment.change"> (berechnet {{ part.adjustment.requested_change > 0 ? '+' : '' }}{{ formatEntryValue(part.adjustment.requested_change) }}, begrenzt)</span></div>
                                         <div class="student-points-progress-track">
-                                            <v-progress-linear :model-value="part.fill" height="36" rounded color="transparent" :aria-label="`${part.name}, ${part.semester}. Semester`" :aria-valuetext="`${formatEntryValue(part.sum)} von ${formatEntryValue(part.maximum)} Punkten, ${formatEntryValue(part.percent)} Prozent`" />
+                                            <v-progress-linear :model-value="part.fill" height="36" rounded color="transparent" :aria-label="`${part.name}, ${part.semester}. Semester`" :aria-valuetext="progressValueText(part)" />
                                             <div class="student-points-progress-fill" aria-hidden="true"
                                                 :style="{ backgroundImage: part.gradient, clipPath: `inset(0 ${100 - part.fill}% 0 0)` }" />
+                                            <template v-if="part.adjustmentRange">
+                                                <span class="student-points-adjustment" :class="`student-points-adjustment--${part.adjustmentRange.direction}`"
+                                                    :style="{ left: `${part.adjustmentRange.left}%`, width: `${part.adjustmentRange.width}%` }" aria-hidden="true" />
+                                                <span class="student-points-adjustment-start" :style="{ left: `${part.adjustmentRange.original}%` }" aria-hidden="true" />
+                                            </template>
                                             <span v-for="boundary in part.boundaries" :key="boundary" class="student-points-grade-boundary"
                                                 :style="{ left: `${boundary}%` }" aria-hidden="true" />
                                             <strong class="student-points-progress-percent" aria-hidden="true">{{ formatEntryValue(part.percent) }} %</strong>
@@ -593,12 +599,18 @@ export default {
                 const valid = part.status === 'complete' && Number.isFinite(part.sum)
                     && Number.isFinite(part.maximum) && part.maximum > 0
                 const percent = valid ? part.sum / part.maximum * 100 : null
+                const original = valid && Number.isFinite(part.adjustment?.original) && Number.isFinite(part.adjustment?.change)
+                    ? Math.max(0, Math.min(100, part.adjustment.original / part.maximum * 100)) : null
+                const current = percent === null ? null : Math.max(0, Math.min(100, percent))
+                const width = original === null || current === null ? 0 : Number(Math.abs(current - original).toFixed(6))
+                const adjustmentRange = width > 0 && part.adjustment.change !== 0
+                    ? { original, left: Math.min(original, current), width, direction: part.adjustment.change > 0 ? 'positive' : 'negative' } : null
                 const boundaries = valid && Array.isArray(part.grade_boundaries)
                     && part.grade_boundaries.length === 4
                     && part.grade_boundaries.every((value, index, values) => Number.isFinite(value) && value >= 0 && value <= 100
                         && (index === 0 || value > values[index - 1])) ? part.grade_boundaries : []
                 return { ...part, percent, fill: percent === null ? 0 : Math.max(0, Math.min(100, percent)),
-                    gradient: percentageProgressGradient, boundaries }
+                    gradient: percentageProgressGradient, boundaries, adjustmentRange }
             })
         },
 
@@ -1039,6 +1051,12 @@ export default {
     },
 
     methods: {
+        progressValueText(part) {
+            const value = `${this.formatEntryValue(part.sum)} von ${this.formatEntryValue(part.maximum)} Punkten, ${this.formatEntryValue(part.percent)} Prozent`
+            if (!part.adjustmentRange) return value
+            const adjustment = part.adjustment
+            return `${value}; vorher ${this.formatEntryValue(adjustment.original)} Punkte, ${adjustment.source}: ${adjustment.change > 0 ? '+' : ''}${this.formatEntryValue(adjustment.change)} Punkte`
+        },
         evaluationPdfUrl(entry) {
             if (!entry.work?.evaluation_pdf) return null
             return evaluationPdf.url({ courseId: this.courseId, course_work: entry.work.id, sha256: entry.work.evaluation_pdf.sha256 })
@@ -1879,6 +1897,25 @@ export default {
     position: absolute;
     inset: 0;
     pointer-events: none;
+}
+
+.student-points-adjustment {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    pointer-events: none;
+}
+
+.student-points-adjustment--positive {
+    background: repeating-linear-gradient(135deg, rgba(21, 110, 68, 0.82) 0 5px, rgba(192, 243, 207, 0.82) 5px 10px);
+}
+
+.student-points-adjustment--negative {
+    background: repeating-linear-gradient(135deg, #d8959b 0 3px, #f6d8db 3px 10px);
+}
+
+.student-points-adjustment-start {
+    display: none;
 }
 
 .student-points-progress-percent {

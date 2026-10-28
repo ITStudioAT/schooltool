@@ -35,6 +35,26 @@ test('saves adjustment decimals and drafts without invented defaults or unrelate
     $this->actingAs($this->otherTeacher, 'sanctum')->putJson($url, ['name' => $part->name, 'sign_adjustment' => $configuration])->assertForbidden();
 });
 
+test('point adjustment can only target a direct summed points part', function () {
+    $attributes = ['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id, 'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $this->area->id];
+    $part = TeachingEntryGradingPart::factory()->create($attributes);
+    $target = TeachingEntryGradingPart::factory()->create([...$attributes, 'points_assessment_mode' => 'sum_percent']);
+    TeachingEntryDefinition::factory()->create([...$attributes, 'teaching_entry_grading_part_id' => $part->id, 'has_properties' => true, 'properties_mode' => 'plus_minus']);
+    $url = "/api/admin/teaching/entry_grading_parts/{$part->id}";
+    $payload = ['name' => $part->name, 'points_assessment_mode' => 'sign_points', 'sign_adjustment' => ['improvement_factor' => '5', 'deterioration_factor' => '2,5']];
+    $this->actingAs($this->teacher, 'sanctum')->putJson($url, $payload)->assertOk()->assertJsonPath('data.sign_adjustment.deterioration_factor', '2.5');
+    $this->putJson("/api/admin/teaching/entry_grading_parts/{$target->id}", ['name' => $target->name, 'points_assessment_mode' => 'individual'])
+        ->assertUnprocessable()->assertJsonValidationErrors('points_assessment_mode');
+    $this->putJson($url, [...$payload, 'sign_adjustment' => ['improvement_factor' => '-1', 'deterioration_factor' => '5']])
+        ->assertUnprocessable()->assertJsonValidationErrors('sign_adjustment.improvement_factor');
+    $this->putJson($url, [...$payload, 'sign_adjustment' => ['mode' => 'percentage', 'value' => '2,5']])
+        ->assertOk()->assertJsonPath('data.sign_adjustment.value', '2.5');
+    $this->putJson($url, [...$payload, 'sign_adjustment' => ['mode' => 'unknown', 'value' => '2']])
+        ->assertUnprocessable()->assertJsonValidationErrors('sign_adjustment.mode');
+    $this->putJson($url, [...$payload, 'sign_adjustment' => ['mode' => 'fixed', 'value' => '-1']])
+        ->assertUnprocessable()->assertJsonValidationErrors('sign_adjustment.value');
+});
+
 trait RefreshTeachingEntryGradingPartDatabase
 {
     use RefreshDatabase;

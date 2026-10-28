@@ -356,16 +356,21 @@ class CourseStudentEntryController extends Controller
 
                 $trace = $part['trace'];
                 $available = $part['status'] === 'complete'
+                    && ($trace['points_adjustment']['status'] ?? 'complete') === 'complete'
                     && is_numeric($trace['sum'] ?? null) && is_finite((float) $trace['sum'])
                     && is_numeric($trace['maximum'] ?? null) && is_finite((float) $trace['maximum']) && $trace['maximum'] > 0
                     && ! collect($semester['issues'])->contains(fn (array $issue): bool => in_array($issue['code'] ?? null, ['invalid_period', 'unassigned_date', 'duplicate_work'], true));
-                $parts[] = [
+                $progressPart = [
                     'id' => $part['id'], 'name' => $part['name'], 'semester' => $semester['semester'],
                     'status' => $available ? 'complete' : ($part['status'] === 'empty' ? 'empty' : 'incomplete'),
-                    'sum' => $available ? $trace['sum'] : null,
+                    'sum' => $available ? ($trace['points_adjustment']['adjusted'] ?? $trace['sum']) : null,
                     'maximum' => $available ? $trace['maximum'] : null,
                     'grade_boundaries' => $available ? $evaluation->pointsProgressBoundaries($part) : [],
                 ];
+                if ($available && ($trace['points_adjustment']['status'] ?? null) === 'complete') {
+                    $progressPart['adjustment'] = array_intersect_key($trace['points_adjustment'], array_flip(['source', 'original', 'change', 'requested_change']));
+                }
+                $parts[] = $progressPart;
             }
         }
 

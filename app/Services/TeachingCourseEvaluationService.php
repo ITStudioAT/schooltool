@@ -81,7 +81,7 @@ class TeachingCourseEvaluationService
         }
 
         return ['course_id' => $course->id, 'schoolyear_id' => $year->id, 'semester' => $semester, 'semester_count' => $semesterCount,
-            'rounding' => ($area?->grading_part_groups ?? []) !== [] || $area?->grading_level_weights !== null || $parts->contains('points_assessment_mode', 'sign_adjust') ? 'half_up' : false, 'issues' => $area ? [] : [$this->issue('missing_area', 'Dem Kurs ist kein gültiger eigener Eintragsbereich zugeordnet.')], 'students' => $students];
+            'rounding' => ($area?->grading_part_groups ?? []) !== [] || $area?->grading_level_weights !== null || $parts->contains(fn ($part): bool => in_array($part->points_assessment_mode, ['sign_adjust', 'sign_points'], true)) ? 'half_up' : false, 'issues' => $area ? [] : [$this->issue('missing_area', 'Dem Kurs ist kein gültiger eigener Eintragsbereich zugeordnet.')], 'students' => $students];
     }
 
     /** @param list<int> $unprocessedWorkIds */
@@ -134,7 +134,7 @@ class TeachingCourseEvaluationService
         if (collect($unassigned)->contains(fn ($type): bool => count($type['entries']) > 0)) {
             $issues[] = $this->issue('unassigned_type', 'Bewertete Eintragstypen sind keinem Benotungsteil zugeordnet.');
         }
-        $usesStructure = ($area?->grading_part_groups ?? []) !== [] || $area?->grading_level_weights !== null || $parts->contains('points_assessment_mode', 'sign_adjust');
+        $usesStructure = ($area?->grading_part_groups ?? []) !== [] || $area?->grading_level_weights !== null || $parts->contains(fn ($part): bool => in_array($part->points_assessment_mode, ['sign_adjust', 'sign_points'], true));
         $total = $usesStructure ? $this->structuredTotal($partReports, $parts, $area) : $this->total($partReports);
         if ($this->hasErrors($issues)) {
             $total['result'] = null;
@@ -194,7 +194,7 @@ class TeachingCourseEvaluationService
                 }
             }
             $direct = $parts->filter(fn ($part): bool => ($part->grading_group_id ?? 'root') === $context);
-            $adjustments = $direct->where('points_assessment_mode', 'sign_adjust');
+            $adjustments = $direct->filter(fn ($part): bool => in_array($part->points_assessment_mode, ['sign_adjust', 'sign_points'], true));
             foreach ($direct as $part) {
                 $report = $reports[$byId[$part->id]];
                 $children['part:'.$part->id] = $report['result_exact'] !== null ? BigRational::of($report['result_exact']) : null;
@@ -213,7 +213,15 @@ class TeachingCourseEvaluationService
             $result = null;
             $method = 'weighted_children';
             if ($adjustments->isNotEmpty()) {
-                $method = 'sign_adjust';
+                $method = $adjustments->first()->points_assessment_mode;
+                foreach ($adjustments->where('points_assessment_mode', 'sign_points') as $pointsAdjustment) {
+                    foreach ($direct as $candidate) {
+                        $candidateIndex = $byId[$candidate->id];
+                        if ($candidate->id !== $pointsAdjustment->id && in_array($reports[$candidateIndex]['trace']['method'] ?? null, ['sum_percent', 'overall_points'], true)) {
+                            $reports[$candidateIndex]['trace']['points_adjustment'] = ['status' => 'incomplete', 'source' => $pointsAdjustment->name];
+                        }
+                    }
+                }
                 if ($adjustments->count() === 1 && count($children) === 2) {
                     $part = $adjustments->first();
                     $index = $byId[$part->id];
@@ -223,20 +231,67 @@ class TeachingCourseEvaluationService
                     if ($balance === null && ! $part->is_required && ($reports[$index]['trace']['balance_status'] ?? null) === 'empty') {
                         $balance = '0';
                     }
-                    $calculation = $base !== null && $balance !== null ? TeachingSignAdjustment::calculate($base, BigRational::of($balance), $part->sign_adjustment) : null;
-                    if ($base !== null && isset($omitted['part:'.$part->id])) {
-                        $calculation = ['raw' => $base, 'delta' => BigRational::of(0), 'grade' => $base->toScale(0, RoundingMode::HalfUp)->toInt()];
-                    }
-                    if ($calculation !== null) {
-                        $raw = $calculation['raw'];
-                        $result = $raw->compareTo(1) < 0 ? BigRational::of(1) : ($raw->compareTo(5) > 0 ? BigRational::of(5) : $raw);
-                        $reports[$index]['result'] = $result->toFloat();
-                        $reports[$index]['result_exact'] = (string) $result;
-                        $reports[$index]['rounded_result'] = $calculation['grade'];
-                        $reports[$index]['status'] = 'complete';
-                        $reports[$index]['issues'] = [];
-                        $reports[$index]['trace'] += ['base_exact' => (string) $base, 'delta_exact' => (string) $calculation['delta'], 'adjusted_exact' => (string) $raw, 'configuration' => $part->sign_adjustment, 'rounding' => 'half_up'];
-                        $reports[$index]['trace']['rule_label'] = 'Netto-Saldo × Faktor, begrenzt durch die maximale Notenwertänderung; kaufmännische Rundung erst am Endergebnis.';
+                    if ($part->points_assessment_mode === 'sign_points') {
+                        $target = $direct->first(fn ($candidate): bool => $candidate->id !== $part->id);
+                        $targetReport = $target ? $reports[$byId[$target->id]] : null;
+                        $config = $part->sign_adjustment;
+                        $newRule = is_array($config) && isset($config['mode']);
+                        $valid = is_array($config) && count($config) === 2 && (! $newRule || in_array($config['mode'], ['fixed', 'percentage'], true));
+                        foreach ($newRule ? ['value'] : ['improvement_factor', 'deterioration_factor'] as $field) {
+                            $valid = $valid && isset($config[$field]) && is_scalar($config[$field]) && preg_match('/^\d+(?:\.\d+)?$/D', (string) $config[$field]);
+                        }
+                        $emptyAdjustment = isset($omitted['part:'.$part->id]);
+                        if ($base !== null && $balance !== null && ($valid || $emptyAdjustment) && $targetReport && $targetReport['status'] === 'complete'
+                            && in_array($targetReport['trace']['method'] ?? null, ['sum_percent', 'overall_points'], true)
+                            && ($targetReport['trace']['maximum'] ?? 0) > 0 && isset($targetReport['trace']['sum_exact'])) {
+                            $points = $this->number($targetReport['trace']['sum_exact']);
+                            $maximum = $this->number($targetReport['trace']['maximum_exact'] ?? $targetReport['trace']['maximum']);
+                            $saldo = BigRational::of($balance);
+                            $factor = $emptyAdjustment ? $this->number(0) : $this->number($newRule ? $config['value'] : $config[$saldo->compareTo(0) >= 0 ? 'improvement_factor' : 'deterioration_factor']);
+                            if ($newRule && $config['mode'] === 'percentage') {
+                                $factor = $maximum->multipliedBy($factor)->dividedBy(100);
+                            }
+                            $delta = $saldo->multipliedBy($factor);
+                            $raw = $points->plus($delta);
+                            $adjusted = $raw->compareTo(0) < 0 ? $this->number(0) : ($raw->compareTo($maximum) > 0 ? $maximum : $raw);
+                            $grade = ($targetReport['trace']['method'] === 'sum_percent')
+                                ? $this->percentageGrade($adjusted->dividedBy($maximum))
+                                : $this->thresholdGrade($adjusted, $target->overall_points_grade_thresholds, false);
+                            if ($grade !== null) {
+                                $result = $this->number($grade);
+                                $reports[$index]['result'] = $grade;
+                                $reports[$index]['result_exact'] = (string) $result;
+                                $reports[$index]['rounded_result'] = $grade;
+                                $reports[$index]['status'] = 'complete';
+                                $reports[$index]['issues'] = [];
+                                $reports[$index]['trace'] += ['base_points_exact' => (string) $points, 'maximum_points_exact' => (string) $maximum, 'delta_points_exact' => (string) $delta, 'adjusted_points_exact' => (string) $adjusted, 'configuration' => $config];
+                                $reports[$index]['trace']['rule_label'] = 'Punkte plus Netto-Saldo × Faktor; begrenzt auf 0 bis zur Höchstpunktzahl. Danach gelten die Notengrenzen des Punktebereichs.';
+                                $reports[$byId[$target->id]]['trace']['points_adjustment'] = [
+                                    'status' => 'complete', 'source' => $part->name,
+                                    'original' => $points->toFloat(), 'change' => $adjusted->minus($points)->toFloat(),
+                                    'requested_change' => $delta->toFloat(), 'adjusted' => $adjusted->toFloat(),
+                                    'original_exact' => (string) $points, 'change_exact' => (string) $adjusted->minus($points),
+                                    'requested_change_exact' => (string) $delta, 'adjusted_exact' => (string) $adjusted,
+                                ];
+                            }
+                        }
+
+                    } else {
+                        $calculation = $base !== null && $balance !== null ? TeachingSignAdjustment::calculate($base, BigRational::of($balance), $part->sign_adjustment) : null;
+                        if ($base !== null && isset($omitted['part:'.$part->id])) {
+                            $calculation = ['raw' => $base, 'delta' => BigRational::of(0), 'grade' => $base->toScale(0, RoundingMode::HalfUp)->toInt()];
+                        }
+                        if ($calculation !== null) {
+                            $raw = $calculation['raw'];
+                            $result = $raw->compareTo(1) < 0 ? BigRational::of(1) : ($raw->compareTo(5) > 0 ? BigRational::of(5) : $raw);
+                            $reports[$index]['result'] = $result->toFloat();
+                            $reports[$index]['result_exact'] = (string) $result;
+                            $reports[$index]['rounded_result'] = $calculation['grade'];
+                            $reports[$index]['status'] = 'complete';
+                            $reports[$index]['issues'] = [];
+                            $reports[$index]['trace'] += ['base_exact' => (string) $base, 'delta_exact' => (string) $calculation['delta'], 'adjusted_exact' => (string) $raw, 'configuration' => $part->sign_adjustment, 'rounding' => 'half_up'];
+                            $reports[$index]['trace']['rule_label'] = 'Netto-Saldo × Faktor, begrenzt durch die maximale Notenwertänderung; kaufmännische Rundung erst am Endergebnis.';
+                        }
                     }
                 }
             } else {
@@ -436,11 +491,14 @@ class TeachingCourseEvaluationService
             $trace['purpose'] = match ($part->points_assessment_mode) {
                 'sign_grade' => 'own_grade',
                 'sign_adjust' => 'adjust_grade',
+                'sign_points' => 'adjust_points',
                 default => null,
             };
-            $pendingRule = $trace['purpose'] === 'adjust_grade'
-                ? 'Die Regel zum Anpassen einer bestehenden Note durch den Plus-/Minus-Saldo ist noch nicht festgelegt.'
-                : 'Die Umrechnung des Plus-/Minus-Saldos in eine Note ist noch nicht festgelegt.';
+            $pendingRule = match ($trace['purpose']) {
+                'adjust_grade' => 'Die Regel zum Anpassen einer bestehenden Note durch den Plus-/Minus-Saldo ist noch nicht festgelegt.',
+                'adjust_points' => 'Die Punkteanpassung benötigt gültige Faktoren und einen auswertbaren Punktebereich.',
+                default => 'Die Umrechnung des Plus-/Minus-Saldos in eine Note ist noch nicht festgelegt.',
+            };
             $trace['rule_label'] = 'Pluszeichen minus Minuszeichen; 0 zählt neutral, ~ zählt +0,5. '.$pendingRule;
             if ($part->points_assessment_mode === 'sign_grade' && $part->hasValidSignGradeThresholds()) {
                 $trace['thresholds'] = $part->sign_grade_thresholds;
@@ -471,7 +529,7 @@ class TeachingCourseEvaluationService
                 $maximum = $maximum->plus($this->number($typeMaximum)->multipliedBy($type['trace']['count']));
             }
             $trace = ['method' => 'sum_percent', 'rule_label' => 'Alle Punkte addieren; feste Notengrenzen ab 50 %',
-                'sum' => $sum->toFloat(), 'sum_exact' => (string) $sum, 'maximum' => $maximum->toFloat()];
+                'sum' => $sum->toFloat(), 'sum_exact' => (string) $sum, 'maximum' => $maximum->toFloat(), 'maximum_exact' => (string) $maximum];
             if ($active !== [] && $maximum->compareTo(0) > 0) {
                 $ratio = $sum->dividedBy($maximum);
                 $trace['percentage'] = $ratio->multipliedBy(100)->toFloat();
@@ -480,7 +538,7 @@ class TeachingCourseEvaluationService
         } elseif ($part->allowed_entry_types === 'points' && $part->points_assessment_mode === 'overall') {
             $sum = $this->sum(array_column(array_column($types, 'trace'), 'sum_exact'));
             $maximum = $this->sum(array_column(array_column($types, 'config'), 'maximum_points'));
-            $trace = ['method' => 'overall_points', 'rule_label' => 'Punktesumme anhand der Gesamtpunkteschwellen', 'sum' => $sum->toFloat(), 'sum_exact' => (string) $sum, 'maximum' => $maximum->toFloat()];
+            $trace = ['method' => 'overall_points', 'rule_label' => 'Punktesumme anhand der Gesamtpunkteschwellen', 'sum' => $sum->toFloat(), 'sum_exact' => (string) $sum, 'maximum' => $maximum->toFloat(), 'maximum_exact' => (string) $maximum];
             foreach ($types as $type) {
                 if ($type['trace']['count'] > 1) {
                     $issues[] = $this->issue('repeated_overall_type', 'Mehrere Bewertungen desselben Punktetyps: Die Gesamtmaximalpunkte gelten bislang einmal pro Eintragstyp.');

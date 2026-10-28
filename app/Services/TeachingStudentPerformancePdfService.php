@@ -8,6 +8,7 @@ use App\Models\TeachingCourseStudentCategoryEvaluation;
 use App\Models\TeachingCourseStudentEntry;
 use App\Models\TeachingCourseWorkGroupStudent;
 use App\Models\TeachingSchema;
+use Brick\Math\BigRational;
 use Illuminate\Contracts\Support\Responsable;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
@@ -45,7 +46,7 @@ class TeachingStudentPerformancePdfService
         $course->loadMissing([
             'school:id,long_name,short_name',
             'schoolyear:id,name,sem_2_start',
-            'user:id,first_name,last_name,last_name',
+            'user:id,first_name,last_name,teaching_count_for_semester_2_date',
         ]);
 
         $schema = TeachingSchema::query()
@@ -79,9 +80,17 @@ class TeachingStudentPerformancePdfService
             ])])
             : $this->activeCourseStudents($course);
 
+        $calculated = $course->teaching_entry_area_id
+            ? collect(app(TeachingCourseEvaluationService::class)->report($course, 3)['students'])->keyBy('course_student_id')
+            : collect();
+
         return $courseStudents
-            ->map(function (TeachingCourseStudent $student) use ($course, $worksByType, $semesterCount, $semesterTwoStart): array {
-                return $this->buildReport($course, $student, $worksByType, $semesterCount, $semesterTwoStart);
+            ->map(function (TeachingCourseStudent $student) use ($course, $worksByType, $semesterCount, $semesterTwoStart, $calculated): array {
+                $report = $this->buildReport($course, $student, $worksByType, $semesterCount, $semesterTwoStart);
+                $personal = $calculated->get($student->id);
+                $report['points_adjustments'] = $this->pointsAdjustments($personal);
+
+                return $report;
             })
             ->values()
             ->all();
@@ -224,6 +233,10 @@ class TeachingStudentPerformancePdfService
         $semesterCount = $this->semesterCountForCourse($course);
         $semesters = $semesterCount === 1 ? [1] : $semesters;
 
+        $calculated = $course->teaching_entry_area_id
+            ? collect(app(TeachingCourseEvaluationService::class)->report($course, 3)['students'])->keyBy('course_student_id')
+            : collect();
+
         $students = $this->activeCourseStudents($course)
             ->map(fn (TeachingCourseStudent $student): array => [
                 'name' => $this->studentDisplayName($student),
@@ -232,6 +245,8 @@ class TeachingStudentPerformancePdfService
                 'sem_1_grade' => $student->sem_1_grade,
                 'sem_2_grade' => $student->sem_2_grade,
                 'sem_grade' => $student->sem_grade,
+                'points_adjustments' => collect($this->pointsAdjustments($calculated->get($student->id)))
+                    ->filter(fn (array $row): bool => in_array($row['semester'], $semesters, true))->values()->all(),
             ])
             ->all();
 
@@ -250,6 +265,30 @@ class TeachingStudentPerformancePdfService
             ->landscape()
             ->name($filename)
             ->download($filename);
+    }
+
+    /** @return list<array<string, mixed>> */
+    private function pointsAdjustments(?array $personal): array
+    {
+        return collect($personal['semesters'] ?? [])->flatMap(function (array $semester): array {
+            return collect($semester['parts'])->filter(fn (array $part): bool => isset($part['trace']['points_adjustment']) || ($part['trace']['purpose'] ?? null) === 'adjust_grade')
+                ->map(function (array $part) use ($semester): array {
+                    $trace = $part['trace'];
+                    $kind = isset($trace['points_adjustment']) ? 'points' : 'grade';
+                    $adjustment = $trace['points_adjustment'] ?? ['status' => 'incomplete', 'source' => $part['name']];
+                    if ($kind === 'grade' && $part['status'] === 'complete' && isset($trace['base_exact'], $trace['delta_exact'], $part['result_exact'])) {
+                        $original = BigRational::of($trace['base_exact']);
+                        $adjusted = BigRational::of($part['result_exact']);
+                        $adjustment = ['status' => 'complete', 'source' => $part['name'], 'original' => $original->toFloat(),
+                            'change' => $adjusted->minus($original)->toFloat(), 'requested_change' => BigRational::of($trace['delta_exact'])->toFloat(),
+                            'adjusted' => $adjusted->toFloat()];
+                    }
+
+                    return ['semester' => $semester['semester'], 'name' => $part['name'], 'kind' => $kind,
+                        'maximum' => $trace['maximum'] ?? null, 'adjustment' => $adjustment,
+                        'semester_result' => $semester['status'] === 'complete' ? $semester['result'] : null];
+                })->all();
+        })->all();
     }
 
     private function semesterCountForCourse(TeachingCourse $course): int

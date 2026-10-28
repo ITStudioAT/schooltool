@@ -139,7 +139,9 @@ export function simulationStructure(parts, groups, rootWeights, valuesByEntry) {
     const groupResults = {}
     const groupSteps = {}
     const partSteps = {}
+    const pointSummaries = {}
     let rootStep = ''
+    let singleRootResult = false
     const resolve = (context, visited = []) => {
         if (visited.includes(context)) return null
         const children = new Map()
@@ -155,7 +157,7 @@ export function simulationStructure(parts, groups, rootWeights, valuesByEntry) {
             }
             return absentOptional
         }
-        const adjustments = direct.filter((part) => part.points_assessment_mode === 'sign_adjust')
+        const adjustments = direct.filter((part) => ['sign_adjust', 'sign_points'].includes(part.points_assessment_mode))
         let result = null
         let step = ''
         if (adjustments.length) {
@@ -167,31 +169,81 @@ export function simulationStructure(parts, groups, rootWeights, valuesByEntry) {
                 const balance = simulationSignBalance(part, valuesByEntry)
                     ?? (!part.is_required && (part.entries || []).every((entry) => !(valuesByEntry[entry.id] || []).length) ? fraction(0n) : null)
                 const configuration = part.sign_adjustment
-                const fields = ['improvement_factor', 'max_improvement', 'deterioration_factor', 'max_deterioration']
-                const valid = configuration && Object.keys(configuration).length === 4 && fields.every((field) => {
-                    const value = decimal(configuration[field])
-                    return value && value.numerator >= 0n
-                })
-                if (base && base !== absentOptional && balance && valid && compare(base, fraction(1n)) >= 0 && compare(base, fraction(5n)) <= 0) {
-                    const positive = balance.numerator >= 0n
-                    const factor = decimal(configuration[positive ? 'improvement_factor' : 'deterioration_factor'])
-                    const cap = decimal(configuration[positive ? 'max_improvement' : 'max_deterioration'])
-                    const amount = fraction((balance.numerator < 0n ? -balance.numerator : balance.numerator) * factor.numerator, balance.denominator * factor.denominator)
-                    const limited = compare(amount, cap) > 0 ? cap : amount
-                    const raw = add(base, fraction(limited.numerator * (positive ? -1n : 1n), limited.denominator))
-                    result = compare(raw, fraction(1n)) < 0 ? fraction(1n) : compare(raw, fraction(5n)) > 0 ? fraction(5n) : raw
-                    partResults[id] = result
-                    step = `Basisnote ${display(base)}; Saldo ${display(balance)} × ${display(factor)} = ${display(amount)}${compare(amount, limited) !== 0 ? `; angewandt ${display(limited)}` : ''}. ${display(base)} ${positive ? '−' : '+'} ${display(limited)} = ${display(raw)}${compare(raw, result) !== 0 ? ` → Note ${display(result)}` : ''}`
-                    partSteps[id] = step
-                } else if (base && base !== absentOptional && partResults[id] === absentOptional) {
-                    result = base
-                    partResults[id] = base
-                    partSteps[id] = `Basisnote ${display(base)}; Saldo 0 → Note ${display(base)}`
+                if (part.points_assessment_mode === 'sign_points') {
+                    const target = direct.find((candidate) => candidate !== part)
+                    const optionalEmpty = partResults[id] === absentOptional
+                    const newRule = configuration && Object.hasOwn(configuration, 'mode')
+                    const fields = newRule ? ['value'] : ['improvement_factor', 'deterioration_factor']
+                    const valid = configuration && Object.keys(configuration).length === 2 && (!newRule || ['fixed', 'percentage'].includes(configuration.mode)) && fields.every((field) => {
+                        const value = decimal(configuration[field])
+                        return value && value.numerator >= 0n
+                    })
+                    let points = target?.points_assessment_mode === 'sum_percent' ? simulationPointsResult(target.entries || [], valuesByEntry) : null
+                    if (target?.points_assessment_mode === 'overall' && target.entries?.length && target.entries.every((entry) => entry.properties_mode === 'points' && (valuesByEntry[entry.id] || []).length === 1)) {
+                        points = simulationPointsResult(target.entries, valuesByEntry)
+                    }
+                    if (balance && points && (valid || optionalEmpty) && target && base !== absentOptional) {
+                        const achieved = decimal(points.achieved)
+                        const maximum = decimal(points.maximum)
+                        let factor = optionalEmpty ? fraction(0n) : decimal(newRule ? configuration.value : configuration[balance.numerator >= 0n ? 'improvement_factor' : 'deterioration_factor'])
+                        if (newRule && configuration.mode === 'percentage') {
+                            factor = fraction(maximum.numerator * factor.numerator, maximum.denominator * factor.denominator * 100n)
+                        }
+                        const delta = fraction(balance.numerator * factor.numerator, balance.denominator * factor.denominator)
+                        const raw = add(achieved, delta)
+                        const adjusted = compare(raw, fraction(0n)) < 0 ? fraction(0n) : compare(raw, maximum) > 0 ? maximum : raw
+                        const percent = fraction(adjusted.numerator * maximum.denominator * 100n, adjusted.denominator * maximum.numerator)
+                        let grade = null
+                        if (target.points_assessment_mode === 'sum_percent' && base) {
+                            grade = standardPercentageGrades.find((band) => compare(percent, decimal(band.min)) >= 0)?.grade ?? 5
+                        } else if (target.points_assessment_mode === 'overall') {
+                            const thresholds = [1, 2, 3, 4].map((number) => decimal(target.overall_points_grade_thresholds?.[number]))
+                            if (thresholds.every((value, index) => value && value.numerator >= 0n && compare(value, maximum) <= 0 && (index === 0 || compare(thresholds[index - 1], value) > 0))) {
+                                grade = thresholds.findIndex((value) => compare(adjusted, value) >= 0) + 1 || 5
+                            }
+                        }
+                        if (grade !== null) {
+                            result = decimal(grade)
+                            partResults[id] = result
+                            const targetId = target.gradingPartId ?? target.id
+                            partResults[targetId] = result
+                            const formattedPercent = display(percent)
+                            pointSummaries[targetId] = `${display(adjusted)} / ${display(maximum)} Punkte · ${formattedPercent.includes('/') ? `≈ ${displayRounded(percent)}` : formattedPercent} % · Note ${grade}`
+                            partSteps[targetId] = 'Nach Anpassung durch den Plus-Minus-Saldo'
+                            step = `${display(achieved)} / ${display(maximum)} Punkte; Saldo ${display(balance)} × ${display(factor)} = ${display(delta)}; angepasst ${display(adjusted)} / ${display(maximum)} Punkte → Note ${display(result)}`
+                            partSteps[id] = step
+                        }
+                    }
+                } else {
+                    const fields = ['improvement_factor', 'max_improvement', 'deterioration_factor', 'max_deterioration']
+                    const valid = configuration && Object.keys(configuration).length === 4 && fields.every((field) => {
+                        const value = decimal(configuration[field])
+                        return value && value.numerator >= 0n
+                    })
+                    if (base && base !== absentOptional && balance && valid && compare(base, fraction(1n)) >= 0 && compare(base, fraction(5n)) <= 0) {
+                        const positive = balance.numerator >= 0n
+                        const factor = decimal(configuration[positive ? 'improvement_factor' : 'deterioration_factor'])
+                        const cap = decimal(configuration[positive ? 'max_improvement' : 'max_deterioration'])
+                        const amount = fraction((balance.numerator < 0n ? -balance.numerator : balance.numerator) * factor.numerator, balance.denominator * factor.denominator)
+                        const limited = compare(amount, cap) > 0 ? cap : amount
+                        const raw = add(base, fraction(limited.numerator * (positive ? -1n : 1n), limited.denominator))
+                        result = compare(raw, fraction(1n)) < 0 ? fraction(1n) : compare(raw, fraction(5n)) > 0 ? fraction(5n) : raw
+                        partResults[id] = result
+                        step = `Basisnote ${display(base)}; Saldo ${display(balance)} × ${display(factor)} = ${display(amount)}${compare(amount, limited) !== 0 ? `; angewandt ${display(limited)}` : ''}. ${display(base)} ${positive ? '−' : '+'} ${display(limited)} = ${display(raw)}${compare(raw, result) !== 0 ? ` → Note ${display(result)}` : ''}`
+                        partSteps[id] = step
+                    } else if (base && base !== absentOptional && partResults[id] === absentOptional) {
+                        result = base
+                        partResults[id] = base
+                        partSteps[id] = `Basisnote ${display(base)}; Saldo 0 → Note ${display(base)}`
+                    }
                 }
             }
         } else {
             const weights = context === 'root' ? rootWeights : groups.find((group) => group.id === context)?.weights
-            if (context === 'root' && !weights && children.size === 1) result = [...children.values()][0]
+            if (context === 'root' && !weights && children.size === 1) {
+                result = [...children.values()][0]
+                singleRootResult = true
+            }
             else if (weights?.length === children.size && children.size) {
                 const seen = new Set()
                 const terms = []
@@ -217,8 +269,13 @@ export function simulationStructure(parts, groups, rootWeights, valuesByEntry) {
                 const total = sum(terms)
                 const weightsTotal = sum(factors)
                 result = fraction(total.numerator * weightsTotal.denominator, total.denominator * weightsTotal.numerator)
-                step = `(${usedWeights.map((row) => `${display(children.get(row.group_id ? `group:${row.group_id}` : `part:${row.part_id}`))} × ${display(decimal(row.weight))}`).join(' + ')}) / ${display(weightsTotal)} = ${display(result)}`
-                if (context === 'root') {
+                if (usedWeights.length === 1) {
+                    step = `Einziger Bewertungsbaustein: ${display(result)}`
+                    if (context === 'root') singleRootResult = true
+                } else {
+                    step = `(${usedWeights.map((row) => `${display(children.get(row.group_id ? `group:${row.group_id}` : `part:${row.part_id}`))} × ${display(decimal(row.weight))}`).join(' + ')}) / ${display(weightsTotal)} = ${display(result)}`
+                }
+                if (context === 'root' && usedWeights.length > 1) {
                     const operands = usedWeights.map((row) => {
                         const grade = display(children.get(row.group_id ? `group:${row.group_id}` : `part:${row.part_id}`))
                         return `${display(decimal(row.weight))} × ${grade.includes('/') ? `(${grade})` : grade}`
@@ -243,7 +300,8 @@ export function simulationStructure(parts, groups, rootWeights, valuesByEntry) {
         const id = part.gradingPartId ?? part.id
         const value = partResults[id]
         return [id, value && value !== absentOptional ? display(value) : null]
-    })), groups: groupResults, groupSteps, partSteps, total: total ? roundGrade(total) : null, totalStep: total ? `${rootStep || `Rechenwert ${display(total)}`}; kaufmännisch → Note ${roundGrade(total)}` : '' }
+    })), groups: groupResults, groupSteps, partSteps, pointSummaries, total: total ? roundGrade(total) : null,
+    totalStep: total && !(singleRootResult && total.denominator === 1n) ? `${rootStep || `Rechenwert ${display(total)}`}; kaufmännisch → Note ${roundGrade(total)}` : '' }
 }
 
 export function simulationPartExplanation(part, valuesByEntry) {
@@ -272,10 +330,10 @@ export function simulationPartSummary(part, valuesByEntry, grade = simulationPar
         const points = simulationPointsResult(part.entries || [], valuesByEntry)
         return points ? `${points.achieved} / ${points.maximum} Punkte · ${points.percentage} % · Note ${points.grade}` : '–'
     }
-    if (['plus_minus', 'sign_grade', 'sign_adjust'].includes(part.points_assessment_mode)) {
+    if (['plus_minus', 'sign_grade', 'sign_adjust', 'sign_points'].includes(part.points_assessment_mode)) {
         const balance = simulationSignBalance(part, valuesByEntry)
         const saldo = balance ? `Saldo ${balance.numerator > 0n ? '+' : ''}${display(balance)}` : 'Saldo –'
-        return part.points_assessment_mode === 'sign_adjust' ? saldo : `${saldo} · Note ${grade ?? '–'}`
+        return ['sign_adjust', 'sign_points'].includes(part.points_assessment_mode) ? saldo : `${saldo} · Note ${grade ?? '–'}`
     }
     return grade ?? '–'
 }

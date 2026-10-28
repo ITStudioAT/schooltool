@@ -82,7 +82,7 @@ class TeachingEntryGradingPart extends Model
 
     public function usesSignBalance(): bool
     {
-        return in_array($this->points_assessment_mode, ['plus_minus', 'sign_grade', 'sign_adjust'], true);
+        return in_array($this->points_assessment_mode, ['plus_minus', 'sign_grade', 'sign_adjust', 'sign_points'], true);
     }
 
     public function overallMaximumPoints(): float
@@ -119,7 +119,7 @@ class TeachingEntryGradingPart extends Model
 
     protected function pointsAssessmentMode(): Attribute
     {
-        return Attribute::make(get: fn (?string $value): string => in_array($value, ['sum_percent', 'plus_minus', 'sign_grade', 'sign_adjust', 'grade_each', 'grade_mean'], true) ? $value : ($this->allowed_entry_types === 'points' ? ($value ?? 'individual') : 'individual'));
+        return Attribute::make(get: fn (?string $value): string => in_array($value, ['sum_percent', 'plus_minus', 'sign_grade', 'sign_adjust', 'sign_points', 'grade_each', 'grade_mean'], true) ? $value : ($this->allowed_entry_types === 'points' ? ($value ?? 'individual') : 'individual'));
     }
 
     public function school(): BelongsTo

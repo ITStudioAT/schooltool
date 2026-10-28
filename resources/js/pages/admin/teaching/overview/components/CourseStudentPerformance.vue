@@ -161,13 +161,32 @@ const gradingPartSummaries = computed(() => {
             let hint = ''
             const gradeMethodPending = ['grade_each', 'grade_mean'].includes(part.trace?.method)
             const pending = (part.trace?.method === 'plus_minus' && !part.trace?.thresholds) || gradeMethodPending
-            const appliedAdjustment = part.trace?.purpose === 'adjust_grade' && part.status === 'complete'
+            const appliedAdjustment = ['adjust_grade', 'adjust_points'].includes(part.trace?.purpose) && part.status === 'complete'
                 && Number.isFinite(part.result)
-            if (part.trace?.purpose === 'adjust_grade') {
+            if (['adjust_grade', 'adjust_points'].includes(part.trace?.purpose)) {
                 const trace = part.trace
                 value = trace.balance_status === 'complete' && Number.isFinite(trace.balance)
                     ? `Saldo ${trace.balance > 0 ? '+' : ''}${formatResult(trace.balance)}`
                     : trace.balance_status === 'empty' ? 'Saldo 0' : 'Saldo unvollständig'
+                if (trace.purpose === 'adjust_points' && appliedAdjustment) {
+                    const original = exactNumber(trace.base_points_exact)
+                    const adjusted = exactNumber(trace.adjusted_points_exact)
+                    if (trace.base_points_exact != null && trace.adjusted_points_exact != null && Number.isFinite(original) && Number.isFinite(adjusted)) {
+                        const change = adjusted - original
+                        const normalizedChange = Math.abs(change) < 1e-9 ? 0 : change
+                        detail = `${normalizedChange > 0 ? '+' : ''}${formatPoints(normalizedChange)} Punkte`
+                    }
+                    hint = trace.rule_label
+                } else if (trace.purpose === 'adjust_grade' && appliedAdjustment && trace.base_exact != null) {
+                    const base = exactNumber(trace.base_exact)
+                    const requested = exactNumber(trace.delta_exact)
+                    if (Number.isFinite(base) && Number.isFinite(requested)) {
+                        const change = part.result - base
+                        detail = `Note vorher ${formatResult(base)} · Anpassung ${change > 0 ? '+' : ''}${formatResult(change)} · danach ${formatResult(part.result)}`
+                        if (Math.abs(change - requested) > 1e-9) detail += ` (berechnet ${requested > 0 ? '+' : ''}${formatResult(requested)}, begrenzt)`
+                        hint = trace.rule_label
+                    }
+                }
             } else if (gradeMethodPending) {
                 value = 'Regel offen'
                 hint = `${part.trace.method === 'grade_each' ? 'Jede Note extra rechnen' : 'Notendurchschnitt'}: Berechnungsregel noch offen`
@@ -192,7 +211,7 @@ const gradingPartSummaries = computed(() => {
                 value = trace.balance_status === 'complete' ? `Saldo ${trace.balance > 0 ? '+' : ''}${formatResult(trace.balance)}` : trace.balance_status === 'empty' ? 'Saldo 0' : 'Saldo unvollständig'
                 detail = part.status === 'complete' && Number.isFinite(part.result) ? `Note ${formatResult(part.result)}` : 'Note noch offen'
                 hint = trace.rule_label
-            } else if (part.status === 'incomplete' || (semester.issues || []).some((issue) => issue.severity === 'error' && ['invalid_period', 'unassigned_date'].includes(issue.code))) {
+            } else if (part.status === 'incomplete' || part.trace?.points_adjustment?.status === 'incomplete' || (semester.issues || []).some((issue) => issue.severity === 'error' && ['invalid_period', 'unassigned_date'].includes(issue.code))) {
                 value = 'Nicht vollständig berechenbar'
             } else if (part.status === 'complete') {
                 const trace = part.trace || {}
@@ -202,7 +221,14 @@ const gradingPartSummaries = computed(() => {
                     value = `Notendurchschnitt ${formatResult(part.result)}`
                     hint = trace.rule_label
                 } else if (['sum_percent', 'overall_points'].includes(trace.method) && Number.isFinite(trace.sum) && Number.isFinite(trace.maximum) && trace.maximum > 0) {
-                    value = `${formatResult(trace.sum)} / ${formatResult(trace.maximum)} Punkte`
+                    const adjustment = trace.points_adjustment
+                    const corrected = adjustment?.status === 'complete' && Number.isFinite(adjustment.adjusted)
+                    value = `${formatPoints(corrected ? adjustment.adjusted : trace.sum)} / ${formatPoints(trace.maximum)} Punkte`
+                    if (corrected && adjustment.change !== 0) {
+                        const sign = adjustment.change > 0 ? '+' : ''
+                        detail = `Vorher ${formatPoints(adjustment.original)} · ${adjustment.source}: ${sign}${formatPoints(adjustment.change)} Punkte`
+                        if (adjustment.requested_change !== adjustment.change) detail += ` (berechnet ${adjustment.requested_change > 0 ? '+' : ''}${formatPoints(adjustment.requested_change)}, begrenzt)`
+                    }
                 } else if (Number.isFinite(part.result)) {
                     value = `Bewertung ${formatResult(part.result)}`
                 }
@@ -268,7 +294,7 @@ const assignmentsProgress = computed(() => {
         if (parts.some((part) => part.status !== 'complete')) return unavailable('Keine Bewertung')
         if (parts.some((part) => !['sum_percent', 'overall_points'].includes(part.trace?.method) || !Number.isFinite(part.trace?.sum))) return unavailable('Keine Punktesumme verfügbar')
         if (parts.some((part) => !Number.isFinite(part.trace?.maximum) || part.trace.maximum <= 0)) return unavailable('Keine Maximalpunkte')
-        const sum = parts.reduce((total, part) => total + part.trace.sum, 0)
+        const sum = parts.reduce((total, part) => total + (part.trace.points_adjustment?.status === 'complete' ? part.trace.points_adjustment.adjusted : part.trace.sum), 0)
         const maximum = parts.reduce((total, part) => total + part.trace.maximum, 0)
         const percent = sum / maximum * 100
         const band = percentageGradeBand(percent)
@@ -309,6 +335,13 @@ function formatExactResult(value) {
 
 function formatResult(value) {
     return Number(value).toLocaleString('de-AT', { maximumFractionDigits: 6 })
+}
+function formatPoints(value) {
+    return Number(value).toLocaleString('de-AT', { minimumFractionDigits: 2, maximumFractionDigits: 6 })
+}
+function exactNumber(value) {
+    const parts = String(value).split('/')
+    return parts.length === 2 ? Number(parts[0]) / Number(parts[1]) : Number(value)
 }
 const hasYearBounds = computed(() => {
     const from = teachingDateKey(props.schoolyear?.from)
@@ -405,9 +438,11 @@ const summaryData = computed(() => {
     ).map(([category, summaries]) => ({
         category,
         summaries: [...summaries.values()].sort((left, right) =>
-            left.sortName.localeCompare(right.sortName, 'de-AT', { sensitivity: 'base', numeric: true })
-            || left.type.localeCompare(right.type, 'de-AT')
-            || left.details[0].date.localeCompare(right.details[0].date),
+            category === 'Benotung'
+                ? left.details[0].date.localeCompare(right.details[0].date)
+                : left.sortName.localeCompare(right.sortName, 'de-AT', { sensitivity: 'base', numeric: true })
+                    || left.type.localeCompare(right.type, 'de-AT')
+                    || left.details[0].date.localeCompare(right.details[0].date),
         ),
     }))
     return { groups, unassignedCount }

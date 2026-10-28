@@ -961,10 +961,11 @@
                             <p v-if="gradingPartOnlyPlusMinus" class="text-caption mb-3">Plus und Minus werden gegengerechnet. Jedes Plus zählt +1, jedes Minus −1, eine 0 ist neutral. ~ zählt +0,5.</p>
                             <h3 id="grading-part-calculation-title" class="text-subtitle-2 mb-2">{{ gradingPartOnlyPlusMinus ? 'Zweck' : 'Notenberechnung' }}</h3>
                             <p v-if="gradingPartSingleStandardNote" class="text-caption mt-2">Für diesen Benotungsteil ist eine Standardnote vorgesehen. Die erfasste Note wird direkt übernommen. {{ gradingPartForm.is_required ? 'Bei fehlender Bewertung bleibt die Berechnung offen.' : 'Ohne Bewertung wird dieser optionale Benotungsteil ausgelassen.' }} Mehrere Bewertungen bleiben nicht auswertbar.</p>
-                            <v-btn-toggle v-if="gradingPartOnlyPlusMinus" v-model="gradingPartSignPurpose" class="maximum-plus-grading-options" aria-label="Verwendung des Plus-Minus-Saldos"
+                            <v-btn-toggle v-if="gradingPartOnlyPlusMinus" v-model="gradingPartSignPurpose" class="maximum-plus-grading-options sign-purpose-options" aria-label="Verwendung des Plus-Minus-Saldos"
                                 color="primary" variant="outlined" :mandatory="Boolean(gradingPartSignPurpose)" :disabled="isSavingGradingPart">
                                 <v-btn value="sign_grade">Eigene Note berechnen</v-btn>
                                 <v-btn value="sign_adjust">Bestehende Note anpassen</v-btn>
+                                <v-btn value="sign_points">Bestehende Punkte anpassen</v-btn>
                             </v-btn-toggle>
                             <v-btn-toggle v-else-if="!gradingPartSingleStandardNote" v-model="gradingPartCalculationMethod" class="maximum-plus-grading-options" aria-label="Berechnungsmethode"
                                 color="primary" variant="outlined" mandatory :disabled="isSavingGradingPart">
@@ -991,6 +992,17 @@
                                 <p class="text-caption">Notenwertänderung = Betrag des Netto-Saldos × Faktor, höchstens das jeweilige Maximum. Alle vier Werte sind frei festzulegen. Erst anschließend kaufmännisch runden; Note 1 bis 5.</p>
                                 <p v-for="error in gradingPartFormErrors.sign_adjustment || []" :key="error" class="text-caption text-error" role="alert">{{ error }}</p>
                             </div>
+                            <div v-if="gradingPartOnlyPlusMinus && gradingPartSignPurpose === 'sign_points'" class="text-body-2 mt-3">
+                                <p class="mb-2">Punkteanpassung</p>
+                                <v-btn-toggle v-model="gradingPartPointsMode" class="maximum-plus-grading-options mb-4" aria-label="Art der Punkteanpassung" color="primary" variant="outlined" mandatory :disabled="isSavingGradingPart">
+                                    <v-btn value="fixed">Fixe Punkte</v-btn>
+                                    <v-btn value="percentage">% der Gesamtpunkte</v-btn>
+                                </v-btn-toggle>
+                                <v-text-field v-model="gradingPartPointsValue" :label="gradingPartPointsMode === 'percentage' ? 'Prozent der Gesamtpunkte pro Plus oder Minus' : 'Punkte pro Plus oder Minus'" inputmode="decimal" variant="outlined" density="compact" :disabled="isSavingGradingPart" :error-messages="gradingPartFormErrors['sign_adjustment.value']" />
+                                <p v-if="gradingPartPointsLegacyDifferent" class="text-caption mb-2">Bisher waren unterschiedliche Werte für Plus und Minus gespeichert. Bitte einen gemeinsamen Wert eingeben; bis zum Speichern bleibt die bisherige Regel erhalten.</p>
+                                <p class="text-caption">Der Netto-Saldo bestimmt, ob Punkte hinzugefügt oder abgezogen werden. Bei Prozent wird der Wert auf die erreichbare Gesamtpunktzahl bezogen. Das Ergebnis bleibt zwischen 0 und der Höchstpunktzahl.</p>
+                                <p v-for="error in gradingPartFormErrors.sign_adjustment || []" :key="error" class="text-caption text-error" role="alert">{{ error }}</p>
+                            </div>
                             <template v-if="gradingPartOnlyStandardGrades && gradingPartCalculationMethod === 'grade_mean'">
                                 <section v-for="occurrence in gradingPartStandardOccurrences.filter((item) => item.mode === 'fixed')" :key="occurrence.entry_definition_id" class="mt-4" aria-label="Gewichtung der Arbeiten">
                                     <h4 class="text-subtitle-2 mb-2">Gewichtung der Arbeiten{{ gradingPartStandardOccurrences.length > 1 ? ` – ${occurrence.name}` : '' }}</h4>
@@ -1014,7 +1026,7 @@
                                 <p v-for="error in gradingPartFormErrors.sign_grade_thresholds || []" :key="error" class="text-caption text-error" role="alert">{{ error }}</p>
                             </div>
                             <template v-else-if="gradingPartOnlyPlusMinus">
-                                <p v-if="gradingPartSignPurpose !== 'sign_adjust'" class="text-caption mt-2">Regel wird noch festgelegt. Bis dahin wird ausschließlich der Saldo angezeigt; keine Note wird berechnet oder angepasst.</p>
+                                <p v-if="!['sign_adjust', 'sign_points'].includes(gradingPartSignPurpose)" class="text-caption mt-2">Regel wird noch festgelegt. Bis dahin wird ausschließlich der Saldo angezeigt; keine Note wird berechnet oder angepasst.</p>
                             </template>
                             <p v-else-if="gradingPartCalculationMethod === 'plus_minus'" class="text-caption mt-2">Jedes Plus zählt +1, jedes Minus −1; 0 zählt neutral. Die Umrechnung des Saldos in eine Note wird noch festgelegt.</p>
                             <template v-else-if="!gradingPartSingleStandardNote && !gradingPartOnlyStandardGrades">
@@ -1616,6 +1628,9 @@ export default {
             gradingPartOnlyPlusMinus: false,
             gradingPartSignPurpose: null,
             gradingPartSignAdjustment: { improvement_factor: null, max_improvement: null, deterioration_factor: null, max_deterioration: null },
+            gradingPartPointsMode: 'fixed',
+            gradingPartPointsValue: null,
+            gradingPartPointsLegacyDifferent: false,
             gradingPartSignThresholds: { 1: null, 2: null, 3: null, 4: null },
             gradingPartOnlyPoints: false,
             gradingPartOnlyStandardGrades: false,
@@ -2127,7 +2142,8 @@ export default {
         simulationEntryGrade,
         simulationPartGrade,
         simulationSummary(part) {
-            return simulationPartSummary(part, this.simulationEntries, this.simulationCalculatedResults.parts[part.gradingPartId ?? part.id])
+            return this.simulationCalculatedResults.pointSummaries[part.gradingPartId ?? part.id]
+                || simulationPartSummary(part, this.simulationEntries, this.simulationCalculatedResults.parts[part.gradingPartId ?? part.id])
         },
         simulationExplanation(part) {
             return this.simulationCalculatedResults.partSteps[part.gradingPartId ?? part.id] || simulationPartExplanation(part, this.simulationEntries)
@@ -2288,7 +2304,7 @@ export default {
         gradingPartSummary(part, showWeights = true) {
             const entries = part.entries || []
             const method = part.points_assessment_mode
-            if (!showWeights && (['sum_percent', 'overall', 'sign_adjust'].includes(method)
+            if (!showWeights && (['sum_percent', 'overall', 'sign_adjust', 'sign_points'].includes(method)
                 || (entries.length && entries.every((entry) => entry.has_properties && entryPropertyMode(entry) === 'grades')))) return []
             if (entries.length && entries.every((entry) => entry.has_properties && entryPropertyMode(entry) === 'grades')) {
                 const lines = entries.map((entry) => {
@@ -2310,6 +2326,7 @@ export default {
             }
             if (['sum_percent', 'overall'].includes(method)) return showWeights ? ['Benotung aufgrund der addierten Punkte.'] : []
             if (method === 'sign_grade') return [part.sign_grade_thresholds ? 'Eigene Note aus dem Plus-Minus-Saldo anhand der gespeicherten Saldo-Grenzen.' : 'Eigene Note aus dem Plus-Minus-Saldo; die Saldo-Grenzen fehlen noch.']
+            if (method === 'sign_points') return ['Bestehende Punkte anhand des Plus-Minus-Saldos anpassen.']
             if (method === 'sign_adjust') return [part.sign_adjustment && Object.values(part.sign_adjustment).every((value) => value !== null && value !== '')
                 ? 'Bestehende Note anhand des Netto-Saldos, der Faktoren und maximalen Notenwertänderungen anpassen.'
                 : 'Bestehende Note anhand des Plus-Minus-Saldos anpassen; die Anpassungsregel ist noch offen.']
@@ -2950,9 +2967,16 @@ export default {
         openEditGradingPartDialog(gradingPartArea, mode = 'settings') {
             const entries = gradingPartArea.entries || (this.calculationEntries || []).filter((entry) => entry.teaching_entry_grading_part_id === gradingPartArea.gradingPartId)
             this.gradingPartOnlyPlusMinus = entries.length > 0 && entries.every((entry) => entryTypeGroup(entry) === 'signs')
-            this.gradingPartSignPurpose = this.gradingPartOnlyPlusMinus && ['sign_grade', 'sign_adjust'].includes(gradingPartArea.points_assessment_mode) ? gradingPartArea.points_assessment_mode : null
+            this.gradingPartSignPurpose = this.gradingPartOnlyPlusMinus && ['sign_grade', 'sign_adjust', 'sign_points'].includes(gradingPartArea.points_assessment_mode) ? gradingPartArea.points_assessment_mode : null
             this.gradingPartSignThresholds = { 1: null, 2: null, 3: null, 4: null, ...gradingPartArea.sign_grade_thresholds }
             this.gradingPartSignAdjustment = { improvement_factor: null, max_improvement: null, deterioration_factor: null, max_deterioration: null, ...gradingPartArea.sign_adjustment }
+            const pointsRule = gradingPartArea.points_assessment_mode === 'sign_points' ? gradingPartArea.sign_adjustment : null
+            this.gradingPartPointsMode = pointsRule?.mode === 'percentage' ? 'percentage' : 'fixed'
+            const oldPositive = pointsRule?.improvement_factor
+            const oldNegative = pointsRule?.deterioration_factor
+            const hasOldValues = oldPositive != null && oldNegative != null && String(oldPositive).trim() !== '' && String(oldNegative).trim() !== ''
+            this.gradingPartPointsLegacyDifferent = Boolean(!pointsRule?.mode && hasOldValues && Number(oldPositive) !== Number(oldNegative))
+            this.gradingPartPointsValue = pointsRule?.mode ? pointsRule.value : hasOldValues && !this.gradingPartPointsLegacyDifferent ? oldPositive : null
             this.gradingPartOnlyPoints = entries.length > 0 && entries.every((entry) => entryTypeGroup(entry) === 'points')
             this.gradingPartOnlyStandardGrades = hasOnlyStandardGradeEntries(entries)
             this.gradingPartSingleStandardNote = this.gradingPartOnlyStandardGrades && entries.length === 1 && (entries[0].standard_grade_occurrences?.mode ?? 'single') === 'single'
@@ -2997,6 +3021,11 @@ export default {
                 this.gradingPartFormErrors = { sign_grade_thresholds: [this.gradingPartSignThresholdError] }
                 return
             }
+            if (!isRenaming && usePointSum && this.gradingPartOnlyPlusMinus && this.gradingPartSignPurpose === 'sign_points'
+                && !/^\d+(?:\.\d+)?$/.test(String(this.gradingPartPointsValue ?? '').trim().replace(',', '.'))) {
+                this.gradingPartFormErrors = { 'sign_adjustment.value': ['Bitte einen nicht negativen Wert eingeben.'] }
+                return
+            }
             if (!this.activeAreaId || !this.gradingPartForm.name.trim() || (!isRenaming && !usePointSum && !this.gradingPartWeightValid) || this.isSavingGradingPart) return
             if (!isRenaming && !usePointSum && this.gradingPartOverallThresholdError) {
                 this.gradingPartFormErrors = { overall_points_grade_thresholds: [this.gradingPartOverallThresholdError] }
@@ -3029,6 +3058,7 @@ export default {
                 if (!isRenaming && usePointSum) payload.points_assessment_mode = method
                 if (!isRenaming && usePointSum && method === 'sign_grade') payload.sign_grade_thresholds = Object.fromEntries([4, 3, 2, 1].map((grade) => [grade, Number(this.gradingPartSignThresholds[grade])]))
                 if (!isRenaming && usePointSum && method === 'sign_adjust') payload.sign_adjustment = Object.fromEntries(Object.entries(this.gradingPartSignAdjustment).map(([key, value]) => [key, value === null || String(value).trim() === '' ? null : String(value).trim().replace(',', '.')]))
+                if (!isRenaming && usePointSum && method === 'sign_points') payload.sign_adjustment = { mode: this.gradingPartPointsMode, value: String(this.gradingPartPointsValue).trim().replace(',', '.') }
                 if (payload.allowed_entry_types === 'points') payload.points_assessment_mode = usePointSum ? method : this.gradingPartForm.points_assessment_mode ?? 'individual'
                 if (payload.points_assessment_mode === 'individual') payload.individual_points_weighting_mode = this.gradingPartForm.individual_points_weighting_mode ?? 'weighted'
                 if (payload.points_assessment_mode === 'overall') {
@@ -4308,6 +4338,9 @@ export default {
     padding: 12px;
     text-transform: none;
     letter-spacing: normal;
+}
+.sign-purpose-options {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 .maximum-plus-grading-options :deep(.v-btn__content) {
     white-space: normal;

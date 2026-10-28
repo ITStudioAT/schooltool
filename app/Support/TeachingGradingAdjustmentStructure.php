@@ -13,14 +13,14 @@ class TeachingGradingAdjustmentStructure
     public static function contexts(array $parts): array
     {
         return array_values(array_unique(array_map(fn (array $part): string => $part['grading_group_id'] ?? 'root',
-            array_filter($parts, fn (array $part): bool => ($part['points_assessment_mode'] ?? null) === 'sign_adjust'))));
+            array_filter($parts, fn (array $part): bool => in_array($part['points_assessment_mode'] ?? null, ['sign_adjust', 'sign_points'], true)))));
     }
 
     public static function hasAdjustment(TeachingEntryArea $area, ?string $context = null): bool
     {
         return $area->gradingParts()->where('user_id', $area->user_id)->where('school_id', $area->school_id)
             ->where('schoolyear_id', $area->schoolyear_id)->where('grading_group_id', $context)
-            ->where('points_assessment_mode', 'sign_adjust')->exists();
+            ->whereIn('points_assessment_mode', ['sign_adjust', 'sign_points'])->exists();
     }
 
     /** @param list<string> $contexts */
@@ -64,7 +64,7 @@ class TeachingGradingAdjustmentStructure
         foreach ($parts as $part) {
             $context = $part['grading_group_id'] ?? 'root';
             $contexts[$context][] = 'part:'.$part['id'];
-            if (($part['points_assessment_mode'] ?? null) === 'sign_adjust') {
+            if (in_array($part['points_assessment_mode'] ?? null, ['sign_adjust', 'sign_points'], true)) {
                 $adjustments[$context][] = $part['id'];
             }
         }
@@ -73,12 +73,18 @@ class TeachingGradingAdjustmentStructure
             $siblings = $contexts[$context];
             sort($siblings);
             sort($ids);
+            $pointsAdjustment = collect($parts)->first(fn (array $part): bool => $part['id'] === $ids[0] && ($part['points_assessment_mode'] ?? null) === 'sign_points');
+            $target = collect($parts)->first(fn (array $part): bool => ($part['grading_group_id'] ?? 'root') === $context && $part['id'] !== $ids[0]);
             if (count($siblings) === 2 && count($ids) === 1) {
-                continue;
+                if (! $pointsAdjustment || ($target && in_array($target['points_assessment_mode'] ?? null, ['sum_percent', 'overall'], true))) {
+                    continue;
+                }
             }
-            $message = count($ids) > 1
+            $message = $pointsAdjustment && count($siblings) === 2 && count($ids) === 1
+                ? '„Bestehende Punkte anpassen“ benötigt auf derselben Ebene einen direkten Benotungsteil mit addierten Punkten.'
+                : (count($ids) > 1
                 ? 'Zwei Anpassungs-Benotungsteile können einander nicht als Ziel verwenden. Auf dieser Ebene braucht die Anpassung genau einen anderen Baustein ohne den Zweck „Bestehende Note anpassen“.'
-                : '„Bestehende Note anpassen“ braucht auf derselben Ebene genau einen weiteren Baustein als Ziel: insgesamt genau zwei direkte Bausteine. Eine Untergruppe zählt als ein Baustein.';
+                : '„Bestehende Note anpassen“ braucht auf derselben Ebene genau einen weiteren Baustein als Ziel: insgesamt genau zwei direkte Bausteine. Eine Untergruppe zählt als ein Baustein.');
             foreach ($ids as $id) {
                 $issues[$id] = ['message' => $message, 'context' => (string) $context, 'siblings' => $siblings, 'adjustments' => $ids];
             }

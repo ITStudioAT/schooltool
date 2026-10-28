@@ -104,7 +104,7 @@ class TeachingEntryGradingPartController extends Controller
                 $payload['sign_grade_thresholds'] = array_map(fn (mixed $value): int => (int) $value, $payload['sign_grade_thresholds']);
             }
             if (($payload['allowed_entry_types'] ?? $entryGradingPart->allowed_entry_types) !== 'points'
-                && ! in_array($payload['points_assessment_mode'] ?? $entryGradingPart->points_assessment_mode, ['sum_percent', 'plus_minus', 'sign_grade', 'sign_adjust', 'grade_each', 'grade_mean'], true)) {
+                && ! in_array($payload['points_assessment_mode'] ?? $entryGradingPart->points_assessment_mode, ['sum_percent', 'plus_minus', 'sign_grade', 'sign_adjust', 'sign_points', 'grade_each', 'grade_mean'], true)) {
                 $payload['points_assessment_mode'] = 'individual';
                 $payload['overall_points_grade_thresholds'] = null;
             }

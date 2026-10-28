@@ -81,8 +81,8 @@ class UpdateTeachingEntryGradingPartRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'sign_adjustment.*.regex' => 'Bitte eine nicht negative Dezimalzahl als Notenwertänderung eingeben.',
-            'sign_adjustment.prohibited' => 'Anpassungswerte sind nur für „Bestehende Note anpassen“ zulässig.',
+            'sign_adjustment.*.regex' => 'Bitte eine nicht negative Dezimalzahl eingeben.',
+            'sign_adjustment.prohibited' => 'Anpassungswerte sind nur für eine Noten- oder Punkteanpassung zulässig.',
             'sign_grade_thresholds.*.required_with' => 'Bitte alle vier Saldo-Grenzen eingeben.',
             'sign_grade_thresholds.*.integer' => 'Bitte eine endliche ganze Saldo-Zahl eingeben.',
             'sign_grade_thresholds.*.between' => 'Bitte eine sicher darstellbare ganze Saldo-Zahl eingeben.',
@@ -106,11 +106,19 @@ class UpdateTeachingEntryGradingPartRequest extends FormRequest
         $methodUnavailable = ($onlyPlusMinus && $method === 'sum_percent') || ($onlyPoints && $method === 'plus_minus')
             || ($onlyStandardGrades && in_array($method, ['sum_percent', 'plus_minus'], true))
             || (! $onlyStandardGrades && in_array($method, ['grade_each', 'grade_mean'], true))
-            || (! $onlyPlusMinus && in_array($method, ['sign_grade', 'sign_adjust'], true));
+            || (! $onlyPlusMinus && in_array($method, ['sign_grade', 'sign_adjust', 'sign_points'], true));
+
+        $adjustmentMode = $this->input('points_assessment_mode', $gradingPart->points_assessment_mode);
+        $newPointsRule = $adjustmentMode === 'sign_points' && is_array($this->input('sign_adjustment'))
+            && (array_key_exists('mode', $this->input('sign_adjustment')) || array_key_exists('value', $this->input('sign_adjustment')));
+        $adjustmentFields = $newPointsRule ? 'mode,value' : ($adjustmentMode === 'sign_points' ? 'improvement_factor,deterioration_factor' : 'improvement_factor,max_improvement,deterioration_factor,max_deterioration');
 
         return [
-            'sign_adjustment' => ['sometimes', 'nullable', 'array:improvement_factor,max_improvement,deterioration_factor,max_deterioration', 'required_array_keys:improvement_factor,max_improvement,deterioration_factor,max_deterioration', Rule::prohibitedIf(! $onlyPlusMinus || $this->input('points_assessment_mode', $gradingPart->points_assessment_mode) !== 'sign_adjust')],
-            'sign_adjustment.*' => ['nullable', 'regex:/^\d+(?:\.\d+)?$/D'],
+            'sign_adjustment' => ['sometimes', 'nullable', 'array:'.$adjustmentFields, 'required_array_keys:'.$adjustmentFields, Rule::prohibitedIf(! $onlyPlusMinus || ! in_array($adjustmentMode, ['sign_adjust', 'sign_points'], true))],
+            ...($newPointsRule ? [
+                'sign_adjustment.mode' => ['required_with:sign_adjustment', Rule::in(['fixed', 'percentage'])],
+                'sign_adjustment.value' => ['required_with:sign_adjustment', 'regex:/^\d+(?:\.\d+)?$/D'],
+            ] : ['sign_adjustment.*' => ['nullable', 'regex:/^\d+(?:\.\d+)?$/D']]),
             'entry_standard_grade_occurrences' => ['sometimes', 'array', 'list', 'max:100', Rule::prohibitedIf(! $onlyStandardGrades)],
             'entry_standard_grade_occurrences.*' => ['required', 'array:entry_definition_id,configuration', 'required_array_keys:entry_definition_id,configuration'],
             'entry_standard_grade_occurrences.*.entry_definition_id' => ['required', 'integer', 'distinct', Rule::exists('teaching_entry_definitions', 'id')->where(fn ($query) => $query
@@ -122,7 +130,7 @@ class UpdateTeachingEntryGradingPartRequest extends FormRequest
             ...self::overallThresholdRules($gradingPart->overallMaximumPoints(), $this->input('allowed_entry_types', $gradingPart->allowed_entry_types) === 'points', $this->requiresOverallThresholds()),
             'allowed_entry_types' => ['sometimes', 'required', Rule::in(TeachingEntryGradingPart::allowedEntryTypeOptions())],
             'individual_points_weighting_mode' => ['sometimes', 'required', Rule::in(['points', 'weighted']), Rule::prohibitedIf($this->input('allowed_entry_types', $gradingPart->allowed_entry_types) !== 'points' || $this->input('points_assessment_mode', $gradingPart->points_assessment_mode) !== 'individual')],
-            'points_assessment_mode' => ['sometimes', 'required', Rule::in($this->input('allowed_entry_types', $gradingPart?->allowed_entry_types) === 'points' ? ['overall', 'individual', 'sum_percent', 'plus_minus', 'sign_grade', 'sign_adjust', 'grade_each', 'grade_mean'] : ['individual', 'sum_percent', 'plus_minus', 'sign_grade', 'sign_adjust', 'grade_each', 'grade_mean']), Rule::prohibitedIf($methodUnavailable)],
+            'points_assessment_mode' => ['sometimes', 'required', Rule::in($this->input('allowed_entry_types', $gradingPart?->allowed_entry_types) === 'points' ? ['overall', 'individual', 'sum_percent', 'plus_minus', 'sign_grade', 'sign_adjust', 'sign_points', 'grade_each', 'grade_mean'] : ['individual', 'sum_percent', 'plus_minus', 'sign_grade', 'sign_adjust', 'sign_points', 'grade_each', 'grade_mean']), Rule::prohibitedIf($methodUnavailable)],
             'weight' => ['sometimes', 'required', 'numeric', 'decimal:0,3', 'min:0.001', 'max:9999999.999'],
             'is_required' => ['sometimes', 'required', 'boolean'],
             'fixed_percentage' => ['sometimes', 'nullable', 'numeric', 'decimal:0,3', 'min:0.001', 'max:100'],

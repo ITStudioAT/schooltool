@@ -18,6 +18,7 @@ use App\Services\TeachingCourseWorkEntrySyncService;
 use App\Support\TeachingSignAdjustment;
 use Brick\Math\BigRational;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Spatie\LaravelPdf\Facades\Pdf;
 use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
@@ -152,6 +153,80 @@ test('adjustment uses exact decimals caps and half-up only after the unrounded b
     ['2.5', '-0.5', '2.625', 3], ['3.2', '99', '2.7', 3], ['3.2', '-99', '3.95', 4],
     ['1', '4', '0.5', 1], ['5', '-4', '5.75', 5],
 ]);
+
+test('sign balance adjusts points before applying the points grading scale', function (string $points, string $signs, string $expected, int $grade) {
+    $this->part->update(['points_assessment_mode' => 'sum_percent']);
+    $definition = evaluationDefinition($this, ['properties_mode' => 'points', 'maximum_points' => 20]);
+    $adjustment = TeachingEntryGradingPart::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->year->id, 'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $this->area->id,
+        'points_assessment_mode' => 'sign_points', 'sign_adjustment' => ['improvement_factor' => '5', 'deterioration_factor' => '5']]);
+    $balance = evaluationDefinition($this, ['short_name' => 'MA', 'properties_mode' => 'plus_minus', 'teaching_entry_grading_part_id' => $adjustment->id]);
+    evaluationEntry($this, $definition, $points);
+    evaluationEntry($this, $balance, $signs);
+    $report = evaluationSemester($this);
+    $adjusted = collect($report['parts'])->firstWhere('id', $adjustment->id);
+    $pointsPart = collect($report['parts'])->firstWhere('id', $this->part->id);
+    expect($report['result'])->toBe($grade)->and($adjusted['trace']['adjusted_points_exact'])->toBe($expected)
+        ->and($pointsPart['trace']['points_adjustment']['adjusted_exact'])->toBe($expected)
+        ->and($pointsPart['trace']['points_adjustment']['original_exact'])->toBe($points)
+        ->and($this->roster->fresh()->sem_grade)->toBe('4');
+})->with([['12', '+', '17', 2], ['12', '-', '7', 5], ['19', '+', '20', 1], ['2', '-', '0', 5], ['12', '~', '29/2', 3], ['12', '0', '12', 4]]);
+
+test('performance and grade printouts show the original points, bounded correction and calculated grade', function () {
+    Pdf::fake();
+    $this->area->update(['semester_count' => 1]);
+    $this->part->update(['points_assessment_mode' => 'sum_percent']);
+    $points = evaluationDefinition($this, ['properties_mode' => 'points', 'maximum_points' => 20]);
+    $adjustment = TeachingEntryGradingPart::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->year->id, 'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $this->area->id,
+        'name' => 'Mitarbeit', 'points_assessment_mode' => 'sign_points', 'sign_adjustment' => ['mode' => 'fixed', 'value' => '5']]);
+    $signs = evaluationDefinition($this, ['short_name' => 'MA', 'properties_mode' => 'plus_minus', 'teaching_entry_grading_part_id' => $adjustment->id]);
+    $pointEntry = evaluationEntry($this, $points, '19');
+    evaluationEntry($this, $signs, '+');
+    $this->actingAs($this->teacher, 'sanctum');
+    $this->get("/api/admin/teaching/courses/{$this->course->id}/performances_pdf")->assertOk();
+    Pdf::assertRespondedWithPdf(fn ($pdf): bool => $pdf->contains('19 / 20 Punkte') && $pdf->contains('Mitarbeit: +1 Punkte')
+        && $pdf->contains('berechnet +5, begrenzt') && $pdf->contains('20 / 20 Punkte') && $pdf->contains('Berechnete Semesternote'));
+    $this->get("/api/admin/teaching/courses/{$this->course->id}/grades_pdf?semesters=1")->assertOk();
+    Pdf::assertRespondedWithPdf(fn ($pdf): bool => $pdf->contains('19 / 20 Punkte') && $pdf->contains('Mitarbeit: +1 Punkte')
+        && $pdf->contains('20 / 20 Punkte') && $pdf->contains('Berechnete Semesternote'));
+    $pointEntry->update(['grade' => '12']);
+    $adjustment->update(['points_assessment_mode' => 'sign_adjust', 'sign_adjustment' => [
+        'improvement_factor' => '0.25', 'max_improvement' => '1', 'deterioration_factor' => '0.25', 'max_deterioration' => '1',
+    ]]);
+    $this->get("/api/admin/teaching/courses/{$this->course->id}/performances_pdf")->assertOk();
+    Pdf::assertRespondedWithPdf(fn ($pdf): bool => $pdf->contains('Note 4') && $pdf->contains('Mitarbeit: -0,25 Notenwerte')
+        && $pdf->contains('Note 3,75') && $pdf->contains('Berechnete Semesternote'));
+    expect($this->roster->fresh()->sem_grade)->toBe('4');
+});
+
+test('symmetric point adjustments use either fixed points or a percentage of the maximum', function (string $mode, string $value, string $points, string $signs, string $expected) {
+    $this->part->update(['points_assessment_mode' => 'sum_percent']);
+    $definition = evaluationDefinition($this, ['properties_mode' => 'points', 'maximum_points' => 20]);
+    $adjustment = TeachingEntryGradingPart::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->year->id, 'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $this->area->id,
+        'points_assessment_mode' => 'sign_points', 'sign_adjustment' => compact('mode', 'value')]);
+    $balance = evaluationDefinition($this, ['short_name' => 'MA', 'properties_mode' => 'plus_minus', 'teaching_entry_grading_part_id' => $adjustment->id]);
+    evaluationEntry($this, $definition, $points);
+    evaluationEntry($this, $balance, $signs);
+    $report = collect(evaluationSemester($this)['parts'])->firstWhere('id', $adjustment->id);
+    expect($report['trace']['adjusted_points_exact'])->toBe($expected);
+})->with([
+    ['fixed', '5', '12', '+', '17'], ['fixed', '5', '12', '-', '7'],
+    ['percentage', '10', '12', '+', '14'], ['percentage', '10', '12', '-', '10'],
+    ['percentage', '10', '12', '~', '13'], ['percentage', '10', '19', '++', '20'],
+    ['percentage', '10', '1', '-', '0'],
+]);
+
+test('point adjustment respects custom point thresholds and fails closed for an incompatible target', function () {
+    $this->part->update(['allowed_entry_types' => 'points', 'points_assessment_mode' => 'overall', 'overall_points_grade_thresholds' => [1 => 19, 2 => 16, 3 => 14, 4 => 9]]);
+    $points = evaluationDefinition($this, ['properties_mode' => 'points', 'maximum_points' => 20]);
+    $adjustment = TeachingEntryGradingPart::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->year->id, 'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $this->area->id,
+        'points_assessment_mode' => 'sign_points', 'sign_adjustment' => ['improvement_factor' => '5', 'deterioration_factor' => '5']]);
+    $signs = evaluationDefinition($this, ['short_name' => 'MA', 'properties_mode' => 'plus_minus', 'teaching_entry_grading_part_id' => $adjustment->id]);
+    evaluationEntry($this, $points, '12');
+    evaluationEntry($this, $signs, '+');
+    expect(evaluationSemester($this)['result'])->toBe(2);
+    $this->part->update(['points_assessment_mode' => 'individual']);
+    expect(evaluationSemester($this)['result'])->toBeNull();
+});
 
 test('configured points basis remains calculable with an unused point type and empty optional adjustment', function () {
     $group = '00000000-0000-4000-8000-000000000004';

@@ -70,6 +70,55 @@ function entry(overrides = {}) {
 }
 
 describe('Compact course student performance', () => {
+    it.each([
+        [-1, '3.15', '2.65', 'Saldo -1', '-0,50 Punkte'],
+        [2, '19', '20', 'Saldo +2', '+1,00 Punkte'],
+        [0, '10', '10', 'Saldo 0', '0,00 Punkte'],
+    ])('shows the sign balance and actual point change for saldo %s', (balance, original, adjusted, expectedBalance, expectedChange) => {
+        const wrapper = mountPerformance({ props: { student, course, activeSemester: 1,
+            gradingReport: { course_id: 18, schoolyear_id: 3, semester_count: 1, students: [{ user_id: 12, semesters: [{ semester: 1,
+                parts: [{ id: 7, name: 'Mitarbeit', status: 'complete', result: 3,
+                    trace: { method: 'plus_minus', purpose: 'adjust_points', balance, balance_status: 'complete',
+                        base_points_exact: original, adjusted_points_exact: adjusted, maximum_points_exact: '20' } }],
+            }] }] },
+        } })
+        expect(wrapper.get('.grading-part-card-value').text()).toBe(expectedBalance)
+        expect(wrapper.get('.grading-part-card .text-caption').text()).toBe(expectedChange)
+        expect(wrapper.get('.grading-part-card').text()).not.toContain('Note')
+    })
+    it('shows the adjusted points, original sum, actual capped correction and corrected progress', () => {
+        const wrapper = mountPerformance({ props: { student, course, activeSemester: 1,
+            gradingReport: { course_id: 18, schoolyear_id: 3, semester_count: 1, students: [{ user_id: 12, semesters: [{ semester: 1, issues: [],
+                parts: [{ id: 7, name: 'Leistungen', status: 'complete', trace: { method: 'sum_percent', sum: 19, maximum: 20,
+                    points_adjustment: { status: 'complete', source: 'Mitarbeit', original: 19, change: 1, requested_change: 5, adjusted: 20 } } }],
+            }] }] },
+        } })
+        expect(wrapper.get('.grading-part-card').text()).toContain('20,00 / 20,00 Punkte')
+        expect(wrapper.get('.grading-part-card').text()).toContain('Vorher 19,00 · Mitarbeit: +1,00 Punkte (berechnet +5,00, begrenzt)')
+        expect(wrapper.get('.assignment-progress').text()).toContain('100 %')
+    })
+
+    it.each([0, 5])('omits original and correction details if the actual point change is zero (requested %s)', (requestedChange) => {
+        const wrapper = mountPerformance({ props: { student, course, activeSemester: 1,
+            gradingReport: { course_id: 18, schoolyear_id: 3, semester_count: 1, students: [{ user_id: 12, semesters: [{ semester: 1, issues: [],
+                parts: [{ id: 7, name: 'Leistungen', status: 'complete', trace: { method: 'sum_percent', sum: 5.85, maximum: 10,
+                    points_adjustment: { status: 'complete', source: 'Mitarbeit', original: 5.85, change: 0, requested_change: requestedChange, adjusted: 5.85 } } }],
+            }] }] },
+        } })
+        expect(wrapper.get('.grading-part-card').text()).toBe('Leistungen:5,85 / 10,00 Punkte')
+        expect(wrapper.get('.grading-part-card').find('.text-caption').exists()).toBe(false)
+    })
+
+    it('does not display unadjusted points as final when the adjustment is incomplete', () => {
+        const wrapper = mountPerformance({ props: { student, course, activeSemester: 1,
+            gradingReport: { course_id: 18, schoolyear_id: 3, semester_count: 1, students: [{ user_id: 12, semesters: [{ semester: 1, issues: [],
+                parts: [{ id: 7, name: 'Leistungen', status: 'complete', trace: { method: 'sum_percent', sum: 19, maximum: 20,
+                    points_adjustment: { status: 'incomplete', source: 'Mitarbeit' } } }],
+            }] }] },
+        } })
+        expect(wrapper.get('.grading-part-card').text()).toContain('Nicht vollständig berechenbar')
+        expect(wrapper.get('.assignment-progress').text()).toContain('Nicht vollständig berechenbar')
+    })
     it('shows authoritative points per part and student and follows the selected semester', async () => {
         const wrapper = mountPerformance({ props: {
             student: { ...student, course_student_id: 42 }, course, activeSemester: 1,
@@ -88,8 +137,8 @@ describe('Compact course student performance', () => {
             ] },
         } })
         const summaries = () => wrapper.findAll('.grading-part-card').map((card) => `${card.get('.grading-part-card-title').text()} ${card.get('.grading-part-card-value').text()}`).join(' ')
-        expect(summaries()).toContain('Aufträge: 18 / 25 Punkte')
-        expect(summaries()).toContain('Tests: 6,25 / 10 Punkte')
+        expect(summaries()).toContain('Aufträge: 18,00 / 25,00 Punkte')
+        expect(summaries()).toContain('Tests: 6,25 / 10,00 Punkte')
         expect(summaries()).toContain('Mitarbeit: Bewertung 2,5')
         expect(summaries()).toContain('Referat: Keine Bewertung')
         expect(summaries()).toContain('Offen: Nicht vollständig berechenbar')
@@ -98,11 +147,11 @@ describe('Compact course student performance', () => {
         expect(wrapper.get('.assignment-progress').text()).toBe('Aufträge72 %')
         expect(wrapper.get('v-progress-linear').attributes('model-value')).toBe('72')
         await wrapper.setProps({ activeSemester: 2 })
-        expect(summaries()).toBe('Aufträge: 7 / 20 Punkte')
+        expect(summaries()).toBe('Aufträge: 7,00 / 20,00 Punkte')
         expect(wrapper.get('.assignment-progress').text()).toBe('Aufträge35 %')
         await wrapper.setProps({ activeSemester: 3 })
-        expect(summaries()).toContain('Aufträge · Sem 1: 18 / 25 Punkte')
-        expect(summaries()).toContain('Aufträge · Sem 2: 7 / 20 Punkte')
+        expect(summaries()).toContain('Aufträge · Sem 1: 18,00 / 25,00 Punkte')
+        expect(summaries()).toContain('Aufträge · Sem 2: 7,00 / 20,00 Punkte')
         expect(wrapper.get('.assignment-progress').text()).toBe('Aufträge55,56 %')
         await wrapper.setProps({ student: { ...student, user_id: 99, course_student_id: 99 } })
         expect(summaries()).toContain('Fremd')
@@ -199,7 +248,7 @@ describe('Compact course student performance', () => {
     it.each([
         [2, '-1/2', 2.5],
         [8, '-5/4', 1.75],
-    ])('shows only balance %s even when the report contains an applied adjustment', (balance, delta, result) => {
+    ])('shows the balance and the original and adjusted grades for balance %s', (balance, delta, result) => {
         const wrapper = mountPerformance({ props: { student, course, activeSemester: 1,
             gradingReport: { course_id: 18, schoolyear_id: 3, semester_count: 2, students: [{ user_id: 12, semesters: [{ semester: 1,
                 parts: [{ id: 7, name: 'Mitarbeit', status: 'complete', result,
@@ -209,7 +258,8 @@ describe('Compact course student performance', () => {
             }] }] },
         } })
         expect(wrapper.get('.grading-part-card-value').text()).toBe(`Saldo +${balance}`)
-        expect(wrapper.get('.grading-part-card').text()).toBe(`Mitarbeit:Saldo +${balance}`)
+        expect(wrapper.get('.grading-part-card').text()).toContain('Note vorher 3 · Anpassung')
+        expect(wrapper.get('.grading-part-card').text()).toContain(`danach ${result.toLocaleString('de-AT')}`)
         expect(wrapper.get('.grading-part-card').text()).not.toContain('offen')
         expect(wrapper.get('.grading-part-card').classes()).not.toContain('grading-part-card--incomplete')
     })
@@ -248,19 +298,19 @@ describe('Compact course student performance', () => {
         ] }
         const wrapper = mountPerformance({ props: { student: { ...student, sem_grade: 5 }, course, activeSemester: 1, gradingReport: report } })
         const cards = () => wrapper.findAll('.grading-part-card').map((card) => card.text())
-        expect(cards()).toEqual(['Leistungsfeststellungen:4 / 5 Punkte'])
+        expect(cards()).toEqual(['Leistungsfeststellungen:4,00 / 5,00 Punkte'])
         await wrapper.setProps({ showCalculatedGrade: true })
-        expect(cards()).toEqual(['Leistungsfeststellungen:4 / 5 Punkte', 'Note:21,68'])
+        expect(cards()).toEqual(['Leistungsfeststellungen:4,00 / 5,00 Punkte', 'Note:21,68'])
         await wrapper.setProps({ activeSemester: 2 })
-        expect(cards()).toEqual(['Leistungsfeststellungen:4 / 5 Punkte', 'Note:4'])
+        expect(cards()).toEqual(['Leistungsfeststellungen:4,00 / 5,00 Punkte', 'Note:4'])
         await wrapper.setProps({ activeSemester: 3 })
-        expect(cards()).toEqual(['Leistungsfeststellungen · Sem 1:4 / 5 Punkte', 'Note · Sem 1:21,68',
-            'Leistungsfeststellungen · Sem 2:4 / 5 Punkte', 'Note · Sem 2:4', 'Gesamtnote:32,80'])
+        expect(cards()).toEqual(['Leistungsfeststellungen · Sem 1:4,00 / 5,00 Punkte', 'Note · Sem 1:21,68',
+            'Leistungsfeststellungen · Sem 2:4,00 / 5,00 Punkte', 'Note · Sem 2:4', 'Gesamtnote:32,80'])
         await wrapper.setProps({ student: { ...student, user_id: 13 }, activeSemester: 1 })
         expect(cards()).toContain('Note:Nicht berechenbar')
         expect(wrapper.findAll('.grading-part-card').at(-1).attributes('title')).toBe('Verpflichtende Prüfung fehlt.')
         await wrapper.setProps({ showCalculatedGrade: false })
-        expect(cards()).toEqual(['Leistungsfeststellungen:4 / 5 Punkte'])
+        expect(cards()).toEqual(['Leistungsfeststellungen:4,00 / 5,00 Punkte'])
         await wrapper.setProps({ showCalculatedGrade: true, course: { ...course, id: 99 } })
         expect(cards()).toEqual([])
     })
@@ -636,7 +686,7 @@ describe('Compact course student performance', () => {
         expect(wrapper.find('table, v-table').exists()).toBe(false)
     })
 
-    it('sorts individual records by their full type name and then date', () => {
+    it('sorts performances chronologically across types using the work deadline and keeps same-day order', () => {
         const wrapper = mountPerformance({ props: {
             student, usesEntryAreas: true,
             course: { ...course, teaching_entry_area: { entry_definitions: [
@@ -646,13 +696,14 @@ describe('Compact course student performance', () => {
             ] } },
             entries: [
                 entry({ id: 1, type: 'P', grade: '2' }),
-                entry({ id: 2, type: 'Z', grade: '-', date: '2026-02-05' }),
+                entry({ id: 2, type: 'Z', grade: '-', date: '2026-02-05', source: 'course_work', teaching_course_work_id: 7 }),
                 entry({ id: 3, type: 'A', grade: '+' }),
                 entry({ id: 4, type: 'Z', grade: '+', date: '2026-02-01' }),
                 entry({ id: 5, type: 'P', grade: '2' }),
             ],
+            works: [{ id: 7, teaching_course_id: 18, finish_until_date: '2026-02-02' }],
         } })
-        expect(wrapper.findAll('v-chip').map((item) => item.text())).toEqual(['Z: +', 'Z: -', 'A: +', 'P: 2', 'P: 2'])
+        expect(wrapper.findAll('v-chip').map((item) => item.text())).toEqual(['Z: +', 'Z: -', 'P: 2', 'A: +', 'P: 2'])
         expect(wrapper.text()).not.toContain('×')
     })
 

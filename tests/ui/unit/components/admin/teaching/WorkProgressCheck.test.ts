@@ -69,6 +69,7 @@ it('does not show a completed check if the server returns a different work', asy
 
 it('updates the Unterricht collection indicator and simulator time after an explicit recheck', async () => {
     const initial = { id: 86, teaching_course_id: 16, title: 'E-Mails', groups: [{ student_ids: [492, 493] }], status: {
+        email_preparation_completed: true,
         dispatch_logs: [{ origin: 'dispatch_import', purpose: 'tasks', sha256: 'a'.repeat(64) }],
         dispatch_notifications: [492, 493].map(studentId => ({ origin: 'dispatch_import', purpose: 'tasks',
             student_id: studentId, sent_at: '2026-10-24T12:00:00Z', log_sha256: 'a'.repeat(64) })),

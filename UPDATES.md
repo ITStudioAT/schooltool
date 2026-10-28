@@ -1,5 +1,11 @@
 # UPDATES
 
+## 3.53.5 !!!
+
+### Unterricht
+
+- Berechnung der Punkte
+
 ## 3.53.4
 
 ### Unterricht
