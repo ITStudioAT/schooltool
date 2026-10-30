@@ -3,9 +3,6 @@ import { resolve } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import HomepageIndex from '@/pages/homepage/index/Index.vue'
 
-vi.mock('/storage/images/schooltool/schooltool-wordmark.svg', () => ({ default: '/schooltool-wordmark.svg' }))
-vi.mock('/storage/images/schooltool/schooltool-mark.svg', () => ({ default: '/schooltool-mark.svg' }))
-
 describe('homepage index visibility', () => {
     describe.each([false, true])('restaurant selection with auth_check=%s', (authenticated) => {
         it.each([

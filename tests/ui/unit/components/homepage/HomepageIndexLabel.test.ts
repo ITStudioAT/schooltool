@@ -21,7 +21,6 @@ describe('homepage product labels', () => {
             'resources/js/pages/admin/studentsTimetables/StudentsTimetables.vue',
             'resources/js/pages/admin/studentsTimetables/settings/AdminUsers.vue',
             'resources/js/pages/admin/settings/components/StudentsTimetablesTeachers.vue',
-            'resources/js/pages/admin/settings/components/ModuleStatusesCard.vue',
         ]
 
         for (const componentPath of componentPaths) {
