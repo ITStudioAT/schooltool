@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
-import { workSubmissionStatus } from '@/helpers/workSubmission'
+import { workCollectionStudentStatus, workSubmissionStatus } from '@/helpers/workSubmission'
 import WorkSubmissionStatus from '@/pages/admin/teaching/overview/components/WorkSubmissionStatus.vue'
 import WorkCellStatus from '@/pages/admin/teaching/overview/components/WorkCellStatus.vue'
 import { workCellStatuses, workEvaluationStatus } from '@/helpers/workCellStatus'
@@ -27,6 +27,65 @@ function finalDownload() {
             scope: 'Gesicherter lokaler Postfachbestand', participants: [{ participant_id: 'person-12', submission_sha256: [] }] } })
     return work
 }
+
+function checkedWithoutSubmission() {
+    const work = fixture('unresolved')
+    work.finish_until_date = '2099-11-03'
+    work.finish_until_time = '23:59'
+    work.submission_check_status = { complete: false, student_ids: [12], checked_at: '2026-10-08T09:00:00Z',
+        deadline_date: work.finish_until_date, deadline_time: work.finish_until_time }
+    const coverage = ['guenther.kron@bildung.gv.at', 'guenther.kron@cdgym.at'].map(mailbox => ({ mailbox,
+        scope: 'server_all_folders', verified: true, start_at: '2026-10-01T10:00:00Z', end_at: '2026-10-08T09:00:00Z', gaps: [] }))
+    work.status.submission_checks = [{ check: { exercise_id: 'exercise-65', state: 'open', checked_at: '2026-10-08T09:00:00Z',
+        coverage, unresolved_candidates: [], gaps: ['deadline_not_passed'], participants: [{ participant_id: 'person-12',
+            available_at: '2026-10-01T10:00:00Z', email_result: 'not_found', other_result: 'not_received', gaps: [] }] } }]
+    return work
+}
+
+describe('Collection dialog submission status', () => {
+    it('shows an evidenced local result only for the unchanged released roster', () => {
+        const work = fixture('unresolved')
+        work.status.assessment_json_imports = []
+        work.status.student_distribution = { published_at: '2026-10-01T10:00:00Z', student_ids: [12, 13] }
+        work.collection_run = { work_id: 65, course_id: 18, completed_at: '2026-10-08T10:00:00Z',
+            local_email_check: { checked_at: '2026-10-08T09:00:00Z', student_ids: [12, 13], server_complete: false } }
+        const result = workCollectionStudentStatus(work, 12)
+        expect(result.state).toBe('scoped_absence')
+        expect(result.label).toContain('keine E-Mail im geprüften lokalen Bestand').toContain('Serversuche ist nicht bestätigt')
+        work.status.student_distribution.student_ids = [12]
+        expect(workCollectionStudentStatus(work, 12).state).toBe('unknown')
+    })
+
+    it('leaves an unchecked submission unknown and preserves positive evidence', () => {
+        expect(workCollectionStudentStatus(fixture('unresolved'), 12).state).toBe('unknown')
+        expect(workCollectionStudentStatus(fixture('received'), 12).state).toBe('received')
+    })
+
+    it('shows an evidenced absence at the check time before the deadline', () => {
+        const result = workCollectionStudentStatus(checkedWithoutSubmission(), 12)
+        expect(result.state).toBe('not_received')
+        expect(result.label).toContain('Bis zur Prüfung am').toContain('08.10.2026')
+    })
+
+    it.each(['cache', 'missing mailbox', 'person gap', 'other way', 'contradictory receipt', 'global gap'])
+        ('does not claim an absence for %s', change => {
+            const work = checkedWithoutSubmission()
+            const check = work.status.submission_checks[0].check
+            if (change === 'cache') check.coverage[0].scope = 'local_cache'
+            if (change === 'missing mailbox') check.coverage.pop()
+            if (change === 'person gap') check.participants[0].gaps.push('unresolved')
+            if (change === 'other way') check.participants[0].other_result = 'unresolved'
+            if (change === 'global gap') check.gaps.push('unresolved_candidates')
+            if (change === 'contradictory receipt') work.status.assessment_json_imports[0].record.submission_state = 'received'
+            expect(workCollectionStudentStatus(work, 12).state).toBe('unknown')
+        })
+
+    it('identifies a local-only absence as limited to that local evidence', () => {
+        const result = workCollectionStudentStatus(finalDownload(), 12)
+        expect(result.state).toBe('scoped_absence')
+        expect(result.label).toContain('Keine Aussage über eine vollständige Serversuche')
+    })
+})
 
 function withProvision(work, method = 'download_release') {
     const sha256 = 'd'.repeat(64)

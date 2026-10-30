@@ -54,6 +54,27 @@ test('submission collection rejects invalid mode and changed dates', function (s
     Http::assertNothingSent();
 })->with(['', '&collection_mode=invalid', '&collection_mode=collect&date=2026-10-21']);
 
+test('collection handoff distinguishes active student-area availability from email delivery', function (): void {
+    Http::preventStrayRequests();
+    Mail::fake();
+    $release = ['published_at' => '2026-10-19T12:00:00+02:00', 'withdrawn_at' => null, 'student_ids' => [$this->student->id]];
+    $this->work->update(['groups' => [['name' => 'Gruppe', 'date' => '2026-10-20', 'student_ids' => [$this->student->id]]],
+        'status' => ['student_distribution' => $release]]);
+    $before = $this->work->fresh()->getAttributes();
+    $data = $this->getJson($this->url.'?purpose=submission_collection&collection_mode=collect&date=2026-10-20')->assertOk()->json('data');
+    expect($data['context']['student_distribution'])->toBe(['source' => 'schooltool_student_distribution',
+        'published_at' => $release['published_at'], 'student_ids' => [$this->student->id]])
+        ->and($data['context']['task_delivery'])->toBeNull()
+        ->and($data['text'])->toContain('weder einen E-Mail-Versand noch einen individuellen Download')
+        ->and($this->work->fresh()->getAttributes())->toBe($before);
+    $release['withdrawn_at'] = '2026-10-20T12:00:00+02:00';
+    $this->work->update(['status' => ['student_distribution' => $release]]);
+    $this->getJson($this->url.'?purpose=submission_collection&collection_mode=collect&date=2026-10-20')
+        ->assertOk()->assertJsonPath('data.context.student_distribution', null);
+    Http::assertNothingSent();
+    Mail::assertNothingSent();
+});
+
 test('submission collection reuses the confirmed folder without a new Dropbox scan', function (): void {
     Http::preventStrayRequests();
     $connection = DropboxConnection::factory()->create(['user_id' => $this->teacher->id]);

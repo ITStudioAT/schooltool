@@ -61,6 +61,10 @@
                             <v-icon start>mdi-information-outline</v-icon>
                             Übersicht
                         </v-btn>
+                        <v-btn class="course-tab-mobile-btn" :aria-pressed="currentTab === 'tasks'" :variant="currentTab === 'tasks' ? 'flat' : 'text'" :color="currentTab === 'tasks' ? '#4056d6' : undefined" @click="currentTab = 'tasks'">
+                            <v-icon start>mdi-clipboard-text-outline</v-icon>
+                            Meine Aufgaben
+                        </v-btn>
                         <v-btn class="course-tab-mobile-btn" :aria-pressed="currentTab === 'entries'" :variant="currentTab === 'entries' ? 'flat' : 'text'" :color="currentTab === 'entries' ? '#4056d6' : undefined" @click="currentTab = 'entries'">
                             <v-icon start>mdi-notebook-outline</v-icon>
                             <span>Leistungen<span v-if="showBehaviourEnabled" class="course-nav-secondary"> &amp; Verhalten</span></span>
@@ -77,6 +81,9 @@
 
 
                     <v-tabs-window v-model="currentTab" style="margin-top: 20px">
+                        <v-tabs-window-item value="tasks">
+                            <StudentCourseTasks :course-id="courseId" />
+                        </v-tabs-window-item>
                         <!-- Übersicht Tab -->
                         <v-tabs-window-item value="overview">
                             <div class="student-course-summary">
@@ -250,14 +257,15 @@
                                             <v-progress-linear :model-value="part.fill" height="36" rounded color="transparent" :aria-label="`${part.name}, ${part.semester}. Semester`" :aria-valuetext="progressValueText(part)" />
                                             <div class="student-points-progress-fill" aria-hidden="true"
                                                 :style="{ backgroundImage: part.gradient, clipPath: `inset(0 ${100 - part.fill}% 0 0)` }" />
-                                            <template v-if="part.adjustmentRange">
-                                                <span class="student-points-adjustment" :class="`student-points-adjustment--${part.adjustmentRange.direction}`"
-                                                    :style="{ left: `${part.adjustmentRange.left}%`, width: `${part.adjustmentRange.width}%` }" aria-hidden="true" />
-                                                <span class="student-points-adjustment-start" :style="{ left: `${part.adjustmentRange.original}%` }" aria-hidden="true" />
-                                            </template>
                                             <span v-for="boundary in part.boundaries" :key="boundary" class="student-points-grade-boundary"
                                                 :style="{ left: `${boundary}%` }" aria-hidden="true" />
                                             <strong class="student-points-progress-percent" aria-hidden="true">{{ formatEntryValue(part.percent) }} %</strong>
+                                        </div>
+                                        <div v-if="part.adjustmentRange" class="student-points-adjustment-track" aria-hidden="true">
+                                            <span class="student-points-adjustment" :class="`student-points-adjustment--${part.adjustmentRange.direction}`"
+                                                :style="{ left: `${part.adjustmentRange.left}%`, width: `${part.adjustmentRange.width}%` }" />
+                                            <span class="student-points-adjustment-start" :class="`student-points-adjustment-start--${part.adjustmentRange.direction}`"
+                                                :style="{ left: `${part.adjustmentRange.original}%` }" />
                                         </div>
                                         <span v-if="part.percent < 0 || part.percent > 100" class="text-caption">Außerhalb 0–100 %</span>
                                     </template>
@@ -533,10 +541,12 @@ import { evaluationPdf } from '@/actions/App/Http/Controllers/Student/CourseStud
 import { assessmentDeductionComment } from '@/helpers/assessmentDeductions'
 import StudentNavigationDrawer from '../../components/StudentNavigationDrawer.vue'
 import StudentFeedbackEntries from '../../components/StudentFeedbackEntries.vue'
+import StudentCourseTasks from './StudentCourseTasks.vue'
 import '../../../../../../css/student.css'
 
 export default {
     components: {
+        StudentCourseTasks,
         ParentAccessPanel,
         StudentNavigationDrawer,
         StudentFeedbackEntries,
@@ -622,12 +632,12 @@ export default {
                     return 'entries'
                 }
 
-                return ['overview', 'entries', 'additional', 'dates'].includes(panel) ? panel : 'overview'
+                return ['overview', 'tasks', 'entries', 'additional', 'dates'].includes(panel) ? panel : 'overview'
             },
             set(panel) {
                 const selectedPanel = panel === 'behaviour' ? 'entries' : panel
 
-                if (!['overview', 'entries', 'additional', 'dates'].includes(selectedPanel)
+                if (!['overview', 'tasks', 'entries', 'additional', 'dates'].includes(selectedPanel)
                     || this.$route.query.panel === selectedPanel) {
                     return
                 }
@@ -1899,23 +1909,63 @@ export default {
     pointer-events: none;
 }
 
+.student-points-adjustment-track {
+    position: relative;
+    height: 2px;
+    margin-top: 4px;
+}
+
 .student-points-adjustment {
     position: absolute;
     top: 0;
     bottom: 0;
+    border-radius: 3px;
     pointer-events: none;
 }
 
 .student-points-adjustment--positive {
-    background: repeating-linear-gradient(135deg, rgba(21, 110, 68, 0.82) 0 5px, rgba(192, 243, 207, 0.82) 5px 10px);
+    background: #198754;
 }
 
 .student-points-adjustment--negative {
-    background: repeating-linear-gradient(135deg, #d8959b 0 3px, #f6d8db 3px 10px);
+    background: #dc3545;
+}
+
+.student-points-adjustment::after {
+    position: absolute;
+    top: 50%;
+    width: 0;
+    height: 0;
+    border-top: 4px solid transparent;
+    border-bottom: 4px solid transparent;
+    content: '';
+    transform: translateY(-50%);
+}
+
+.student-points-adjustment--positive::after {
+    right: -1px;
+    border-left: 6px solid #198754;
+}
+
+.student-points-adjustment--negative::after {
+    left: -1px;
+    border-right: 6px solid #dc3545;
 }
 
 .student-points-adjustment-start {
-    display: none;
+    position: absolute;
+    top: -3px;
+    bottom: -3px;
+    width: 2px;
+    transform: translateX(-50%);
+}
+
+.student-points-adjustment-start--positive {
+    background: #198754;
+}
+
+.student-points-adjustment-start--negative {
+    background: #dc3545;
 }
 
 .student-points-progress-percent {

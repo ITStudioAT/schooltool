@@ -1,6 +1,7 @@
 <template>
     <section v-if="state" class="check-progress mt-2" aria-label="Fortschritt der Prüfung" aria-live="polite">
-        <strong>{{ state.state === 'done' ? 'Prüfung abgeschlossen' : state.state === 'failed' ? 'Prüfung unterbrochen' : 'Prüfung läuft' }}</strong>
+        <strong class="check-progress-title">{{ state.state === 'done' ? 'Prüfung abgeschlossen' : state.state === 'failed' ? 'Prüfung unterbrochen' : 'Prüfung läuft' }}</strong>
+        <span v-if="state.state === 'running' && !state.active && !state.completed?.length" class="check-progress-start text-caption">Prüfung wird gestartet …</span>
         <ul v-if="state.steps?.length" class="check-progress-list">
             <li v-for="step in state.steps" :key="step" :class="stepClass(step)">
                 <span aria-hidden="true" class="check-progress-icon">{{ stepSymbol(step) }}</span>
@@ -8,7 +9,6 @@
                 <span class="check-progress-caption">{{ stepText(step) }}</span>
             </li>
         </ul>
-        <span v-else-if="state.state === 'running'" class="text-caption">Prüfung wird gestartet …</span>
         <span v-if="unavailable" class="d-block text-caption mt-1">Der Fortschritt kann momentan nicht angezeigt werden.</span>
     </section>
 </template>
@@ -42,9 +42,11 @@ function stepSymbol(step) {
 </script>
 
 <style scoped>
-.check-progress { min-width: min(100%, 320px); padding: 12px 14px; border: 1px solid #d8e4f0; border-radius: 10px; background: #f7fafc; color: #233b53; }
+.check-progress { box-sizing: border-box; display: block; width: min(100%, 480px); min-width: 0; padding: 12px 14px; border: 1px solid #d8e4f0; border-radius: 10px; background: #f7fafc; color: #233b53; }
+.check-progress-title { display: block; margin-bottom: 4px; }
+.check-progress-start { display: block; margin-top: 4px; color: #536d83; }
 .check-progress-list { list-style: none; padding: 0; margin: 8px 0 0; }
-.check-progress-list li { display: flex; align-items: center; gap: 8px; padding: 3px 0; font-size: 0.8rem; }
+.check-progress-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 4px 0; font-size: 0.8rem; }
 .check-progress-icon { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 20px; width: 20px; height: 20px; border-radius: 50%; background: #e4ebf1; color: #63798c; font-weight: 700; }
 .check-progress-done .check-progress-icon { background: #d6f2e3; color: #08783e; }
 .check-progress-active .check-progress-icon { background: #d8eaff; color: #1565b8; }

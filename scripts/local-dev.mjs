@@ -155,29 +155,38 @@ function runRequired(project, executable, argumentsList, environment) {
 
 async function waitForWeb(project, ports, children = []) {
     const deadline = Date.now() + 45000;
+    let lastProblem = 'The services have not answered yet.';
     while (Date.now() < deadline) {
         if (children.some(child => child.exitCode !== null)) {
             throw new Error('A development service stopped before it became ready.');
         }
         try {
+            lastProblem = 'Waiting for Vite /@vite/client.';
             const frontend = await fetch(`http://localhost:${ports.vite}/@vite/client`, { signal: AbortSignal.timeout(1000) });
+            await frontend.body?.cancel();
             const hot = fs.readFileSync(path.join(project, 'public/hot'), 'utf8').trim();
+            lastProblem = !frontend.ok ? `Vite returned HTTP ${frontend.status}.`
+                : `The Vite hot file does not match port ${ports.vite}.`;
             if (frontend.ok && hot === `http://localhost:${ports.vite}`) {
                 // Wait for Vite before probing Laravel; its first boot may take more than one second.
+                lastProblem = 'Waiting for Laravel /up.';
                 const backend = await fetch(`http://127.0.0.1:${ports.server}/up`, { signal: AbortSignal.timeout(5000) });
+                await backend.body?.cancel();
+                lastProblem = `Laravel /up returned HTTP ${backend.status}.`;
                 if (backend.ok) {
                     const inventory = processInventory(ports);
+                    lastProblem = 'Both HTTP checks passed, but Windows did not identify both matching service owners.';
                     if (existingWorkspaceSession(project, ports, inventory)) {
                         return;
                     }
                 }
             }
-        } catch {
-            // Services may not yet have bound their ports or written their own hot file.
+        } catch (error) {
+            lastProblem += ` ${error.message}`;
         }
         await new Promise(resolve => setTimeout(resolve, 300));
     }
-    throw new Error('The matching backend and Vite server did not become ready. No browser was opened.');
+    throw new Error(`The matching backend and Vite server did not become ready. ${lastProblem} No browser was opened.`);
 }
 
 function openWorkspace(url) {

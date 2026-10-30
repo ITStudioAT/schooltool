@@ -81,7 +81,9 @@ class TeachingCourseWorkEntrySyncService
     public function serializeWork(TeachingCourseWork $work, ?array $testTitles = null): array
     {
         $payload = $work->toArray();
+        $payload['student_distribution_version'] = app(TeachingWorkStudentDistribution::class)->version($work);
         $payload['automation_enabled'] = $work->automationEnabled();
+        $payload['local_task_copy'] = app()->isLocal() && ($work->status['local_test_copy']['source_work_id'] ?? null) !== null;
         $payload['communicated_deadline'] = $work->communicatedDeadline();
         $payload['groups'] = $this->groupsForWork($work);
         $ids = $this->multipleChoiceTestIds($work);

@@ -44,7 +44,7 @@ function saveExerciseCheck(cacheKey, entry) {
     try { localStorage.setItem(exerciseStoragePrefix + cacheKey, JSON.stringify(entry)) } catch { /* Keep the in-memory result. */ }
 }
 
-export async function loadWorkExercise(key, work, date = '', fresh = false, deadlineDraft = null, refreshCollection = false, progressId = null) {
+export async function loadWorkExercise(key, work, date = '', fresh = false, deadlineDraft = null, refreshCollection = false, progressId = null, stream = null) {
     if (!key) return null
     const cached = workExerciseCheck(key, work, date)
     if (cached && !fresh) {
@@ -63,10 +63,11 @@ export async function loadWorkExercise(key, work, date = '', fresh = false, dead
         expected: { date: work.finish_until_date || null, time: work.finish_until_time || null },
         ...(refreshCollection ? { refresh_collection: true } : {}),
         ...(progressId ? { progress_id: progressId } : {}),
-    }, { timeout: 120000 }) : axios.get(show.url(work.id), { timeout: 45000,
+        ...(stream ? { stream_progress: true } : {}),
+    }, { timeout: 120000, ...(stream?.options || {}) }) : axios.get(show.url(work.id), { timeout: 45000,
         params: { include_exercise: 1, ...(date ? { date } : {}) },
     })).then(response => {
-        const data = response.data
+        const data = stream ? stream.result(response) : response.data
         const currentBinding = workDropboxBinding(workDropboxStates.get(key))
         if (generation !== requestGeneration || (currentBinding !== binding && currentBinding !== workDropboxBinding(data))) {
             throw new Error('Die Verbindung wurde während der Prüfung geändert.')
@@ -90,14 +91,25 @@ export async function loadWorkExercise(key, work, date = '', fresh = false, dead
         if (pending.get(key)?.request === request) pending.delete(key)
     })
     exercisePending.set(requestKey, request)
-    if (!pending.has(key)) pending.set(key, { request })
+    if (!pending.has(key)) pending.set(key, { request, exercise: true })
     return request
 }
 
 export async function loadWorkDropbox(key, workId, fresh = false, options = {}) {
     if (!key) return null
-    if (!fresh && workDropboxStates.has(key)) return workDropboxStates.get(key)
-    if (pending.has(key) && !pending.get(key).signal?.aborted) return pending.get(key).request
+    const cached = workDropboxStates.get(key)
+    if (!fresh && cached && ('folder' in cached || 'module_link' in cached)) return cached
+    const inFlight = pending.get(key)
+    if (inFlight && !inFlight.signal?.aborted && !(fresh && inFlight.exercise)) {
+        if (!inFlight.exercise) return inFlight.request
+        const requestGeneration = generation
+        try {
+            return await inFlight.request
+        } catch (error) {
+            if (generation !== requestGeneration || options.signal?.aborted) throw error
+            return loadWorkDropbox(key, workId, true, options)
+        }
+    }
     const requestGeneration = generation
     const request = axios.get(show.url(workId), { timeout: 45000, ...options }).then(response => {
         if (generation === requestGeneration && !options.signal?.aborted) workDropboxStates.set(key, response.data)

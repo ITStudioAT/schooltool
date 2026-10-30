@@ -2,6 +2,7 @@
 
 use App\Ai\Agents\TeachingSimulationAnswerAgent;
 use App\Models\DropboxConnection;
+use App\Models\TeachingCourse;
 use App\Models\TeachingCourseWork;
 use App\Models\User;
 use App\Services\DropboxFolderContents;
@@ -59,7 +60,7 @@ beforeEach(function (): void {
     ], ['good', 'partial', 'weak']), 'warnings' => []]])->preventStrayPrompts();
 });
 
-function simulationFixture(): array
+function simulationFixture(bool $localCopy = false): array
 {
     $actor = (new User)->forceFill(['id' => 7, 'email' => 'teacher@example.test']);
     $work = (new TeachingCourseWork)->forceFill(['id' => 86, 'teaching_course_id' => 16, 'title' => 'E-Mails']);
@@ -72,9 +73,19 @@ function simulationFixture(): array
     ]]);
     $connection = new DropboxConnection;
     $dropbox = Mockery::mock(DropboxWorkImport::class);
-    $dropbox->shouldReceive('connection')->with($actor)->andReturn($connection);
+    if (! $localCopy) {
+        $dropbox->shouldReceive('connection')->with($actor)->andReturn($connection);
+    }
     $folders = Mockery::mock(DropboxFolderContents::class);
     $pdf = Pdf::loadHTML('<p>Erstellen Sie eine PDF über zwei Phishing-Warnzeichen und zwei Verhaltensweisen. Senden Sie sie an teacher@example.test.</p>')->output();
+    if ($localCopy) {
+        $path = 'teaching/work_tasks/1/86/local-copy.pdf';
+        Storage::disk('local')->put($path, $pdf);
+        $work->setRelation('teachingCourse', (new TeachingCourse)->forceFill(['school_id' => 1]));
+        $work->status = ['local_test_copy' => ['source_work_id' => 90], 'student_task_files' => [
+            ['name' => 'Aufgabenstellung.pdf', 'storage_disk' => 'local', 'file_path' => $path, 'sha256' => hash('sha256', $pdf)],
+        ]];
+    }
     $folders->shouldReceive('read')->with($connection, 'id:exercise')->andReturn(['cursor' => null,
         'current' => ['id' => 'id:exercise'], 'entries' => [['id' => 'id:task', 'name' => 'Aufgabenstellung.pdf', 'size' => strlen($pdf), 'type' => 'file']]]);
     $folders->shouldReceive('pdf')->with($connection, 'id:exercise', 'id:task')->andReturn(['name' => 'Aufgabenstellung.pdf', 'bytes' => $pdf]);
@@ -84,6 +95,22 @@ function simulationFixture(): array
 
     return [$service, $mailpit, $work, $actor];
 }
+
+test('a local test copy prepares simulated submissions from its private PDF without Dropbox', function (): void {
+    [$service, , $work, $actor] = simulationFixture(localCopy: true);
+    $original = $work->getAttributes();
+    $run = $service->create($work, $actor, 'mixed', null);
+    expect($run['rows'])->toHaveCount(7)
+        ->and($work->getAttributes())->toBe($original);
+    Http::assertNothingSent();
+});
+
+test('a changed local test assignment is rejected before preparing simulated submissions', function (): void {
+    [$service, , $work, $actor] = simulationFixture(localCopy: true);
+    Storage::disk('local')->put('teaching/work_tasks/1/86/local-copy.pdf', '%PDF-changed');
+    expect(fn () => $service->create($work, $actor, 'mixed', null))->toThrow(HttpException::class);
+    Http::assertNothingSent();
+});
 
 test('simulation uses the actual selected roster and creates all seven cases without changing the work', function (): void {
     [$service, , $work, $actor] = simulationFixture();

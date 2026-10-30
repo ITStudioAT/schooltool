@@ -11,15 +11,19 @@ use Illuminate\Validation\ValidationException;
 class McAttemptActivityService
 {
     /** @param list<array<string, mixed>> $events */
-    public function record(McAttempt $attempt, string $session, array $events): void
+    public function record(McAttempt $attempt, string $session, array $events, ?int $version = null): void
     {
-        DB::transaction(function () use ($attempt, $session, $events): void {
+        DB::transaction(function () use ($attempt, $session, $events, $version): void {
             $test = McTest::query()->lockForUpdate()->findOrFail($attempt->test_id);
             $attempt = $test->attempts()->lockForUpdate()->findOrFail($attempt->id);
+            abort_if((int) ($attempt->control()['version'] ?? 0) !== ($version ?? 0), 409, 'Dieser Versuch wurde zurückgesetzt. Bitte lade den Test erneut.');
+            if ($test->status !== 'published') {
+                throw ValidationException::withMessages(['activity' => 'Der Test ist derzeit nicht freigegeben.']);
+            }
             if (! $test->exam_mode || $attempt->started_at === null) {
                 throw ValidationException::withMessages(['activity' => 'Das Protokoll ist nur während eines begonnenen Tests im Prüfungsmodus verfügbar.']);
             }
-            if ($test->paused_at !== null || $attempt->completed_at !== null) {
+            if ($test->paused_at !== null || $attempt->individualPausedAt() !== null || $attempt->completed_at !== null) {
                 return;
             }
             $end = $attempt->effectiveDeadline($test);
@@ -92,6 +96,9 @@ class McAttemptActivityService
         if ($test->paused_at !== null) {
             $end = $end->min($test->paused_at);
         }
+        if ($attempt->individualPausedAt() !== null) {
+            $end = $end->min($attempt->individualPausedAt());
+        }
         if ($attempt->effectiveDeadline($test) !== null) {
             $end = $end->min($attempt->effectiveDeadline($test));
         }
@@ -102,7 +109,7 @@ class McAttemptActivityService
         if (isset($state['away_since'])) {
             $ongoing = max(0, CarbonImmutable::parse($state['away_since'])->diffInSeconds($end, false));
             $seconds += $ongoing;
-            $stopped = $attempt->completed_at !== null || $test->paused_at !== null || ($attempt->effectiveDeadline($test) !== null && ! $attempt->effectiveDeadline($test)->isFuture());
+            $stopped = $attempt->completed_at !== null || $test->paused_at !== null || $attempt->individualPausedAt() !== null || ($attempt->effectiveDeadline($test) !== null && ! $attempt->effectiveDeadline($test)->isFuture());
             $periods[] = ['left_at' => $state['away_since'], 'returned_at' => null, 'ended_at' => $stopped ? $end->toIso8601String() : null, 'seconds' => (int) floor($ongoing), 'reason' => $state['reason'] ?? 'hidden'];
         }
         $status = 'not_reported';
@@ -111,7 +118,7 @@ class McAttemptActivityService
         }
         if ($attempt->completed_at !== null) {
             $status = 'finished';
-        } elseif ($test->paused_at !== null) {
+        } elseif ($test->paused_at !== null || $attempt->individualPausedAt() !== null) {
             $status = 'paused';
         } elseif ($attempt->effectiveDeadline($test) !== null && ! $attempt->effectiveDeadline($test)->isFuture()) {
             $status = 'expired';

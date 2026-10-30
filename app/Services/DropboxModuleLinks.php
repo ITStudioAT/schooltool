@@ -13,6 +13,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use JsonException;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
@@ -134,8 +135,17 @@ class DropboxModuleLinks
                     continue;
                 }
                 $binding = $record['Modulbindung'] ?? [];
-                if (! is_array($binding) || ($binding['status'] ?? null) !== 'linked' || ! is_string($binding['module_id'] ?? null)
-                    || ! is_string($binding['dropbox_path'] ?? null) || strcasecmp($binding['module_id'], $module['module_id']) !== 0
+                if ($binding === [] && ($record['Status'] ?? null) === 'Teil 1 angelegt') {
+                    $matches[] = $this->verifyLegacyPartOne($connection, $work, $link, $module, $root, $folder, $children, $record, $scheduled, $includeEmailStatus);
+
+                    continue;
+                }
+                abort_unless(is_array($binding) && ($binding['status'] ?? null) === 'linked'
+                    && is_string($binding['module_id'] ?? null) && trim($binding['module_id']) !== ''
+                    && is_string($binding['dropbox_folder_id'] ?? null) && trim($binding['dropbox_folder_id']) !== ''
+                    && is_string($binding['dropbox_path'] ?? null) && trim($binding['dropbox_path']) !== '', 409,
+                    'Ein passender LF-Ordner wurde gefunden, aber seine Modulzuordnung ist unvollständig. Bitte den bestehenden Ordner prüfen.');
+                if (strcasecmp($binding['module_id'], $module['module_id']) !== 0
                     || ($binding['dropbox_folder_id'] ?? null) !== $module['folder_id']
                     || strcasecmp($binding['dropbox_path'] ?? '', $module['folder_path']) !== 0) {
                     continue;
@@ -176,6 +186,107 @@ class DropboxModuleLinks
             return ['status' => 'unknown', 'folder' => null, 'message' => 'Anlagezustand nicht bestätigt. '.($exception instanceof ValidationException
                 ? collect($exception->errors())->flatten()->first() : ($exception instanceof JsonException ? 'Ungültige LF-Metadaten.' : $exception->getMessage()))];
         }
+    }
+
+    /** @param array<string, mixed> $module
+     * @param  array<string, mixed>  $root
+     * @param  array<string, mixed>  $folder
+     * @param  list<array<string, mixed>>  $children
+     * @param  array<string, mixed>  $record
+     * @return array<string, mixed>
+     */
+    private function verifyLegacyPartOne(DropboxConnection $connection, TeachingCourseWork $work, TeachingWorkModuleLink $link,
+        array $module, array $root, array $folder, array $children, array $record, string $scheduled, bool $includeEmailStatus): array
+    {
+        $confirmed = $this->dropbox->metadata($connection, $folder['id']);
+        abort_unless(($confirmed['id'] ?? null) === $folder['id'] && is_string($confirmed['path_lower'] ?? null)
+            && dirname($confirmed['path_lower']) === $root['path_lower']
+            && strcasecmp($module['folder_path'], $link->folder_path) === 0
+            && $this->legacyPathMatches($record['Lerninhaltquelle'] ?? null, $module['folder_path'])
+            && $this->legacyPathMatches($record['Leistungsfeststellungsordner'] ?? null, $confirmed['path_lower']),
+            409, 'Der vorhandene LF-Ordner oder seine Lernmaterialquelle konnte nicht eindeutig bestätigt werden.');
+
+        $subfolders = [];
+        foreach (['Schülerlisten', 'Angaben', 'Abgaben', 'Auswertungen', 'Transaktionen'] as $name) {
+            $matches = array_values(array_filter($children, fn (array $entry): bool => ($entry['.tag'] ?? null) === 'folder'
+                && ($entry['name'] ?? null) === $name));
+            abort_unless(count($matches) === 1 && is_string($matches[0]['id'] ?? null)
+                && ($matches[0]['path_lower'] ?? null) === $confirmed['path_lower'].'/'.mb_strtolower($name), 409,
+                'Die Struktur des vorhandenen LF-Ordners ist unvollständig oder mehrdeutig.');
+            $subfolders[$name] = $matches[0];
+        }
+        $sourceClaims = array_values(array_filter(is_array($record['Dateien'] ?? null) ? $record['Dateien'] : [],
+            fn (mixed $item): bool => is_array($item) && ($item['Rolle'] ?? null) === 'Unveränderte Teilnehmerquelle'));
+        abort_unless(count($sourceClaims) === 1 && is_string($sourceClaims[0]['SHA256'] ?? null)
+            && preg_match('/\A[a-f0-9]{64}\z/', $sourceClaims[0]['SHA256']) === 1
+            && is_string($record['Teilnehmerliste_SHA256'] ?? null) && preg_match('/\A[a-f0-9]{64}\z/', $record['Teilnehmerliste_SHA256']) === 1
+            && $this->legacyPathMatches($sourceClaims[0]['Kopie'] ?? null, $subfolders['Schülerlisten']['path_lower'].'/quelle_schooltool_arbeitsdaten.json')
+            && $this->legacyPathMatches($record['Teilnehmerliste'] ?? null, $subfolders['Schülerlisten']['path_lower'].'/schuelerliste.json'),
+            409, 'Die gespeicherten Teilnehmerquellen des LF-Ordners sind unvollständig.');
+
+        $roster = $this->exerciseChildren($connection, $subfolders['Schülerlisten']['id']);
+        $documents = $this->exerciseChildren($connection, $subfolders['Angaben']['id']);
+        $transactions = $this->exerciseChildren($connection, $subfolders['Transaktionen']['id']);
+        abort_unless($documents === [] && ! collect($children)->contains(fn (array $entry): bool => strcasecmp($entry['name'] ?? '', 'Schooltool-Vorbereitung.json') === 0)
+            && ! collect($transactions)->contains(fn (array $entry): bool => strcasecmp($entry['name'] ?? '', 'History.json') === 0),
+            409, 'Der LF-Ordner enthält weitere Nachweise, die gesondert geprüft werden müssen.');
+        foreach ([[$children, $confirmed['path_lower'], 'handshake.json'], [$roster, $subfolders['Schülerlisten']['path_lower'], 'Quelle_Schooltool_Arbeitsdaten.json'],
+            [$roster, $subfolders['Schülerlisten']['path_lower'], 'Schuelerliste.json']] as [$entries, $parentPath, $name]) {
+            $matches = array_values(array_filter($entries, fn (array $entry): bool => ($entry['.tag'] ?? null) === 'file'
+                && strcasecmp($entry['name'] ?? '', $name) === 0));
+            abort_unless(count($matches) === 1 && ($matches[0]['path_lower'] ?? null) === $parentPath.'/'.mb_strtolower($name),
+                409, 'Eine benötigte Originaldatei fehlt oder liegt außerhalb des LF-Ordners.');
+        }
+        $files = $this->exerciseFilesBatch($connection, [
+            'handshake' => ['entries' => $children, 'name' => 'handshake.json', 'max_size' => 4096],
+            'source' => ['entries' => $roster, 'name' => 'Quelle_Schooltool_Arbeitsdaten.json', 'max_size' => 512 * 1024],
+            'roster' => ['entries' => $roster, 'name' => 'Schuelerliste.json', 'max_size' => 512 * 1024],
+        ]);
+        abort_unless(is_string($files['source']) && is_string($files['roster']) && is_string($files['handshake'])
+            && hash_equals($sourceClaims[0]['SHA256'], hash('sha256', $files['source']))
+            && hash_equals($record['Teilnehmerliste_SHA256'], hash('sha256', $files['roster'])), 409,
+            'Die Teilnehmerquellen stimmen nicht mit den gespeicherten Prüfsummen überein.');
+        $handshake = json_decode($files['handshake'], true, 64, JSON_THROW_ON_ERROR);
+        $source = json_decode($files['source'], true, 64, JSON_THROW_ON_ERROR);
+        $studentList = json_decode($files['roster'], true, 64, JSON_THROW_ON_ERROR);
+        $sourceBinding = $source['module_binding'] ?? null;
+        abort_unless(is_array($handshake) && ($handshake['schema_version'] ?? null) === 1
+            && ($handshake['kind'] ?? null) === 'schooltool.exercise_folder'
+            && is_string($handshake['exercise_folder_id'] ?? null) && Str::isUuid($handshake['exercise_folder_id'])
+            && is_array($source) && ($source['school']['id'] ?? null) === $work->teachingCourse->school_id
+            && ($source['course']['id'] ?? null) === $work->teaching_course_id && ($source['work']['id'] ?? null) === $work->id
+            && ($source['work']['scheduled_date'] ?? null) === $scheduled
+            && is_array($sourceBinding) && ($sourceBinding['status'] ?? null) === 'linked'
+            && ($sourceBinding['schema_version'] ?? null) === (int) $link->schema_version
+            && is_string($sourceBinding['module_id'] ?? null) && strcasecmp($sourceBinding['module_id'], $module['module_id']) === 0
+            && ($sourceBinding['dropbox_folder_id'] ?? null) === $module['folder_id']
+            && is_string($sourceBinding['dropbox_path'] ?? null) && strcasecmp($sourceBinding['dropbox_path'], $module['folder_path']) === 0
+            && is_array($studentList) && ($studentList['complete'] ?? null) === true && is_array($studentList['participants'] ?? null)
+            && ($studentList['scope'] ?? null) === 'active_saved_work_groups'
+            && ($studentList['selection']['work_id'] ?? null) === $work->id
+            && ($studentList['selection']['course_id'] ?? null) === $work->teaching_course_id
+            && ($studentList['selection']['source_sha256'] ?? null) === $sourceClaims[0]['SHA256'],
+            409, 'Die Arbeitsquelle, Teilnehmerliste oder Ordnerkennung passt nicht zur aktuellen Arbeit und Modulverbindung.');
+
+        $match = ['date' => $scheduled, 'folder' => ['id' => $confirmed['id'], 'name' => $confirmed['name'],
+            'path' => $confirmed['path_display'] ?? $confirmed['path_lower']], 'assignment_status' => 'missing'];
+        if ($includeEmailStatus) {
+            $match['email_preparation'] = $this->emailPreparation($connection, $work, $confirmed, $children, $scheduled);
+            $match['email_dispatch'] = $this->emailDispatch($connection, $work, $children);
+        }
+
+        return $match;
+    }
+
+    private function legacyPathMatches(mixed $candidate, string $dropboxPath): bool
+    {
+        if (! is_string($candidate) || trim($candidate) === '' || preg_match('/(^|[\\\\\/])\.{1,2}([\\\\\/]|$)/', $candidate)) {
+            return false;
+        }
+        $normalized = mb_strtolower(rtrim(str_replace('\\', '/', $candidate), '/'));
+        $expected = mb_strtolower(rtrim($dropboxPath, '/'));
+
+        return $normalized === $expected || str_ends_with($normalized, $expected);
     }
 
     /**

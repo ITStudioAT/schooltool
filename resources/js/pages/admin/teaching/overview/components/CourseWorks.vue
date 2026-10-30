@@ -169,11 +169,11 @@
                     <WorkImportActions :work="courseWorks.find(work => work.id === work_form.id)" link-only @open="openImport" @link="openLink" />
                     <WorkExerciseExport :work="courseWorks.find(work => work.id === work_form.id)" :course="selected_course" :date="work_form.date_for_all_groups || ''"
                         :check-progress="workHasProgress(courseWorks.find(work => work.id === work_form.id))" :disabled="workChecking || is_saving"
-                        @check-busy="workChecking = $event" @deadline-saved="refreshWorks" />
+                        @exercise-status="workExerciseStatus = $event" @check-busy="workChecking = $event" @deadline-saved="refreshWorks" />
                 </div>
                 <div v-if="work_form.id" class="mt-2"><WorkDispatchStatus :work="work_form" aggregate /></div>
-                <span v-if="work_form.id" :inert="workChecking" :aria-disabled="workChecking" :class="{ 'opacity-50': workChecking }">
-                    <WorkDeliveryStatus :work="courseWorks.find(work => work.id === work_form.id) || work_form" :size="24" @import="openImport" @saved="refreshWorks" />
+                <span v-if="work_form.id" :inert="workChecking" :aria-disabled="workChecking" :class="{ 'work-status-checking': workChecking }">
+                    <WorkDeliveryStatus :work="courseWorks.find(work => work.id === work_form.id) || work_form" :date="work_form.date_for_all_groups || ''" :state="workExerciseStatus" :exercise-ready="workStudentDistributionAvailable(courseWorks.find(work => work.id === work_form.id) || work_form)" :disabled="is_saving" :size="24" @import="openImport" @saved="refreshWorks" />
                 </span>
                 <div v-if="work_form.id" class="text-caption mt-2" data-testid="work-assessment-total">
                     {{ workAssessedCount(courseWorks.find(work => work.id === work_form.id)) }} von {{ totalCourseStudentsCount }} beurteilt
@@ -918,7 +918,7 @@ import WorkFolderStatus from './WorkFolderStatus.vue'
 import WorkDeliveryStatus from './WorkDeliveryStatus.vue'
 import WorkSimulationBadge from './WorkSimulationBadge.vue'
 import WorkSubmissionCollection from './WorkSubmissionCollection.vue'
-import { workHasProgress, workProgressNextAction } from '@/helpers/workProgress'
+import { workHasProgress, workManualCompletionFields, workProgressNextAction } from '@/helpers/workProgress'
 import { workAutomationEnabled } from '@/helpers/workAutomation'
 import { loadWorkDropbox, loadWorkExercise, workDropboxKey, workDropboxStates, workExerciseCheck } from '@/helpers/workDropbox'
 import { isInitialWork, workConnectionLabel, workNeedsPreparation, workPreparationLabel } from '@/helpers/workOverview'
@@ -983,6 +983,7 @@ export default {
             comment_dialog_value: '',
             is_saving: false,
             workChecking: false,
+            workExerciseStatus: null,
             is_changing_group_work_mode: false,
             work_folder_errors: {},
             deadlineNow: Date.now(),
@@ -1732,6 +1733,7 @@ export default {
         },
         editWork(work) {
             this.is_initializing_form = true
+            this.workExerciseStatus = null
             const activeStudentIdSet = new Set(this.activeCourseStudents.map((student) => String(student.id)))
             this.work_form = {
                 ...this.emptyWorkForm(),
@@ -2504,6 +2506,13 @@ export default {
         workFolderState(work) {
             return workDropboxStates.get(workDropboxKey(this.config?.user?.id, work))
         },
+        workStudentDistributionAvailable(work) {
+            const checked = workExerciseCheck(workDropboxKey(this.config?.user?.id, work), work, work.date_for_all_groups || '')
+            if (checked?.status === 'found' && checked.data?.exercise?.assignment_status === 'ready') return true
+            const status = { ...work.status }
+            Object.values(workManualCompletionFields).forEach(field => { delete status[field] })
+            return workHasProgress({ ...work, status }) && !workNeedsPreparation(work, this.workFolderState(work))
+        },
         workEmailPreparationLabel(work) {
             if (workHasProgress(work)) return workProgressNextAction(work, this.deadlineNow)
             if (!workAutomationEnabled(work) || !workNeedsPreparation(work, this.workFolderState(work))) return ''
@@ -2596,6 +2605,15 @@ export default {
 </script>
 
 <style scoped>
+.work-status-checking :deep(.v-btn--disabled),
+.work-status-checking :deep(.v-icon) {
+    opacity: 1;
+}
+
+.work-status-checking :deep(.v-icon) {
+    color: #526781 !important;
+}
+
 .work-card-status-row :deep(.v-icon) {
     flex: 1 1 0;
 }

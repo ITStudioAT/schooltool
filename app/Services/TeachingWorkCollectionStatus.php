@@ -7,6 +7,7 @@ use App\Models\TeachingCourseWork;
 use App\Models\TeachingWorkDropboxFolder;
 use App\Models\TeachingWorkModuleLink;
 use App\Models\User;
+use App\Support\SchooltoolAssessmentJson;
 use DateTimeImmutable;
 use Illuminate\Support\Facades\Cache;
 use JsonException;
@@ -140,6 +141,7 @@ class TeachingWorkCollectionStatus
                 409, 'Der Einsammelabschluss weicht vom gespeicherten Herkunftsbeleg ab.');
             $run = $this->parse($work, $storage, $this->json($proof['contents']));
             if ($run) {
+                $run['local_email_check'] = $this->localEmailCheck($connection, $work, $folderId, $root['entries'], $entries, $proof, $run);
                 $runs[] = $run + ['origin' => 'dropbox_collection_run', 'sha256' => hash('sha256', $download['contents']),
                     'source_path' => $download['path']];
             }
@@ -152,6 +154,142 @@ class TeachingWorkCollectionStatus
         $lastChange = collect($runs)->firstWhere('changes_detected', true);
 
         return $runs[0] + ['last_changed_at' => $lastChange['completed_at'] ?? null];
+    }
+
+    private function localEmailCheck(DropboxConnection $connection, TeachingCourseWork $work, string $folderId, array $rootEntries, array $entries, array $proof, array $run): ?array
+    {
+        try {
+            $folderName = basename(dirname($proof['path']));
+            if (! preg_match('/\APruefbelege_(\d{4}-\d{2}-\d{2}_\d{6})\z/', $folderName, $match)) {
+                return null;
+            }
+            $folder = collect($entries)->first(fn (array $item): bool => $item['type'] === 'folder' && $item['name'] === $folderName);
+            $checkpoint = collect($entries)->first(fn (array $item): bool => $item['type'] === 'file' && $item['name'] === 'Abgabepruefung_'.$match[1].'.json');
+            $provision = collect($rootEntries)->first(fn (array $item): bool => $item['type'] === 'file' && $item['name'] === 'Schooltool-Bereitstellung.json');
+            if (! $folder || ! $checkpoint || ! $provision) {
+                return null;
+            }
+            $page = $this->folders->read($connection, $folderId, $folder['id']);
+            if ($page['cursor']) {
+                return null;
+            }
+            $documents = [];
+            foreach (['Outlook_Rohabruf.json', 'Pruefdaten_intern.json', 'Kandidatenentscheidung.json'] as $name) {
+                $entry = collect($page['entries'])->first(fn (array $item): bool => $item['type'] === 'file' && $item['name'] === $name);
+                if (! $entry) {
+                    return null;
+                }
+                $documents[$name] = $this->document($connection, $entry['id'], dirname($proof['path']).'/')['contents'];
+            }
+            $protocolPrefix = dirname(dirname($proof['path'])).'/';
+            $checkBytes = $this->document($connection, $checkpoint['id'], $protocolPrefix)['contents'];
+            $provisionBytes = $this->document($connection, $provision['id'], dirname($protocolPrefix).'/')['contents'];
+
+            return $this->validateLocalEmailCheck($work, $run, $documents, $checkBytes, $provisionBytes);
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    private function validateLocalEmailCheck(TeachingCourseWork $work, array $run, array $documents, string $checkBytes, string $provisionBytes): ?array
+    {
+        $scan = $this->json($documents['Outlook_Rohabruf.json']);
+        $review = $this->json($documents['Pruefdaten_intern.json']);
+        $decision = $this->json($documents['Kandidatenentscheidung.json']);
+        $check = $this->json($checkBytes);
+        $provision = $this->json($provisionBytes);
+        $sameTime = fn ($a, $b): bool => is_string($a) && is_string($b) && strtotime($a) !== false && strtotime($a) === strtotime($b);
+        $scanHash = hash('sha256', $documents['Outlook_Rohabruf.json']);
+        $decisionHash = hash('sha256', $documents['Kandidatenentscheidung.json']);
+        $provisionHash = hash('sha256', $provisionBytes);
+        $release = $work->status['student_distribution'] ?? [];
+        $expected = collect($work->groups ?? [])->flatMap(fn (array $group): array => $group['student_ids'] ?? [])->map(fn ($id): string => 'user:'.$id)->unique()->sort()->values()->all();
+        $people = collect($review['participants'] ?? [])->pluck('participant_id')->sort()->values()->all();
+        $released = collect($release['student_ids'] ?? [])->map(fn ($id): string => 'user:'.$id)->unique()->sort()->values()->all();
+        $provisionPeople = collect($provision['participants'] ?? [])->pluck('participant_id')->sort()->values()->all();
+        $checkChecksum = $check['check_checksum'] ?? '';
+        unset($check['check_checksum']);
+        $provisionChecksum = $provision['provision_checksum'] ?? '';
+        unset($provision['provision_checksum']);
+        if (! is_string($checkChecksum) || ! hash_equals($checkChecksum, SchooltoolAssessmentJson::digest($check))
+            || ! is_string($provisionChecksum) || ! hash_equals($provisionChecksum, SchooltoolAssessmentJson::digest($provision))
+            || $expected === [] || $people !== $expected || $released !== $expected || $provisionPeople !== $expected
+            || ($review['schema_version'] ?? null) !== 2 || ($review['exercise_id'] ?? null) !== 'schooltool-work:'.$work->id
+            || ($check['exercise_id'] ?? null) !== $review['exercise_id'] || ($provision['exercise_id'] ?? null) !== $review['exercise_id']
+            || ! empty($release['withdrawn_at']) || ! $sameTime($scan['CheckUtc'] ?? null, $review['checked_at'] ?? null)
+            || ! $sameTime($check['checked_at'] ?? null, $review['checked_at'] ?? null)
+            || ! is_string($scan['ScanCompletedAtUtc'] ?? null) || strtotime($scan['ScanCompletedAtUtc']) === false
+            || strtotime($scan['ScanCompletedAtUtc']) > strtotime($run['completed_at'] ?? '')
+            || ($scan['LocalScanComplete'] ?? null) !== true || ($scan['ReadStatePreserved'] ?? null) !== true
+            || empty($scan['Folders']) || ! empty($scan['Errors']) || ! empty($check['unresolved_candidates'])) {
+            return null;
+        }
+        $accounts = collect($scan['Accounts'] ?? [])->pluck('Mailbox')->map(fn ($mail): string => strtolower($mail))->sort()->values()->all();
+        if ($accounts !== ['guenther.kron@bildung.gv.at', 'guenther.kron@cdgym.at']) {
+            return null;
+        }
+        $processed = 0;
+        foreach ($scan['Folders'] ?? [] as $folder) {
+            if (($folder['PostReadSnapshotStable'] ?? null) !== true || ($folder['StableSnapshotVerified'] ?? null) !== true
+                || ($folder['Count'] ?? -1) !== ($folder['Processed'] ?? 0) + ($folder['NonMail'] ?? 0) + ($folder['Duplicates'] ?? 0) + ($folder['OutsideWindow'] ?? 0)) {
+                return null;
+            }
+            $processed += $folder['Processed'] ?? 0;
+        }
+        foreach ($review['participants'] as $person) {
+            $source = $person['availability_sources'][0] ?? [];
+            if (($source['method'] ?? null) !== 'provision' || ($source['evidence']['sha256'] ?? null) !== $provisionHash
+                || count($person['availability_sources'] ?? []) !== 1 || ! empty($person['prior_submissions']) || ! empty($person['gaps'])) {
+                return null;
+            }
+        }
+        $events = $provision['events'] ?? [];
+        if (count($events) !== 1 || ($events[0]['method'] ?? null) !== 'download_release'
+            || ! $sameTime($events[0]['available_at'] ?? null, $release['published_at'] ?? null)
+            || collect($events[0]['participant_ids'] ?? [])->sort()->values()->all() !== $expected
+            || strtotime($scan['StartUtc'] ?? '') > strtotime($events[0]['available_at'] ?? '')) {
+            return null;
+        }
+        $coverage = $review['coverage'] ?? [];
+        if (count($coverage) !== 2) {
+            return null;
+        }
+        foreach ($coverage as $item) {
+            if (! in_array(strtolower($item['mailbox'] ?? ''), $accounts, true)
+                || ! $sameTime($item['start_at'] ?? null, $scan['StartUtc'] ?? null) || ! $sameTime($item['end_at'] ?? null, $scan['CheckUtc'] ?? null)
+                || ($item['evidence'][0]['sha256'] ?? null) !== $scanHash || ! empty($item['gaps'])) {
+                return null;
+            }
+        }
+        $checkCoverage = $check['coverage'] ?? [];
+        if (count($checkCoverage) !== 2 || collect($checkCoverage)->pluck('mailbox')->map(fn ($mail): string => strtolower($mail))->sort()->values()->all() !== $accounts) {
+            return null;
+        }
+        foreach ($checkCoverage as $item) {
+            if (($item['scope'] ?? null) !== 'local_cache' || ($item['verified'] ?? null) !== true
+                || ! in_array($scanHash, $item['evidence_sha256'] ?? [], true) || ! empty($item['gaps'])
+                || ! $sameTime($item['start_at'] ?? null, $scan['StartUtc'] ?? null) || ! $sameTime($item['end_at'] ?? null, $scan['CheckUtc'] ?? null)) {
+                return null;
+            }
+        }
+        if (collect($check['participants'] ?? [])->pluck('participant_id')->sort()->values()->all() !== $expected) {
+            return null;
+        }
+        $messages = $scan['Messages'] ?? [];
+        $candidates = $review['candidates'] ?? [];
+        if (count($messages) !== 1 || $processed !== count($messages) || count($candidates) !== 1 || ($candidates[0]['decision'] ?? null) !== 'irrelevant'
+            || ($candidates[0]['evidence'][0]['sha256'] ?? null) !== $decisionHash || ($decision['decision'] ?? null) !== 'irrelevant'
+            || empty($decision['reason']) || ($decision['message_id'] ?? null) !== ($candidates[0]['message_id'] ?? null)
+            || ($candidates[0]['message_id'] ?? null) !== ($messages[0]['StoreID'] ?? '').':'.($messages[0]['EntryID'] ?? '')
+            || ! is_string($messages[0]['ReceivedUtc'] ?? null) || strtotime($messages[0]['ReceivedUtc']) === false
+            || strtotime($messages[0]['ReceivedUtc']) < strtotime($scan['StartUtc']) || strtotime($messages[0]['ReceivedUtc']) > strtotime($scan['CheckUtc'])
+            || strtolower($messages[0]['Mailbox'] ?? '') !== strtolower($candidates[0]['mailbox'] ?? '')
+            || strtolower($decision['mailbox'] ?? '') !== strtolower($candidates[0]['mailbox'] ?? '')) {
+            return null;
+        }
+
+        return ['checked_at' => $check['checked_at'], 'student_ids' => array_map(fn (string $id): int => (int) substr($id, 5), $expected),
+            'server_complete' => false];
     }
 
     public function parse(TeachingCourseWork $work, array $storage, array $completion): ?array

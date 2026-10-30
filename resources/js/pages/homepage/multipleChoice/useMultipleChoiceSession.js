@@ -30,7 +30,6 @@ export function useMultipleChoiceSession(route) {
     let answerRevision = 0
     let clockInitialized = false
     let disposed = false
-    const automaticStarts = new Set()
 
     const finished = computed(() => ['submitted', 'timeout'].includes(attempt.value?.status))
     const hasPending = computed(() => Object.keys(pending.value).length > 0)
@@ -52,11 +51,12 @@ export function useMultipleChoiceSession(route) {
     }
 
     function requestConfig() {
-        return { headers: token ? { 'X-MC-Access': token } : {}, __skipGlobalLoading: true }
+        return { headers: { ...(token ? { 'X-MC-Access': token } : {}),
+            ...(attempt.value?.attempt_version ? { 'X-MC-Attempt-Version': String(attempt.value.attempt_version) } : {}) }, __skipGlobalLoading: true }
     }
 
-    function storageKey(id) {
-        return `schooltool:multiple-choice:pending:${id}`
+    function storageKey(id, version = 0) {
+        return `schooltool:multiple-choice:pending:${id}${version ? `:${version}` : ''}`
     }
 
     function persistPending() {
@@ -65,9 +65,9 @@ export function useMultipleChoiceSession(route) {
         }
         try {
             if (hasPending.value && !finished.value) {
-                window.localStorage.setItem(storageKey(attempt.value.id), JSON.stringify(pending.value))
+                window.localStorage.setItem(storageKey(attempt.value.id, attempt.value.attempt_version), JSON.stringify(pending.value))
             } else {
-                window.localStorage.removeItem(storageKey(attempt.value.id))
+                window.localStorage.removeItem(storageKey(attempt.value.id, attempt.value.attempt_version))
             }
         } catch {
             storageUnavailable.value = true
@@ -75,6 +75,13 @@ export function useMultipleChoiceSession(route) {
     }
 
     function acceptAttempt(value, restore = false) {
+        if (attempt.value && String(attempt.value.id) === String(value.id)
+            && Number(attempt.value.attempt_version || 0) !== Number(value.attempt_version || 0)) {
+            try { window.localStorage.removeItem(storageKey(attempt.value.id, attempt.value.attempt_version)) } catch { storageUnavailable.value = true }
+            pending.value = {}
+            answerRevision++
+            generation++
+        }
         if (value.server_now) {
             const offset = Date.parse(value.server_now) - Date.now()
             if (Number.isFinite(offset)) {
@@ -89,7 +96,14 @@ export function useMultipleChoiceSession(route) {
         if (restore && !value.teacher_preview) {
             pending.value = {}
             try {
-                const stored = JSON.parse(window.localStorage.getItem(storageKey(value.id)) || '{}')
+                if (value.attempt_version) {
+                    const prefix = `schooltool:multiple-choice:pending:${value.id}`
+                    const currentKey = storageKey(value.id, value.attempt_version)
+                    for (const key of Object.keys(window.localStorage)) {
+                        if ((key === prefix || key.startsWith(`${prefix}:`)) && key !== currentKey) window.localStorage.removeItem(key)
+                    }
+                }
+                const stored = JSON.parse(window.localStorage.getItem(storageKey(value.id, value.attempt_version)) || '{}')
                 if (stored && typeof stored === 'object' && !Array.isArray(stored)) {
                     pending.value = Object.fromEntries(Object.entries(stored).filter(([, selected]) =>
                         Array.isArray(selected) && selected.every(option => ['string', 'number'].includes(typeof option))))
@@ -210,15 +224,20 @@ export function useMultipleChoiceSession(route) {
     }
 
     async function startAttempt() {
-        if (!attempt.value || attempt.value.teacher_preview || attempt.value.started_at || finished.value || submitting.value || Date.now() < retryUntil.value || (exam.enabled.value && !exam.fullscreen.value)) return
+        if (!attempt.value || attempt.value.start_mode !== 'individual' || attempt.value.paused_at || attempt.value.teacher_preview || attempt.value.started_at || finished.value || submitting.value || Date.now() < retryUntil.value || (exam.enabled.value && !exam.fullscreen.value)) return false
+        const currentGeneration = generation
+        const attemptId = attempt.value.id
         submitting.value = true
         error.value = ''
         try {
-            const { data } = await axios.post(start.url(attempt.value.id), {}, requestConfig())
+            const { data } = await axios.post(start.url(attemptId), {}, requestConfig())
+            if (currentGeneration !== generation || disposed || String(attempt.value?.id) !== String(attemptId)) return false
             answerRevision++
             acceptAttempt(data.attempt)
+            return true
         } catch (failure) {
-            error.value = explainFailure(failure)
+            if (currentGeneration === generation && !disposed && String(attempt.value?.id) === String(attemptId)) error.value = explainFailure(failure)
+            return false
         } finally {
             submitting.value = false
         }
@@ -374,17 +393,6 @@ export function useMultipleChoiceSession(route) {
     }
 
     watch(() => route.fullPath, () => void load())
-    watch(() => [attempt.value?.id, attempt.value?.start_mode, attempt.value?.started_at, attempt.value?.status,
-        attempt.value?.paused_at, loading.value, submitting.value, exam.fullscreen.value], () => {
-        const current = attempt.value
-        if (disposed || loading.value || !current || current.start_mode !== 'individual' || current.started_at
-            || current.teacher_preview || current.paused_at || finished.value || submitting.value
-            || !['not_started', 'ready'].includes(current.status) || (exam.enabled.value && !exam.fullscreen.value)) return
-        const key = `${generation}:${current.id}`
-        if (automaticStarts.has(key)) return
-        automaticStarts.add(key)
-        void startAttempt()
-    }, { flush: 'post' })
     watch(active, (value, previous) => {
         if (!value && previous) {
             void refresh()

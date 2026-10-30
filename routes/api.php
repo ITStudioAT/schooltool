@@ -129,6 +129,7 @@ use App\Http\Controllers\Homepage\StudentTimetableV3StateController as HomepageS
 use App\Http\Controllers\Homepage\StudentTimetableV3TimetableController as HomepageStudentTimetableV3TimetableController;
 use App\Http\Controllers\Student\CourseController;
 use App\Http\Controllers\Student\CourseStudentEntryController;
+use App\Http\Controllers\Student\CourseWorkTaskController;
 use App\Http\Controllers\Student\StudentController;
 use App\Http\Middleware\AuthenticateFeaturePreviewControl;
 use Illuminate\Foundation\Http\Middleware\HandlePrecognitiveRequests;
@@ -195,6 +196,8 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::get('/homepage/student/courses', [CourseController::class, 'index'])->middleware('tool-licensed:Lehrertool');
         Route::get('/homepage/student/courses/{courseId}', [CourseController::class, 'show'])->middleware('tool-licensed:Lehrertool');
         Route::get('/homepage/student/courses/{courseId}/entries', [CourseStudentEntryController::class, 'index'])->middleware('tool-licensed:Lehrertool');
+        Route::get('/homepage/student/courses/{courseId}/tasks', [CourseWorkTaskController::class, 'index'])->middleware('tool-licensed:Lehrertool')->name('student.course-work.tasks');
+        Route::get('/homepage/student/courses/{courseId}/works/{course_work}/tasks/{fileId}', [CourseWorkTaskController::class, 'download'])->middleware('tool-licensed:Lehrertool')->name('student.course-work.task-file');
         Route::get('/homepage/student/courses/{courseId}/works/{course_work}/evaluations/{sha256}', [CourseStudentEntryController::class, 'evaluationPdf'])->middleware('tool-licensed:Lehrertool')->name('student.course-work.evaluation-pdf');
         Route::get('/homepage/student/course-date-materials/attachments/{attachment}/preview', [CourseController::class, 'previewAdoptedAttachment'])->middleware('tool-licensed:Lehrertool');
         Route::get('/homepage/student/course-date-materials/attachments/{attachment}/download', [CourseController::class, 'downloadAdoptedAttachment'])->middleware('tool-licensed:Lehrertool');
@@ -296,6 +299,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/test-folder/resolve', [MultipleChoiceController::class, 'testFolderResolve'])->middleware('throttle:10,1')->name('test-folder.resolve');
         Route::post('/tests', [MultipleChoiceController::class, 'createTest'])->name('tests.create');
         Route::post('/tests/{test}/publish', [MultipleChoiceController::class, 'publishTest'])->name('tests.publish');
+        Route::post('/tests/{test}/withdraw', [MultipleChoiceController::class, 'withdrawTest'])->name('tests.withdraw');
         Route::get('/tests/{test}', [MultipleChoiceController::class, 'showTest'])->name('tests.show');
         Route::get('/tests/{test}/exercise-export', [MultipleChoiceController::class, 'exportExercise'])->name('tests.exercise-export');
         Route::get('/tests/{test}/folder', [MultipleChoiceController::class, 'folderStatus'])->name('tests.folder.status');
@@ -310,6 +314,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::delete('/tests/{test}', [MultipleChoiceController::class, 'deleteTest'])->name('tests.delete');
         Route::patch('/tests/{test}/attempts/{attempt}/closing-deadline', [MultipleChoiceController::class, 'changeClosingDeadline'])->name('attempts.closing-deadline');
         Route::post('/tests/{test}/attempts/reopen', [MultipleChoiceController::class, 'reopenAttempts'])->name('attempts.reopen-selected');
+        Route::post('/tests/{test}/attempts/control', [MultipleChoiceController::class, 'controlAttempts'])->name('attempts.control');
         Route::post('/tests/{test}/attempts/{attempt}/reopen', [MultipleChoiceController::class, 'reopenAttempt'])->name('attempts.reopen');
         Route::patch('/tests/{test}/access-links', [MultipleChoiceController::class, 'setAccessLinks'])->name('tests.access-links');
         Route::patch('/tests/{test}/settings', [MultipleChoiceController::class, 'updateTestSettings'])->name('tests.settings');
@@ -801,11 +806,14 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::get('/admin/teaching/course_works/{course_work}/ai-export', [CourseWorkController::class, 'aiExport'])->name('teaching.course-works.ai-export');
         Route::get('/admin/teaching/course_works/{course_work}/email-preparation-preview', [CourseWorkController::class, 'emailPreparationPreview'])->name('teaching.course-works.email-preparation-preview');
         Route::get('/admin/teaching/course_works/{course_work}/exercise-options', [CourseWorkController::class, 'exerciseOptions'])->name('teaching.course-works.exercise-options');
-        Route::post('/admin/teaching/course_works/{course_work}/prepare-exercise', [CourseWorkController::class, 'prepareExercise'])->name('teaching.course-works.prepare-exercise');
+        Route::post('/admin/teaching/course_works/{course_work}/prepare-exercise', [CourseWorkController::class, 'prepareExercise'])->middleware('throttle:10,1')->name('teaching.course-works.prepare-exercise');
+        Route::post('/admin/teaching/course_works/{course_work}/store-exercise', [CourseWorkController::class, 'storeExercise'])->name('teaching.course-works.store-exercise');
         Route::post('/admin/teaching/course_works/{course_work}/import-evaluations', [CourseWorkController::class, 'importEvaluations'])->name('teaching.course-works.import-evaluations');
         Route::post('/admin/teaching/course_works/{course_work}/import-folder', [CourseWorkController::class, 'importFolder'])->name('teaching.course-works.import-folder');
         Route::post('/admin/teaching/course_works/{course_work}/import-json', [CourseWorkController::class, 'importJson'])->name('teaching.course-works.import-json');
         Route::post('/admin/teaching/course_works/{course_work}/student-deadline', [CourseWorkController::class, 'studentDeadline'])->name('teaching.work-student-deadline');
+        Route::get('/admin/teaching/course_works/{course_work}/student-distribution-preview', [CourseWorkController::class, 'studentDistributionPreview'])->name('teaching.work-student-distribution-preview');
+        Route::post('/admin/teaching/course_works/{course_work}/student-distribution', [CourseWorkController::class, 'studentDistribution'])->name('teaching.work-student-distribution');
         Route::prefix('/admin/teaching/course_works/{course_work}/result-notifications')->name('teaching.work-results.')->group(function (): void {
             Route::post('/preview', [WorkResultNotificationController::class, 'preview'])->name('preview');
             Route::post('/send', [WorkResultNotificationController::class, 'send'])->middleware('throttle:5,1')->name('send');

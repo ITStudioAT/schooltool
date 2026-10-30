@@ -49,6 +49,43 @@ it('uses FilePond for one file and requires explicit linking after the online pa
     wrapper.unmount()
 })
 
+it('shows each actual step while the file, online check and save are pending', async () => {
+    let finishFile: (value: string) => void = () => {}
+    let finishCheck: (value: unknown) => void = () => {}
+    let finishSave: (value: unknown) => void = () => {}
+    const post = vi.fn().mockImplementationOnce(() => new Promise(resolve => { finishCheck = resolve }))
+        .mockImplementationOnce(() => new Promise(resolve => { finishSave = resolve }))
+    const wrapper = mountLink(post)
+    try {
+        await (wrapper.vm as any).openLink(work)
+        wrapper.findComponent({ name: 'FilePond' }).vm.$emit('updatefiles', [{ file: {
+            name: 'handshake.json', size: handshake.length, text: () => new Promise(resolve => { finishFile = resolve }),
+        } }])
+        await flushPromises()
+        expect(wrapper.get('[aria-label="Fortschritt der Verknüpfung"]').text()).toContain('Handshake-Datei lesen und prüfenLäuft')
+        expect(post).not.toHaveBeenCalled()
+
+        finishFile(handshake)
+        await flushPromises()
+        expect(wrapper.text()).toContain('Handshake-Datei lesen und prüfenErledigt')
+        expect(wrapper.text()).toContain('Lernmodul in Dropbox prüfenLäuft')
+        expect(wrapper.text()).toContain('Verknüpfung speichernAusstehend')
+
+        finishCheck({ data: { candidate, proof: 'proof', can_link: true } })
+        await flushPromises()
+        expect(wrapper.text()).toContain('Lernmodul in Dropbox prüfenErledigt')
+        expect(wrapper.text()).toContain('Bereit zum Verknüpfen')
+        await wrapper.findAll('button').find(button => button.text() === 'Verknüpfen')!.trigger('click')
+        expect(wrapper.text()).toContain('Verknüpfung speichernLäuft')
+
+        finishSave({ data: { module_link: { folder: { id: 'id:module' } }, connected: true } })
+        await flushPromises()
+        expect(wrapper.text()).toContain('Verknüpfung abgeschlossen')
+        expect(wrapper.text()).toContain('Verknüpfung speichernErledigt')
+        expect(wrapper.findAll('button').some(button => button.text() === 'Fertig')).toBe(true)
+    } finally { wrapper.unmount() }
+})
+
 it('accepts a handshake with a direct Dropbox folder identity', async () => {
     const direct = JSON.stringify({ schema_version: 2, module_id: 'a263b873-4f27-4167-90f0-7d94ea0f67fa', dropbox_folder_id: 'id:module' })
     const post = vi.fn().mockResolvedValue({ data: { candidate, proof: 'proof', can_link: true } })
@@ -121,6 +158,7 @@ it('clears a stale confirmation after a rejected save and offers a new online ch
 
     expect(wrapper.text()).toContain('Online-Datei geändert')
     expect(wrapper.text()).toContain('Erneut prüfen')
+    expect(wrapper.text()).toContain('Verknüpfung speichernNicht abgeschlossen')
     expect(wrapper.findAll('button').find(button => button.text() === 'Verknüpfen')!.attributes('disabled')).toBeDefined()
     wrapper.unmount()
 })

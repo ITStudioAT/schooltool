@@ -44,6 +44,37 @@ it('opens the collection order after manual completion even when no task emails 
     } finally { wrapper.unmount() }
 })
 
+it('allows collection for a matching active student-area release without a task email', async () => {
+    const get = vi.fn().mockResolvedValue(response('collect'))
+    vi.stubGlobal('axios', { get })
+    const wrapper = mountCollection()
+    const release = { published_at: '2026-10-15T12:00:00Z', student_ids: [12] }
+    try {
+        await wrapper.setProps({ work: { ...work, date_for_all_groups: '2026-10-16', groups: [{ student_ids: [12] }],
+            status: { student_distribution: release } }, dispatch: { status: 'missing', confirmed_count: 0 } })
+        expect(wrapper.get('button').element.disabled).toBe(false)
+        await wrapper.get('button').trigger('click'); await flushPromises()
+        expect(get).toHaveBeenCalledOnce()
+        expect(wrapper.get('[role="dialog"]').text()).toContain('KI-Auftrag kopieren')
+        await wrapper.setProps({ work: { ...work, date_for_all_groups: '2026-10-16', groups: [{ student_ids: [12] }],
+            status: { student_distribution: { ...release, withdrawn_at: '2026-10-16T12:00:00Z' } } } })
+        expect(wrapper.get('button').element.disabled).toBe(true)
+        expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+    } finally { wrapper.unmount() }
+})
+
+it('does not use a student-area release for a different group or date', async () => {
+    vi.stubGlobal('axios', { get: vi.fn() })
+    const wrapper = mountCollection()
+    try {
+        await wrapper.setProps({ work: { ...work, date_for_all_groups: '2026-10-15', groups: [
+            { date: '2026-10-15', student_ids: [12] }, { date: '2026-10-16', student_ids: [13] },
+        ], status: { student_distribution: { published_at: '2026-10-15T12:00:00Z', student_ids: [12] } } },
+        dispatch: { status: 'missing', confirmed_count: 0 } })
+        expect(wrapper.get('button').element.disabled).toBe(true)
+    } finally { wrapper.unmount() }
+})
+
 it.each([false, true])('generates the correct collection order and shows a check only after copying: %s', async repeat => {
     const mode = repeat ? 'repeat' : 'collect'
     const get = vi.fn().mockResolvedValue(response(mode))

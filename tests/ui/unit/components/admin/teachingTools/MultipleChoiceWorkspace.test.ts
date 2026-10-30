@@ -249,6 +249,54 @@ it('releases an existing draft only after the separate confirmation', async () =
     expect(wrapper.text()).toContain('Countdown starten (30 s)')
 })
 
+it('withdraws test access only after confirmation and offers release again', async () => {
+    const test = { id: 7, catalog_id: 4, title: 'Test A', status: 'published', start_mode: 'individual', question_count: 10, lead_seconds: 30, duration_seconds: 600, closes_at: '2027-01-15T12:00:00Z' }
+    const testData = { catalogs: [{ id: 4, title: 'Katalog', questions: tenQuestions() }], tests: [test] }
+    const wrapper = renderWorkspace(testData, { test, attempts: [] }, '/admin/teaching-tools/multiple-choice?catalog=4&view=test&test=7', true)
+    await flushPromises()
+    await clickText(wrapper, 'Testfreigabe zurücknehmen')
+    expect(axios.post).not.toHaveBeenCalled()
+    expect(wrapper.get('[role="dialog"]').text()).toContain('Bearbeitungszeiten und Schlussfristen laufen weiter')
+    await wrapper.get('[role="dialog"]').findAll('button').find(button => button.text() === 'Abbrechen').trigger('click')
+    expect(axios.post).not.toHaveBeenCalled()
+    await clickText(wrapper, 'Testfreigabe zurücknehmen')
+    const withdrawn = { ...test, status: 'withdrawn' }
+    vi.mocked(axios.post).mockResolvedValueOnce({ data: { test: withdrawn, attempts: [] } })
+    vi.mocked(axios.get).mockImplementation(async url => ({ data: String(url).endsWith('/multiple-choice')
+        ? { available: true, catalogs: testData.catalogs, tests: [withdrawn] }
+        : { test: withdrawn, attempts: [] } }))
+    await wrapper.get('[role="dialog"]').findAll('button').find(button => button.text() === 'Testfreigabe zurücknehmen').trigger('click')
+    await flushPromises()
+    expect(axios.post).toHaveBeenCalledExactlyOnceWith('/api/admin/multiple-choice/tests/7/withdraw')
+    expect(wrapper.text()).toContain('Testfreigabe zurückgenommen')
+    expect(wrapper.text()).toContain('Test wieder freigeben')
+    expect(wrapper.text()).not.toContain('Countdown starten')
+    expect(wrapper.text()).not.toContain('Alle pausieren')
+    await clickText(wrapper, 'Test wieder freigeben')
+    expect(wrapper.get('[role="dialog"]').text()).toContain('Bearbeitungszeiten und Schlussfristen bleiben unverändert')
+    expect(wrapper.get('[role="dialog"]').text()).not.toContain('Danach können die Teilnehmer selbst starten')
+})
+
+it('keeps a paused test described as paused after withdrawal and on release', async () => {
+    const test = { id: 7, catalog_id: 4, title: 'Test A', status: 'published', start_mode: 'individual', paused_at: '2026-10-29T11:00:00Z', question_count: 10, duration_seconds: 600, closes_at: '2027-01-15T12:00:00Z' }
+    const data = { catalogs: [{ id: 4, title: 'Katalog', questions: tenQuestions() }], tests: [test] }
+    const wrapper = renderWorkspace(data, { test, attempts: [] }, '/admin/teaching-tools/multiple-choice?catalog=4&view=test&test=7', true)
+    await flushPromises()
+    await clickText(wrapper, 'Testfreigabe zurücknehmen')
+    expect(wrapper.get('[role="dialog"]').text()).toContain('Der Test bleibt pausiert und die Zeit steht still.')
+    expect(wrapper.get('[role="dialog"]').text()).not.toContain('Fristen laufen weiter')
+    const withdrawn = { ...test, status: 'withdrawn' }
+    vi.mocked(axios.post).mockResolvedValueOnce({ data: { test: withdrawn, attempts: [] } })
+    vi.mocked(axios.get).mockImplementation(async url => ({ data: String(url).endsWith('/multiple-choice')
+        ? { available: true, catalogs: data.catalogs, tests: [withdrawn] }
+        : { test: withdrawn, attempts: [] } }))
+    await wrapper.get('[role="dialog"]').findAll('button').find(button => button.text() === 'Testfreigabe zurücknehmen').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('Test fortsetzen')
+    await clickText(wrapper, 'Test wieder freigeben')
+    expect(wrapper.get('[role="dialog"]').text()).toContain('Der Test bleibt pausiert, bis du ihn fortsetzt.')
+})
+
 it.each(['common', 'individual'])('shows the real draft status and previews each saved assignment without requests in %s mode', async startMode => {
     const test = { id: 7, catalog_id: 4, title: 'Entwurf', status: 'draft', start_mode: startMode, question_count: 10, closes_at: '2026-10-22T19:00:00Z' }
     const attempts = [{ id: 1, student_name: 'Alex', questions: tenQuestions(), access_url: null },

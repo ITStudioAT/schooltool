@@ -2,7 +2,7 @@ import { workSimulationCollection, workSimulationEvaluation, workSimulationNotif
 export { workSimulationCollection, workSimulationEvaluation } from '@/helpers/workSimulation'
 import { personalWorkAssessment, workCollectionEvidence, workSubmissionStatus } from '@/helpers/workSubmission'
 import { workEvaluationStatus, workCellPendingStatuses } from '@/helpers/workCellStatus'
-import { workDispatchNotifications, workTaskDispatchCompleted } from '@/helpers/workDispatch'
+import { workDispatchNotifications, workTaskDispatchCompleted, workStudentDistribution } from '@/helpers/workDispatch'
 
 export const workManualCompletionFields = {
     preparation: 'email_preparation_completed', send: 'task_dispatch_completed', collection: 'submission_collection_completed',
@@ -10,11 +10,18 @@ export const workManualCompletionFields = {
 }
 
 export function workHasProgress(work) {
-    return Object.values(workManualCompletionFields).some(field => work?.status?.[field] === true) || Boolean(workSimulationCollection(work)) || ['assessment_json_imports', 'evaluation_pdfs', 'dispatch_notifications', 'submission_checks', 'provision_events']
+    return Boolean(workStudentDistribution(work)) || Object.values(workManualCompletionFields).some(field => work?.status?.[field] === true) || Boolean(workSimulationCollection(work)) || ['assessment_json_imports', 'evaluation_pdfs', 'dispatch_notifications', 'submission_checks', 'provision_events']
         .some(key => (work?.status?.[key] || []).length > 0)
 }
 
 
+
+export function workLastCollectionRunAt(work) {
+    const run = work?.collection_run
+    return run?.origin === 'dropbox_collection_run' && Number(run.work_id) === Number(work.id)
+        && Number(run.course_id) === Number(work.teaching_course_id) && /^[a-f0-9]{64}$/.test(run.sha256 || '')
+        && Number.isFinite(Date.parse(run.completed_at)) && Date.parse(run.completed_at) <= Date.now() ? run.completed_at : null
+}
 
 export function workLastCollectionAt(work) {
     const ids = [...new Set((work?.groups || []).flatMap(group => group.student_ids || []).map(String))]
@@ -24,10 +31,7 @@ export function workLastCollectionAt(work) {
     const downloads = (work?.status?.assessment_json_packages || []).filter(receipt => exerciseIds.has(receipt.exercise_id)
         && receipt.final_download?.exercise_id === receipt.exercise_id && /^[a-f0-9]{64}$/.test(receipt.final_download.download_checksum || ''))
         .map(receipt => receipt.final_download.download_completed_at)
-    const run = work?.collection_run
-    const completedRun = run?.origin === 'dropbox_collection_run' && Number(run.work_id) === Number(work.id)
-        && Number(run.course_id) === Number(work.teaching_course_id) && /^[a-f0-9]{64}$/.test(run.sha256 || '')
-        ? run.completed_at : null
+    const completedRun = workLastCollectionRunAt(work)
     return [...downloads, ...receipts.map(receipt => receipt.record.email_collected_at), completedRun]
         .filter(value => typeof value === 'string' && Number.isFinite(Date.parse(value)))
         .sort((first, second) => Date.parse(second) - Date.parse(first))[0] || null
@@ -46,8 +50,7 @@ export function workProgressStages(work, now = Date.now()) {
     const missing = ids.filter(id => workSubmissionStatus(work, id, now).state === 'not_received').length
     const evaluated = ids.filter(id => workEvaluationStatus(work, id, now).state === 'complete').length
     const run = work.collection_run
-    const verifiedRun = run?.origin === 'dropbox_collection_run' && Number(run.work_id) === Number(work.id)
-        && Number(run.course_id) === Number(work.teaching_course_id) && /^[a-f0-9]{64}$/.test(run.sha256 || '')
+    const verifiedRun = Boolean(workLastCollectionRunAt(work))
     const collectionTime = Date.parse(simulation?.last_collected_at || (verifiedRun
         ? run.last_changed_at || (run.changes_detected === true ? run.completed_at : null) : null))
     const latestPackage = (work.status?.assessment_json_packages || []).findLast(item => /^[a-f0-9]{64}$/.test(item.package_checksum || '')
@@ -109,17 +112,20 @@ export function workProgressStages(work, now = Date.now()) {
         const completionField = workManualCompletionFields[stage.key]
         const manuallyCompleted = work?.status?.[completionField] === true
         return { ...stage, completionField, manuallyCompleted, complete: stage.complete || manuallyCompleted }
-    }).map((stage, index, all) => ({ ...stage, blocked: all.slice(0, index).some(previous => !previous.complete),
-        blockedBy: all.slice(0, index).find(previous => !previous.complete)?.title || '',
+    }).map((stage, index, all) => {
+        const blocked = all.slice(0, index).find(previous => !previous.complete
+            && !(stage.key === 'evaluation' && previous.key === 'collection' && verifiedRun))
+        return { ...stage, blocked: Boolean(blocked), blockedBy: blocked?.title || '',
         total: stage.targetCount ?? total, state: stage.complete ? 'complete' : stage.count > 0 ? 'partial' : 'open',
         color: stage.review ? 'warning' : stage.complete ? 'success' : stage.count > 0 ? 'warning' : 'error',
-        label: `${stage.title}: ${stage.manuallyCompleted ? 'manuell erledigt' : stage.complete ? 'abgeschlossen' : stage.count > 0 ? 'teilweise erledigt' : 'noch offen'}${stage.simulation ? ' · Simulation' : ''}` }))
+        label: `${stage.title}: ${stage.manuallyCompleted ? 'manuell erledigt' : stage.complete ? 'abgeschlossen' : stage.count > 0 ? 'teilweise erledigt' : 'noch offen'}${stage.simulation ? ' · Simulation' : ''}` }
+    })
 }
 
 export function workProgressNextAction(work, now = Date.now()) {
     if (!workHasProgress(work)) return ''
     const stages = workProgressStages(work, now)
-    if (work?.status?.email_preparation_completed === true && !workTaskDispatchCompleted(work)
+    if (!workStudentDistribution(work) && work?.status?.email_preparation_completed === true && !workTaskDispatchCompleted(work)
         && !workDispatchNotifications(work, 'tasks').length
         && !stages.some(stage => stage.complete || stage.count > 0)) return 'E-Mails versenden'
     return stages.find(stage => !stage.complete)?.title || 'Abgeschlossen'

@@ -220,6 +220,24 @@ class DropboxWorkImport
         return ['contents' => $contents, 'rev' => $entry['rev']];
     }
 
+    /** @return array<string, mixed> */
+    public function createExerciseChildFolder(DropboxConnection $connection, string $parentId, string $name, string $expectedParentPath): array
+    {
+        abort_unless($this->canWrite($connection) && $name !== '' && mb_strlen($name) <= 200
+            && ! preg_match('/[\/\\\\\x00-\x1f]/u', $name) && ! in_array($name, ['.', '..'], true), 422,
+            'Dropbox-Schreibfreigabe oder gültiger neuer Ordnername fehlt.');
+        $parent = $this->metadata($connection, $parentId);
+        abort_unless(strcasecmp($parent['path_lower'], $expectedParentPath) === 0, 409, 'Der Zielordner wurde inzwischen verschoben.');
+        $path = rtrim($parent['path_display'] ?? $parent['path_lower'], '/').'/'.$name;
+        $created = $this->api($connection, 'files/create_folder_v2', ['path' => $path, 'autorename' => false])->json('metadata');
+        abort_unless(is_array($created) && is_string($created['id'] ?? null), 409, 'Dropbox hat die neue Ordneranlage nicht bestätigt.');
+        $confirmed = $this->metadata($connection, $created['id']);
+        abort_unless(strcasecmp($confirmed['path_lower'], $path) === 0 && $confirmed['name'] === $name, 409,
+            'Der neu angelegte Ordner konnte nicht eindeutig bestätigt werden.');
+
+        return $confirmed;
+    }
+
     public function writeDocument(DropboxConnection $connection, string $folderId, string $filename, string $contents, ?string $revision): string
     {
         if (! $this->canWrite($connection) || strlen($contents) > self::MAX_BYTES) {

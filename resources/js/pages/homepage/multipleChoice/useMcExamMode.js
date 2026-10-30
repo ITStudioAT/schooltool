@@ -17,12 +17,14 @@ export function useMcExamMode(attempt, active, requestConfig, serverOffset) {
     let disposed = false
     let windowFocused = document.hasFocus()
     let currentAttemptId
+    let currentAttemptVersion
 
     function sample(leaving = false) {
         fullscreen.value = Boolean(document.fullscreenElement)
         if (!enabled.value || !active.value || disposed) return
-        if (currentAttemptId !== attempt.value.id) {
+        if (currentAttemptId !== attempt.value.id || currentAttemptVersion !== Number(attempt.value.attempt_version || 0)) {
             currentAttemptId = attempt.value.id
+            currentAttemptVersion = Number(attempt.value.attempt_version || 0)
             session = crypto.randomUUID()
             sequence = 0
             queue = []
@@ -35,6 +37,7 @@ export function useMcExamMode(attempt, active, requestConfig, serverOffset) {
     async function send(keepalive) {
         if (!queue.length || Date.now() < retryUntil || (sending && !keepalive)) return
         const id = currentAttemptId
+        const version = currentAttemptVersion
         const batch = queue.slice(0, 100)
         const body = { session, events: batch }
         sending = true
@@ -54,7 +57,7 @@ export function useMcExamMode(attempt, active, requestConfig, serverOffset) {
             } else {
                 await axios.post(activity.url(id), body, requestConfig())
             }
-            if (id === currentAttemptId) {
+            if (id === currentAttemptId && version === currentAttemptVersion) {
                 queue = queue.filter(event => event.sequence > batch[batch.length - 1].sequence)
                 monitoringError.value = ''
                 succeeded = true
@@ -93,7 +96,14 @@ export function useMcExamMode(attempt, active, requestConfig, serverOffset) {
     }
     function leaving() { sample(true) }
 
-    watch([enabled, active, () => attempt.value?.id], () => {
+    watch(() => [attempt.value?.id, attempt.value?.attempt_version], ([id, version]) => {
+        if (id !== currentAttemptId || Number(version || 0) !== currentAttemptVersion) {
+            queue = []
+            currentAttemptId = undefined
+            currentAttemptVersion = undefined
+        }
+    })
+    watch([enabled, active, () => attempt.value?.id, () => attempt.value?.attempt_version], () => {
         if (enabled.value && active.value) sample()
     })
     onMounted(() => {

@@ -161,7 +161,7 @@ it.each([true, false])('reads an existing folder path when available (%s) and ot
         await wrapper.get('button').trigger('click')
         await flushPromises()
 
-        expect(get).toHaveBeenCalledExactlyOnceWith('/api/admin/teaching/course_works/65/dropbox', { params: { include_folder_path: 1 } })
+        expect(get).toHaveBeenCalledExactlyOnceWith('/api/admin/teaching/course_works/65/dropbox', { timeout: 45000, params: { include_folder_path: 1 } })
         expect(writeText.mock.calls[0][0].split('\n')[3]).toBe(available
             ? 'Ordner: verknüpft – Dropbox: /Schule/Beispielordner (Dropbox-ID: id:example)'
             : 'Ordner: verknüpft – Beispielordner (Dropbox-ID: id:example)')
@@ -200,6 +200,43 @@ it('blocks copying after a failed folder lookup and supports retry without inven
         await flushPromises()
         expect(wrapper.get('button').attributes('disabled')).toBeUndefined()
         expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    } finally { wrapper.unmount() }
+})
+
+it('refreshes folder metadata on retry even if another component has cached an incomplete result', async () => {
+    const get = vi.fn().mockRejectedValueOnce(new Error('Unavailable')).mockResolvedValueOnce({ data: { folder: null, module_link: moduleLink } })
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    vi.stubGlobal('axios', { get })
+    vi.stubGlobal('navigator', { clipboard: { writeText }, userAgent: 'Test' })
+    const wrapper = mountCopy()
+    try {
+        await flushPromises()
+        workDropboxStates.set('7:2:65', { exercise: { status: 'unknown' } })
+        await flushPromises()
+        await wrapper.findAll('button').find(button => button.text() === 'Erneut prüfen')!.trigger('click')
+        await flushPromises()
+        await wrapper.get('button').trigger('click')
+        await flushPromises()
+
+        expect(get).toHaveBeenCalledTimes(2)
+        expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+        expect(writeText.mock.calls[0][0]).toContain('Modul-ID: a263b873-4f27-4167-90f0-7d94ea0f67fa')
+    } finally { wrapper.unmount() }
+})
+
+it.each([
+    [{ response: { status: 401 } }, 'Sitzung ist abgelaufen'],
+    [{ response: { status: 403 } }, 'keine Berechtigung'],
+    [{ response: { status: 429 } }, 'zu viele Anfragen'],
+    [{ code: 'ECONNABORTED' }, 'zu lange gedauert'],
+    [{ response: { status: 422, data: { errors: { dropbox: ['Bitte Dropbox erneut verbinden.'] } } } }, 'Bitte Dropbox erneut verbinden.'],
+])('explains a failed folder lookup (%j)', async (error, message) => {
+    vi.stubGlobal('axios', { get: vi.fn().mockRejectedValue(error) })
+    const wrapper = mountCopy()
+    try {
+        await flushPromises()
+        expect(wrapper.get('[role="alert"]').text()).toContain(message)
+        expect(wrapper.get('button').attributes('disabled')).toBeDefined()
     } finally { wrapper.unmount() }
 })
 

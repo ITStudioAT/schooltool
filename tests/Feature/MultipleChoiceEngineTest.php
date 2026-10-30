@@ -15,6 +15,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Spatie\Permission\Models\Role;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 use Symfony\Component\Process\Process;
 
 require_once dirname(__DIR__).'/Support/MultipleChoiceTestDatabase.php';
@@ -576,6 +577,95 @@ test('individual pause shifts personal timers and hard deadlines without startin
     expect($second->fresh()->started_at)->toBeNull();
     expect($second->fresh()->pause_seconds)->toBe(0);
     expect($service->startIndividual($second)->effectiveDeadline($resumed)->equalTo(now()->addSeconds(600)))->toBeTrue();
+});
+
+test('a personal pause blocks only that pupil and credits overlapping global pauses once', function () {
+    $this->freezeSecond();
+    [$test, $student, $service] = mcEngineFixture(['start_mode' => 'individual', 'closes_at' => now()->addHour()]);
+    $other = User::factory()->create(['school_id' => $student->school_id, 'schoolyear_id' => $student->schoolyear_id, 'is_active' => true]);
+    $other->assignRole('student');
+    $test = $service->publish($test, [$student->id, $other->id]);
+    [$first, $second] = $test->attempts()->orderBy('id')->get()->all();
+    $first = $service->startIndividual($first);
+    $deadline = $first->effectiveDeadline($test);
+    $service->controlAttempts($test, [$first->id], 'pause', $test->owner_id);
+    expect(fn () => $service->saveAnswers($first, ['q1' => ['a']]))->toThrow(ValidationException::class);
+    expect($service->startIndividual($second)->started_at)->not->toBeNull();
+    $this->travel(30)->seconds();
+    $service->pause($test, $test->owner_id);
+    $this->travel(60)->seconds();
+    $test = $service->resume($test, $test->owner_id);
+    $this->travel(30)->seconds();
+    $service->controlAttempts($test, [$first->id], 'resume', $test->owner_id);
+    expect($first->fresh()->effectiveDeadline($test)->equalTo($deadline->addSeconds(120)))->toBeTrue();
+    expect($first->fresh()->individualPausedAt())->toBeNull();
+});
+
+test('reset clears only selected answers and rejects stale attempts', function () {
+    $this->freezeSecond();
+    [$test, $student, $service] = mcEngineFixture(['start_mode' => 'individual', 'closes_at' => now()->addHour()]);
+    $test = $service->publish($test, [$student->id]);
+    $attempt = $service->startIndividual($test->attempts()->sole());
+    $attempt = $service->saveAnswers($attempt, ['q1' => ['a']]);
+    $revision = $attempt->controlRevision();
+    $service->controlAttempts($test, [$attempt->id], 'reset', $test->owner_id, [$attempt->id => $revision]);
+    $reset = $attempt->fresh();
+    expect($reset->answers)->toBe([])->and($reset->started_at)->toBeNull()->and($reset->control()['version'])->toBe(1);
+    expect(fn () => $service->saveAnswers($attempt, ['q1' => ['b']], 0))->toThrow(HttpException::class);
+    $reset = $service->startIndividual($reset, 1);
+    expect($service->saveAnswers($reset, ['q1' => ['b']], 1)->answers)->toBe(['q1' => ['b']]);
+});
+
+test('a personal pause before starting prevents only that pupil from starting', function () {
+    $this->freezeSecond();
+    [$test, $student, $service] = mcEngineFixture(['start_mode' => 'individual', 'closes_at' => now()->addHour()]);
+    $test = $service->publish($test, [$student->id]);
+    $attempt = $test->attempts()->sole();
+    $service->controlAttempts($test, [$attempt->id], 'pause', $test->owner_id);
+    expect(fn () => $service->startIndividual($attempt))->toThrow(ValidationException::class);
+    $this->travel(120)->seconds();
+    $service->controlAttempts($test, [$attempt->id], 'resume', $test->owner_id);
+    expect($service->startIndividual($attempt)->started_at)->not->toBeNull();
+    expect($attempt->fresh()->closingDeadline($test)->equalTo($test->closes_at->addSeconds(120)))->toBeTrue();
+});
+
+test('resetting a common test allows a fresh personal start after the common timer ends', function () {
+    $this->freezeSecond();
+    [$test, $student, $service] = mcEngineFixture(['lead_seconds' => 0]);
+    $test = $service->startCountdown($service->publish($test, [$student->id]));
+    $attempt = $service->openAttempt($test->attempts()->sole());
+    $service->controlAttempts($test, [$attempt->id], 'reset', $test->owner_id, [$attempt->id => $attempt->controlRevision()]);
+    $this->travel(601)->seconds();
+    $attempt = $service->openAttempt($attempt->fresh());
+    expect($attempt->started_at)->toBeNull();
+    $attempt = $service->startIndividual($attempt, 1);
+    expect($attempt->effectiveDeadline($test)->equalTo(now()->addSeconds(600)))->toBeTrue();
+    $attempt = $service->submit($attempt, 1);
+    $reopened = $service->reopenAttempt($attempt, 120, $test->owner_id);
+    expect($reopened->effectiveDeadline($test)->equalTo(now()->addSeconds(120)))->toBeTrue();
+});
+
+test('reset all requires an unchanged complete selection and clears every selected result', function () {
+    $this->freezeSecond();
+    [$test, $student, $service] = mcEngineFixture(['start_mode' => 'individual', 'closes_at' => now()->addHour()]);
+    $other = User::factory()->create(['school_id' => $student->school_id, 'schoolyear_id' => $student->schoolyear_id, 'is_active' => true]);
+    $other->assignRole('student');
+    $test = $service->publish($test, [$student->id, $other->id]);
+    [$first, $second] = $test->attempts()->orderBy('id')->get()->all();
+    $first = $service->startIndividual($first);
+    $first = $service->saveAnswers($first, ['q1' => ['a']]);
+    $first = $service->submit($first);
+    $second = $service->startIndividual($second);
+    $second = $service->saveAnswers($second, ['q1' => ['b']]);
+    $expected = [$first->id => $first->controlRevision(), $second->id => $second->controlRevision()];
+    expect(fn () => $service->controlAttempts($test, [], 'reset', $test->owner_id, [$first->id => $expected[$first->id]], true))
+        ->toThrow(ValidationException::class);
+    expect($first->fresh()->answers)->toBe(['q1' => ['a']]);
+    $service->controlAttempts($test, [], 'reset', $test->owner_id, $expected, true);
+    foreach ([$first, $second] as $attempt) {
+        expect($attempt->fresh()->answers)->toBe([])->and($attempt->fresh()->completed_at)->toBeNull()
+            ->and($attempt->fresh()->started_at)->toBeNull()->and($attempt->fresh()->control()['version'])->toBe(1);
+    }
 });
 
 test('exam activity merges blur and hidden events and retries without grading or double counting', function () {

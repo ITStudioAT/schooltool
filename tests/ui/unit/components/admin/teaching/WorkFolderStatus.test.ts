@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createTestingPinia } from '@pinia/testing'
 import WorkFolderStatus from '@/pages/admin/teaching/overview/components/WorkFolderStatus.vue'
-import { clearWorkDropboxStates, workDropboxStates } from '@/helpers/workDropbox'
+import { clearWorkDropboxStates, loadWorkExercise, workDropboxStates } from '@/helpers/workDropbox'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 
 const work = { id: 65, teaching_course_id: 2, title: 'Dateimanagement' }
@@ -15,6 +15,43 @@ function mountStatus() {
         } })] },
     })
 }
+
+it('keeps the folder indicator visible while a published work loads its link', async () => {
+    let finish: (response: unknown) => void = () => {}
+    vi.stubGlobal('axios', { get: vi.fn().mockImplementation(() => new Promise(resolve => { finish = resolve })) })
+    const publishedWork = { ...work, status: { student_distribution: { published_at: '2026-10-29T08:00:00Z', student_ids: [1] } } }
+    const wrapper = mount(WorkFolderStatus, { props: { work: publishedWork }, global: {
+        plugins: [createTestingPinia({ createSpy: vi.fn, initialState: { AdminAdminStore: { config: { user: { id: 7 } } } } })],
+    } })
+    try {
+        expect(wrapper.get('[role="img"]').attributes('color')).toBe('grey')
+        expect(wrapper.attributes('title')).toContain('wird geprüft')
+        finish({ data: { module_link: { folder: { id: 'id:module', name: 'Modul' } } } })
+        await flushPromises()
+        expect(wrapper.get('[role="img"]').attributes('color')).toBe('success')
+        expect(wrapper.attributes('title')).toContain('Ordner verknüpft')
+    } finally { wrapper.unmount() }
+})
+
+it('restores the confirmed folder immediately for a published work after reloading', async () => {
+    const publishedWork = { ...work, status: { student_distribution: { published_at: '2026-10-29T08:00:00Z', student_ids: [1] } } }
+    const data = { connected: true, module_link: { folder: { id: 'id:module', name: 'Modul', path: '/Modul' } },
+        exercise: { status: 'found', folder: { id: 'id:exercise', name: 'Prüfung' } } }
+    const get = vi.fn().mockResolvedValue({ data })
+    vi.stubGlobal('axios', { get })
+    await loadWorkExercise('7:2:65', publishedWork, '', false)
+    clearWorkDropboxStates(false)
+    get.mockClear()
+    const wrapper = mount(WorkFolderStatus, { props: { work: publishedWork }, global: {
+        plugins: [createTestingPinia({ createSpy: vi.fn, initialState: { AdminAdminStore: { config: { user: { id: 7 } } } } })],
+    } })
+    try {
+        await flushPromises()
+        expect(wrapper.get('[role="img"]').attributes('color')).toBe('success')
+        expect(wrapper.attributes('title')).toBe('Ordner verknüpft: /Modul')
+        expect(get).not.toHaveBeenCalled()
+    } finally { wrapper.unmount() }
+})
 
 afterEach(() => {
     clearWorkDropboxStates()

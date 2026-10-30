@@ -15,6 +15,47 @@ const helpers = path.join(root, 'scripts/git_helpers.ps1');
 const temporaryRoot = os.tmpdir();
 const localEnvironment = 'APP_ENV=local\nAPP_KEY=fixture-private-key\nDB_CONNECTION=mysql\nDB_HOST=127.0.0.1\nDB_DATABASE=owned_fixture_not_connected\nDB_PASSWORD=fixture-secret-do-not-log\nSESSION_COOKIE=owned-shared-session\nREDIS_PREFIX=owned_shared_\n';
 
+test('Windows inventory recognizes zero-state listeners and excludes stale, bound and connected endpoints',
+    { skip: process.platform !== 'win32' }, () => {
+    const inventoryScript = path.join(root, 'scripts/dev-processes.ps1').replaceAll("'", "''");
+    const command = `
+function Get-NetTCPConnection {
+    foreach ($row in @(
+        @(8000, 0, '0.0.0.0', 0, 101),
+        @(5173, 0, '::', 'Listen', 102),
+        @(5173, 0, '::', $null, 102),
+        @(8000, 58539, '127.0.0.1', 'Listen', 0),
+        @(5173, 60170, '::1', 5, 102),
+        @(8000, 0, '0.0.0.0', 100, 103),
+        @(8000, 0, '0.0.0.0', 0, 0),
+        @(9000, 0, '0.0.0.0', 0, 104)
+    )) {
+        [pscustomobject]@{LocalPort=$row[0];RemotePort=$row[1];RemoteAddress=$row[2];State=$row[3];OwningProcess=$row[4]}
+    }
+}
+function Get-CimInstance { }
+& '${inventoryScript}' -Ports '8000,5173'
+`;
+    const result = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command],
+        { encoding: 'utf8', windowsHide: true, timeout: 10000 });
+
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(JSON.parse(result.stdout).listeners,
+        [{ port: 8000, pid: 101 }, { port: 5173, pid: 102 }, { port: 5173, pid: 102 }]);
+});
+
+test('Windows inventory fails closed when TCP enumeration fails', { skip: process.platform !== 'win32' }, () => {
+    const inventoryScript = path.join(root, 'scripts/dev-processes.ps1').replaceAll("'", "''");
+    const command = `function Get-NetTCPConnection { throw 'Owned inventory failure' }; & '${inventoryScript}' -Ports '8000,5173'`;
+
+    const result = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command],
+        { encoding: 'utf8', windowsHide: true, timeout: 10000 });
+
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /Owned inventory failure/);
+    assert.equal(result.stdout.trim(), '');
+});
+
 test('keeps development launches silent unless browser opening is explicitly requested', () => {
     assert.equal(shouldOpenLocalDev([]), false);
     assert.equal(shouldOpenLocalDev(['--project', root]), false);

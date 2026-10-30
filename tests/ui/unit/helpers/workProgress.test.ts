@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { workProgressNextAction, workProgressStages, workLastCollectionAt, workSimulationCollection, workSimulationEvaluation, workManualCompletionFields } from '@/helpers/workProgress'
+import { workProgressNextAction, workProgressStages, workLastCollectionAt, workLastCollectionRunAt, workSimulationCollection, workSimulationEvaluation, workManualCompletionFields } from '@/helpers/workProgress'
 import { isInitialWork, workNeedsPreparation } from '@/helpers/workOverview'
 
 function historicalWork() {
@@ -55,6 +55,22 @@ it('unlocks grading after manual collection without adding evidence or completin
     work.status.submission_collection_completed = false
     expect(workProgressStages(work)[1].blocked).toBe(true)
     expect(workProgressNextAction(work)).toBe('')
+})
+
+it('permits grading preparation after a verified run without claiming complete collection', () => {
+    const work = { id: 64, teaching_course_id: 16, groups: [{ student_ids: [12] }], status: {},
+        collection_run: { origin: 'dropbox_collection_run', work_id: 64, course_id: 16, sha256: 'e'.repeat(64),
+            completed_at: '2026-10-24T13:46:16Z', stored_at: '2026-10-24T13:48:22Z', checkpoint_state: 'open' } } as any
+    expect(workLastCollectionRunAt(work)).toBe('2026-10-24T13:46:16Z')
+    expect(workProgressStages(work)[0]).toMatchObject({ complete: false, state: 'open' })
+    expect(workProgressStages(work)[1]).toMatchObject({ complete: false, blocked: false })
+    expect(workProgressStages(work)[2].blocked).toBe(true)
+    work.collection_run.work_id = 99
+    expect(workLastCollectionRunAt(work)).toBeNull()
+    expect(workProgressStages(work)[1].blocked).toBe(true)
+    work.collection_run.work_id = 64
+    work.collection_run.completed_at = '2099-01-01T00:00:00Z'
+    expect(workLastCollectionRunAt(work)).toBeNull()
 })
 
 it('retains actual collection evidence when manual collection completion is revoked', () => {

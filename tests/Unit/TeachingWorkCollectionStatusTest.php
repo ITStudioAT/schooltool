@@ -7,12 +7,81 @@ use App\Services\DropboxFolderContents;
 use App\Services\DropboxModuleLinks;
 use App\Services\DropboxWorkImport;
 use App\Services\TeachingWorkCollectionStatus;
+use App\Support\SchooltoolAssessmentJson;
 use GuzzleHttp\Psr7\Response as PsrResponse;
 use Illuminate\Http\Client\Response;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\TestCase;
 
 uses(TestCase::class);
+
+function localEmailFixture(): array
+{
+    $at = '2026-10-24T13:00:00Z';
+    $checked = '2026-10-24T14:00:00Z';
+    $work = (new TeachingCourseWork)->forceFill(['id' => 64, 'teaching_course_id' => 16,
+        'groups' => [['student_ids' => [12]]], 'status' => ['student_distribution' => [
+            'student_ids' => [12], 'published_at' => $at, 'withdrawn_at' => null]]]);
+    $provision = ['exercise_id' => 'schooltool-work:64', 'participants' => [['participant_id' => 'user:12']],
+        'events' => [['method' => 'download_release', 'available_at' => $at, 'participant_ids' => ['user:12']]]];
+    $provision['provision_checksum'] = SchooltoolAssessmentJson::digest($provision);
+    $provisionBytes = json_encode($provision, JSON_THROW_ON_ERROR);
+    $scan = ['CheckUtc' => $checked, 'StartUtc' => $at, 'ScanCompletedAtUtc' => '2026-10-24T14:00:01Z',
+        'LocalScanComplete' => true, 'ReadStatePreserved' => true, 'Errors' => [],
+        'Accounts' => [['Mailbox' => 'guenther.kron@cdgym.at'], ['Mailbox' => 'guenther.kron@bildung.gv.at']],
+        'Folders' => [['PostReadSnapshotStable' => true, 'StableSnapshotVerified' => true, 'Count' => 1,
+            'Processed' => 1, 'NonMail' => 0, 'Duplicates' => 0, 'OutsideWindow' => 0]],
+        'Messages' => [['Mailbox' => 'guenther.kron@cdgym.at', 'StoreID' => 'store', 'EntryID' => 'entry', 'ReceivedUtc' => $checked]]];
+    $scanBytes = json_encode($scan, JSON_THROW_ON_ERROR);
+    $decision = ['decision' => 'irrelevant', 'reason' => 'Anderes Thema', 'mailbox' => 'guenther.kron@cdgym.at', 'message_id' => 'store:entry'];
+    $decisionBytes = json_encode($decision, JSON_THROW_ON_ERROR);
+    $coverage = array_map(fn ($mail) => ['mailbox' => $mail, 'start_at' => $at, 'end_at' => $checked,
+        'evidence' => [['sha256' => hash('sha256', $scanBytes)]]], ['guenther.kron@bildung.gv.at', 'guenther.kron@cdgym.at']);
+    $review = ['schema_version' => 2, 'exercise_id' => 'schooltool-work:64', 'checked_at' => $checked,
+        'participants' => [['participant_id' => 'user:12', 'availability_sources' => [['method' => 'provision',
+            'evidence' => ['sha256' => hash('sha256', $provisionBytes)]]]]], 'coverage' => $coverage,
+        'candidates' => [['mailbox' => 'guenther.kron@cdgym.at', 'message_id' => 'store:entry', 'decision' => 'irrelevant',
+            'evidence' => [['sha256' => hash('sha256', $decisionBytes)]]]]];
+    $check = ['exercise_id' => 'schooltool-work:64', 'checked_at' => $checked, 'participants' => [['participant_id' => 'user:12']],
+        'unresolved_candidates' => [], 'coverage' => array_map(fn ($item) => ['mailbox' => $item['mailbox'], 'start_at' => $at,
+            'end_at' => $checked, 'scope' => 'local_cache', 'verified' => true, 'gaps' => [], 'evidence_sha256' => [hash('sha256', $scanBytes)]], $coverage)];
+    $check['check_checksum'] = SchooltoolAssessmentJson::digest($check);
+
+    return [$work, ['completed_at' => '2026-10-24T14:02:00Z'], ['Outlook_Rohabruf.json' => $scanBytes,
+        'Pruefdaten_intern.json' => json_encode($review, JSON_THROW_ON_ERROR), 'Kandidatenentscheidung.json' => $decisionBytes],
+        json_encode($check, JSON_THROW_ON_ERROR), $provisionBytes];
+}
+
+test('local email results require matching verified evidence and current participants', function (string $fault): void {
+    [$work, $run, $documents, $check, $provision] = localEmailFixture();
+    if ($fault === 'scan changed') {
+        $documents['Outlook_Rohabruf.json'] .= ' ';
+    }
+    if ($fault === 'candidate changed') {
+        $documents['Kandidatenentscheidung.json'] .= ' ';
+    }
+    if ($fault === 'unresolved candidate') {
+        $review = json_decode($documents['Pruefdaten_intern.json'], true);
+        $review['candidates'][0]['decision'] = 'unresolved';
+        $documents['Pruefdaten_intern.json'] = json_encode($review, JSON_THROW_ON_ERROR);
+    }
+    if ($fault === 'roster changed') {
+        $work->groups = [['student_ids' => [12, 13]]];
+    }
+    if ($fault === 'release withdrawn') {
+        $status = $work->status;
+        $status['student_distribution']['withdrawn_at'] = '2026-10-24T15:00:00Z';
+        $work->status = $status;
+    }
+    if ($fault === 'checkpoint changed') {
+        $decoded = json_decode($check, true);
+        $decoded['checked_at'] = '2026-10-24T14:01:00Z';
+        $check = json_encode($decoded, JSON_THROW_ON_ERROR);
+    }
+    $method = new ReflectionMethod(app(TeachingWorkCollectionStatus::class), 'validateLocalEmailCheck');
+    $result = $method->invoke(app(TeachingWorkCollectionStatus::class), $work, $run, $documents, $check, $provision);
+    expect($result)->toBe($fault === 'valid' ? ['checked_at' => '2026-10-24T14:00:00Z', 'student_ids' => [12], 'server_complete' => false] : null);
+})->with(['valid', 'scan changed', 'candidate changed', 'unresolved candidate', 'roster changed', 'release withdrawn', 'checkpoint changed']);
 
 test('only the same unambiguous fresh server result can be reused for collection', function (string $scenario): void {
     $work = (new TeachingCourseWork)->forceFill(['id' => 64, 'teaching_course_id' => 16]);

@@ -50,9 +50,27 @@ describe('New work overview and assessment mode', () => {
                 'v-divider': true, 'v-switch': true, 'v-checkbox': true, 'v-textarea': true, 'v-date-input': true,
                 'v-dialog': { props: ['modelValue'], template: '<div v-if="modelValue"><slot /></div>' },
                 WorkImportActions: true, WorkEvaluationPdf: true, WorkDispatchStatus: true, WorkEvaluationImport: true,
-                WorkAiExport: true, WorkDispatchLog: true },
+                WorkAiExport: true, WorkDispatchLog: true, WorkStudentDistribution: { name: 'WorkStudentDistribution', props: ['work', 'available'], template: '<div />' } },
         } })
     }
+
+    it('offers student distribution only when the exercise assignment is confirmed', async () => {
+        const work = { id: 65, teaching_course_id: 2, type: 'A5', title: 'E-Mails', groups: [], status: {} }
+        const state = { connected: true, module_link: { folder: { id: 'id:module' } },
+            exercise: { status: 'found', folder: { id: 'id:exercise' }, assignment_status: 'missing' } }
+        const get = vi.fn().mockResolvedValue({ data: state })
+        vi.stubGlobal('axios', { get, post: get })
+        const wrapper = mountOverview(work)
+        try {
+            await flushPromises()
+            await wrapper.get('.work-row').trigger('click')
+            expect(wrapper.getComponent({ name: 'WorkDeliveryStatus' }).props('exerciseReady')).toBe(false)
+            get.mockResolvedValue({ data: { ...state, exercise: { ...state.exercise, assignment_status: 'ready' } } })
+            await loadWorkExercise('7:2:65', work, '', true)
+            await flushPromises()
+            expect(wrapper.getComponent({ name: 'WorkDeliveryStatus' }).props('exerciseReady')).toBe(true)
+        } finally { wrapper.unmount() }
+    })
 
     it('labels the overview card as a simulation as soon as a run is prepared', async () => {
         const work = { id: 65, teaching_course_id: 2, type: 'A5', title: 'Testarbeit', groups: [{ student_ids: [12] }], status: {},

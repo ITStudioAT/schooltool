@@ -30,7 +30,7 @@ class McTest extends Model
     protected static function booted(): void
     {
         static::updating(function (self $test): void {
-            if ($test->getRawOriginal('status') !== 'published') {
+            if (! in_array($test->getRawOriginal('status'), ['published', 'withdrawn'], true)) {
                 return;
             }
 

@@ -117,3 +117,52 @@ export function workSubmissionStatus(work, studentId, now = Date.now()) {
     }
     return unknown
 }
+
+export function workCollectionStudentStatus(work, studentId) {
+    const existing = workSubmissionStatus(work, studentId)
+    const local = work?.collection_run?.local_email_check
+    const groupIds = [...new Set((work?.groups || []).flatMap(group => group.student_ids || []).map(String))].sort()
+    const released = [...new Set((work?.status?.student_distribution?.student_ids || []).map(String))].sort()
+    const checked = (local?.student_ids || []).map(String).sort()
+    if (existing.state !== 'received' && local?.server_complete === false && String(work.collection_run?.work_id) === String(work.id)
+        && String(work.collection_run?.course_id) === String(work.teaching_course_id)
+        && groupIds.length > 0 && JSON.stringify(groupIds) === JSON.stringify(released)
+        && JSON.stringify(groupIds) === JSON.stringify(checked) && checked.includes(String(studentId))
+        && Number.isFinite(Date.parse(local.checked_at)) && Date.parse(local.checked_at) <= Date.parse(work.collection_run.completed_at)
+        && Date.parse(local.checked_at) >= Date.parse(work.status.student_distribution.published_at)
+        && !work.status.student_distribution.withdrawn_at) {
+        return { state: 'scoped_absence', label: `Bis ${assessmentTimeText(local.checked_at)} keine E-Mail im geprüften lokalen Bestand gefunden. Die Vollständigkeit der Serversuche ist nicht bestätigt.` }
+    }
+    const receipt = (work?.status?.assessment_json_imports || []).findLast(item => String(item.student_id) === String(studentId))
+    const record = personalWorkAssessment(work, studentId)
+    const check = (work?.status?.submission_checks || []).at(-1)?.check
+    const status = work?.submission_check_status
+    const person = check?.participants?.find(item => item.participant_id === receipt?.participant_id)
+    const coverage = check?.coverage || []
+    const mailboxes = ['guenther.kron@bildung.gv.at', 'guenther.kron@cdgym.at']
+    const completeCoverage = coverage.length === 2 && mailboxes.every(mailbox => coverage.some(item =>
+        item.mailbox?.toLowerCase() === mailbox && item.scope === 'server_all_folders' && item.verified === true
+        && Array.isArray(item.gaps) && item.gaps.length === 0
+        && Date.parse(item.start_at) <= Date.parse(person?.available_at || person?.dispatched_at)
+        && Date.parse(item.end_at) >= Date.parse(check.checked_at)))
+    const otherGapsOnly = Array.isArray(check?.gaps) && check.gaps.every(gap => gap === 'deadline_not_passed'
+        || (gap.startsWith('person_unresolved:') && gap !== `person_unresolved:${receipt?.participant_id}`))
+    const negative = record && check && ['open', 'complete'].includes(check.state) && status?.checked_at === check.checked_at
+        && Number.isFinite(Date.parse(check.checked_at)) && Date.parse(check.checked_at) <= Date.now()
+        && status.deadline_date === work.finish_until_date && status.deadline_time === work.finish_until_time
+        && status.student_ids?.some(id => String(id) === String(studentId)) && check.exercise_id === receipt.exercise_id
+        && person?.email_result === 'not_found' && person.other_result === 'not_received'
+        && Array.isArray(person.gaps) && person.gaps.length === 0
+        && Array.isArray(check.unresolved_candidates) && check.unresolved_candidates.length === 0 && completeCoverage && otherGapsOnly
+    if (negative && existing.state === 'received') {
+        return { state: 'unknown', label: 'Widersprüchliche Abgabenachweise: vorhandene Abgabe und negativer Prüfstand. Bitte prüfen.' }
+    }
+    if (negative) return { state: 'not_received', label: `Bis zur Prüfung am ${assessmentTimeText(check.checked_at)} keine Abgabe festgestellt.` }
+    if (existing.state === 'not_received') {
+        return { state: 'scoped_absence', label: existing.label }
+    }
+    if (existing.state === 'unknown' && check) {
+        return { state: 'unknown', label: 'Abgabestatus ungeklärt: Der gespeicherte Prüfstand belegt keine vollständige personenbezogene Prüfung.' }
+    }
+    return existing
+}

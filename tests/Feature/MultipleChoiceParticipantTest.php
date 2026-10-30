@@ -14,6 +14,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schedule;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Spatie\Permission\Models\Role;
 
 require_once dirname(__DIR__).'/Support/MultipleChoiceTestDatabase.php';
@@ -106,6 +107,20 @@ test('partial saves merge across the same account and link then repeated submiss
     $this->postJson($this->url.'/submit')->assertOk()->assertJsonPath('attempt.status', 'submitted');
     expect($this->attempt->fresh()->completed_at->equalTo($completed->completed_at))->toBeTrue();
     $this->putJson($this->url.'/answers', ['answers' => ['q2' => ['a']]])->assertUnprocessable();
+});
+
+test('a reset rejects writes from an old student page and allows the new version', function (): void {
+    $test = $this->service->startCountdown($this->test);
+    $this->travelTo($test->starts_at);
+    $this->actingAs($this->student)->putJson($this->url.'/answers', ['answers' => ['q1' => ['a']]])->assertOk();
+    $attempt = $this->attempt->fresh();
+    $this->service->controlAttempts($test, [$attempt->id], 'reset', $test->owner_id, [$attempt->id => $attempt->controlRevision()]);
+    $this->putJson($this->url.'/answers', ['answers' => ['q1' => ['a']]])->assertConflict();
+    $this->postJson($this->url.'/submit')->assertConflict();
+    $this->getJson($this->url)->assertOk()->assertJsonPath('attempt.attempt_version', 1)->assertJsonPath('attempt.start_mode', 'individual');
+    $this->withHeader('X-MC-Attempt-Version', '1')->postJson($this->url.'/start')->assertOk();
+    $this->putJson($this->url.'/answers', ['answers' => ['q1' => ['b']]])->assertOk();
+    expect($attempt->fresh()->answers)->toBe(['q1' => ['b']]);
 });
 
 test('deadline job collects a closed browser and never accepts a late answer', function (): void {
@@ -242,6 +257,32 @@ test('participant pause preserves answers and conceals questions during a frozen
     expect((int) now()->diffInSeconds($resumed->starts_at))->toBe(20);
     expect($this->attempt->fresh()->pause_seconds)->toBe(0);
 });
+
+test('a published test can be paused before anyone starts and blocks start until resumed', function (string $mode): void {
+    DB::table('mc_tests')->where('id', $this->test->id)->update([
+        'start_mode' => $mode,
+        'closes_at' => $mode === 'individual' ? now()->addHour() : null,
+    ]);
+    $test = $this->test->fresh();
+    $paused = $this->service->pause($test, $test->owner_id);
+    expect($paused->paused_at)->not->toBeNull();
+    $this->actingAs($this->student)->getJson($this->url)->assertOk()
+        ->assertJsonPath('attempt.paused_at', $paused->paused_at->toIso8601String())
+        ->assertJsonPath('attempt.questions', []);
+    if ($mode === 'individual') {
+        $this->postJson($this->url.'/start')->assertUnprocessable();
+    } else {
+        expect(fn () => $this->service->startCountdown($test))->toThrow(ValidationException::class);
+    }
+    expect($this->attempt->fresh()->started_at)->toBeNull();
+    $resumed = $this->service->resume($test, $test->owner_id);
+    if ($mode === 'individual') {
+        $this->postJson($this->url.'/start')->assertOk();
+        expect($this->attempt->fresh()->started_at)->not->toBeNull();
+    } else {
+        expect($this->service->startCountdown($resumed)->starts_at)->not->toBeNull();
+    }
+})->with(['individual', 'common']);
 
 test('activity recording requires the correct pupil and enabled exam mode and never exposes private session state', function () {
     $test = $this->service->startCountdown($this->test);

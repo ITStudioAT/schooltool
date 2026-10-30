@@ -2,11 +2,32 @@ import { expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createTestingPinia } from '@pinia/testing'
 import WorkExerciseStatus from '@/pages/admin/teaching/overview/components/WorkExerciseStatus.vue'
-import WorkFolderBrowser from '@/pages/admin/teaching/overview/components/WorkFolderBrowser.vue'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { workDropboxStates } from '@/helpers/workDropbox'
 
 const work = { id: 65, teaching_course_id: 2 }
+it('opens creation from the missing LF icon with mouse and keyboard without claiming an existing folder', async () => {
+    const wrapper = render('missing', { canCreate: true })
+    try {
+        const icon = wrapper.get('[role="button"]')
+        await icon.trigger('click')
+        await icon.trigger('keydown', { key: 'Enter' })
+        await icon.trigger('keydown', { key: ' ' })
+        expect(wrapper.emitted('create')).toHaveLength(3)
+        expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+        await wrapper.setProps({ disabled: true })
+        await wrapper.get('[aria-disabled="true"]').trigger('click')
+        expect(wrapper.emitted('create')).toHaveLength(3)
+    } finally { wrapper.unmount() }
+})
+
+it('does not offer creation from an unchecked or foreign LF state', async () => {
+    const wrapper = render('missing', { canCreate: true, state: { userId: 99, status: 'missing' } })
+    try {
+        expect(wrapper.find('[role="button"]').exists()).toBe(false)
+        expect(wrapper.emitted('create')).toBeUndefined()
+    } finally { wrapper.unmount() }
+})
 const state = { userId: 7, workId: 65, courseId: 2, date: '2026-10-20', assignmentStatus: 'ready', folder: { id: 'id:exercise', name: 'Bestätigter Ordner', path: '/Materialien/Prüfung' } }
 function render(status = 'checking', props = {}) {
     return mount(WorkExerciseStatus, { props: { work, date: state.date, state: { ...state, status }, ...props }, global: {
@@ -66,10 +87,20 @@ it('keeps the existing assignment accessible after importing results and linking
         expect(wrapper.get('[role="dialog"]').text()).toContain('Bestehende Leistungsfeststellung')
         expect(wrapper.get('[role="dialog"]').text()).toContain('Originalordner')
         expect(wrapper.get('[role="dialog"]').text()).not.toContain('Prüfungsordner bestätigt')
-        expect(wrapper.findAllComponents({ name: 'WorkExercisePdf' })).toHaveLength(0)
-        expect(wrapper.findAll('button').some(button => button.text() === 'Leistungsfeststellungsordner öffnen')).toBe(true)
-        expect(wrapper.getComponent(WorkFolderBrowser).props('exercise')).toBe(true)
+        expect(wrapper.findAllComponents({ name: 'WorkExercisePdf' })).toHaveLength(2)
+        expect(wrapper.findAll('button').some(button => button.text() === 'Leistungsfeststellungsordner öffnen')).toBe(false)
     } finally { wrapper.unmount(); workDropboxStates.delete('7:2:65') }
+})
+
+it('uses the confirmed exercise folder for a work with existing results', async () => {
+    const wrapper = render('found', { work: { ...work, status: {
+        assessment_json_packages: [{ exercise_id: 'existing' }], assessment_json_imports: [{ student_id: 101 }],
+    } } })
+    try {
+        await wrapper.get('[role="button"]').trigger('click')
+        expect(wrapper.get('[role="dialog"]').text()).toContain('/Materialien/Prüfung')
+        expect(wrapper.get('[role="dialog"]').text()).toContain('Angaben (PDF)')
+    } finally { wrapper.unmount() }
 })
 
 it.each([['found', 'success', 'erstellt: Bestätigter Ordner'], ['missing', 'error', 'noch nicht erstellt'],
@@ -124,6 +155,44 @@ it('opens the completed LF as persistent read-only information for the selected 
     await wrapper.findAll('button').find(button => button.text() === 'Schließen')!.trigger('click')
     expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
     wrapper.unmount()
+})
+
+it('shows the MC tests for the selected date and all groups, without mixing in other dates', async () => {
+    const wrapper = render('found', { course, work: { ...savedWork, multiple_choice_test_titles: {
+        11: 'E-Mails Gruppe 1', 12: 'Gemeinsamer Test', 13: 'E-Mails Gruppe 2',
+    }, status: { multiple_choice_tests: {
+        '2026-10-20': { work_id: 65, test_id: 11 }, all: { work_id: 65, test_id: 12 },
+        '2026-10-21': { work_id: 65, test_id: 13 },
+    } } } })
+    try {
+        await wrapper.get('[role="button"]').trigger('click')
+        expect(info(wrapper)['MC-Tests']).toBe('E-Mails Gruppe 1, Gemeinsamer Test')
+        expect(wrapper.get('[role="dialog"]').text()).not.toContain('E-Mails Gruppe 2')
+    } finally { wrapper.unmount() }
+})
+
+it('shows the same test once and does not invent a title for an unverified work binding', async () => {
+    const wrapper = render('found', { course, work: { ...savedWork, status: { multiple_choice_tests: {
+        '2026-10-20': { work_id: 65, test_id: 11 }, all: { work_id: 65, test_id: 11 },
+    } } } })
+    try {
+        await wrapper.get('[role="button"]').trigger('click')
+        expect(info(wrapper)['MC-Test']).toBe('Nr. 11')
+        await wrapper.setProps({ work: { ...savedWork, status: { multiple_choice_tests: { '2026-10-20': { work_id: 66, test_id: 11 } } } } })
+        expect(info(wrapper)['MC-Test']).toBeUndefined()
+    } finally { wrapper.unmount() }
+})
+
+it('also shows a linked MC test in the historical exercise dialog', async () => {
+    workDropboxStates.set('7:2:65', { has_import: true })
+    const wrapper = render('missing', { work: { ...savedWork, multiple_choice_test_titles: { 11: 'MC E-Mails' }, status: {
+        assessment_json_packages: [{ exercise_id: 'old' }], assessment_json_imports: [{ student_id: 101 }],
+        multiple_choice_tests: { '2026-10-20': { work_id: 65, test_id: 11 } },
+    } } })
+    try {
+        await wrapper.get('[role="button"]').trigger('click')
+        expect(info(wrapper)['MC-Test']).toBe('MC E-Mails')
+    } finally { wrapper.unmount(); workDropboxStates.delete('7:2:65') }
 })
 
 it.each(['missing', 'checking', 'unknown'])('does not open an information dialog for %s LF status', async status => {

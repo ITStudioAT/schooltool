@@ -12,8 +12,8 @@
         </v-btn>
         <span v-if="message" role="status" class="text-caption">{{ message }}</span>
         <template v-if="loadError">
-            <span role="alert" class="text-caption text-error">Ordnerverknüpfung konnte nicht geprüft werden.</span>
-            <v-btn size="small" variant="text" @click.stop="loadFolder">Erneut prüfen</v-btn>
+            <span role="alert" class="text-caption text-error">Ordnerverknüpfung konnte nicht geprüft werden. {{ loadError }}</span>
+            <v-btn size="small" variant="text" @click.stop="loadFolder(true)">Erneut prüfen</v-btn>
         </template>
         <textarea
             v-if="manualCopy"
@@ -41,7 +41,7 @@ const admin = useAdminStore()
 const loading = ref(false)
 const copying = ref(false)
 const copied = ref(false)
-const loadError = ref(false)
+const loadError = ref('')
 const message = ref('')
 const manualCopy = ref(false)
 const copyText = ref(null)
@@ -50,13 +50,14 @@ const key = computed(() => workDropboxKey(admin.config?.user?.id, props.work))
 const isCurrentWork = computed(() => Boolean(key.value && props.course?.id
     && String(props.work.teaching_course_id) === String(props.course.id)))
 const folderState = computed(() => workDropboxStates.get(key.value))
+const hasFolderState = computed(() => Boolean(folderState.value && ('folder' in folderState.value || 'module_link' in folderState.value)))
 
 function singleLine(value) {
     return String(value ?? '').replace(/\s+/g, ' ').trim()
 }
 
 const contextText = computed(() => {
-    if (!isCurrentWork.value || !folderState.value || loading.value || loadError.value) return ''
+    if (!isCurrentWork.value || !hasFolderState.value || loading.value || loadError.value) return ''
     const workTitle = [singleLine(props.work.type), singleLine(props.work.title)].filter(Boolean).join(' – ')
     const title = singleLine(props.course.title)
     const classes = Array.isArray(props.course.classes) ? props.course.classes : singleLine(props.course.classes).split(',')
@@ -73,9 +74,20 @@ const contextText = computed(() => {
     return `Arbeit: ${workTitle || 'Ohne Titel'} (ID: ${props.work.id})\nKurs: ${courseTitle || 'Ohne Bezeichnung'} (ID: ${props.course.id})\nDatum: ${date}\nOrdner: ${folderText}${moduleText}`
 })
 
-async function loadFolder() {
+function folderError(error) {
+    const status = error?.response?.status
+    if ([401, 419].includes(status)) return 'Die Sitzung ist abgelaufen. Bitte die Seite neu laden und gegebenenfalls erneut anmelden.'
+    if (status === 403) return 'Für diese Arbeit besteht keine Berechtigung. Bitte das ausgewählte Konto prüfen.'
+    if (status === 429) return 'Es wurden zu viele Anfragen gestellt. Bitte kurz warten und erneut prüfen.'
+    if (['ECONNABORTED', 'ETIMEDOUT'].includes(error?.code)) return 'Die Anfrage hat zu lange gedauert. Bitte erneut prüfen.'
+    if (status === 422) return Object.values(error.response.data?.errors || {}).flat().filter(value => typeof value === 'string').join(' ')
+        || error.response.data?.message || 'Die gespeicherte Zuordnung konnte nicht bestätigt werden.'
+    return 'Schooltool ist momentan nicht erreichbar oder konnte die Anfrage nicht verarbeiten. Bitte erneut prüfen.'
+}
+
+async function loadFolder(fresh = false) {
     const current = ++sequence
-    loadError.value = false
+    loadError.value = ''
     message.value = ''
     manualCopy.value = false
     copying.value = false
@@ -84,11 +96,11 @@ async function loadFolder() {
     if (!isCurrentWork.value) return
     try {
         const currentKey = key.value
-        const state = await loadWorkDropbox(currentKey, props.work.id)
+        const state = await loadWorkDropbox(currentKey, props.work.id, fresh)
         if (sequence !== current) return
         if (!state?.module_link?.folder?.id && state?.folder?.id && !state.folder.path) {
             try {
-                const response = await axios.get(show.url(props.work.id), { params: { include_folder_path: 1 } })
+                const response = await axios.get(show.url(props.work.id), { timeout: 45000, params: { include_folder_path: 1 } })
                 if (sequence === current && folderState.value === state && response.data.folder?.id === state.folder.id) {
                     workDropboxStates.set(currentKey, response.data)
                 }
@@ -96,8 +108,8 @@ async function loadFolder() {
                 if (sequence === current && folderState.value === state) message.value = 'Ordnerpfad nicht verfügbar; Ordnername und Dropbox-ID werden kopiert.'
             }
         }
-    } catch {
-        if (sequence === current) loadError.value = true
+    } catch (error) {
+        if (sequence === current) loadError.value = folderError(error)
     } finally {
         if (sequence === current) loading.value = false
     }
@@ -130,11 +142,11 @@ async function copyContext() {
     }
 }
 
-watch(() => [key.value, props.course?.id, props.date], loadFolder, { immediate: true })
-watch(folderState, state => {
+watch(() => [key.value, props.course?.id, props.date], () => loadFolder(), { immediate: true })
+watch(folderState, () => {
     message.value = ''
     manualCopy.value = false
-    if (state && isCurrentWork.value) loadError.value = false
+    if (hasFolderState.value && isCurrentWork.value) loadError.value = ''
 })
 </script>
 

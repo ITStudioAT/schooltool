@@ -25,6 +25,14 @@ export function workConnectionLabel(folderState, failed = false) {
     return failed ? 'Ordnerverbindung konnte nicht geprüft werden.' : 'Ordnerverbindung wird geprüft …'
 }
 
+export function workLinkedMcTestTitle(work, date = '') {
+    const slot = date || work?.date_for_all_groups || 'all'
+    const binding = work?.status?.multiple_choice_tests?.[slot]
+    if (!binding?.test_id || String(binding.work_id) !== String(work?.id)) return null
+    const title = work?.multiple_choice_test_titles?.[String(binding.test_id)]
+    return typeof title === 'string' && title.trim() ? title : `Nr. ${binding.test_id}`
+}
+
 export function workNeedsPreparation(work, folderState) {
     const status = { ...work?.status }
     delete status.communicated_deadline_at
@@ -35,6 +43,7 @@ export function workNeedsPreparation(work, folderState) {
 export function workPreparationLabel(checked) {
     if (checked.status === 'found') {
         if (checked.data?.exercise?.email_dispatch?.status === 'sent') return 'Abgaben einsammeln'
+        if (checked.data?.exercise?.assignment_status === 'missing') return 'Aufgabenstellung fehlt'
         const preparation = checked.data?.exercise?.email_preparation
         return preparation?.status === 'ready' ? 'Versandbereit'
             : preparation?.status === 'unknown' ? 'Vorbereitung prüfen' : 'E-Mails vorbereiten'

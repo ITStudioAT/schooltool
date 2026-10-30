@@ -36,6 +36,33 @@ use Tests\Support\TeachingWorkJsonFixture;
 
 uses(RefreshDatabase::class);
 
+test('creates exercise child folders without autorename and verifies the returned parent path', function (): void {
+    $connection = DropboxConnection::factory()->create(['user_id' => $this->user->id,
+        'credentials' => ['refresh_token' => 'test-refresh', 'scopes' => ['files.content.write']]]);
+    $parent = ['.tag' => 'folder', 'id' => 'id:parent', 'name' => 'Leistungsfeststellung', 'path_lower' => '/modul/leistungsfeststellung'];
+    $child = ['.tag' => 'folder', 'id' => 'id:child', 'name' => 'Neue Arbeit', 'path_lower' => '/modul/leistungsfeststellung/neue arbeit'];
+    Http::fake([
+        'https://api.dropboxapi.com/oauth2/token' => Http::response(['access_token' => 'test-access']),
+        'https://api.dropboxapi.com/2/files/get_metadata' => fn (Request $request) => Http::response($request['path'] === 'id:parent' ? $parent : $child),
+        'https://api.dropboxapi.com/2/files/create_folder_v2' => Http::response(['metadata' => $child]),
+    ]);
+    expect(app(DropboxWorkImport::class)->createExerciseChildFolder($connection, 'id:parent', 'Neue Arbeit', $parent['path_lower']))->toBe($child);
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'https://api.dropboxapi.com/2/files/create_folder_v2'
+        && $request['path'] === '/modul/leistungsfeststellung/Neue Arbeit' && $request['autorename'] === false);
+});
+
+test('does not create exercise child folders after their parent moved', function (): void {
+    $connection = DropboxConnection::factory()->create(['user_id' => $this->user->id,
+        'credentials' => ['refresh_token' => 'test-refresh', 'scopes' => ['files.content.write']]]);
+    Http::fake([
+        'https://api.dropboxapi.com/oauth2/token' => Http::response(['access_token' => 'test-access']),
+        'https://api.dropboxapi.com/2/files/get_metadata' => Http::response(['.tag' => 'folder', 'id' => 'id:parent', 'name' => 'Verschoben', 'path_lower' => '/verschoben']),
+    ]);
+    expect(fn () => app(DropboxWorkImport::class)->createExerciseChildFolder($connection, 'id:parent', 'Neue Arbeit', '/ursprung'))
+        ->toThrow(HttpException::class, 'Der Zielordner wurde inzwischen verschoben.');
+    Http::assertNotSent(fn (Request $request): bool => str_ends_with($request->url(), '/create_folder_v2'));
+});
+
 beforeEach(function (): void {
     Http::preventStrayRequests();
     Storage::fake('local');
@@ -64,6 +91,53 @@ function dropboxConnectionForWork(object $context): DropboxConnection
 
     return $connection;
 }
+
+test('assignment folder reads support legacy sources while preserving scope and ambiguity checks', function (string $layout, bool $download): void {
+    $connection = dropboxConnectionForWork($this);
+    $before = $this->work->fresh()->getAttributes();
+    $rootPath = '/modul/leistungsfeststellung/arbeit';
+    $sourceName = $layout === 'modern' ? 'Angaben' : 'Quellunterlagen';
+    $folder = ['id' => 'id:workfolder', 'name' => 'Arbeit', 'path' => $rootPath];
+    $dropbox = Mockery::mock(DropboxWorkImport::class);
+    $dropbox->shouldReceive('connection')->with($this->user)->andReturn($connection);
+    $dropbox->shouldReceive('legacyFolderContext')->with($connection, 'id:workfolder')->andReturn(['module' => ['id' => 'id:module'], 'exercise' => $folder]);
+    $dropbox->shouldReceive('metadata')->andReturnUsing(function ($actualConnection, string $id) use ($rootPath, $sourceName, $layout): array {
+        return ['id' => $id, 'path_lower' => $id === 'id:workfolder' ? $rootPath
+            : ($layout === 'moved' ? '/outside' : $rootPath.'/'.mb_strtolower($sourceName)), 'path_display' => $rootPath];
+    });
+    $this->app->instance(DropboxWorkImport::class, $dropbox);
+    $sections = match ($layout) {
+        'modern' => [['id' => 'id:source', 'name' => 'Angaben', 'type' => 'folder'], ['id' => 'id:old', 'name' => 'Quellunterlagen', 'type' => 'folder']],
+        'ambiguous' => [['id' => 'id:source', 'name' => 'Quellunterlagen', 'type' => 'folder'], ['id' => 'id:other', 'name' => 'Quellunterlagen', 'type' => 'folder']],
+        'missing' => [],
+        default => [['id' => 'id:source', 'name' => 'Quellunterlagen', 'type' => 'folder']],
+    };
+    $contents = Mockery::mock(DropboxFolderContents::class);
+    $contents->shouldReceive('read')->with($connection, 'id:workfolder')->once()->andReturn(['root' => ['id' => 'id:workfolder', 'path' => $rootPath], 'entries' => $sections, 'cursor' => null]);
+    if (! in_array($layout, ['ambiguous', 'missing'], true)) {
+        $contents->shouldReceive('read')->with($connection, 'id:source', null, null, [])->once()->andReturn([
+            'root' => ['id' => 'id:source', 'name' => $sourceName], 'cursor' => null,
+            'entries' => [['id' => 'id:pdf', 'name' => 'Leistungsfeststellung_Dateimanagement.pdf', 'type' => 'file']],
+        ]);
+        if ($download) {
+            $contents->shouldReceive('pdf')->with($connection, 'id:source', 'id:pdf')->once()->andReturn(['bytes' => '%PDF-local-assignment']);
+        }
+    }
+    $this->app->instance(DropboxFolderContents::class, $contents);
+    $response = $this->getJson($this->url.'/folders?contents=1&exercise=1&section=Angaben'.($download ? '&pdf=1&file_id=id:pdf' : ''));
+    if (in_array($layout, ['ambiguous', 'missing'], true)) {
+        $response->assertNotFound();
+    } elseif ($layout === 'moved') {
+        $response->assertConflict();
+    } elseif ($download) {
+        $response->assertOk()->assertHeader('Content-Type', 'application/pdf');
+        expect($response->getContent())->toBe('%PDF-local-assignment');
+    } else {
+        $response->assertOk()->assertJsonPath('root.name', $sourceName);
+    }
+    expect($this->work->fresh()->getAttributes())->toBe($before);
+    Http::assertNothingSent();
+})->with(['legacy', 'modern', 'ambiguous', 'missing', 'moved'])->with([false, true]);
 
 test('combined refresh saves the deadline and safely reuses or rechecks the collection binding', function (string $case): void {
     $progressId = (string) Str::uuid();
@@ -109,25 +183,37 @@ test('combined refresh saves the deadline and safely reuses or rechecks the coll
     $this->app->instance(TeachingWorkDeadlineSync::class, $deadlines);
     $folders = Mockery::mock(DropboxFolderContents::class);
     $read = $folders->shouldReceive('read')->once();
-    if ($case === 'error') {
+    if (in_array($case, ['error', 'stream_error'], true)) {
         $read->andThrow(new HttpException(409, 'Einsammelprüfung fehlgeschlagen.'));
     } else {
         $read->andReturn(['root' => ['path' => '/arbeit'], 'entries' => [], 'cursor' => null]);
     }
     $this->app->instance(DropboxFolderContents::class, $folders);
+    $streaming = in_array($case, ['stream', 'stream_error'], true);
     $response = $this->postJson($this->url.'/refresh', ['date' => '2026-10-20', 'finish_until_date' => '2026-10-15',
-        'finish_until_time' => '14:55', 'expected' => ['date' => '2026-10-15', 'time' => '16:00'], 'refresh_collection' => true, 'progress_id' => $progressId]);
-    $response->assertOk()->assertJsonPath('saved_work.id', $this->work->id)->assertJsonPath('saved_work.finish_until_time', '14:55');
+        'finish_until_time' => '14:55', 'expected' => ['date' => '2026-10-15', 'time' => '16:00'], 'refresh_collection' => true, 'progress_id' => $progressId, 'stream_progress' => $streaming]);
+    if ($streaming) {
+        $response->assertOk()->assertHeader('X-Accel-Buffering', 'no');
+        $events = array_map(fn (string $line): array => json_decode($line, true, flags: JSON_THROW_ON_ERROR), explode("\n", trim($response->streamedContent())));
+        $progressEvents = array_values(array_filter($events, fn (array $event): bool => $event['type'] === 'progress'));
+        expect(array_column(array_column($progressEvents, 'data'), 'active'))->toContain('connection', 'folder', 'deadline', 'verification', 'collection');
+        $body = end($events)['data'];
+        expect(end($events)['type'])->toBe('result')->and($body['saved_work']['id'])->toBe($this->work->id)
+            ->and($body['saved_work']['finish_until_time'])->toBe('14:55')
+            ->and($body['progress']['state'])->toBe($case === 'stream_error' ? 'failed' : 'done');
+    } else {
+        $response->assertOk()->assertJsonPath('saved_work.id', $this->work->id)->assertJsonPath('saved_work.finish_until_time', '14:55');
+    }
     expect($this->work->fresh()->finish_until_time)->toBe('14:55');
     if ($case === 'error') {
         $response->assertJsonPath('collection_error.message', 'Einsammelprüfung fehlgeschlagen.');
         $response->assertJsonPath('progress.state', 'failed')->assertJsonPath('progress.active', 'collection');
-    } else {
+    } elseif (! $streaming) {
         $response->assertJsonMissingPath('collection_error');
         $response->assertJsonPath('progress.state', 'done')->assertJsonPath('progress.completed.4', 'collection');
     }
     $this->getJson($this->url.'/refresh-progress/'.$progressId)->assertOk()->assertHeader('Cache-Control', 'no-store, private')
-        ->assertJsonPath('state', $case === 'error' ? 'failed' : 'done');
+        ->assertJsonPath('state', in_array($case, ['error', 'stream_error'], true) ? 'failed' : 'done');
     $this->getJson($this->url.'/refresh-progress/'.Str::uuid())->assertNotFound();
     $otherWork = TeachingCourseWork::factory()->create(['teaching_course_id' => $this->course->id]);
     $this->getJson('/api/admin/teaching/course_works/'.$otherWork->id.'/dropbox/refresh-progress/'.$progressId)->assertNotFound();
@@ -135,7 +221,7 @@ test('combined refresh saves the deadline and safely reuses or rechecks the coll
     $this->actingAs($otherUser, 'sanctum')->getJson($this->url.'/refresh-progress/'.$progressId)->assertNotFound();
     $collectionRefreshes = array_values(array_filter($calls, fn (array $call): bool => $call[0] === null && $call[1]));
     expect(count($collectionRefreshes))->toBe(in_array($case, ['groups', 'binding'], true) ? 1 : 0);
-})->with(['same', 'groups', 'binding', 'error']);
+})->with(['same', 'groups', 'binding', 'error', 'stream', 'stream_error']);
 
 test('collection refresh reports actual progress and skips unavailable steps', function (string $case): void {
     $progressId = (string) Str::uuid();
@@ -174,6 +260,36 @@ test('collection refresh reports actual progress and skips unavailable steps', f
         $response->assertJsonPath('progress.skipped', $expected);
     }
 })->with(['success', 'no_folder', 'unavailable', 'error']);
+
+test('collection refresh streams each observed step before its final result', function (): void {
+    $service = Mockery::mock(TeachingWorkCollectionStatus::class);
+    $service->shouldReceive('cached')->andReturnNull();
+    $service->shouldReceive('refresh')->once()->andReturnUsing(function ($work, $actor, $exercise, $link, $onProgress): void {
+        $onProgress('connection');
+        $onProgress('folder');
+        $onProgress('collection');
+    });
+    $this->app->instance(TeachingWorkCollectionStatus::class, $service);
+    $response = $this->getJson('/api/admin/teaching/course_works/'.$this->work->id.'?refresh_collection=1&stream_progress=1&progress_id='.Str::uuid());
+    $events = array_map(fn (string $line): array => json_decode($line, true, flags: JSON_THROW_ON_ERROR), explode("\n", trim($response->streamedContent())));
+    expect(array_column($events, 'type'))->toBe(['progress', 'progress', 'progress', 'progress', 'progress', 'result'])
+        ->and($events[0]['data']['active'])->toBe('connection')
+        ->and($events[2]['data']['active'])->toBe('collection')
+        ->and(end($events)['data']['data']['id'])->toBe($this->work->id);
+});
+
+test('collection refresh streams a failed stage and preserves the error message', function (): void {
+    $service = Mockery::mock(TeachingWorkCollectionStatus::class);
+    $service->shouldReceive('refresh')->once()->andReturnUsing(function ($work, $actor, $exercise, $link, $onProgress): void {
+        $onProgress('connection');
+        throw new HttpException(409, 'Arbeitsordner nicht verfügbar.');
+    });
+    $this->app->instance(TeachingWorkCollectionStatus::class, $service);
+    $response = $this->getJson('/api/admin/teaching/course_works/'.$this->work->id.'?refresh_collection=1&stream_progress=1&progress_id='.Str::uuid());
+    $events = array_map(fn (string $line): array => json_decode($line, true, flags: JSON_THROW_ON_ERROR), explode("\n", trim($response->streamedContent())));
+    expect($events[count($events) - 2]['data'])->toMatchArray(['state' => 'failed', 'active' => 'folder', 'completed' => ['connection']])
+        ->and(end($events))->toMatchArray(['type' => 'error', 'data' => ['status' => 409, 'body' => ['message' => 'Arbeitsordner nicht verfügbar.']]]);
+});
 
 test('work context reads only the assigned Dropbox metadata path on explicit request without sharing a folder', function (): void {
     dropboxConnectionForWork($this);

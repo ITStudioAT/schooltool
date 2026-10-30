@@ -38,7 +38,7 @@ class TeachingWorkMultipleChoice
         return ['available' => true, 'configuration' => $this->configuration($work, $actor, $date, $workContext),
             'tests' => $tests->map(fn (McTest $test): array => [...$test->toArray(),
                 'catalog_title' => $catalogs->firstWhere('id', $test->catalog_id)['title'] ?? null]),
-            'catalogs' => $catalogs->filter(fn (array $catalog): bool => $catalog['reviewed_question_count'] >= 10)->values(),
+            'catalogs' => $catalogs->filter(fn (array $catalog): bool => $catalog['reviewed_question_count'] > 0)->values(),
             'linked_test_id' => ($binding['work_id'] ?? null) === $work->id && $tests->contains('id', $binding['test_id'] ?? null)
                 ? $binding['test_id'] : null,
             'expected_test_id' => isset($binding['test_id']) ? (int) $binding['test_id'] : null,
@@ -101,7 +101,7 @@ class TeachingWorkMultipleChoice
             $test = McTest::query()->create([
                 'school_id' => $work->teachingCourse->school_id, 'schoolyear_id' => $work->teachingCourse->schoolyear_id,
                 'owner_id' => $actor->id, 'catalog_id' => $catalog->id, 'title' => $this->newTestTitle($work, $data['date'] ?? $workContext['scheduled_date'] ?? null),
-                'status' => 'draft', 'question_count' => 10, 'total_points' => $data['total_points'],
+                'status' => 'draft', 'question_count' => $data['question_count'] ?? 10, 'total_points' => $data['total_points'],
                 'duration_seconds' => $data['duration_minutes'] * 60, 'lead_seconds' => 60,
                 'start_mode' => 'individual', 'closes_at' => $closingDeadline, 'exam_mode' => false, 'balance_types' => true,
                 'shuffle_questions' => true, 'shuffle_options' => true,
@@ -162,7 +162,7 @@ class TeachingWorkMultipleChoice
     /** @return array{locked: bool, message: ?string, maximum_points: ?float} */
     public function configuration(TeachingCourseWork $work, User $actor, ?string $date, array $workContext, bool $refresh = false): array
     {
-        $locked = app(TeachingWorkFolderImport::class)->availabilitySources($work, [], []) !== [];
+        $locked = ! empty($work->status['student_distribution']['published_at']) || app(TeachingWorkFolderImport::class)->availabilitySources($work, [], []) !== [];
         $message = $locked ? 'Die Leistungsfeststellung wurde bereits versendet oder bereitgestellt. MC-Fragen können nicht mehr ergänzt oder geändert werden.' : null;
         $modules = app(DropboxModuleLinks::class);
         $link = $modules->current($work);

@@ -1272,7 +1272,7 @@ export default {
 .timetable-cell-content { display: flex; gap: 2px; align-items: stretch; height: var(--timetable-cell-height, auto); min-height: min-content; }
 .timetable-cell-courses, .timetable-cell-appointments { flex: 1; min-width: 84px; }
 .timetable-cell-courses { display: flex; flex-direction: column; gap: 2px; }
-.timetable-cell-courses > .timetable-grid-item { flex: 1; min-height: 52px; margin-bottom: 0; }
+.timetable-cell-courses > .timetable-grid-item { flex: 1 0 52px; min-height: max-content; margin-bottom: 0; }
 .timetable-cell-appointments { display: grid; gap: 0; }
 .timetable-cell-appointments :deep(.personal-appointment-card) { padding: 4px 5px; gap: 0; }
 .timetable-gap-cell { height: auto !important; }

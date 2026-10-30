@@ -93,3 +93,58 @@ it('keeps a failed check unknown and reuses that result until explicitly retried
     await loadWorkExercise(key, work, work.date_for_all_groups, true)
     expect(workExerciseCheck(key, work, work.date_for_all_groups)?.status).toBe('found')
 })
+
+it('reads the saved folder separately when a shared exercise check fails', async () => {
+    let fail: (error: Error) => void = () => {}
+    const get = vi.fn().mockImplementationOnce(() => new Promise((resolve, reject) => { fail = reject }))
+        .mockResolvedValueOnce({ data: { ...found, exercise: null } })
+    vi.stubGlobal('axios', { get })
+    const exercise = loadWorkExercise(key, work)
+    const failure = expect(exercise).rejects.toThrow('Exercise unavailable')
+    const folder = loadWorkDropbox(key, work.id)
+
+    fail(new Error('Exercise unavailable'))
+
+    await failure
+    expect(await folder).toEqual({ ...found, exercise: null })
+    expect(get).toHaveBeenCalledTimes(2)
+    expect(get.mock.calls[1][1]).toEqual({ timeout: 45000 })
+    expect(workDropboxStates.get(key)?.exercise).toBeNull()
+})
+
+it('does not treat an unknown exercise check without folder metadata as a saved folder result', async () => {
+    const get = vi.fn().mockRejectedValueOnce(new Error('Offline')).mockResolvedValueOnce({ data: found })
+    vi.stubGlobal('axios', { get })
+    await expect(loadWorkExercise(key, work)).rejects.toThrow('Offline')
+
+    expect(await loadWorkDropbox(key, work.id)).toEqual(found)
+    expect(get).toHaveBeenCalledTimes(2)
+})
+
+it('can retry folder metadata without waiting for a running exercise check', async () => {
+    let finish: (value: unknown) => void = () => {}
+    const get = vi.fn().mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+        .mockResolvedValueOnce({ data: found })
+    vi.stubGlobal('axios', { get })
+    const exercise = loadWorkExercise(key, work)
+
+    expect(await loadWorkDropbox(key, work.id, true)).toEqual(found)
+    finish({ data: found })
+    await exercise
+    expect(get).toHaveBeenCalledTimes(2)
+})
+
+it('does not start a fallback folder request after the user context has been cleared', async () => {
+    let fail: (error: Error) => void = () => {}
+    const get = vi.fn().mockImplementation(() => new Promise((resolve, reject) => { fail = reject }))
+    vi.stubGlobal('axios', { get })
+    const exercise = expect(loadWorkExercise(key, work)).rejects.toThrow('Offline')
+    const folder = expect(loadWorkDropbox(key, work.id)).rejects.toThrow('Offline')
+
+    clearWorkDropboxStates()
+    fail(new Error('Offline'))
+    await Promise.all([exercise, folder])
+
+    expect(get).toHaveBeenCalledTimes(1)
+    expect(workDropboxStates.size).toBe(0)
+})

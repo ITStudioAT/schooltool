@@ -22,21 +22,22 @@ function render(get: ReturnType<typeof vi.fn>) {
 
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
-it('loads nothing until clicked then opens the single PDF directly and releases it on close', async () => {
+it('downloads the single PDF with its original filename without opening a preview', async () => {
     const get = vi.fn().mockResolvedValueOnce({ data: { entries: [pdf, { name: 'Quelle.md', type: 'file' }], cursor: null } })
         .mockResolvedValueOnce({ data: new Blob(['%PDF-1.7'], { type: 'application/pdf' }) })
     const wrapper = render(get)
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+        expect(this.download).toBe('Aufgabenblatt.pdf')
+        expect(this.href).toBe('blob:task-pdf')
+    })
     expect(get).not.toHaveBeenCalled()
     await wrapper.get('button').trigger('click')
     await flushPromises()
 
     expect(get.mock.calls[1][1]).toMatchObject({ params: { contents: 1, exercise: 1, section: 'Angaben', date: '2026-10-23', pdf: 1, file_id: 'id:pdf' }, responseType: 'blob' })
-    expect(wrapper.getComponent({ name: 'VDialog' }).props('persistent')).toBe(true)
-    expect(wrapper.getComponent({ name: 'CurriculumPdfPreview' }).props('src')).toBe('blob:task-pdf')
-    expect(wrapper.text()).not.toContain('Quelle.md')
-    await wrapper.findAll('button').find(button => button.text() === 'Schließen')!.trigger('click')
-    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:task-pdf')
+    expect(click).toHaveBeenCalledOnce()
     expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Quelle.md')
     wrapper.unmount()
 })
 
@@ -45,6 +46,7 @@ it('offers only PDFs when several documents exist and fetches the selected file'
     const get = vi.fn().mockResolvedValueOnce({ data: { entries: [pdf, second, { type: 'folder', name: 'Quellen' }], cursor: null } })
         .mockResolvedValueOnce({ data: new Blob(['%PDF-1.7'], { type: 'application/pdf' }) })
     const wrapper = render(get)
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
     await wrapper.get('button').trigger('click')
     await flushPromises()
     expect(get).toHaveBeenCalledTimes(1)
@@ -52,6 +54,7 @@ it('offers only PDFs when several documents exist and fetches the selected file'
     await wrapper.findAll('button').find(button => button.text() === 'Beilage.pdf')!.trigger('click')
     await flushPromises()
     expect(get.mock.calls[1][1].params.file_id).toBe('id:second')
+    expect(click).toHaveBeenCalledOnce()
     wrapper.unmount()
 })
 
@@ -63,7 +66,7 @@ it('reports absent PDFs without opening folders and ignores late results after c
     await wrapper.get('button').trigger('click')
     await flushPromises()
     expect(wrapper.get('[role="alert"]').text()).toContain('Keine PDF')
-    await wrapper.findAll('button').find(button => button.text() === 'Erneut laden')!.trigger('click')
+    await wrapper.get('button').trigger('click')
     await wrapper.setProps({ work: { ...work, id: 66 } })
     finish({ data: { entries: [pdf], cursor: null } })
     await flushPromises()

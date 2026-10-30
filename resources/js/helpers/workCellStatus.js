@@ -125,7 +125,7 @@ export function workCellDeviationStatuses(work, studentId, students, now = Date.
 }
 
 export function workCellPendingStatuses(work, studentId, now = Date.now()) {
-    if (!workAutomationEnabled(work) || !studentId) return []
+    if (!work || !workAutomationEnabled(work) || !studentId) return []
     const ids = (work.groups || []).flatMap(group => group.student_ids || []).map(String)
     if (!ids.includes(String(studentId))) return []
     const simulation = workSimulationEvaluation(work)

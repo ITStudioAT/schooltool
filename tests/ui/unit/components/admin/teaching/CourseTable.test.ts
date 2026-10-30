@@ -19,6 +19,7 @@ import { VTextField } from 'vuetify/components/VTextField'
 import { VList, VListItem } from 'vuetify/components/VList'
 import axios from 'axios'
 import CourseTable from '@/pages/admin/teaching/overview/components/CourseTable.vue'
+import WorkExerciseExport from '@/pages/admin/teaching/overview/components/WorkExerciseExport.vue'
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
 import { useCourseDateStore } from '@/stores/admin/teaching/CourseDateStore'
 import { useCurriculumStore } from '@/stores/admin/teaching/CurriculumStore'
@@ -32,8 +33,21 @@ const { openModuleLink } = vi.hoisted(() => ({ openModuleLink: vi.fn() }))
 vi.mock('@/pages/admin/teaching/overview/components/WorkDropboxLink.vue', () => ({ default: {
     name: 'WorkDropboxLink', props: ['courseId'], template: '<div />', methods: { openLink: openModuleLink },
 } }))
+vi.mock('@/pages/admin/teaching/overview/components/WorkStudentDistribution.vue', () => ({ default: {
+    name: 'WorkStudentDistribution', props: ['work', 'available', 'disabled'], template: '<div />',
+} }))
 
 describe('CourseTable manual work completion', () => {
+    it('updates only the saved deadline in the open work draft', () => {
+        const methods = (CourseTable as any).methods
+        const context: any = { workDialogForm: { id: 65, title: 'Ungespeicherter Titel', finish_until_date: '2026-10-20', finish_until_time: null },
+            applySavedCourseWork: vi.fn().mockReturnValue(true) }
+        const response = { data: { id: 65, finish_until_date: '2026-10-25', finish_until_time: '13:30' } }
+        methods.applyExerciseDeadline.call(context, response)
+        expect(context.applySavedCourseWork).toHaveBeenCalledWith(response)
+        expect(context.workDialogForm).toEqual({ id: 65, title: 'Ungespeicherter Titel', finish_until_date: '2026-10-25', finish_until_time: '13:30' })
+    })
+
     it('checks the overview before offering creation and reuses the confirmed result', async () => {
         clearWorkDropboxStates()
         let finish: (value: unknown) => void = () => {}
@@ -137,10 +151,32 @@ describe('CourseTable manual work completion', () => {
                 date: '2026-10-12', assignmentStatus: 'missing', folder: { id: 'id:exercise', name: 'Leistungsfeststellung' } }
             await flushPromises()
             expect(statuses.getComponent({ name: 'WorkDeliveryStatus' }).props('disabled')).toBe(true)
+            expect(statuses.getComponent({ name: 'WorkDeliveryStatus' }).props('exerciseReady')).toBe(false)
             ;(wrapper.vm as any).workDialogExerciseStatus.assignmentStatus = 'ready'
             await flushPromises()
             expect(statuses.getComponent({ name: 'WorkDeliveryStatus' }).props('disabled')).toBe(false)
+            expect(statuses.getComponent({ name: 'WorkDeliveryStatus' }).props('exerciseReady')).toBe(true)
         } finally { wrapper.unmount(); clearWorkDropboxStates() }
+    })
+
+    it('opens LF creation from its red status icon without an extra action button', async () => {
+        clearWorkDropboxStates()
+        const status = vi.fn().mockResolvedValue({ data: { connected: true, module_link: { folder: { id: 'id:module' } }, exercise: { status: 'missing' } } })
+        vi.stubGlobal('axios', { get: status, post: status })
+        const { wrapper, works, first } = mountCompletionTable()
+        try {
+            useAdminStore().config = { user: { id: 7 } } as never
+            works.courseWorks = [{ ...first, status: {} }] as never
+            await flushPromises()
+            await wrapper.get('.course-table-work-summary-title').trigger('click')
+            await flushPromises()
+            const form = wrapper.get('.course-table-date-work-form')
+            expect(form.findAll('button').some(button => button.text() === 'Leistungsfeststellung erstellen')).toBe(false)
+            const icon = form.getComponent({ name: 'WorkExerciseStatus' })
+            expect(icon.get('v-icon').attributes('color')).toBe('error')
+            await icon.get('[role="button"]').trigger('click')
+            expect(form.getComponent({ name: 'WorkExerciseExport' }).text()).toContain('Direkt über die OpenAI-API')
+        } finally { wrapper.unmount(); clearWorkDropboxStates(); vi.unstubAllGlobals() }
     })
 
     it('offers deletion for the saved work and preserves the draft when confirmation is canceled', async () => {
@@ -947,9 +983,28 @@ describe('CourseTable evaluation PDF links', () => {
             await flushPromises()
             const form = wrapper.get('.course-table-date-work-form')
             expect(form.get('[data-testid="work-detail-progress"]').text()).toContain('0 von 1 beurteilt')
+            expect(form.get('[data-testid="work-dialog-last-collection"]').text()).toBe('Zuletzt abgesammelt: Kein belegter Zeitpunkt')
+            expect(form.get('[data-testid="work-dialog-last-evaluation"]').text()).toBe('Zuletzt bewertet: Kein belegter Zeitpunkt')
+            workStore.courseWorks = [{ ...work, collection_run: { origin: 'dropbox_collection_run', work_id: 65, course_id: 18,
+                sha256: 'e'.repeat(64), completed_at: '2026-10-24T13:46:16Z', stored_at: '2026-10-24T13:48:22Z' }, status: { ...work.status,
+                assessment_json_imports: [{ student_id: 12, exercise_id: 'exercise', participant_id: 'user:12', record_checksum: 'a'.repeat(64),
+                    record: { participant_id: 'user:12', record_checksum: 'a'.repeat(64), evaluation_state: 'complete', evaluation_completed_at: '2026-10-25T12:30:00Z' } }] } }] as never
+            await flushPromises()
+            expect(form.get('[data-testid="work-dialog-last-collection"]').text()).toBe('Zuletzt abgesammelt: 24.10.2026 um 15:46 Uhr')
+            expect(form.get('[data-testid="work-dialog-last-evaluation"]').text()).toBe('Zuletzt bewertet: 25.10.2026 um 13:30 Uhr')
+            const exportComponent = form.getComponent(WorkExerciseExport)
+            exportComponent.vm.$emit('progress-checked', { checkKey: '7:18:65', checkedAt: '2027-01-02T13:15:00Z', completed: true })
+            await flushPromises()
+            expect(form.get('[data-testid="work-dialog-last-check"]').text()).toBe('Zuletzt geprüft: 02.01.2027 um 14:15 Uhr')
+            exportComponent.vm.$emit('progress-checked', { checkKey: '7:18:65', checkedAt: '2027-01-02T14:15:00Z', completed: false })
+            await flushPromises()
+            expect(form.get('[data-testid="work-dialog-last-check"]').text()).toContain('Prüfung nicht abgeschlossen')
+            exportComponent.vm.$emit('progress-checked', { checkKey: '7:18:999', checkedAt: '2028-01-02T14:15:00Z', completed: true })
+            await flushPromises()
+            expect(form.get('[data-testid="work-dialog-last-check"]').text()).not.toContain('2028')
             expect(form.findAll('v-btn').filter(button => button.text() === 'Verknüpfen')).toHaveLength(0)
             const actions = form.get('[aria-label="Weitere Aktionen"]')
-            expect(actions.findAll('v-btn').map(button => button.text())).toEqual(['Ordner verknüpfen', 'Kontext kopieren', 'Abgaben einsammeln', 'Erneut prüfen'])
+            expect(actions.findAll('v-btn').map(button => button.text())).toEqual(['Ordner verknüpfen', 'Kontext kopieren', 'Erneut prüfen'])
             vm.workSaving = true
             await flushPromises()
             expect(form.get('.work-dialog-status-icons').attributes('inert')).toBeDefined()

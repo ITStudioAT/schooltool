@@ -26,14 +26,18 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { aiExport } from '@/actions/App/Http/Controllers/Admin/Teaching/CourseWorkController'
 import { workAutomationEnabled } from '@/helpers/workAutomation'
 import { workDropboxKey, workDropboxStates, workExerciseCheck } from '@/helpers/workDropbox'
-import { workDispatchNotifications, workTaskDispatchCompleted } from '@/helpers/workDispatch'
+import { workDispatchNotifications, workStudentDistribution, workTaskDispatchCompleted } from '@/helpers/workDispatch'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 
 const props = defineProps({ work: { type: Object, required: true }, date: { type: String, default: '' }, repeat: Boolean, disabled: Boolean, dispatch: { type: Object, default: null } })
 const admin = useAdminStore()
 const hasSentTasks = computed(() => {
-    if (workTaskDispatchCompleted(props.work)) return true
     const date = props.date || props.work.date_for_all_groups || ''
+    const releaseGroups = (props.work.groups || []).filter(group => !date || (group.date || props.work.date_for_all_groups) === date)
+    const releaseStudents = new Set(releaseGroups.flatMap(group => group.student_ids || []).map(String))
+    const release = workStudentDistribution(props.work)
+    if (release?.student_ids?.some(id => releaseStudents.has(String(id)))) return true
+    if (workTaskDispatchCompleted(props.work)) return true
     const key = workDropboxKey(admin.config?.user?.id, props.work)
     const cached = workExerciseCheck(key, props.work, date)?.data
     const checked = cached?.exercise?.email_dispatch ? cached : workDropboxStates.get(key)

@@ -21,12 +21,31 @@ class McTestService
             if ($locked->status === 'published') {
                 return $locked;
             }
+            if ($locked->status === 'withdrawn') {
+                McTest::query()->whereKey($locked->id)->update(['status' => 'published']);
+
+                return $locked->fresh();
+            }
             if ($locked->start_mode === 'individual' && ($locked->closes_at === null || ! $locked->closes_at->isFuture())) {
                 throw ValidationException::withMessages(['closes_at' => 'Bitte legen Sie eine zukünftige Schlussfrist fest.']);
             }
             $locked->forceFill(['status' => 'published'])->save();
 
             return $locked;
+        }, 3);
+    }
+
+    public function withdraw(McTest $test): McTest
+    {
+        return DB::transaction(function () use ($test): McTest {
+            $locked = McTest::query()->lockForUpdate()->findOrFail($test->id);
+            if ($locked->status === 'withdrawn') {
+                return $locked;
+            }
+            $this->assertPublished($locked);
+            McTest::query()->whereKey($locked->id)->update(['status' => 'withdrawn']);
+
+            return $locked->fresh();
         }, 3);
     }
 
@@ -165,8 +184,8 @@ class McTestService
                 return $locked;
             }
             $attempts = $locked->attempts()->whereNull('completed_at')->orderBy('id')->lockForUpdate()->get();
-            if ($attempts->isEmpty() || ($locked->start_mode !== 'individual' && $locked->starts_at === null)) {
-                throw ValidationException::withMessages(['test' => 'Es gibt keinen laufenden Test zum Pausieren.']);
+            if ($attempts->isEmpty()) {
+                throw ValidationException::withMessages(['test' => 'Es gibt keine offenen Versuche zum Pausieren.']);
             }
             $at = CarbonImmutable::now()->floorSecond();
             foreach ($attempts as $attempt) {
@@ -229,6 +248,111 @@ class McTestService
         }
     }
 
+    /** @param list<int> $attemptIds */
+    public function controlAttempts(McTest $test, array $attemptIds, string $action, int $teacherId, array $expected = [], bool $all = false): void
+    {
+        DB::transaction(function () use ($test, $attemptIds, $action, $teacherId, $expected, $all): void {
+            $lockedTest = McTest::query()->lockForUpdate()->findOrFail($test->id);
+            $this->assertPublished($lockedTest);
+            if ((int) $lockedTest->owner_id !== $teacherId) {
+                throw ValidationException::withMessages(['test' => 'Nur die zuständige Lehrkraft kann Versuche steuern.']);
+            }
+            $attempts = $lockedTest->attempts()->when(! $all, fn ($query) => $query->whereIn('id', $attemptIds))->orderBy('id')->lockForUpdate()->get();
+            if ($attempts->isEmpty() || (! $all && $attempts->count() !== count($attemptIds)) || ($all && $attempts->count() !== count($expected))) {
+                throw ValidationException::withMessages(['attempts' => 'Die Auswahl gehört nicht vollständig zu diesem Test.']);
+            }
+            if ($action === 'reset' && $attempts->contains(fn (McAttempt $attempt): bool => ! hash_equals($attempt->controlRevision(), (string) ($expected[$attempt->id] ?? '')))) {
+                abort(409, 'Der Teststand hat sich geändert. Bitte aktualisiere die Liste und bestätige erneut.');
+            }
+            $now = CarbonImmutable::now()->floorSecond();
+            foreach ($attempts as $attempt) {
+                $state = $attempt->activity_state ?? [];
+                $control = $attempt->control();
+                if ($action === 'reset') {
+                    $state = ['control' => ['version' => (int) ($control['version'] ?? 0) + 1,
+                        'restart_individually' => $lockedTest->start_mode !== 'individual']];
+                    McAttempt::query()->whereKey($attempt->id)->update([
+                        'answers' => json_encode((object) [], JSON_THROW_ON_ERROR), 'ready_at' => null, 'started_at' => null,
+                        'completed_at' => null, 'submitted_at' => null, 'completion_reason' => null,
+                        'score' => null, 'percentage' => null, 'correct_count' => null, 'pause_seconds' => 0,
+                        'reopened_until' => null, 'reopen_history' => null, 'activity_state' => json_encode($state, JSON_THROW_ON_ERROR),
+                    ]);
+
+                    continue;
+                }
+                if ($attempt->completed_at !== null) {
+                    throw ValidationException::withMessages(['attempts' => 'Abgeschlossene Versuche können nicht pausiert oder fortgesetzt werden.']);
+                }
+                if ($action === 'pause') {
+                    if ($attempt->individualPausedAt() !== null) {
+                        continue;
+                    }
+                    $deadline = $attempt->effectiveDeadline($lockedTest);
+                    if ($deadline !== null && ! $deadline->isFuture()) {
+                        throw ValidationException::withMessages(['attempts' => 'Ein abgelaufener Versuch kann nicht pausiert werden.']);
+                    }
+                    app(McAttemptActivityService::class)->finish($attempt, $now);
+                    $state = $attempt->activity_state ?? [];
+                    $control['paused_at'] = $now->toIso8601String();
+                } elseif ($action === 'resume') {
+                    $start = $attempt->individualPausedAt();
+                    if ($start === null) {
+                        continue;
+                    }
+                    if (! $attempt->startsIndividually($lockedTest)) {
+                        $start = $lockedTest->starts_at === null ? $now : $start->max($lockedTest->starts_at);
+                    }
+                    $seconds = (int) max(0, $start->diffInSeconds($now, false));
+                    $periods = $lockedTest->pause_history ?? [];
+                    if ($lockedTest->paused_at !== null) {
+                        $periods[] = ['paused_at' => $lockedTest->paused_at->toIso8601String(), 'resumed_at' => $now->toIso8601String()];
+                    }
+                    foreach ($periods as $period) {
+                        $from = CarbonImmutable::parse($period['paused_at'])->max($start);
+                        $until = CarbonImmutable::parse($period['resumed_at'])->min($now);
+                        $seconds -= (int) max(0, $from->diffInSeconds($until, false));
+                    }
+                    $seconds = max(0, $seconds);
+                    $changes = [];
+                    if ($attempt->startsIndividually($lockedTest)) {
+                        if ($attempt->started_at !== null) {
+                            $changes['pause_seconds'] = (int) $attempt->pause_seconds + $seconds;
+                        }
+                        $closing = $attempt->closingDeadline($lockedTest);
+                        if ($closing !== null) {
+                            $changes['closes_at'] = $closing->addSeconds($seconds);
+                        }
+                    } else {
+                        $control['individual_pause_seconds'] = (int) ($control['individual_pause_seconds'] ?? 0) + $seconds;
+                    }
+                    if ($attempt->startsIndividually($lockedTest) && $attempt->reopened_until !== null) {
+                        $changes['reopened_until'] = $attempt->reopened_until->addSeconds($seconds);
+                    }
+                    unset($control['paused_at']);
+                } else {
+                    throw ValidationException::withMessages(['action' => 'Unbekannte Aktion.']);
+                }
+                $state['control'] = $control;
+                McAttempt::query()->whereKey($attempt->id)->update([...($changes ?? []), 'activity_state' => json_encode($state, JSON_THROW_ON_ERROR)]);
+                unset($changes);
+            }
+        }, 3);
+    }
+
+    private function assertAttemptVersion(McAttempt $attempt, ?int $version): void
+    {
+        if ((int) ($attempt->control()['version'] ?? 0) !== ($version ?? 0)) {
+            abort(409, 'Dieser Versuch wurde zurückgesetzt. Bitte lade den Test erneut.');
+        }
+    }
+
+    private function assertAttemptNotPaused(McAttempt $attempt): void
+    {
+        if ($attempt->individualPausedAt() !== null) {
+            throw ValidationException::withMessages(['attempt' => 'Dein Test ist pausiert. Bitte warte auf die Fortsetzung durch die Lehrkraft.']);
+        }
+    }
+
     public function startCountdown(McTest $test): McTest
     {
         return DB::transaction(function () use ($test): McTest {
@@ -268,11 +392,13 @@ class McTestService
             [$test, $locked] = $this->lockAttempt($attempt);
             $this->assertPublished($test);
             $this->assertNotPaused($test);
+            $this->assertAttemptNotPaused($locked);
             if ((int) $test->owner_id !== $teacherId) {
                 throw ValidationException::withMessages(['attempt' => 'Nur die zuständige Lehrkraft kann den Versuch wieder öffnen.']);
             }
-            if ($test->start_mode === 'individual' ? $locked->started_at === null || ($locked->completed_at === null && $locked->effectiveDeadline($test)?->isFuture()) : ($test->starts_at === null || $test->starts_at->isFuture() || $test->ends_at === null || $test->ends_at->isFuture())) {
-                throw ValidationException::withMessages(['attempt' => $test->start_mode === 'individual' ? 'Nur bereits gestartete, abgeschlossene oder abgelaufene Versuche können wieder geöffnet werden.' : 'Einzelne Versuche können erst nach Ende der gemeinsamen Bearbeitungszeit wieder geöffnet werden.']);
+            $individual = $locked->startsIndividually($test);
+            if ($individual ? $locked->started_at === null || ($locked->completed_at === null && $locked->effectiveDeadline($test)?->isFuture()) : ($test->starts_at === null || $test->starts_at->isFuture() || $test->ends_at === null || $test->ends_at->isFuture())) {
+                throw ValidationException::withMessages(['attempt' => $individual ? 'Nur bereits gestartete, abgeschlossene oder abgelaufene Versuche können wieder geöffnet werden.' : 'Einzelne Versuche können erst nach Ende der gemeinsamen Bearbeitungszeit wieder geöffnet werden.']);
             }
             if ($remainingSeconds < 1 || $remainingSeconds > 86400) {
                 throw ValidationException::withMessages(['remaining_seconds' => 'Die Zusatzzeit muss zwischen einer Sekunde und 24 Stunden liegen.']);
@@ -282,12 +408,14 @@ class McTestService
                 $locked = $this->complete($test, $locked, 'timeout');
             }
             $until = now()->addSeconds($remainingSeconds)->ceilSecond();
-            if ($test->start_mode === 'individual') {
+            if ($individual) {
                 $closing = $locked->closingDeadline($test);
-                if ($closing === null || ! $closing->isFuture()) {
+                if (($closing === null && $test->start_mode === 'individual') || ($closing !== null && ! $closing->isFuture())) {
                     throw ValidationException::withMessages(['closes_at' => 'Bitte verlängern Sie zuerst die persönliche Schlussfrist.']);
                 }
-                $until = $until->min($closing);
+                if ($closing !== null) {
+                    $until = $until->min($closing);
+                }
             }
             $history = $locked->reopen_history ?? [];
             $history[] = [
@@ -299,8 +427,13 @@ class McTestService
                     'score' => $locked->score, 'percentage' => $locked->percentage,
                 ],
             ];
+            $activity = $locked->activity_state;
+            if ($activity !== null && isset($activity['control']['individual_pause_seconds'])) {
+                $activity['control']['individual_pause_seconds'] = 0;
+            }
             McAttempt::query()->whereKey($locked->id)->update([
                 'reopened_until' => $until, 'reopen_history' => json_encode($history, JSON_THROW_ON_ERROR),
+                'activity_state' => $activity === null ? null : json_encode($activity, JSON_THROW_ON_ERROR),
                 'completed_at' => null, 'submitted_at' => null, 'completion_reason' => null,
                 'correct_count' => null, 'score' => null, 'percentage' => null,
             ]);
@@ -348,19 +481,21 @@ class McTestService
         }
     }
 
-    public function startIndividual(McAttempt $attempt): McAttempt
+    public function startIndividual(McAttempt $attempt, ?int $version = null): McAttempt
     {
-        return DB::transaction(function () use ($attempt): McAttempt {
+        return DB::transaction(function () use ($attempt, $version): McAttempt {
             [$test, $locked] = $this->lockAttempt($attempt);
+            $this->assertAttemptVersion($locked, $version);
             $this->assertPublished($test);
             $this->assertNotPaused($test);
-            if ($test->start_mode !== 'individual') {
+            $this->assertAttemptNotPaused($locked);
+            if (! $locked->startsIndividually($test)) {
                 throw ValidationException::withMessages(['attempt' => 'Dieser Test startet gemeinsam.']);
             }
             if ($locked->completed_at !== null) {
                 return $locked;
             }
-            if ($locked->effectiveDeadline($test) === null || ! $locked->effectiveDeadline($test)->isFuture()) {
+            if ($locked->effectiveDeadline($test) !== null && ! $locked->effectiveDeadline($test)->isFuture()) {
                 return $this->complete($test, $locked, 'timeout');
             }
             if ($locked->started_at === null) {
@@ -406,7 +541,7 @@ class McTestService
         return DB::transaction(function () use ($attempt): McAttempt {
             [$test, $locked] = $this->lockAttempt($attempt);
             $this->assertPublished($test);
-            if ($test->paused_at !== null) {
+            if ($test->paused_at !== null || $locked->individualPausedAt() !== null) {
                 return $locked;
             }
             if ($locked->completed_at !== null) {
@@ -417,7 +552,7 @@ class McTestService
                 return $this->complete($test, $locked, 'timeout');
             }
             $locked->ready_at ??= now();
-            if ($test->start_mode !== 'individual' && $test->starts_at !== null && now()->greaterThanOrEqualTo($test->starts_at)) {
+            if (! $locked->startsIndividually($test) && $test->starts_at !== null && now()->greaterThanOrEqualTo($test->starts_at)) {
                 $locked->started_at ??= now();
             }
             $locked->save();
@@ -427,10 +562,11 @@ class McTestService
     }
 
     /** @param array<string, list<string>> $answers */
-    public function saveAnswers(McAttempt $attempt, array $answers): McAttempt
+    public function saveAnswers(McAttempt $attempt, array $answers, ?int $version = null): McAttempt
     {
-        return DB::transaction(function () use ($attempt, $answers): McAttempt {
+        return DB::transaction(function () use ($attempt, $answers, $version): McAttempt {
             [$test, $locked] = $this->lockAttempt($attempt);
+            $this->assertAttemptVersion($locked, $version);
             $this->assertWritable($test, $locked);
             $validated = $this->validateAnswers($locked, $answers);
             $locked->forceFill([
@@ -443,15 +579,17 @@ class McTestService
         }, 3);
     }
 
-    public function submit(McAttempt $attempt): McAttempt
+    public function submit(McAttempt $attempt, ?int $version = null): McAttempt
     {
-        return DB::transaction(function () use ($attempt): McAttempt {
+        return DB::transaction(function () use ($attempt, $version): McAttempt {
             [$test, $locked] = $this->lockAttempt($attempt);
+            $this->assertAttemptVersion($locked, $version);
+            $this->assertPublished($test);
             if ($locked->completed_at !== null) {
                 return $locked;
             }
-            $this->assertPublished($test);
             $this->assertNotPaused($test);
+            $this->assertAttemptNotPaused($locked);
             $deadline = $locked->effectiveDeadline($test);
             if ($deadline !== null && now()->greaterThanOrEqualTo($deadline)) {
                 return $this->complete($test, $locked, 'timeout');
@@ -465,7 +603,7 @@ class McTestService
 
     public function finalizeExpired(?int $testId = null): int
     {
-        $ids = McTest::query()->where('status', 'published')->whereNull('paused_at')
+        $ids = McTest::query()->whereIn('status', ['published', 'withdrawn'])->whereNull('paused_at')
             ->where(fn ($query) => $query->where(fn ($common) => $common->where('ends_at', '<=', now()))
                 ->orWhere(fn ($individual) => $individual->where('start_mode', 'individual')->whereHas('attempts', fn ($attempts) => $attempts->whereNull('completed_at'))))
             ->when($testId !== null, fn ($query) => $query->whereKey($testId))->orderBy('id')->pluck('id');
@@ -473,12 +611,15 @@ class McTestService
         foreach ($ids as $id) {
             $count += DB::transaction(function () use ($id): int {
                 $test = McTest::query()->lockForUpdate()->findOrFail($id);
-                if ($test->paused_at !== null || ($test->start_mode !== 'individual' && ($test->ends_at === null || now()->lessThan($test->ends_at)))) {
+                if (! in_array($test->status, ['published', 'withdrawn'], true) || $test->paused_at !== null || ($test->start_mode !== 'individual' && ($test->ends_at === null || now()->lessThan($test->ends_at)))) {
                     return 0;
                 }
                 $completed = 0;
                 $test->attempts()->whereNull('completed_at')->orderBy('id')->lockForUpdate()->chunkById(100, function ($attempts) use ($test, &$completed): void {
                     foreach ($attempts as $attempt) {
+                        if ($attempt->individualPausedAt() !== null) {
+                            continue;
+                        }
                         if ($attempt->effectiveDeadline($test) === null || $attempt->effectiveDeadline($test)->isFuture()) {
                             continue;
                         }
@@ -514,10 +655,11 @@ class McTestService
     {
         $this->assertPublished($test);
         $this->assertNotPaused($test);
+        $this->assertAttemptNotPaused($attempt);
         if ($attempt->completed_at !== null) {
             throw ValidationException::withMessages(['attempt' => 'Der Versuch ist bereits abgeschlossen.']);
         }
-        if ($test->start_mode === 'individual' ? $attempt->started_at === null : ($test->starts_at === null || now()->lessThan($test->starts_at))) {
+        if ($attempt->startsIndividually($test) ? $attempt->started_at === null : ($test->starts_at === null || now()->lessThan($test->starts_at))) {
             throw ValidationException::withMessages(['attempt' => 'Die Bearbeitungszeit hat noch nicht begonnen.']);
         }
         $deadline = $attempt->effectiveDeadline($test);

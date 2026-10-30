@@ -13,6 +13,7 @@ use App\Services\MultipleChoice\McAttemptActivityService;
 use App\Services\MultipleChoice\McTestService;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Queue;
@@ -288,6 +289,60 @@ test('creation freezes independent assignments and release and starts preserve t
     expect($test->attempts()->orderBy('id')->get()->pluck('questions', 'id')->all())->toBe($assigned);
     Mail::assertNothingSent();
 })->with(['common', 'individual']);
+
+test('withdrawing a test blocks both student access paths and preserves an ongoing attempt for re-release', function (): void {
+    $context = mcAdminContext();
+    $test = mcAdminPublished($context['teacher'], $context['student']);
+    $attempt = $test->attempts()->sole();
+    $url = "/api/multiple-choice/attempts/{$attempt->id}";
+    $otherTeacher = User::factory()->create(['school_id' => $context['school']->id, 'schoolyear_id' => $context['teacher']->schoolyear_id]);
+    $otherTeacher->assignRole('teacher');
+    $this->actingAs($otherTeacher, 'web')->postJson("/api/admin/multiple-choice/tests/{$test->id}/withdraw")->assertNotFound();
+    Auth::forgetGuards();
+    $this->actingAs($context['student'], 'web')->postJson("/api/admin/multiple-choice/tests/{$test->id}/withdraw")->assertForbidden();
+
+    $test = app(McTestService::class)->startCountdown($test);
+    $this->travelTo($test->starts_at);
+    $questionId = $attempt->questions[0]['id'];
+    $optionId = $attempt->questions[0]['options'][0]['id'];
+    $this->actingAs($context['student'], 'web')->putJson($url.'/answers', ['answers' => [$questionId => [$optionId]]])->assertOk();
+    $before = $attempt->fresh()->getAttributes();
+    $snapshot = $test->fresh()->snapshot;
+
+    Auth::forgetGuards();
+    $this->actingAs($context['teacher'], 'web')->postJson("/api/admin/multiple-choice/tests/{$test->id}/withdraw")
+        ->assertOk()->assertJsonPath('test.status', 'withdrawn');
+    expect($attempt->fresh()->getAttributes())->toBe($before)->and($test->fresh()->snapshot)->toBe($snapshot);
+    $this->actingAs($context['student'], 'web')->getJson('/api/multiple-choice/attempts')->assertOk()->assertJsonCount(0, 'attempts');
+    $this->getJson($url)->assertNotFound();
+    $this->putJson($url.'/answers', ['answers' => [$questionId => [$optionId]]])->assertNotFound();
+    $this->withHeader('X-MC-Access', $attempt->access_token)->getJson('/api/multiple-choice/access')->assertNotFound();
+    $this->flushHeaders();
+    Auth::forgetGuards();
+    $this->actingAs($context['teacher'], 'web')->postJson("/api/admin/multiple-choice/tests/{$test->id}/publish")
+        ->assertOk()->assertJsonPath('test.status', 'published');
+    expect($attempt->fresh()->getAttributes())->toBe($before)->and($test->fresh()->snapshot)->toBe($snapshot);
+    $this->actingAs($context['student'], 'web')->getJson($url)->assertOk()->assertJsonPath('attempt.id', $attempt->id);
+});
+
+test('withdrawn individual tests still finalize at the deadline and may be republished afterwards', function (): void {
+    $context = mcAdminContext();
+    $catalog = mcAdminCatalog($context['teacher'], 2);
+    $test = McTest::query()->create(['school_id' => $context['school']->id, 'schoolyear_id' => $context['teacher']->schoolyear_id,
+        'owner_id' => $context['teacher']->id, 'catalog_id' => $catalog->id, 'title' => 'Test', 'question_count' => 2,
+        'total_points' => 2, 'duration_seconds' => 600, 'lead_seconds' => 0, 'start_mode' => 'individual', 'closes_at' => now()->addMinutes(5)]);
+    $test = app(McTestService::class)->publish($test, [$context['student']->id]);
+    $attempt = $test->attempts()->sole();
+    $questions = $attempt->questions;
+    $token = $attempt->access_token;
+    $this->actingAs($context['teacher'])->postJson("/api/admin/multiple-choice/tests/{$test->id}/withdraw")->assertOk();
+    $this->travelTo($test->closes_at->addSecond());
+    expect(app(McTestService::class)->finalizeExpired($test->id))->toBe(1);
+    expect($attempt->fresh()->completion_reason)->toBe('timeout');
+    $this->postJson("/api/admin/multiple-choice/tests/{$test->id}/publish")->assertOk()->assertJsonPath('test.status', 'published');
+    expect($attempt->fresh()->questions)->toBe($questions)->and($attempt->fresh()->access_token)->toBe($token)
+        ->and($attempt->fresh()->completion_reason)->toBe('timeout');
+});
 
 test('creation rejects pools smaller than ten and duplicate question identities without partial records', function (bool $duplicate) {
     $context = mcAdminContext();
@@ -1000,6 +1055,24 @@ test('owning teachers control full pause and exam mode while foreign teachers ca
     $this->actingAs($foreign['teacher'])->postJson($url.'/pause')->assertNotFound();
     $this->postJson($url.'/resume')->assertNotFound();
     $this->patchJson($url.'/exam-mode', ['enabled' => true])->assertNotFound();
+});
+
+test('attempt control requires ownership and a current explicit reset confirmation', function () {
+    $context = mcAdminContext();
+    $test = mcAdminPublished($context['teacher'], $context['student']);
+    $attempt = $test->attempts()->sole();
+    $url = "/api/admin/multiple-choice/tests/{$test->id}/attempts/control";
+    $reset = ['action' => 'reset', 'attempt_ids' => [$attempt->id], 'all' => true,
+        'expected' => [$attempt->id => $attempt->controlRevision()]];
+    $this->actingAs($context['teacher'])->postJson($url, $reset)->assertUnprocessable();
+    $this->postJson($url, [...$reset, 'confirmed' => true, 'expected' => [$attempt->id => str_repeat('0', 64)]])->assertConflict();
+    expect($attempt->fresh()->control())->toBe([]);
+    $foreign = mcAdminContext();
+    $this->app['auth']->forgetGuards();
+    $this->actingAs($foreign['teacher'])->postJson($url, [...$reset, 'confirmed' => true])->assertNotFound();
+    $this->app['auth']->forgetGuards();
+    $this->actingAs($context['teacher'])->postJson($url, [...$reset, 'confirmed' => true])->assertOk();
+    expect($attempt->fresh()->control()['version'])->toBe(1);
 });
 
 test('selected reopening finalizes an expired monitored attempt without the immutable assignment error', function () {

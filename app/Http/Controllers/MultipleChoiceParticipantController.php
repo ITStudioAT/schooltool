@@ -69,7 +69,7 @@ class MultipleChoiceParticipantController extends Controller
     public function start(Request $request, McAttempt $attempt): JsonResponse
     {
         $this->authorizeAttempt($request, $attempt);
-        $attempt = $this->tests->startIndividual($attempt)->load('test');
+        $attempt = $this->tests->startIndividual($attempt, $this->attemptVersion($request))->load('test');
         if ($attempt->completed_at === null) {
             FinalizeMultipleChoiceTest::dispatch((int) $attempt->test_id)->delay($attempt->effectiveDeadline())->afterCommit();
         }
@@ -89,7 +89,7 @@ class MultipleChoiceParticipantController extends Controller
             'events.*.focused' => ['required', 'boolean'],
             'events.*.fullscreen' => ['required', 'boolean'],
         ]);
-        app(McAttemptActivityService::class)->record($attempt, $data['session'], $data['events']);
+        app(McAttemptActivityService::class)->record($attempt, $data['session'], $data['events'], $this->attemptVersion($request));
 
         return $this->respond(['recorded' => true]);
     }
@@ -98,7 +98,7 @@ class MultipleChoiceParticipantController extends Controller
     {
         $this->authorizeAttempt($request, $attempt);
         $data = $request->validate(['answers' => ['required', 'array', 'max:1000'], 'answers.*' => ['array', 'max:100']]);
-        $attempt = $this->tests->saveAnswers($attempt, $data['answers']);
+        $attempt = $this->tests->saveAnswers($attempt, $data['answers'], $this->attemptVersion($request));
 
         return $this->respond(['attempt' => $this->serialize($attempt->load('test'))]);
     }
@@ -106,7 +106,7 @@ class MultipleChoiceParticipantController extends Controller
     public function submit(Request $request, McAttempt $attempt): JsonResponse
     {
         $this->authorizeAttempt($request, $attempt);
-        $attempt = $this->tests->submit($attempt);
+        $attempt = $this->tests->submit($attempt, $this->attemptVersion($request));
 
         return $this->respond(['attempt' => $this->serialize($attempt->load('test'))]);
     }
@@ -114,6 +114,14 @@ class MultipleChoiceParticipantController extends Controller
     private function assertAvailable(): void
     {
         abort_unless(Schema::hasTable('mc_attempts'), 503, 'Multiple Choice ist noch nicht aktiviert. Bitte wende dich an deine Lehrkraft.');
+    }
+
+    private function attemptVersion(Request $request): ?int
+    {
+        $version = $request->header('X-MC-Attempt-Version');
+        abort_if($version !== null && ! preg_match('/\A\d{1,10}\z/', $version), 422);
+
+        return $version === null ? null : (int) $version;
     }
 
     private function accountStudent(): User
@@ -182,8 +190,10 @@ class MultipleChoiceParticipantController extends Controller
     private function serialize(McAttempt $attempt, bool $includeQuestions = true, bool $ownerPreview = false): array
     {
         $test = $attempt->test;
-        $clock = $test->paused_at ?? now();
-        $released = $ownerPreview || ($test->start_mode === 'individual' ? $attempt->started_at !== null : ($test->starts_at !== null && $clock->greaterThanOrEqualTo($test->starts_at)));
+        $pausedAt = collect([$test->paused_at, $attempt->individualPausedAt()])->filter()->sort()->first();
+        $clock = $pausedAt ?? now();
+        $individual = $attempt->startsIndividually($test);
+        $released = $ownerPreview || ($individual ? $attempt->started_at !== null : ($test->starts_at !== null && $clock->greaterThanOrEqualTo($test->starts_at)));
         $status = $attempt->completed_at
             ? ($attempt->completion_reason === 'submitted' ? 'submitted' : 'timeout')
             : ($attempt->started_at ? 'in_progress' : ($attempt->ready_at ? 'ready' : 'not_started'));
@@ -214,10 +224,10 @@ class MultipleChoiceParticipantController extends Controller
             'id' => $attempt->id, 'test_id' => $test->id, 'title' => $test->title,
             'question_count' => $test->question_count, 'total_points' => $test->total_points,
             'duration_seconds' => $test->duration_seconds, 'lead_seconds' => $test->lead_seconds,
-            'start_mode' => $test->start_mode ?? 'common',
+            'start_mode' => $individual ? 'individual' : 'common', 'attempt_version' => (int) ($attempt->control()['version'] ?? 0),
             'closes_at' => $attempt->closingDeadline($test)?->toIso8601String(),
-            'starts_at' => ($test->start_mode === 'individual' ? $attempt->started_at : $test->starts_at)?->toIso8601String(), 'ends_at' => $attempt->effectiveDeadline($test)?->toIso8601String(),
-            'exam_mode' => (bool) $test->exam_mode, 'paused_at' => $test->paused_at?->toIso8601String(),
+            'starts_at' => ($individual ? $attempt->started_at : $test->starts_at)?->toIso8601String(), 'ends_at' => $attempt->effectiveDeadline($test)?->toIso8601String(),
+            'exam_mode' => (bool) $test->exam_mode, 'paused_at' => $pausedAt?->toIso8601String(),
             'server_now' => now()->toIso8601String(), 'status' => $status,
             'ready_at' => $attempt->ready_at?->toIso8601String(), 'started_at' => $attempt->started_at?->toIso8601String(),
             'completed_at' => $attempt->completed_at?->toIso8601String(),

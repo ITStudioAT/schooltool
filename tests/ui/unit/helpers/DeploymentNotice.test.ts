@@ -14,6 +14,7 @@ describe('deployment notices', () => {
 
     beforeEach(() => {
         vi.useFakeTimers()
+        vi.spyOn(document, 'hidden', 'get').mockReturnValue(false)
         window.sessionStorage.clear()
         document.body.innerHTML = '<main><input value="Unsaved lesson plan"></main>'
         fetchStatus = vi.fn().mockResolvedValue(jsonResponse({ state: 'idle', id: null }))
@@ -251,6 +252,63 @@ describe('deployment notices', () => {
         await vi.advanceTimersByTimeAsync(30000)
         expect(fetchStatus).toHaveBeenCalledTimes(2)
         expect(notice()).toBeNull()
+    })
+
+    it('pauses polling in a hidden tab and checks immediately when it becomes visible', async () => {
+        await start()
+        vi.spyOn(document, 'hidden', 'get').mockReturnValue(true)
+        document.dispatchEvent(new Event('visibilitychange'))
+
+        await vi.advanceTimersByTimeAsync(60000)
+        expect(fetchStatus).toHaveBeenCalledTimes(1)
+
+        fetchStatus.mockResolvedValue(jsonResponse({ state: 'scheduled', id: 'release-1' }))
+        vi.spyOn(document, 'hidden', 'get').mockReturnValue(false)
+        document.dispatchEvent(new Event('visibilitychange'))
+        await monitor.checkNow()
+        expect(fetchStatus).toHaveBeenCalledTimes(2)
+        expect(notice()?.textContent).toContain('Bitte speichern Sie jetzt')
+
+        await vi.advanceTimersByTimeAsync(10000)
+        expect(fetchStatus).toHaveBeenCalledTimes(3)
+
+        monitor.stop()
+        document.dispatchEvent(new Event('visibilitychange'))
+        await vi.advanceTimersByTimeAsync(10000)
+        expect(fetchStatus).toHaveBeenCalledTimes(3)
+    })
+
+    it('does not request status when started in a hidden tab', async () => {
+        vi.spyOn(document, 'hidden', 'get').mockReturnValue(true)
+        await start()
+        await vi.advanceTimersByTimeAsync(30000)
+        expect(fetchStatus).not.toHaveBeenCalled()
+
+        vi.spyOn(document, 'hidden', 'get').mockReturnValue(false)
+        document.dispatchEvent(new Event('visibilitychange'))
+        await monitor.checkNow()
+        expect(fetchStatus).toHaveBeenCalledOnce()
+    })
+
+    it('lets an in-flight check finish without continuing to poll a hidden tab', async () => {
+        let finish
+        fetchStatus.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve }))
+        monitor = startDeploymentNotice({ fetchStatus, reload })
+
+        vi.spyOn(document, 'hidden', 'get').mockReturnValue(true)
+        document.dispatchEvent(new Event('visibilitychange'))
+        finish(jsonResponse({ state: 'scheduled', id: 'release-1' }))
+        await monitor.checkNow()
+        expect(notice()?.textContent).toContain('Bitte speichern Sie jetzt')
+
+        await vi.advanceTimersByTimeAsync(30000)
+        expect(fetchStatus).toHaveBeenCalledOnce()
+
+        fetchStatus.mockResolvedValue(jsonResponse({ state: 'scheduled', id: 'release-1' }))
+        vi.spyOn(document, 'hidden', 'get').mockReturnValue(false)
+        document.dispatchEvent(new Event('visibilitychange'))
+        await monitor.checkNow()
+        expect(fetchStatus).toHaveBeenCalledTimes(2)
     })
 
     it('aborts stalled requests and resumes polling', async () => {

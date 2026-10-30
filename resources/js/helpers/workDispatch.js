@@ -1,3 +1,11 @@
+export function workStudentDistribution(work, studentId = null) {
+    const release = work?.status?.student_distribution
+    if (!release?.published_at || release.withdrawn_at) return null
+    const assignedIds = new Set((work.groups || []).flatMap(group => group.student_ids || []).map(String))
+    const recipients = (release.student_ids || []).filter(id => assignedIds.has(String(id)))
+    return recipients.length && (studentId === null || recipients.some(id => String(id) === String(studentId))) ? release : null
+}
+
 export function workTaskDispatchCompleted(work) {
     return work?.status?.task_dispatch_completed === true
 }

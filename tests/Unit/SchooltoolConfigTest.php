@@ -4,8 +4,8 @@ use Tests\TestCase;
 
 uses(TestCase::class);
 
-it('does not profile the frequently polled health status endpoint', function () {
-    expect(config('debugbar.except'))->toContain('api/admin/health/status');
+it('does not profile the frequently polled health endpoints', function () {
+    expect(config('debugbar.except'))->toContain('up', 'api/admin/health/status');
 });
 
 it('provides the European allergen list with character and short description', function () {

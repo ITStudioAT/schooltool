@@ -1,4 +1,8 @@
 <template>
+    <span v-if="portalRelease" class="d-inline-flex align-center ga-1 text-caption text-success" :title="`Im Schülerbereich bereitgestellt am ${assessmentTimeText(portalRelease.published_at)}`">
+        <v-icon icon="mdi-account-school-outline" size="16" aria-label="Im Schülerbereich bereitgestellt" />
+        <span v-if="!compact">Im Schülerbereich bereitgestellt</span>
+    </span>
     <span v-if="records.length || showAssessmentTimes" :class="!compact && (aggregate || showResultTime) ? 'd-flex flex-column ga-1' : 'd-inline-flex align-center ga-1'">
         <template v-for="item in records" :key="item.purpose + (item.record.method || '') + (item.pendingCount ? item.record.mode : '')">
             <template v-if="showAssessmentTimes && item.purpose === 'results' && !item.pendingCount">
@@ -21,6 +25,7 @@
 
 <script setup>
 import { computed } from 'vue'
+import { workStudentDistribution } from '@/helpers/workDispatch'
 import { workAutomationEnabled } from '@/helpers/workAutomation'
 import { dispatchNotificationText, workDispatchRecord, workDispatchReady, workDispatchPlanningRecords, workProvisionRecords, provisionNotificationText } from '@/helpers/workDispatch'
 import { assessmentTimeText, assessmentCompletionText, currentAssessmentRecord } from '@/helpers/workAssessmentTimes'
@@ -33,6 +38,7 @@ const props = defineProps({
     compact: { type: Boolean, default: false },
     nativeTitle: { type: Boolean, default: true },
 })
+const portalRelease = computed(() => workStudentDistribution(props.work, props.aggregate ? null : props.studentId))
 const resultSentText = sentAt => dispatchNotificationText(sentAt)
     .replace('Über die Korrektur per E-Mail verständigt', props.aggregate ? 'Ergebnisbenachrichtigung zuletzt versandt' : 'Ergebnisbenachrichtigung versandt')
 const showAssessmentTimes = computed(() => workAutomationEnabled(props.work) && !props.compact && !props.aggregate && props.showResultTime && props.work?.id && props.studentId)

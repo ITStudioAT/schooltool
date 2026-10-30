@@ -15,11 +15,13 @@ use App\Services\TeachingCourseWorkService;
 use App\Services\TeachingWorkAiExport;
 use App\Services\TeachingWorkCollectionStatus;
 use App\Services\TeachingWorkDispatchImport;
+use App\Services\TeachingWorkExerciseGeneration;
 use App\Services\TeachingWorkFolderImport;
 use App\Services\TeachingWorkJsonImport;
 use App\Services\TeachingWorkMarkdownImport;
 use App\Services\TeachingWorkMultipleChoice;
 use App\Services\TeachingWorkRefreshProgress;
+use App\Services\TeachingWorkStudentDistribution;
 use Closure;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -33,6 +35,60 @@ use Throwable;
 
 class CourseWorkController extends Controller
 {
+    public function studentDistributionPreview(TeachingCourseWork $course_work, TeachingWorkStudentDistribution $distribution): JsonResponse
+    {
+        $actor = $this->userHasRole(['admin', 'teaching_admin', 'teacher']);
+        abort_unless($actor && $course_work->teachingCourse, 403);
+        $this->authorizeTeachingCourseAccess($course_work->teachingCourse, $actor);
+
+        return response()->json(['data' => ['tests' => $distribution->mcReleasePreview($course_work)]])->header('Cache-Control', 'private, no-store');
+    }
+
+    public function studentDistribution(Request $request, TeachingCourseWork $course_work, TeachingWorkStudentDistribution $distribution, TeachingCourseWorkEntrySyncService $entries): JsonResponse
+    {
+        $actor = $this->userHasRole(['admin', 'teaching_admin', 'teacher']);
+        abort_unless($actor && $course_work->teachingCourse, 403);
+        $this->authorizeTeachingCourseAccess($course_work->teachingCourse, $actor);
+        $data = $request->validate(['publish' => ['required', 'boolean'], 'instructions' => ['nullable', 'string', 'max:20000'],
+            'files' => ['sometimes', 'array', 'max:5'], 'files.*' => ['file', 'extensions:pdf', 'mimetypes:application/pdf', 'max:8192'],
+            'retained_file_ids' => ['sometimes', 'array', 'max:5'], 'retained_file_ids.*' => ['required', 'uuid', 'distinct'],
+            'expected_version' => ['required', 'string', 'size:64'], 'mc_tests' => ['nullable', 'string', 'max:65536']]);
+        $createdPaths = [];
+        $committed = false;
+        try {
+            $result = DB::transaction(function () use ($course_work, $actor, $data, $request, $distribution, $entries, &$createdPaths, &$committed): array {
+                DB::afterCommit(function () use (&$committed): void {
+                    $committed = true;
+                });
+                $work = TeachingCourseWork::query()->with('teachingCourse')->lockForUpdate()->findOrFail($course_work->id);
+                $this->authorizeTeachingCourseAccess($work->teachingCourse, $actor);
+                abort_unless(hash_equals($distribution->version($work), $data['expected_version']), 409, 'Die Arbeit wurde inzwischen geändert. Bitte neu öffnen.');
+                if ($data['publish']) {
+                    $distribution->publishMcTests($work, $data['mc_tests'] ?? null);
+                    $distribution->publish($work, $data['instructions'] ?? '', $request->file('files', []), $createdPaths, $data['retained_file_ids'] ?? []);
+                } else {
+                    $status = $work->status ?? [];
+                    if (isset($status['student_distribution'])) {
+                        $status['student_distribution']['withdrawn_at'] = now()->toIso8601String();
+                        $work->update(['status' => $status]);
+                    }
+                }
+
+                return $entries->serializeWork($work->load('teachingCourseWorkGroupStudents'));
+            });
+        } catch (Throwable $exception) {
+            if ($committed) {
+                report($exception);
+
+                return response()->json(['message' => 'Die Freigabe wurde gespeichert, aber die automatische Abschlussplanung konnte nicht bestätigt werden. Bitte den aktuellen Stand erneut öffnen und prüfen.'], 500);
+            }
+            Storage::disk('local')->delete($createdPaths);
+            throw $exception;
+        }
+
+        return response()->json(['data' => $result]);
+    }
+
     private const ManualCompletionFields = [
         'email_preparation_completed', 'task_dispatch_completed', 'submission_collection_completed',
         'evaluation_completed', 'publication_completed', 'notification_completed',
@@ -61,32 +117,60 @@ class CourseWorkController extends Controller
         return response()->json($multipleChoice->options($course_work, $actor, $data['date'] ?? null, $preview['context']['work']))->header('Cache-Control', 'private, no-store');
     }
 
-    public function prepareExercise(Request $request, TeachingCourseWork $course_work, TeachingWorkAiExport $export, TeachingWorkMultipleChoice $multipleChoice): JsonResponse
+    public function prepareExercise(Request $request, TeachingCourseWork $course_work, TeachingWorkAiExport $export, TeachingWorkMultipleChoice $multipleChoice, TeachingWorkExerciseGeneration $generation): JsonResponse
     {
         $actor = $this->userHasRole(['admin', 'teaching_admin', 'teacher']);
         abort_unless($actor && $course_work->teachingCourse, 403);
         $this->authorizeTeachingCourseAccess($course_work->teachingCourse, $actor);
         $data = $request->validate([
-            'date' => ['nullable', 'date_format:Y-m-d'], 'mc_mode' => ['required', 'in:existing,new'],
+            'date' => ['nullable', 'date_format:Y-m-d'], 'mc_mode' => ['required_unless:execution,openai', 'nullable', 'in:existing,new'],
+            'execution' => ['sometimes', 'in:openai'],
+            'email_form_policy' => ['required_if:execution,openai', 'nullable', 'string', 'min:5', 'max:2000'],
+            'instructions' => ['nullable', 'string', 'max:8000'],
             'test_id' => ['required_if:mc_mode,existing', 'nullable', 'integer', 'min:1'],
             'catalog_id' => ['required_if:mc_mode,new', 'nullable', 'integer', 'min:1'],
+            'question_count' => ['sometimes', 'required', 'integer', 'min:1', 'max:2000'],
             'total_points' => ['required_if:mc_mode,new', 'nullable', 'numeric', 'min:0.01', 'max:100000', 'decimal:0,2'],
             'duration_minutes' => ['required_if:mc_mode,new', 'nullable', 'integer', 'min:1', 'max:1440'],
-            'mc_points' => ['required', 'numeric', 'min:0.01', 'max:100000', 'decimal:0,2'],
+            'mc_points' => ['required_with:mc_mode', 'numeric', 'min:0.01', 'max:100000', 'decimal:0,2'],
             'other_points' => ['sometimes', 'required', 'numeric', 'min:0', 'max:100000', 'decimal:0,2'],
-            'expected_maximum_points' => ['required', 'numeric', 'min:0.01', 'max:100000', 'decimal:0,2'],
+            'expected_maximum_points' => ['required_with:mc_mode', 'numeric', 'min:0.01', 'max:100000', 'decimal:0,2'],
             'request_id' => ['required', 'uuid'], 'expected_test_id' => ['present', 'nullable', 'integer', 'min:1'],
         ]);
 
-        return DB::transaction(function () use ($course_work, $actor, $data, $export, $multipleChoice): JsonResponse {
+        if (($data['execution'] ?? null) === 'openai') {
+            $generation->requireConfigured();
+        }
+        $prepared = DB::transaction(function () use ($course_work, $actor, $data, $export, $multipleChoice): array {
             $work = TeachingCourseWork::query()->with('teachingCourse')->lockForUpdate()->findOrFail($course_work->id);
             $this->authorizeTeachingCourseAccess($work->teachingCourse, $actor);
             $preview = $export->buildExercise($work, $actor, false, $data['date'] ?? null);
-            $test = $multipleChoice->prepare($work, $actor, $data, $preview['context']['course_roster']['participants'], $preview['context']['work']);
+            if (empty($data['mc_mode'])) {
+                return $preview;
+            }
+            $mcData = array_diff_key($data, array_flip(['execution', 'email_form_policy', 'instructions']));
+            $test = $multipleChoice->prepare($work, $actor, $mcData, $preview['context']['course_roster']['participants'], $preview['context']['work']);
 
-            return response()->json(['data' => $export->buildExercise($work, $actor, true, $data['date'] ?? null, $test)])
-                ->header('Cache-Control', 'private, no-store');
+            return $export->buildExercise($work, $actor, true, $data['date'] ?? null, $test);
         });
+        $result = ['data' => $prepared];
+        if (($data['execution'] ?? null) === 'openai') {
+            $result['generation'] = $generation->preview($course_work->fresh('teachingCourse'), $actor, $prepared,
+                $data['email_form_policy'], $data['instructions'] ?? '');
+        }
+
+        return response()->json($result)->header('Cache-Control', 'private, no-store');
+    }
+
+    public function storeExercise(Request $request, TeachingCourseWork $course_work, TeachingWorkExerciseGeneration $generation): JsonResponse
+    {
+        $actor = $this->userHasRole(['admin', 'teaching_admin', 'teacher']);
+        abort_unless($actor && $course_work->teachingCourse, 403);
+        $this->authorizeTeachingCourseAccess($course_work->teachingCourse, $actor);
+        $data = $request->validate(['generation_id' => ['required', 'uuid'], 'approved' => ['required', 'accepted']]);
+
+        return response()->json(['data' => $generation->store($course_work, $actor, $data['generation_id'])])
+            ->header('Cache-Control', 'private, no-store');
     }
 
     public function studentDeadline(Request $request, TeachingCourseWork $course_work, TeachingCourseWorkEntrySyncService $entries): JsonResponse
@@ -481,7 +565,7 @@ class CourseWorkController extends Controller
             unset($validated['status']['submission_checks']);
             unset($validated['status']['communicated_deadline_at']);
             unset($validated['status']['communicated_deadline_date']);
-            unset($validated['status']['completion_override'], $validated['status']['multiple_choice_tests']);
+            unset($validated['status']['completion_override'], $validated['status']['multiple_choice_tests'], $validated['status']['student_distribution'], $validated['status']['student_task_files']);
             foreach (self::ManualCompletionFields as $field) {
                 unset($validated['status'][$field]);
             }
@@ -517,6 +601,11 @@ class CourseWorkController extends Controller
         $progress = null;
         $progressKey = null;
         $progressService = app(TeachingWorkRefreshProgress::class);
+        if (request()->boolean('stream_progress') && request()->boolean('refresh_collection')) {
+            request()->merge(['stream_progress' => false]);
+
+            return $progressService->stream(request(), fn () => $this->show($course_work, $entrySyncService));
+        }
         if (request()->boolean('refresh_collection')) {
             $data = request()->validate(['progress_id' => ['sometimes', 'uuid']]);
             if (isset($data['progress_id'])) {
@@ -609,7 +698,7 @@ class CourseWorkController extends Controller
             $validated['status']['dispatch_notifications'] = $course_work->status['dispatch_notifications'] ?? [];
             $validated['status']['dispatch_attempts'] = $course_work->status['dispatch_attempts'] ?? [];
             $validated['status']['folder_import_sources'] = $course_work->status['folder_import_sources'] ?? [];
-            foreach (['assessment_json_imports', 'assessment_json_packages', 'submission_checks', 'provision_events', 'provision_imports', 'communicated_deadline_at', 'communicated_deadline_date', 'completion_override', 'multiple_choice_tests', ...self::ManualCompletionFields] as $field) {
+            foreach (['student_distribution', 'student_task_files', 'assessment_json_imports', 'assessment_json_packages', 'submission_checks', 'provision_events', 'provision_imports', 'communicated_deadline_at', 'communicated_deadline_date', 'completion_override', 'multiple_choice_tests', ...self::ManualCompletionFields] as $field) {
                 if (isset($course_work->status[$field])) {
                     $validated['status'][$field] = $course_work->status[$field];
                 } else {

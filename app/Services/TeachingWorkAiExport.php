@@ -344,6 +344,12 @@ class TeachingWorkAiExport
         $link = $modules->current($work);
         $exercise = $connection && $link && $link->dropbox_connection_id === $connection->id && $link->account_id === $connection->account_id
             ? $modules->exercise($connection, $work, $link, $date, refresh: false, initial: false) : null;
+        $release = $work->status['student_distribution'] ?? [];
+        $assigned = collect($selected['work']['groups'])->flatMap(fn (array $group): array => $group['schooltool_student_ids'])->map(fn ($id): string => (string) $id)->all();
+        $releasedIds = collect($release['student_ids'] ?? [])->filter(fn ($id): bool => in_array((string) $id, $assigned, true))->values()->all();
+        $studentDistribution = ! empty($release['published_at']) && empty($release['withdrawn_at']) && $releasedIds !== []
+            ? ['source' => 'schooltool_student_distribution', 'published_at' => $release['published_at'], 'student_ids' => $releasedIds]
+            : null;
         $context = ['purpose' => 'collect-exercise-submissions', 'mode' => $repeat ? 'repeat' : 'collect',
             'work_id' => (int) $work->id, 'course_id' => (int) $work->teaching_course_id,
             'course' => $selected['course'], 'work' => $selected['work'], 'course_roster' => $selected['course_roster'],
@@ -351,6 +357,7 @@ class TeachingWorkAiExport
             'folder_binding' => $selected['folder_binding'], 'module_binding' => $selected['module_binding'],
             'historical_source_metadata' => collect($work->status['assessment_json_packages'] ?? [])->last()['exercise'] ?? null,
             'task_delivery' => $exercise['email_dispatch'] ?? null,
+            'student_distribution' => $studentDistribution,
             'collection_receipt_contract' => [
                 'schema_version' => 1,
                 'completion' => ['kind' => 'schooltool.collection-run-completion', 'exercise_id' => 'schooltool-work:'.$work->id,
@@ -375,7 +382,7 @@ class TeachingWorkAiExport
             .'Verwenden Sie den Skill download-exercise-submissions-from-email für genau die unten referenzierte bestehende Arbeit. '
             .'Übernehmen Sie den bestätigten Leistungsfeststellungsordner und die maßgebliche Teilnehmerliste per Dropbox-API. '
             .'Falls keine eindeutige Ordnerbindung gespeichert ist, ermitteln und bestätigen Sie den vorhandenen Ordner anhand der Arbeitsidentität und Originalbelege online; keinen neuen Leistungsfeststellungsordner anlegen und bei Mehrdeutigkeit stoppen.'."\n\n"
-            .'Prüfen Sie die tatsächlichen Aufgabenversand- oder Bereitstellungsbelege vor dem Postfachabruf. Mailpit-Testversand ist kein Beleg einer echten Zustellung an Schüler:innen. '
+            .'Prüfen Sie die tatsächlichen Aufgabenversand- oder Bereitstellungsbelege vor dem Postfachabruf. Eine bestätigte student_distribution belegt die Bereitstellung an die genannten Personen, jedoch weder einen E-Mail-Versand noch einen individuellen Download. Mailpit-Testversand ist kein Beleg einer echten Zustellung an Schüler:innen. '
             .'Sammeln Sie nach dem Skill-Vertrag aus beiden vorhandenen Schulpostfächern guenther.kron@cdgym.at und guenther.kron@bildung.gv.at. '
             .'Verwenden Sie ausschließlich vorhandene Zugänge. Gleichen Sie Teilnehmeridentität und konkreten Aufgabenbezug getrennt ab. '
             .'Die gespeicherte endgültige Abgabefrist ist maßgeblich; eine optionale Schülerfrist ersetzt sie nicht. Fehlende Pflichtangaben nicht erfinden. '

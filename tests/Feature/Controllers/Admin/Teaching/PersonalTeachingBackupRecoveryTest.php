@@ -79,7 +79,11 @@ test('admin can approve a deleted student and restore grades attendance work gro
     Storage::disk('local')->put($provisionPath, 'provision original');
     $logs[] = ['file_path' => $provisionPath, 'storage_disk' => 'local', 'sha256' => hash('sha256', 'provision original'), 'purpose' => 'provision', 'origin' => 'provision_import'];
     $provision = ['student_id' => $id, 'participant_id' => 'stable-1', 'exercise_id' => 'exercise-1', 'log_sha256' => hash('sha256', 'provision original'), 'origin' => 'provision_import'];
+    $taskPath = "teaching/work_tasks/{$this->school->id}/{$work->id}/original.pdf";
+    Storage::disk('local')->put($taskPath, '%PDF-1.4 task original');
     $work->update(['status' => ['evaluation_pdfs' => $pdfs,
+        'student_task_files' => [['id' => 'task-1', 'file_path' => $taskPath, 'storage_disk' => 'local', 'name' => 'Aufgabe.pdf']],
+        'student_distribution' => ['student_ids' => [$id], 'file_ids' => ['task-1'], 'published_at' => '2026-09-10T10:00:00Z', 'instructions' => 'Aufgabe'],
         'provision_events' => [$provision + ['method' => 'download_release', 'available_at' => '2026-09-10T10:00:00Z']], 'provision_imports' => [$provision],
         'dispatch_logs' => $logs, 'dispatch_notifications' => $notices,
         'dispatch_attempts' => [['student_id' => $id, 'purpose' => 'tasks', 'mode' => 'test', 'log_sha256' => $logs[0]['sha256'], 'origin' => 'dispatch_import']]]]);
@@ -106,6 +110,8 @@ test('admin can approve a deleted student and restore grades attendance work gro
         ->and($work->fresh()->groups[0]['grades'][0]['student_id'])->toBe($this->target->id)
         ->and($work->fresh()->status['evaluation_pdfs'][0]['student_id'])->toBeNull()
         ->and($work->fresh()->status['evaluation_pdfs'][1]['student_id'])->toBe($this->target->id)
+        ->and($work->fresh()->status['student_distribution']['student_ids'])->toBe([$this->target->id])
+        ->and(Storage::disk('local')->get($work->fresh()->status['student_task_files'][0]['file_path']))->toBe('%PDF-1.4 task original')
         ->and(array_column($work->fresh()->status['dispatch_notifications'], 'student_id'))->toBe([$this->target->id, $this->target->id])
         ->and(array_column($work->fresh()->status['dispatch_notifications'], 'purpose'))->toBe(['tasks', 'results'])
         ->and($work->fresh()->status['dispatch_attempts'][0]['student_id'])->toBe($this->target->id)

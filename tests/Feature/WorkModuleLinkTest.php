@@ -908,6 +908,122 @@ test('copying an export or an empty LF root is not proof of exercise creation', 
     $this->getJson($this->url.'?include_exercise=1')->assertOk()->assertJsonPath('exercise.status', 'missing');
 });
 
+/** @return array{path:string,source:array<string,mixed>,roster:array<string,mixed>,metadata:array<string,mixed>,handshake:array<string,mixed>} */
+function addLegacyPartOneFixture(object $context, string $name = '2026-10-06_Alte_LF'): array
+{
+    addExerciseFixture($context, $name, ['Modulbindung' => null]);
+    $module = dirname($context->online[0]['path_display']);
+    $path = $module.'/Leistungsfeststellung/'.$name;
+    $sourcePath = $path.'/Schülerlisten/Quelle_Schooltool_Arbeitsdaten.json';
+    $rosterPath = $path.'/Schülerlisten/Schuelerliste.json';
+    $local = fn (string $path): string => 'C:\\Dropbox'.str_replace('/', '\\', $path);
+    $source = ['school' => ['id' => $context->course->school_id], 'course' => ['id' => $context->course->id],
+        'work' => ['id' => $context->work->id, 'scheduled_date' => '2026-10-06'],
+        'module_binding' => ['status' => 'linked', 'schema_version' => 1, 'module_id' => json_decode($context->handshake, true)['module_id'],
+            'dropbox_folder_id' => 'id:folder'.basename(strtolower($module)), 'dropbox_path' => $module]];
+    $sourceBytes = json_encode($source, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+    $roster = ['complete' => true, 'scope' => 'active_saved_work_groups', 'participants' => [],
+        'selection' => ['work_id' => $context->work->id, 'course_id' => $context->course->id, 'source_sha256' => hash('sha256', $sourceBytes)]];
+    $rosterBytes = json_encode($roster, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+    $metadata = ['Status' => 'Teil 1 angelegt', 'Schooltool_Arbeit_ID' => $context->work->id,
+        'Schooltool_Kurs_ID' => $context->course->id, 'Schooltool_Schule_ID' => $context->course->school_id,
+        'Durchfuehrungsdatum' => '2026-10-06', 'Lerninhaltquelle' => $local($module),
+        'Leistungsfeststellungsordner' => $local($path),
+        'Dateien' => [['Rolle' => 'Unveränderte Teilnehmerquelle', 'Kopie' => $local($sourcePath), 'SHA256' => hash('sha256', $sourceBytes)]],
+        'Teilnehmerliste' => $local($rosterPath), 'Teilnehmerliste_SHA256' => hash('sha256', $rosterBytes)];
+    $handshake = ['schema_version' => 1, 'kind' => 'schooltool.exercise_folder', 'exercise_folder_id' => 'a263b873-4f27-4167-90f0-7d94ea0f67fa'];
+    $context->online = array_values(array_filter($context->online, fn (array $entry): bool => $entry['path_lower'] !== strtolower($path.'/Transaktionen/History.json')));
+    foreach ([$path.'/Anlage_und_Quellen.json' => $metadata, $path.'/handshake.json' => $handshake,
+        $sourcePath => $source, $rosterPath => $roster] as $file => $contents) {
+        addEmailPreparationFile($context, $file, json_encode($contents, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR));
+    }
+
+    return compact('path', 'source', 'roster', 'metadata', 'handshake');
+}
+
+test('a proven older part-one exercise is recognized without writing or inventing completed assignment evidence', function (): void {
+    linkExerciseFixture($this);
+    $fixture = addLegacyPartOneFixture($this);
+    $before = $this->work->fresh()->getAttributes();
+    $this->getJson($this->url.'?include_exercise=1&refresh=1&date=2026-10-06')->assertOk()
+        ->assertJsonPath('exercise.status', 'found')->assertJsonPath('exercise.assignment_status', 'missing')
+        ->assertJsonPath('exercise.folder.name', basename($fixture['path']))
+        ->assertJsonPath('exercise.email_preparation.status', 'missing');
+    expect($this->work->fresh()->getAttributes())->toEqual($before);
+    Http::assertNotSent(fn (Request $request): bool => preg_match('#/files/(upload|delete|move|create)#', $request->url()) === 1);
+});
+
+test('an older part-one exercise with altered or contradictory proof stays unconfirmed', function (string $scenario): void {
+    linkExerciseFixture($this);
+    $fixture = addLegacyPartOneFixture($this);
+    $path = $fixture['path'];
+    $source = $fixture['source'];
+    $roster = $fixture['roster'];
+    $metadata = $fixture['metadata'];
+    $handshake = $fixture['handshake'];
+    if ($scenario === 'source bytes') {
+        $source['work']['id'] = 999;
+    } elseif ($scenario === 'roster bytes') {
+        $roster['complete'] = false;
+    } elseif ($scenario === 'module identity') {
+        $source['module_binding']['module_id'] = 'b263b873-4f27-4167-90f0-7d94ea0f67fa';
+        $sourceBytes = json_encode($source, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+        $metadata['Dateien'][0]['SHA256'] = $roster['selection']['source_sha256'] = hash('sha256', $sourceBytes);
+        $metadata['Teilnehmerliste_SHA256'] = hash('sha256', json_encode($roster, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR));
+    } elseif ($scenario === 'source work identity') {
+        $source['work']['id'] = 999;
+        $sourceBytes = json_encode($source, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+        $metadata['Dateien'][0]['SHA256'] = $roster['selection']['source_sha256'] = hash('sha256', $sourceBytes);
+        $metadata['Teilnehmerliste_SHA256'] = hash('sha256', json_encode($roster, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR));
+    } elseif ($scenario === 'roster binding') {
+        $roster['selection']['work_id'] = 999;
+        $metadata['Teilnehmerliste_SHA256'] = hash('sha256', json_encode($roster, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR));
+    } elseif ($scenario === 'folder handshake') {
+        $handshake['kind'] = 'wrong';
+    } elseif ($scenario === 'folder path') {
+        $metadata['Leistungsfeststellungsordner'] = 'C:\\Dropbox\\anderen-ordner';
+    } elseif ($scenario === 'module path') {
+        $metadata['Lerninhaltquelle'] = 'C:\\Dropbox\\anderes-modul';
+    } elseif ($scenario === 'copy path') {
+        $metadata['Dateien'][0]['Kopie'] = 'C:\\Dropbox\\fremde-quelle.json';
+    } elseif ($scenario === 'other documents') {
+        addEmailPreparationFile($this, $path.'/Angaben/fremd.pdf', '%PDF-1.4');
+    } elseif ($scenario === 'other preparation') {
+        addEmailPreparationFile($this, $path.'/Schooltool-Vorbereitung.json', '{}');
+    } elseif ($scenario === 'wrong status') {
+        $metadata['Status'] = 'Teil 2 angelegt';
+    } elseif ($scenario === 'malformed binding') {
+        $metadata['Modulbindung'] = 'invalid';
+    }
+    foreach ([$path.'/Anlage_und_Quellen.json' => $metadata, $path.'/handshake.json' => $handshake,
+        $path.'/Schülerlisten/Quelle_Schooltool_Arbeitsdaten.json' => $source, $path.'/Schülerlisten/Schuelerliste.json' => $roster] as $file => $contents) {
+        addEmailPreparationFile($this, $file, json_encode($contents, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR));
+    }
+    $this->getJson($this->url.'?include_exercise=1&refresh=1&date=2026-10-06')->assertOk()
+        ->assertJsonPath('exercise.status', 'unknown')->assertJsonPath('exercise.folder', null);
+    Http::assertNotSent(fn (Request $request): bool => preg_match('#/files/(upload|delete|move|create)#', $request->url()) === 1);
+})->with(['source bytes', 'roster bytes', 'module identity', 'source work identity', 'roster binding', 'folder handshake', 'folder path',
+    'module path', 'copy path', 'other documents', 'other preparation', 'wrong status', 'malformed binding']);
+
+test('a matching exercise with incomplete module binding is unconfirmed instead of inviting duplicate creation', function (mixed $binding, bool $alsoConfirmed): void {
+    linkExerciseFixture($this);
+    addExerciseFixture($this, '2026-10-06_unbestaetigt', ['Modulbindung' => $binding]);
+    if ($alsoConfirmed) {
+        addExerciseFixture($this, '2026-10-06_bestaetigt');
+    }
+    $before = $this->work->fresh()->getAttributes();
+    $this->getJson($this->url.'?include_exercise=1&refresh=1&date=2026-10-06')->assertOk()
+        ->assertJsonPath('exercise.status', 'unknown')->assertJsonPath('exercise.folder', null)
+        ->assertJsonPath('exercise.message', 'Anlagezustand nicht bestätigt. Ein passender LF-Ordner wurde gefunden, aber seine Modulzuordnung ist unvollständig. Bitte den bestehenden Ordner prüfen.');
+    expect($this->work->fresh()->getAttributes())->toEqual($before);
+    Http::assertNotSent(fn (Request $request): bool => preg_match('#/files/(upload|delete|move|create)#', $request->url()) === 1);
+})->with([
+    'missing' => [null, false],
+    'missing module id' => [['module_id' => null], false],
+    'unconfirmed status' => [['status' => 'pending'], false],
+    'another confirmed folder' => [null, true],
+]);
+
 test('ambiguous or incomplete matching exercise packages stay unconfirmed', function (bool $duplicate): void {
     linkExerciseFixture($this);
     addExerciseFixture($this);

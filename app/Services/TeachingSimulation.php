@@ -34,15 +34,31 @@ class TeachingSimulation
             abort_unless(filter_var($person['email'] ?? '', FILTER_VALIDATE_EMAIL), 422,
                 'Für alle ausgewählten Personen wird eine belegte E-Mail-Adresse benötigt.');
         }
-        $connection = $this->dropbox->connection($actor);
-        $folder = $context['exercise_folder'] ?? null;
-        if (! $folder && ($link = $this->modules->current($work))) {
-            $exercise = $this->modules->exercise($connection, $work, $link, $date, refresh: true);
-            $folder = $exercise['status'] === 'found' ? $exercise['folder'] : null;
+        if (isset($work->status['local_test_copy']['source_work_id'])) {
+            $files = $work->status['student_task_files'] ?? [];
+            abort_unless(count($files) === 1, 422, 'Die lokale Testkopie benötigt genau ein Aufgaben-PDF.');
+            $file = $files[0];
+            $path = $file['file_path'] ?? '';
+            $prefix = 'teaching/work_tasks/'.$work->teachingCourse->school_id.'/'.$work->id.'/';
+            abort_unless(($file['storage_disk'] ?? null) === 'local' && str_starts_with($path, $prefix)
+                && ! str_contains($path, '..') && ! str_contains($path, '\\') && Storage::disk('local')->exists($path),
+                422, 'Das Aufgaben-PDF gehört nicht zur lokalen Testkopie.');
+            $bytes = Storage::disk('local')->get($path);
+            abort_unless(strlen($bytes) <= 8 * 1024 * 1024 && str_starts_with($bytes, '%PDF-')
+                && hash_equals($file['sha256'] ?? '', hash('sha256', $bytes)), 422, 'Das lokale Aufgaben-PDF wurde verändert.');
+            $task = ['name' => $file['name'], 'bytes' => $bytes];
+            $folderId = null;
+        } else {
+            $connection = $this->dropbox->connection($actor);
+            $folder = $context['exercise_folder'] ?? null;
+            if (! $folder && ($link = $this->modules->current($work))) {
+                $exercise = $this->modules->exercise($connection, $work, $link, $date, refresh: true);
+                $folder = $exercise['status'] === 'found' ? $exercise['folder'] : null;
+            }
+            $folderId = $folder['id'] ?? $context['folder_binding']['dropbox_folder_id'] ?? null;
+            abort_unless(is_string($folderId), 422, 'Zuerst den bestehenden Leistungsfeststellungsordner bestätigen.');
+            $task = $this->assignment($connection, $folderId);
         }
-        $folderId = $folder['id'] ?? $context['folder_binding']['dropbox_folder_id'] ?? null;
-        abort_unless(is_string($folderId), 422, 'Zuerst den bestehenden Leistungsfeststellungsordner bestätigen.');
-        $task = $this->assignment($connection, $folderId);
         $assignment = (new Parser)->parseContent($task['bytes'])->getText();
         $variants = $this->answers->generate($assignment);
         preg_match_all('/[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/', $assignment, $matches);

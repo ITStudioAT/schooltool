@@ -2619,7 +2619,7 @@ class TeachingBackupService
                 ->flatMap(function (array $row): array {
                     $status = $this->arrayValue($row['status'] ?? []);
 
-                    return array_merge($status['evaluation_pdfs'] ?? [], $status['dispatch_logs'] ?? []);
+                    return array_merge($status['evaluation_pdfs'] ?? [], $status['dispatch_logs'] ?? [], $status['student_task_files'] ?? []);
                 })
                 ->map(fn (array $pdf): array => $this->filePayload($pdf['file_path'], 'local', true)))
             ->merge(collect($tables['teaching_course_date_material_attachments'] ?? [])
@@ -3827,6 +3827,13 @@ class TeachingBackupService
             return null;
         }
         $status = $this->arrayValue($status);
+        foreach ($status['student_task_files'] ?? [] as $index => $file) {
+            $status['student_task_files'][$index]['file_path'] = $this->restoreFilePath($file['file_path'], $files, "teaching/work_tasks/{$schoolId}/restored");
+            $status['student_task_files'][$index]['storage_disk'] = 'local';
+        }
+        if (isset($status['student_distribution']['student_ids']) && $userIdMap !== []) {
+            $status['student_distribution']['student_ids'] = array_map(fn (int $id): int => $userIdMap[$id] ?? throw new RuntimeException('Schülerzuordnung der Aufgabenfreigabe fehlt.'), $status['student_distribution']['student_ids']);
+        }
         foreach ($status['evaluation_pdfs'] ?? [] as $index => $pdf) {
             $status['evaluation_pdfs'][$index]['file_path'] = $this->restoreFilePath($pdf['file_path'], $files, "teaching/work_evaluations/{$schoolId}/restored");
             $status['evaluation_pdfs'][$index]['storage_disk'] = 'local';

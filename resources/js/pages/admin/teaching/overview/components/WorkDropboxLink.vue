@@ -21,7 +21,17 @@
                     {{ state.message }}
                     <v-btn v-if="state.configured && state.installed" class="mt-2" @click="connectDropbox">Dropbox verbinden</v-btn>
                 </v-alert>
-                <v-progress-linear v-if="busy" class="mt-4" indeterminate aria-label="Dropbox wird geprüft" />
+                <v-progress-linear v-if="busy && !progress" class="mt-4" indeterminate aria-label="Dropbox wird geprüft" />
+                <section v-if="progress" class="link-progress mt-4" aria-label="Fortschritt der Verknüpfung" aria-live="polite">
+                    <strong>{{ progress.failed ? 'Verknüpfung unterbrochen' : progress.completed.includes('save') ? 'Verknüpfung abgeschlossen' : progress.active ? 'Verknüpfung läuft' : 'Bereit zum Verknüpfen' }}</strong>
+                    <ul>
+                        <li v-for="step in progressSteps" :key="step.id" :class="progressClass(step.id)">
+                            <span class="link-progress-icon" aria-hidden="true">{{ progress.completed.includes(step.id) ? '✓' : progress.failed && progress.active === step.id ? '!' : '•' }}</span>
+                            <span>{{ step.label }}</span>
+                            <span class="link-progress-caption">{{ progressText(step.id) }}</span>
+                        </li>
+                    </ul>
+                </section>
                 <div v-if="resolved" class="mt-4">
                     <v-alert :type="resolved.conflict ? 'error' : 'info'" variant="tonal">{{ resolved.message }}</v-alert>
                     <div v-if="resolved.candidate" class="mt-3">
@@ -39,8 +49,8 @@
             </v-card-text>
             <v-card-actions>
                 <v-spacer />
-                <v-btn :disabled="busy || folderBusy" @click="opened = false">Abbrechen</v-btn>
-                <v-btn v-if="!legacyLink" color="primary" variant="flat" :disabled="busy || !resolved?.can_link || !resolved?.proof || resolved?.conflict" @click="link">Verknüpfen</v-btn>
+                <v-btn :disabled="busy || folderBusy" @click="opened = false">{{ progress?.completed.includes('save') ? 'Fertig' : 'Abbrechen' }}</v-btn>
+                <v-btn v-if="!legacyLink && !progress?.completed.includes('save')" color="primary" variant="flat" :disabled="busy || !resolved?.can_link || !resolved?.proof || resolved?.conflict" @click="link">Verknüpfen</v-btn>
             </v-card-actions>
         </v-card>
     </v-dialog>
@@ -71,6 +81,12 @@ const filename = ref('')
 const resolved = ref(null)
 const busy = ref(false)
 const folderBusy = ref(false)
+const progress = ref(null)
+const progressSteps = [
+    { id: 'file', label: 'Handshake-Datei lesen und prüfen' },
+    { id: 'online', label: 'Lernmodul in Dropbox prüfen' },
+    { id: 'save', label: 'Verknüpfung speichern' },
+]
 const pondKey = ref(0)
 const key = computed(() => workDropboxKey(admin.config?.user?.id, work.value))
 const legacyLink = computed(() => Boolean(work.value) && !workNeedsPreparation(work.value, state.value))
@@ -89,6 +105,18 @@ function folderLinked() {
     if (workDropboxStates.get(key.value)?.folder?.id) opened.value = false
 }
 
+function progressClass(step) {
+    if (progress.value.completed.includes(step)) return 'link-progress-done'
+    if (progress.value.active === step) return progress.value.failed ? 'link-progress-failed' : 'link-progress-active'
+    return 'link-progress-pending'
+}
+
+function progressText(step) {
+    if (progress.value.completed.includes(step)) return 'Erledigt'
+    if (progress.value.active === step) return progress.value.failed ? 'Nicht abgeschlossen' : 'Läuft …'
+    return 'Ausstehend'
+}
+
 function message(exception) {
     return Object.values(exception.response?.data?.errors || {}).flat()[0]
         || exception.response?.data?.message || exception.message || 'Dropbox konnte nicht geprüft werden. Bitte erneut versuchen.'
@@ -103,6 +131,7 @@ async function openLink(value) {
     contents.value = ''
     filename.value = ''
     resolved.value = null
+    progress.value = null
     pondKey.value++
     opened.value = true
     const current = operation
@@ -139,17 +168,26 @@ async function selectFiles(items) {
     resolved.value = null
     contents.value = ''
     filename.value = ''
+    progress.value = null
     if (items.length !== 1) return
     if (!acceptFile(items[0])) return
     error.value = ''
+    progress.value = { completed: [], active: 'file', failed: false }
+    busy.value = true
     try {
         const selected = await readModuleHandshake(items[0].file)
         if (current !== operation) return
         contents.value = selected.contents
         filename.value = selected.filename
+        progress.value.completed.push('file')
         await resolve()
     } catch (exception) {
-        if (current === operation) error.value = message(exception)
+        if (current === operation) {
+            error.value = message(exception)
+            progress.value.failed = true
+        }
+    } finally {
+        if (current === operation) busy.value = false
     }
 }
 
@@ -160,12 +198,24 @@ async function resolve() {
     error.value = ''
     resolved.value = null
     busy.value = true
+    progress.value = { completed: ['file'], active: 'online', failed: false }
     try {
         const response = await axios.post(storeFolder.url(work.value.id), { handshake: contents.value, filename: filename.value, resolve: true },
             { signal: controller.signal, timeout: 120000 })
-        if (current === operation && key.value === currentKey) resolved.value = response.data
+        if (current === operation && key.value === currentKey) {
+            resolved.value = response.data
+            if (response.data?.can_link && response.data?.proof && !response.data?.conflict) {
+                progress.value.completed.push('online')
+                progress.value.active = null
+            } else {
+                progress.value.failed = true
+            }
+        }
     } catch (exception) {
-        if (current === operation) error.value = message(exception)
+        if (current === operation) {
+            error.value = message(exception)
+            progress.value.failed = true
+        }
     } finally {
         if (current === operation) busy.value = false
     }
@@ -177,16 +227,20 @@ async function link() {
     const currentKey = key.value
     busy.value = true
     error.value = ''
+    progress.value.active = 'save'
+    progress.value.failed = false
     try {
         const response = await axios.post(storeFolder.url(work.value.id), { handshake: contents.value, filename: filename.value, proof: resolved.value.proof },
             { signal: controller.signal, timeout: 120000 })
         if (current !== operation || key.value !== currentKey) return
         workDropboxStates.set(currentKey, response.data)
-        opened.value = false
+        progress.value.completed.push('save')
+        progress.value.active = null
     } catch (exception) {
         if (current === operation) {
             error.value = message(exception)
             resolved.value = null
+            progress.value.failed = true
         }
     } finally {
         if (current === operation) busy.value = false
@@ -209,4 +263,14 @@ defineExpose({ openLink })
 .module-folder-path {
     overflow-wrap: anywhere;
 }
+.link-progress { padding: 12px 14px; border: 1px solid #d8e4f0; border-radius: 10px; background: #f7fafc; color: #233b53; }
+.link-progress ul { list-style: none; padding: 0; margin: 8px 0 0; }
+.link-progress li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 4px 0; font-size: 0.8rem; }
+.link-progress-icon { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 20px; width: 20px; height: 20px; border-radius: 50%; background: #e4ebf1; color: #63798c; font-weight: 700; }
+.link-progress-done .link-progress-icon { background: #d6f2e3; color: #08783e; }
+.link-progress-active .link-progress-icon { background: #d8eaff; color: #1565b8; }
+.link-progress-failed .link-progress-icon { background: #fde3e3; color: #b42318; }
+.link-progress-caption { margin-left: auto; color: #536d83; font-size: 0.72rem; }
+.link-progress-done .link-progress-caption { color: #08783e; }
+.link-progress-failed .link-progress-caption { color: #b42318; }
 </style>

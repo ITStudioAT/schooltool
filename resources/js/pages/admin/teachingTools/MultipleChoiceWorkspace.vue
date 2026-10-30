@@ -229,7 +229,7 @@
                                         :aria-label="`Test umbenennen: ${item.title}`" title="Test umbenennen" @click="openTestRename(item)" />
                                 </div>
                                 <p class="text-body-2 text-medium-emphasis mt-2">{{ item.question_count }} Fragen · {{ item.total_points }} Punkte · {{ Math.round(item.duration_seconds / 60) }} Minuten</p>
-                                <p class="text-caption text-medium-emphasis mt-1">{{ item.status === 'draft' ? 'Erstellt · noch nicht freigegeben' : item.start_mode === 'individual' ? `Selbstständiger Start · Schlussfrist: ${dateLabel(item.closes_at)}` : item.starts_at ? `Start: ${dateLabel(item.starts_at)}` : 'Warteraum geöffnet' }}</p>
+                                <p class="text-caption text-medium-emphasis mt-1">{{ item.status === 'withdrawn' ? 'Testfreigabe zurückgenommen' : item.status === 'draft' ? 'Erstellt · noch nicht freigegeben' : item.start_mode === 'individual' ? `Selbstständiger Start · Schlussfrist: ${dateLabel(item.closes_at)}` : item.starts_at ? `Start: ${dateLabel(item.starts_at)}` : 'Warteraum geöffnet' }}</p>
                             </v-card-text>
                             <v-card-actions class="mc-test-card-actions pa-4 pt-0">
                                 <v-btn color="primary" variant="text" append-icon="mdi-arrow-right" :disabled="!!busy"
@@ -425,7 +425,11 @@
                             <strong>Noch nicht freigegeben</strong>
                             <p>Die Fragen sind pro Person gespeichert. Schüler können diesen Test erst nach der separaten Freigabe öffnen.</p>
                         </v-alert>
-                        <p v-if="selectedTest.start_mode === 'individual'" class="text-body-2 mt-3">{{ selectedTest.status === 'draft' ? 'Nach Freigabe: selbstständiger Start' : 'Selbstständiger Start' }} · Schlussfrist für alle: {{ dateLabel(selectedTest.closes_at) }} · {{ selectedTest.duration_seconds / 60 }} Minuten ab persönlichem Start</p>
+                        <v-alert v-else-if="selectedTest.status === 'withdrawn'" type="warning" variant="tonal" class="mt-4" role="status">
+                            <strong>Testfreigabe zurückgenommen</strong>
+                            <p>Der Zugang ist gesperrt. Gespeicherte Fragen, Antworten und Ergebnisse bleiben erhalten. {{ selectedTest.paused_at ? 'Der Test bleibt pausiert und die Zeit steht still.' : 'Bearbeitungszeiten und Schlussfristen laufen weiter.' }}</p>
+                        </v-alert>
+                        <p v-if="selectedTest.start_mode === 'individual'" class="text-body-2 mt-3">{{ selectedTest.status === 'withdrawn' && selectedTest.paused_at ? 'Nach erneuter Freigabe und Fortsetzen: selbstständiger Start' : ['draft', 'withdrawn'].includes(selectedTest.status) ? 'Nach Freigabe: selbstständiger Start' : 'Selbstständiger Start' }} · Schlussfrist für alle: {{ dateLabel(selectedTest.closes_at) }} · {{ selectedTest.duration_seconds / 60 }} Minuten ab persönlichem Start</p>
                         <p v-else-if="selectedTest.starts_at" class="text-body-2 mt-3">Start:
                             {{ dateLabel(selectedTest.starts_at) }} · Ende: {{ dateLabel(selectedTest.ends_at) }}</p>
                         <div v-if="section === 'tests'" v-show="['control', 'access'].includes(testPane)" class="mc-control-grid mc-control-grid--single mt-5">
@@ -433,32 +437,34 @@
                                 <h3>Prüfung steuern</h3>
                                 <div class="mc-toolbar mt-3">
                                     <v-btn v-if="selectedTest.status === 'draft'" color="primary" variant="flat" :loading="busy === 'publish'" :disabled="!!busy" @click="releaseTestDialog = true">Test freigeben</v-btn>
-                                    <v-btn v-if="selectedTest.status !== 'draft' && selectedTest.start_mode !== 'individual' && !selectedTest.starts_at" color="primary" variant="flat" prepend-icon="mdi-play"
+                                    <v-btn v-else-if="selectedTest.status === 'withdrawn'" color="primary" variant="flat" :loading="busy === 'publish'" :disabled="!!busy" @click="releaseTestDialog = true">Test wieder freigeben</v-btn>
+                                    <v-btn v-else-if="selectedTest.status === 'published'" variant="outlined" :disabled="!!busy" @click="withdrawTestDialog = true">Testfreigabe zurücknehmen</v-btn>
+                                    <v-btn v-if="!['draft', 'withdrawn'].includes(selectedTest.status) && selectedTest.start_mode !== 'individual' && !selectedTest.starts_at" color="primary" variant="flat" prepend-icon="mdi-play"
                                         :loading="busy === 'countdown'" :disabled="!!busy" @click="startDialog = true">Countdown starten ({{ selectedTest.lead_seconds }} s)</v-btn>
-                                    <v-btn v-if="selectedTest.paused_at" color="primary" variant="flat" prepend-icon="mdi-play" :disabled="!!busy" @click="setTestPause(false)">Test fortsetzen</v-btn>
+                                    <v-btn v-if="selectedTest.paused_at && selectedTest.status !== 'withdrawn'" color="primary" variant="flat" prepend-icon="mdi-play" :disabled="!!busy" @click="setTestPause(false)">Test fortsetzen</v-btn>
                                     <v-btn v-else-if="canPauseTest" variant="outlined" prepend-icon="mdi-pause" :disabled="!!busy" @click="setTestPause(true)">Alle pausieren</v-btn>
                                     <v-btn v-if="testRunning" variant="outlined" :disabled="!!busy" @click="openRemainingTime">Restzeit ändern</v-btn>
                                     <v-btn v-if="canCloseTest" color="error" variant="text" :disabled="!!busy" @click="closeTestDialog = true">Test vorzeitig schließen</v-btn>
-                                    <v-btn v-if="canReopenAttempts" variant="outlined" prepend-icon="mdi-lock-open-outline"
+                                    <v-btn v-if="canReopenAttempts && selectedTest.status !== 'withdrawn'" variant="outlined" prepend-icon="mdi-lock-open-outline"
                                         :disabled="!!busy || !reopenSelectionEnabled || !attempts.length" @click="openReopenSelection">Wieder öffnen</v-btn>
                                 </div>
-                                <p v-if="allAttemptsCompleted" class="text-body-2 mt-3">Alle Bearbeitungen sind abgeschlossen. Zum Wiederöffnen wählst du hier alle geeigneten oder einzelne Schüler und ihre Zusatzzeit aus.</p>
-                                <p v-else-if="testEnded && hasPersonalRunningAttempts" class="text-body-2 mt-3">Persönliche Zusatzzeit läuft. Abgeschlossene Bearbeitungen kannst du hier wieder öffnen.</p>
-                                <p v-if="hasCompletedAttempts && selectedTest.start_mode !== 'individual' && !testEnded" class="text-body-2 mt-2">Wiederöffnen ist nach Ende der gemeinsamen Bearbeitungszeit möglich. Du kannst den laufenden Test dafür vorzeitig schließen.</p>
+                                <p v-if="selectedTest.status !== 'withdrawn' && allAttemptsCompleted" class="text-body-2 mt-3">Alle Bearbeitungen sind abgeschlossen. Zum Wiederöffnen wählst du hier alle geeigneten oder einzelne Schüler und ihre Zusatzzeit aus.</p>
+                                <p v-else-if="selectedTest.status !== 'withdrawn' && testEnded && hasPersonalRunningAttempts" class="text-body-2 mt-3">Persönliche Zusatzzeit läuft. Abgeschlossene Bearbeitungen kannst du hier wieder öffnen.</p>
+                                <p v-if="selectedTest.status !== 'withdrawn' && hasCompletedAttempts && selectedTest.start_mode !== 'individual' && !testEnded" class="text-body-2 mt-2">Wiederöffnen ist nach Ende der gemeinsamen Bearbeitungszeit möglich. Du kannst den laufenden Test dafür vorzeitig schließen.</p>
                                 <div class="mc-toolbar mt-3">
-                                    <v-btn variant="text" :disabled="!!busy || allAttemptsCompleted" :prepend-icon="selectedTest.exam_mode ? 'mdi-eye-off-outline' : 'mdi-eye-outline'" @click="toggleExamMode">{{ selectedTest.exam_mode ? 'Prüfungsmodus deaktivieren' : 'Prüfungsmodus aktivieren' }}</v-btn>
+                                    <v-btn v-if="selectedTest.status !== 'withdrawn'" variant="text" :disabled="!!busy || allAttemptsCompleted" :prepend-icon="selectedTest.exam_mode ? 'mdi-eye-off-outline' : 'mdi-eye-outline'" @click="toggleExamMode">{{ selectedTest.exam_mode ? 'Prüfungsmodus deaktivieren' : 'Prüfungsmodus aktivieren' }}</v-btn>
                                 </div>
                                 <p class="text-caption text-medium-emphasis mt-2">Status wird automatisch aktualisiert.</p>
                             </section>
                             <section v-show="testPane === 'access'" class="mc-control-section" aria-label="Zugang und Einladungen">
                                 <h3>Zugang und Einladungen</h3>
-                                <p class="text-body-2 text-medium-emphasis mt-2">{{ selectedTest.access_links_disabled_at ? 'Persönliche Zugangslinks sind deaktiviert. Die Schüleranmeldung bleibt möglich.' : 'Persönliche Links öffnen oder kopieren: direkt in der Schülerliste.' }}</p>
+                                <p class="text-body-2 text-medium-emphasis mt-2">{{ selectedTest.status === 'withdrawn' ? 'Die Testfreigabe ist zurückgenommen. Zugänge stehen erst nach erneuter Freigabe zur Verfügung.' : selectedTest.access_links_disabled_at ? 'Persönliche Zugangslinks sind deaktiviert. Die Schüleranmeldung bleibt möglich.' : 'Persönliche Links öffnen oder kopieren: direkt in der Schülerliste.' }}</p>
                                 <div class="mc-toolbar mt-3">
-                                    <v-btn variant="outlined" prepend-icon="mdi-email-outline" :disabled="!!busy || !!selectedTest.access_links_disabled_at" @click="openInvitationDialog">Einladungen vorbereiten</v-btn>
+                                    <v-btn variant="outlined" prepend-icon="mdi-email-outline" :disabled="!!busy || !!selectedTest.access_links_disabled_at || selectedTest.status === 'withdrawn'" @click="openInvitationDialog">Einladungen vorbereiten</v-btn>
                                     <v-btn variant="outlined" prepend-icon="mdi-folder-sync-outline" :disabled="!!busy" @click="folderDialog = true">Im Testordner speichern</v-btn>
-                                    <v-btn variant="text" :loading="busy === 'exercise-folder-export'" :disabled="!!busy || !!selectedTest.access_links_disabled_at" @click="saveExerciseExportToDirectory">Einmalig lokal speichern</v-btn>
-                                    <v-btn variant="outlined" prepend-icon="mdi-download-outline" :loading="busy === 'exercise-export'" :disabled="!!busy || !!selectedTest.access_links_disabled_at" @click="downloadExerciseExport">Für Leistungsfeststellung exportieren</v-btn>
-                                    <v-btn variant="text" :prepend-icon="selectedTest.access_links_disabled_at ? 'mdi-link' : 'mdi-link-off'" :disabled="!!busy" @click="toggleAccessLinks">{{ selectedTest.access_links_disabled_at ? 'Zugangslinks aktivieren' : 'Zugangslinks deaktivieren' }}</v-btn>
+                                    <v-btn variant="text" :loading="busy === 'exercise-folder-export'" :disabled="!!busy || !!selectedTest.access_links_disabled_at || selectedTest.status === 'withdrawn'" @click="saveExerciseExportToDirectory">Einmalig lokal speichern</v-btn>
+                                    <v-btn variant="outlined" prepend-icon="mdi-download-outline" :loading="busy === 'exercise-export'" :disabled="!!busy || !!selectedTest.access_links_disabled_at || selectedTest.status === 'withdrawn'" @click="downloadExerciseExport">Für Leistungsfeststellung exportieren</v-btn>
+                                    <v-btn v-if="selectedTest.status !== 'withdrawn'" variant="text" :prepend-icon="selectedTest.access_links_disabled_at ? 'mdi-link' : 'mdi-link-off'" :disabled="!!busy" @click="toggleAccessLinks">{{ selectedTest.access_links_disabled_at ? 'Zugangslinks aktivieren' : 'Zugangslinks deaktivieren' }}</v-btn>
                                 </div>
                                 <p class="text-caption text-medium-emphasis mt-2">Die persönlichen Testlinks können schon vor dem Teststart im lokalen Testordner gespeichert und für die Aufgaben-Mails verwendet werden. Der Export startet den Test nicht.</p>
                                 <p v-if="selectedTest.access_links_disabled_at" class="text-caption mt-2">Die Sperre gilt auch für bereits geöffnete persönliche Links.</p>
@@ -516,7 +522,7 @@
                                                     icon="mdi-open-in-new" size="small" variant="tonal" color="primary"
                                                     :aria-label="`Persönlichen Test von ${attempt.student_name} öffnen`" title="Persönlichen Testzugang öffnen" />
                                                 <v-btn v-if="attempt.access_url" icon="mdi-content-copy" size="small" variant="text" color="primary" :aria-label="`Zugangslink von ${attempt.student_name} kopieren`" title="Zugangslink kopieren" @click="copyAccessLink(attempt)" />
-                                                <span v-else class="text-caption">{{ selectedTest.status === 'draft' ? 'Schülerzugang noch gesperrt' : '—' }}</span>
+                                                <span v-else class="text-caption">{{ selectedTest.status === 'draft' ? 'Schülerzugang noch gesperrt' : selectedTest.status === 'withdrawn' ? 'Schülerzugang gesperrt' : '—' }}</span>
                                             </td>
                                             <td>{{ statusLabel(attempt.status) }}
                                                 <div v-if="selectedTest.start_mode === 'individual'" class="text-caption text-medium-emphasis">
@@ -998,12 +1004,23 @@
         </v-dialog>
         <v-dialog v-model="releaseTestDialog" max-width="520">
             <v-card>
-                <v-card-title>Test freigeben?</v-card-title>
-                <v-card-text>Die gespeicherten Fragen bleiben erhalten. {{ selectedTest?.start_mode === 'individual' ? 'Danach können die Teilnehmer selbst starten.' : 'Danach öffnet sich der Warteraum. Den Countdown startest du separat.' }}</v-card-text>
+                <v-card-title>{{ selectedTest?.status === 'withdrawn' ? 'Test wieder freigeben?' : 'Test freigeben?' }}</v-card-title>
+                <v-card-text>Die gespeicherten Fragen bleiben erhalten. {{ selectedTest?.status === 'withdrawn' ? (selectedTest?.paused_at ? 'Der Test bleibt pausiert, bis du ihn fortsetzt. Bereits abgeschlossene Versuche bleiben abgeschlossen.' : 'Der Zugang wird wieder freigegeben. Bearbeitungszeiten und Schlussfristen bleiben unverändert; bereits abgeschlossene Versuche bleiben abgeschlossen.') : selectedTest?.start_mode === 'individual' ? 'Danach können die Teilnehmer selbst starten.' : 'Danach öffnet sich der Warteraum. Den Countdown startest du separat.' }}</v-card-text>
                 <v-card-actions>
                     <v-btn @click="releaseTestDialog = false">Zurück</v-btn>
                     <v-spacer />
                     <v-btn color="primary" :disabled="!!busy" :loading="busy === 'publish'" @click="releaseCreatedTest">Test freigeben</v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
+        <v-dialog v-model="withdrawTestDialog" max-width="520" :persistent="!!busy">
+            <v-card>
+                <v-card-title>Testfreigabe zurücknehmen?</v-card-title>
+                <v-card-text>Der Test kann über Schülerkonto und persönliche Links nicht mehr geöffnet oder weiterbearbeitet werden. Bereits gespeicherte Fragen, Antworten und Ergebnisse bleiben erhalten. {{ selectedTest?.paused_at ? 'Der Test bleibt pausiert und die Zeit steht still.' : 'Laufende Bearbeitungszeiten und Schlussfristen laufen weiter; abgelaufene Versuche werden abgeschlossen.' }} Du kannst den Test später wieder freigeben.</v-card-text>
+                <v-card-actions>
+                    <v-btn :disabled="!!busy" @click="withdrawTestDialog = false">Abbrechen</v-btn>
+                    <v-spacer />
+                    <v-btn color="primary" :disabled="!!busy" :loading="busy === 'withdraw-test'" @click="withdrawCreatedTest">Testfreigabe zurücknehmen</v-btn>
                 </v-card-actions>
             </v-card>
         </v-dialog>
@@ -1093,6 +1110,7 @@ import {
     testFolderResolve,
     createTest,
     publishTest as publishCreatedTest,
+    withdrawTest,
     showTest,
     exportExercise,
     renameTest,
@@ -1316,15 +1334,16 @@ const remainingMinutes = ref(0)
 const remainingSeconds = ref(0)
 const remainingTimeValue = computed(() => Number(remainingMinutes.value) * 60 + Number(remainingSeconds.value))
 const validRemainingTime = computed(() => Number.isInteger(Number(remainingMinutes.value)) && Number(remainingMinutes.value) >= 0 && Number.isInteger(Number(remainingSeconds.value)) && Number(remainingSeconds.value) >= 0 && Number(remainingSeconds.value) < 60 && remainingTimeValue.value > 0 && remainingTimeValue.value <= 86400)
-const canPauseTest = computed(() => Boolean(selectedTest.value && !selectedTest.value.paused_at && attempts.value.some(attempt => !attemptCompleted(attempt)) && (!testEnded.value || hasPersonalRunningAttempts.value) && (selectedTest.value.start_mode === 'individual' || selectedTest.value.starts_at)))
-const testRunning = computed(() => Boolean(!selectedTest.value?.paused_at && selectedTest.value?.start_mode !== 'individual' && selectedTest.value?.starts_at && Date.parse(selectedTest.value.starts_at) <= serverNow.value && !testEnded.value))
-const canCloseTest = computed(() => !selectedTest.value?.paused_at && (testRunning.value || hasPersonalRunningAttempts.value))
+const canPauseTest = computed(() => Boolean(selectedTest.value && selectedTest.value.status !== 'withdrawn' && !selectedTest.value.paused_at && attempts.value.some(attempt => !attemptCompleted(attempt)) && (!testEnded.value || hasPersonalRunningAttempts.value)))
+const testRunning = computed(() => Boolean(selectedTest.value?.status !== 'withdrawn' && !selectedTest.value?.paused_at && selectedTest.value?.start_mode !== 'individual' && selectedTest.value?.starts_at && Date.parse(selectedTest.value.starts_at) <= serverNow.value && !testEnded.value))
+const canCloseTest = computed(() => selectedTest.value?.status !== 'withdrawn' && !selectedTest.value?.paused_at && (testRunning.value || hasPersonalRunningAttempts.value))
 const monitorError = ref('')
 const publishDialog = ref(false)
 const startDialog = ref(false)
 const mailDialog = ref(false)
 const releaseMode = ref(null)
 const releaseTestDialog = ref(false)
+const withdrawTestDialog = ref(false)
 const questionPreviewId = ref(null)
 const questionPreview = computed(() => attempts.value.find(attempt => attempt.id === questionPreviewId.value) ?? null)
 const revokeMode = ref(null)
@@ -1400,6 +1419,7 @@ const testEnded = computed(() => selectedTest.value?.start_mode === 'individual'
     : Boolean(selectedTest.value?.ends_at && Date.parse(selectedTest.value.ends_at) <= serverNow.value))
 const testPhase = computed(() => {
     const test = selectedTest.value
+    if (test?.status === 'withdrawn') return { label: 'Testfreigabe zurückgenommen', color: 'warning' }
     if (test?.status === 'draft') return { label: 'Erstellt · noch nicht freigegeben', color: 'info' }
     if (test?.paused_at) return { label: 'Test pausiert', color: 'warning' }
     if (test?.start_mode === 'individual') {
@@ -2372,6 +2392,16 @@ async function releaseCreatedTest() {
     })
 }
 
+async function withdrawCreatedTest() {
+    await task('withdraw-test', async () => {
+        await axios.post(withdrawTest.url(selectedTestId.value))
+        withdrawTestDialog.value = false
+        await refreshMonitor()
+        await loadIndex()
+        notice.value = 'Die Testfreigabe wurde zurückgenommen. Gespeicherte Antworten bleiben erhalten.'
+    })
+}
+
 async function selectTest(id) {
     if (!catalogTests.value.some((item) => item.id === id)) {
         return
@@ -2394,6 +2424,7 @@ async function loadSelectedTest(id) {
     invitationPreview.value = null
     expandedAttempt.value = null
     startDialog.value = false
+    withdrawTestDialog.value = false
     mailDialog.value = false
     releaseMode.value = null
     revokeMode.value = null

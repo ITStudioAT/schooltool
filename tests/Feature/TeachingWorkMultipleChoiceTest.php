@@ -84,6 +84,29 @@ test('the LF creates and binds one draft MC test with its actual candidates and 
     Http::assertNothingSent();
 });
 
+test('the LF uses the selected question count and rejects unavailable or invalid counts', function (): void {
+    workMcFixture($this);
+    $this->postJson($this->base.'/prepare-exercise', [...$this->payload, 'question_count' => 0])
+        ->assertUnprocessable()->assertJsonValidationErrors('question_count');
+    $this->postJson($this->base.'/prepare-exercise', [...$this->payload, 'question_count' => 11])
+        ->assertUnprocessable()->assertJsonValidationErrors('question_count');
+    expect(McTest::query()->count())->toBe(0);
+
+    $response = $this->postJson($this->base.'/prepare-exercise', [...$this->payload, 'question_count' => 7, 'duration_minutes' => 7])
+        ->assertOk()->assertJsonPath('data.context.multiple_choice_test.question_count', 7);
+    $test = McTest::query()->findOrFail($response->json('data.context.multiple_choice_test.test_id'));
+    expect($test->question_count)->toBe(7)->and($test->duration_seconds)->toBe(420);
+});
+
+test('a small reviewed catalog can be used for a test with fewer than ten questions', function (): void {
+    workMcFixture($this);
+    $this->catalog->update(['questions' => array_slice($this->catalog->questions, 0, 4)]);
+    $this->getJson($this->base.'/exercise-options?date=2026-10-20')->assertOk()
+        ->assertJsonPath('catalogs.0.reviewed_question_count', 4);
+    $this->postJson($this->base.'/prepare-exercise', [...$this->payload, 'question_count' => 4])
+        ->assertOk()->assertJsonPath('data.context.multiple_choice_test.question_count', 4);
+});
+
 test('work responses show only the titles of tests actually bound to the work and its school year', function (): void {
     workMcFixture($this);
     $id = $this->postJson($this->base.'/prepare-exercise', $this->payload)->assertOk()->json('data.context.multiple_choice_test.test_id');

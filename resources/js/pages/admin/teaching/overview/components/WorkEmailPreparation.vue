@@ -1,7 +1,7 @@
 <template>
-    <v-btn v-if="available && !ready && !statusOnly" size="small" variant="tonal" prepend-icon="mdi-email-edit-outline"
+    <v-btn v-if="available && !ready && !statusOnly && action !== 'send'" size="small" variant="tonal" prepend-icon="mdi-email-edit-outline"
         :disabled="disabled" @click.stop="openDialog('prepare')">E-Mails vorbereiten</v-btn>
-    <v-btn v-if="available && ready && !sent && !statusOnly" size="small" color="primary" variant="tonal" prepend-icon="mdi-send-outline"
+    <v-btn v-if="available && ready && !sent && !statusOnly && action !== 'prepare'" size="small" color="primary" variant="tonal" prepend-icon="mdi-send-outline"
         :disabled="disabled" @click.stop="openDialog('send')">E-Mails versenden</v-btn>
     <slot v-if="statusOnly && (workAutomationEnabled(work) || workHasProgress(work))" name="status-activator" :open="openInfo" :available="canInspect" :label="tooltip">
         <span class="d-inline-flex" :class="{ 'cursor-pointer': canInspect }"
@@ -100,7 +100,7 @@ import { workNeedsPreparation } from '@/helpers/workOverview'
 import { workHasProgress } from '@/helpers/workProgress'
 import { workDropboxKey, workDropboxStates, workExerciseCheck } from '@/helpers/workDropbox'
 
-const props = defineProps({ work: Object, state: Object, date: { type: String, default: '' }, disabled: Boolean, statusOnly: Boolean, size: { type: [Number, String], default: 30 } })
+const props = defineProps({ work: Object, state: Object, date: { type: String, default: '' }, disabled: Boolean, statusOnly: Boolean, action: { type: String, default: '' }, size: { type: [Number, String], default: 30 } })
 const admin = useAdminStore()
 const opened = ref(false)
 const infoOpened = ref(false)

@@ -19,10 +19,11 @@ export function useWorkCheckProgress() {
         return true
     }
 
-    function start(workId, progressId) {
+    function start(workId, progressId, steps = [], streaming = false) {
         stop()
         const operation = sequence
-        state.value = { state: 'running', steps: [], completed: [], active: null }
+        state.value = { state: 'running', steps, completed: [], active: null }
+        if (streaming) return operation
         let failures = 0
         const poll = async () => {
             if (operation !== sequence) return
@@ -46,6 +47,13 @@ export function useWorkCheckProgress() {
         return operation
     }
 
+    function update(operation, progress) {
+        if (operation !== sequence || !progress || !['running', 'done', 'failed'].includes(progress.state)
+            || !Array.isArray(progress.steps) || !Array.isArray(progress.completed)) return
+        state.value = progress
+        unavailable.value = false
+    }
+
     function finish(operation, finalState = null, failed = false) {
         if (!stop(operation)) return false
         if (finalState) state.value = failed && finalState.state === 'done' ? { ...finalState, state: 'failed', active: null } : finalState
@@ -59,5 +67,46 @@ export function useWorkCheckProgress() {
         state.value = null
     }
 
-    return { state, unavailable, start, finish, reset }
+    return { state, unavailable, start, update, finish, reset }
+}
+
+export function createWorkCheckStream(onProgress) {
+    let consumed = 0
+    let pending = ''
+    let result = null
+    let failure = null
+    function read(text) {
+        if (typeof text !== 'string' || text.length < consumed) return
+        pending += text.slice(consumed)
+        consumed = text.length
+        const lines = pending.split('\n')
+        pending = lines.pop()
+        for (const line of lines) {
+            if (!line.trim()) continue
+            let event
+            try {
+                event = JSON.parse(line)
+            } catch {
+                failure = { body: { message: 'Die Fortschrittsdaten sind ungültig.' } }
+                continue
+            }
+            if (event.type === 'progress') onProgress(event.data)
+            if (event.type === 'result') result = event.data
+            if (event.type === 'error') failure = event.data
+        }
+    }
+    return {
+        options: { responseType: 'text', onDownloadProgress: event => read(event.event?.target?.responseText) },
+        result(response) {
+            if (typeof response.data !== 'string') return response.data
+            read(response.data)
+            if (failure) {
+                const error = new Error(failure.body?.message || 'Die Prüfung konnte nicht abgeschlossen werden.')
+                error.response = { status: failure.status, data: failure.body }
+                throw error
+            }
+            if (!result) throw new Error('Die Prüfung wurde ohne vollständiges Ergebnis unterbrochen.')
+            return result
+        },
+    }
 }

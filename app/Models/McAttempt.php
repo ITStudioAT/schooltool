@@ -44,11 +44,39 @@ class McAttempt extends Model
         return $this->closes_at ?? ($test ?? $this->test)->closes_at;
     }
 
+    /** @return array<string, mixed> */
+    public function control(): array
+    {
+        return $this->activity_state['control'] ?? [];
+    }
+
+    public function individualPausedAt(): ?CarbonImmutable
+    {
+        $value = $this->control()['paused_at'] ?? null;
+
+        return $value ? CarbonImmutable::parse($value) : null;
+    }
+
+    public function startsIndividually(McTest $test): bool
+    {
+        return $test->start_mode === 'individual' || (bool) ($this->control()['restart_individually'] ?? false);
+    }
+
+    public function controlRevision(): string
+    {
+        return hash('sha256', json_encode([$this->id, $this->updated_at?->toIso8601String(), $this->answers,
+            $this->ready_at?->toIso8601String(), $this->started_at?->toIso8601String(), $this->submitted_at?->toIso8601String(),
+            $this->completed_at?->toIso8601String(), $this->completion_reason, $this->score, $this->percentage,
+            $this->correct_count, $this->control()], JSON_THROW_ON_ERROR));
+    }
+
     public function effectiveDeadline(?McTest $test = null): ?CarbonImmutable
     {
         $test ??= $this->test;
-        if ($test->start_mode !== 'individual') {
-            return $this->reopened_until ?? $test->ends_at;
+        if (! $this->startsIndividually($test)) {
+            $deadline = $this->reopened_until ?? $test->ends_at;
+
+            return $deadline?->addSeconds((int) ($this->control()['individual_pause_seconds'] ?? 0));
         }
         $closing = $this->closingDeadline($test);
         $personal = $this->reopened_until ?? $this->started_at?->addSeconds($test->duration_seconds + (int) $this->pause_seconds);

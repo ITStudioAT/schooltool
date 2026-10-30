@@ -24,11 +24,8 @@
                     <p class="exercise-info-description text-body-2">{{ work.description }}</p>
                 </template>
                 <h3 class="text-subtitle-2 mt-4 mb-1">Prüfungsordner</h3>
-                <p class="exercise-info-path text-body-2">{{ folder?.path || folder?.name || 'Noch kein Dropbox-Ordner zugeordnet. Die vorhandenen Ergebnisse bleiben gespeichert.' }}</p>
-                <WorkFolderBrowser v-if="folder?.id" :work="work" :date="date" exercise>
-                    <template #default="{ open }"><v-btn class="mt-3" variant="tonal" prepend-icon="mdi-folder-open-outline" @click="open">Leistungsfeststellungsordner öffnen</v-btn></template>
-                </WorkFolderBrowser>
-                <div v-if="!historical && folder?.id" class="d-flex flex-wrap ga-2 mt-4" aria-label="Prüfungsunterlagen">
+                <p class="exercise-info-path text-body-2">{{ folder?.path || folder?.name || 'Der Prüfungsordner ist derzeit nicht bestätigt. Gespeicherte Nachweise bleiben erhalten.' }}</p>
+                <div v-if="folder?.id" class="d-flex flex-wrap ga-2 mt-4" aria-label="Prüfungsunterlagen">
                     <WorkExercisePdf v-for="section in ['Angaben', 'Bewertungskriterien']" :key="section" :work="work" :date="date" :section="section" />
                     <WorkEvaluationPdf :work="work" />
                 </div>
@@ -45,22 +42,28 @@
 import { computed, ref, watch } from 'vue'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { workAutomationEnabled } from '@/helpers/workAutomation'
-import { workNeedsPreparation } from '@/helpers/workOverview'
-import { workDropboxKey, workDropboxStates } from '@/helpers/workDropbox'
+import { workLinkedMcTestTitle, workNeedsPreparation } from '@/helpers/workOverview'
+import { workDropboxKey, workDropboxStates, workExerciseCheck } from '@/helpers/workDropbox'
 import { workParticipantIds } from '@/helpers/workCellStatus'
 import { workHasProgress } from '@/helpers/workProgress'
 import WorkExercisePdf from './WorkExercisePdf.vue'
 import WorkEvaluationPdf from './WorkEvaluationPdf.vue'
-import WorkFolderBrowser from './WorkFolderBrowser.vue'
 
-const props = defineProps({ work: Object, course: Object, date: { type: String, default: '' }, state: Object, size: { type: [Number, String], default: 30 }, disabled: Boolean })
+const props = defineProps({ work: Object, course: Object, date: { type: String, default: '' }, state: Object, size: { type: [Number, String], default: 30 }, disabled: Boolean, canCreate: Boolean })
+const emit = defineEmits(['create'])
 const admin = useAdminStore()
 const binding = computed(() => workDropboxStates.get(workDropboxKey(admin.config?.user?.id, props.work)))
 const historical = computed(() => workAutomationEnabled(props.work) && workHasProgress(props.work) && !needsPreparation.value)
 const needsPreparation = computed(() => workNeedsPreparation(props.work,
     binding.value))
-const folder = computed(() => historical.value ? binding.value?.legacy_folders?.exercise || binding.value?.folder : props.state?.folder)
-const accessible = computed(() => !props.disabled && (historical.value || status.value === 'found'))
+const folder = computed(() => {
+    const key = workDropboxKey(admin.config?.user?.id, props.work)
+    const cached = workExerciseCheck(key, props.work, props.date)
+    const currentFolder = status.value === 'found' ? props.state?.folder : null
+    const checkedFolder = cached?.status === 'found' ? cached.folder : null
+    return currentFolder || checkedFolder || (historical.value ? binding.value?.legacy_folders?.exercise || binding.value?.folder : null)
+})
+const accessible = computed(() => !props.disabled && (historical.value || status.value === 'found' || (props.canCreate && status.value === 'missing')))
 const opened = ref(false)
 const checkTime = computed(() => props.state?.checkedAt ? new Intl.DateTimeFormat('de-AT', {
     timeZone: 'Europe/Vienna', dateStyle: 'short', timeStyle: 'short',
@@ -88,6 +91,11 @@ const tooltip = computed(() => {
 const course = computed(() => String(props.course?.id) === String(props.work?.teaching_course_id) ? props.course : null)
 const groups = computed(() => (props.work?.groups || []).map((group, index) => ({ ...group, index }))
     .filter(group => !props.date || (group.date || props.work.date_for_all_groups) === props.date))
+const linkedMcTests = computed(() => {
+    const slots = [props.date || props.work?.date_for_all_groups || 'all', 'all']
+    return [...new Map(slots.map(slot => [String(props.work?.status?.multiple_choice_tests?.[slot]?.test_id),
+        workLinkedMcTestTitle(props.work, slot)]).filter(([, title]) => title)).values()]
+})
 const participants = computed(() => {
     if (!Array.isArray(course.value?.students_info)) return null
     if ((props.work?.groups || []).length) {
@@ -116,6 +124,7 @@ const details = computed(() => {
         ...(maximumPoints !== null && maximumPoints !== undefined && Number.isFinite(Number(maximumPoints))
             ? [{ label: 'Maximale Punkte', value: new Intl.NumberFormat('de-AT').format(Number(maximumPoints)) }] : []),
         { label: 'Beurteilung', value: workAutomationEnabled(work) ? 'Automatische Beurteilung' : 'Manuelle Beurteilung' },
+        ...(linkedMcTests.value.length ? [{ label: linkedMcTests.value.length === 1 ? 'MC-Test' : 'MC-Tests', value: linkedMcTests.value.join(', ') }] : []),
         { label: 'Hauptfrist', value: deadline(work.finish_until_date, work.finish_until_time) },
         { label: 'Mitgeteilte Frist', value: deadline(work.communicated_deadline?.date, work.communicated_deadline?.time, 'Nicht mitgeteilt') },
     ]
@@ -131,6 +140,10 @@ function deadline(date, time, empty = 'Nicht festgelegt') {
 }
 
 function openDialog() {
+    if (accessible.value && !historical.value && status.value === 'missing') {
+        emit('create')
+        return
+    }
     if (accessible.value) opened.value = true
 }
 

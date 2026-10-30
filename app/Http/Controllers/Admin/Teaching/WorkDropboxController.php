@@ -29,10 +29,11 @@ use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class WorkDropboxController extends Controller
 {
-    public function refresh(Request $request, TeachingCourseWork $course_work, DropboxWorkImport $dropbox, TeachingWorkDeadlineSync $deadlines): JsonResponse
+    public function refresh(Request $request, TeachingCourseWork $course_work, DropboxWorkImport $dropbox, TeachingWorkDeadlineSync $deadlines): JsonResponse|StreamedResponse
     {
         $actor = $this->actor($course_work);
         $data = $request->validate([
@@ -44,7 +45,13 @@ class WorkDropboxController extends Controller
             'expected.time' => ['present', 'nullable', 'date_format:H:i'],
             'refresh_collection' => ['sometimes', 'boolean'],
             'progress_id' => ['sometimes', 'uuid'],
+            'stream_progress' => ['sometimes', 'boolean'],
         ]);
+        if ($data['stream_progress'] ?? false) {
+            $request->merge(['stream_progress' => false]);
+
+            return app(TeachingWorkRefreshProgress::class)->stream($request, fn (): JsonResponse => $this->refresh($request, $course_work, $dropbox, $deadlines));
+        }
         $progressService = app(TeachingWorkRefreshProgress::class);
         $progressKey = isset($data['progress_id']) ? $progressService->key($actor, $course_work, $data['progress_id']) : null;
         $progress = ['state' => 'running', 'active' => 'connection', 'completed' => [], 'skipped' => [],
@@ -310,6 +317,11 @@ class WorkDropboxController extends Controller
                 $rootContents = app(DropboxFolderContents::class)->read($connection, $rootId);
                 $sections = array_values(array_filter($rootContents['entries'], fn (array $entry): bool => $entry['type'] === 'folder'
                     && $entry['name'] === $data['section']));
+                if ($sections === [] && $rootContents['cursor'] === null && ! $module
+                    && isset($legacyFolders['exercise']) && $data['section'] === 'Angaben') {
+                    $sections = array_values(array_filter($rootContents['entries'], fn (array $entry): bool => $entry['type'] === 'folder'
+                        && $entry['name'] === 'Quellunterlagen'));
+                }
                 abort_unless(count($sections) === 1 && $rootContents['cursor'] === null, 404, 'Dieser Bereich ist im Prüfungsordner noch nicht verfügbar.');
                 $rootId = $sections[0]['id'];
             }

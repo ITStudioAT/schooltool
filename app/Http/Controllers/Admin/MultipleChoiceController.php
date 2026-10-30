@@ -403,6 +403,14 @@ class MultipleChoiceController extends Controller
         return response()->json(['test' => $test, 'attempts' => $this->attemptPayloads($test)]);
     }
 
+    public function withdrawTest(McTest $test): JsonResponse
+    {
+        $this->authorizeOwned($test);
+        $test = $this->tests->withdraw($test);
+
+        return response()->json(['test' => $test, 'attempts' => $this->attemptPayloads($test)]);
+    }
+
     public function deleteCatalog(Request $request, McCatalog $catalog): JsonResponse
     {
         $this->authorizeOwned($catalog);
@@ -519,6 +527,29 @@ class MultipleChoiceController extends Controller
         $test = $this->tests->pause($test, (int) $this->teacher()->id);
 
         return response()->json(['test' => $test]);
+    }
+
+    public function controlAttempts(Request $request, McTest $test): JsonResponse
+    {
+        $this->authorizeOwned($test);
+        $data = $request->validate([
+            'action' => ['required', 'in:pause,resume,reset'],
+            'attempt_ids' => ['required', 'array', 'max:2000'],
+            'attempt_ids.*' => ['integer', 'distinct'],
+            'all' => ['boolean'], 'confirmed' => ['boolean'], 'expected' => ['array'],
+            'expected.*' => ['string', 'size:64'],
+        ]);
+        abort_if($data['action'] === 'reset' && empty($data['confirmed']), 422, 'Das Zurücksetzen muss bestätigt werden.');
+        abort_if(empty($data['all']) && empty($data['attempt_ids']), 422, 'Bitte einen Versuch auswählen.');
+        $this->tests->controlAttempts($test, $data['attempt_ids'], $data['action'], (int) $this->teacher()->id,
+            $data['expected'] ?? [], (bool) ($data['all'] ?? false));
+        foreach ($test->attempts()->whereNull('completed_at')->get() as $attempt) {
+            if ($attempt->effectiveDeadline($test) !== null) {
+                FinalizeMultipleChoiceTest::dispatch((int) $test->id)->delay($attempt->effectiveDeadline($test))->afterCommit();
+            }
+        }
+
+        return response()->json(['test' => $test->fresh(), 'attempts' => $this->attemptPayloads($test)]);
     }
 
     public function resumeTest(Request $request, McTest $test): JsonResponse
@@ -936,7 +967,7 @@ class MultipleChoiceController extends Controller
                 ];
             }, $questions);
 
-            return [...$attempt->toArray(), 'activity' => ($test->exam_mode || $attempt->activity_state !== null) ? app(McAttemptActivityService::class)->summary($attempt, $test) : null, 'effective_ends_at' => $attempt->effectiveDeadline($test)?->toIso8601String(), 'closing_deadline' => $attempt->closingDeadline($test)?->toIso8601String(), 'access_url' => $test->status === 'published' && $test->access_links_disabled_at === null ? $this->invitationUrl($attempt) : null, 'status' => $status, 'questions' => $questions, 'answers' => $answers, 'evaluation' => $evaluation, 'question_results' => $evaluation];
+            return [...$attempt->toArray(), 'individual_paused_at' => $attempt->individualPausedAt()?->toIso8601String(), 'control_revision' => $attempt->controlRevision(), 'activity' => ($test->exam_mode || $attempt->activity_state !== null) ? app(McAttemptActivityService::class)->summary($attempt, $test) : null, 'effective_ends_at' => $attempt->effectiveDeadline($test)?->toIso8601String(), 'closing_deadline' => $attempt->closingDeadline($test)?->toIso8601String(), 'access_url' => $test->status === 'published' && $test->access_links_disabled_at === null ? $this->invitationUrl($attempt) : null, 'status' => $status, 'questions' => $questions, 'answers' => $answers, 'evaluation' => $evaluation, 'question_results' => $evaluation];
         })->all();
     }
 }

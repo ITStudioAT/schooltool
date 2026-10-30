@@ -2,6 +2,10 @@ import { describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createTestingPinia } from '@pinia/testing'
 import { workAggregateStatuses, workCellDeviationStatuses, workCellPendingStatuses, workFullyComplete, workMarkedComplete, workParticipantIds } from '@/helpers/workCellStatus'
+
+it('does not show a pending status while the work is unavailable', () => {
+    expect(workCellPendingStatuses(null, 12)).toEqual([])
+})
 import WorkCellStatus from '@/pages/admin/teaching/overview/components/WorkCellStatus.vue'
 import CourseWorks from '@/pages/admin/teaching/overview/components/CourseWorks.vue'
 import CourseTable from '@/pages/admin/teaching/overview/components/CourseTable.vue'

@@ -196,7 +196,7 @@ export function startDeploymentNotice({ axiosClient, fetchStatus = window.fetch.
     }
 
     function checkNow() {
-        if (stopped || pending) {
+        if (stopped || pending || document.hidden) {
             return pending ?? Promise.resolve();
         }
 
@@ -204,13 +204,23 @@ export function startDeploymentNotice({ axiosClient, fetchStatus = window.fetch.
         pending = updateStatus().finally(() => {
             pending = null;
 
-            if (!stopped) {
+            if (!stopped && !document.hidden) {
                 pollTimer = window.setTimeout(checkNow, 10000);
             }
         });
 
         return pending;
     }
+
+    function handleVisibilityChange() {
+        window.clearTimeout(pollTimer);
+
+        if (!document.hidden) {
+            void checkNow();
+        }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     const interceptorId = axiosClient?.interceptors.response.use(
         (response) => response,
@@ -230,6 +240,7 @@ export function startDeploymentNotice({ axiosClient, fetchStatus = window.fetch.
         stop() {
             stopped = true;
             window.clearTimeout(pollTimer);
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
             requestController?.abort();
             banner?.remove();
 

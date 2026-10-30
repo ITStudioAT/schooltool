@@ -37,7 +37,7 @@
                     <div><dt>Fragen</dt><dd>{{ attempt.question_count }}</dd></div>
                     <div><dt>Gesamtpunkte</dt><dd>{{ formatNumber(attempt.total_points) }}</dd></div>
                     <div><dt>Bearbeitungsdauer</dt><dd>{{ minutes(attempt.duration_seconds) }} Minuten</dd></div>
-                    <div v-if="attempt.start_mode === 'individual'"><dt>Schlussfrist</dt><dd>{{ deadlineLabel(attempt.closes_at) }}</dd></div>
+                    <div v-if="attempt.start_mode === 'individual' && attempt.closes_at"><dt>Schlussfrist</dt><dd>{{ deadlineLabel(attempt.closes_at) }}</dd></div>
                 </dl>
             </section>
 
@@ -92,11 +92,11 @@
                     <p>Antworten können nicht mehr geändert werden. Der Server schließt deinen Versuch ab.</p>
                 </template>
                 <template v-else-if="attempt.start_mode === 'individual' && !attempt.started_at">
-                    <h2 id="mc-wait-title">Dein Test startet automatisch.</h2>
-                    <p>Dein Test startet beim Öffnen automatisch. Du hast {{ minutes(attempt.duration_seconds) }} Minuten. Die Zeit läuft auch weiter, wenn du die Seite verlässt.</p>
-                    <p><strong>Spätestes Testende: {{ deadlineLabel(attempt.closes_at) }}</strong></p>
-                    <p class="mc-description">Bei einem späten Start bleibt weniger Zeit. Nach der Schlussfrist oder nach Ablauf deiner Bearbeitungszeit sind keine Änderungen mehr möglich.</p>
-                    <button class="mc-button" :disabled="submitting" @click="startAttempt">{{ submitting ? 'Test wird gestartet …' : 'Start erneut versuchen' }}</button>
+                    <h2 id="mc-wait-title">Bereit für deinen Test?</h2>
+                    <p>Du hast {{ minutes(attempt.duration_seconds) }} Minuten. Die Zeit beginnt erst, wenn du den Start bestätigst.</p>
+                    <p v-if="attempt.closes_at"><strong>Spätestes Testende: {{ deadlineLabel(attempt.closes_at) }}</strong></p>
+                    <p v-if="attempt.closes_at" class="mc-description">Nach der Schlussfrist oder nach Ablauf deiner Bearbeitungszeit sind keine Änderungen mehr möglich.</p>
+                    <button class="mc-button" :disabled="submitting || retrySeconds > 0" @click="openStartConfirmation">Test starten</button>
                 </template>
                 <template v-else>
                     <h2 id="mc-wait-title">{{ attempt.starts_at ? 'Gleich geht es los.' : 'Willkommen im Warteraum.' }}</h2>
@@ -152,6 +152,18 @@
             </section>
         </template>
 
+        <dialog ref="startDialog" class="mc-dialog" aria-labelledby="mc-start-title" @cancel="cancelStart" @close="showStartDialog = false">
+            <form @submit.prevent="confirmStart">
+                <h2 id="mc-start-title">Test jetzt starten?</h2>
+                <p>Du hast {{ minutes(attempt?.duration_seconds) }} Minuten. Deine Zeit beginnt mit der Bestätigung und läuft auch weiter, wenn du die Seite verlässt.</p>
+                <p v-if="attempt?.closes_at">Spätestes Testende: <strong>{{ deadlineLabel(attempt.closes_at) }}</strong>. Bei einem späten Start bleibt entsprechend weniger Zeit.</p>
+                <p v-if="startError" class="mc-save-warning" role="alert">{{ startError }}</p>
+                <div class="mc-dialog-actions">
+                    <button type="button" class="mc-button mc-button-secondary" :disabled="submitting" @click="showStartDialog = false">Abbrechen</button>
+                    <button class="mc-button" :disabled="submitting || retrySeconds > 0 || !canStart">{{ submitting ? 'Test wird gestartet …' : startError ? 'Start erneut versuchen' : 'Ja, Test starten' }}</button>
+                </div>
+            </form>
+        </dialog>
         <dialog ref="submitDialog" class="mc-dialog" aria-labelledby="mc-submit-title" @cancel="showSubmitDialog = false" @close="showSubmitDialog = false">
             <form @submit.prevent="confirmSubmit">
                 <h2 id="mc-submit-title">Test verbindlich abgeben?</h2>
@@ -181,10 +193,17 @@ const { exam, retrySeconds, attempts, attempt, answers, loading, saving, submitt
     load, openAttempt, markReady, startAttempt, selectAnswer, flush, submitAttempt, refresh } = useMultipleChoiceSession(route)
 const showDrawer = ref(false)
 const currentQuestion = ref(0)
+const showStartDialog = ref(false)
+const startDialog = ref(null)
+const startDialogAttemptId = ref(null)
+const startError = ref('')
 const showSubmitDialog = ref(false)
 const submitDialog = ref(null)
 const { enabled: examEnabled, fullscreen, fullscreenAvailable, monitoringError, enterFullscreen } = exam
 const neverStarted = computed(() => attempt.value?.status === 'timeout' && !attempt.value?.started_at)
+const canStart = computed(() => Boolean(attempt.value && attempt.value.start_mode === 'individual' && !attempt.value.started_at
+    && !attempt.value.teacher_preview && !attempt.value.paused_at && !finished.value && ['not_started', 'ready'].includes(attempt.value.status)
+    && (!attempt.value.ends_at || remainingSeconds.value > 0) && (!examEnabled.value || fullscreen.value)))
 
 onMounted(() => {
     if (!isPublic.value) {
@@ -202,6 +221,17 @@ watch(showSubmitDialog, async (value) => {
     } else if (!value) {
         submitDialog.value?.close()
     }
+})
+watch(showStartDialog, async () => {
+    await nextTick()
+    if (showStartDialog.value && !startDialog.value?.open) {
+        startDialog.value?.showModal()
+    } else if (!showStartDialog.value && startDialog.value?.open) {
+        startDialog.value.close()
+    }
+})
+watch([canStart, () => attempt.value?.id], ([allowed, id]) => {
+    if (!allowed || String(id) !== String(startDialogAttemptId.value)) showStartDialog.value = false
 })
 watch(finished, value => { if (value) { showSubmitDialog.value = false } })
 watch(canAnswer, value => { if (!value) { showSubmitDialog.value = false } })
@@ -229,6 +259,25 @@ function statusLabel(item) {
     }
     return { not_started: 'Noch nicht begonnen', ready: 'Bereit', in_progress: 'In Bearbeitung',
         submitted: 'Abgegeben', timeout: 'Zeit abgelaufen' }[item.status] || 'Zugewiesen'
+}
+
+function openStartConfirmation() {
+    if (!canStart.value) return
+    startDialogAttemptId.value = attempt.value.id
+    startError.value = ''
+    showStartDialog.value = true
+}
+
+function cancelStart(event) {
+    if (submitting.value) event.preventDefault()
+    else showStartDialog.value = false
+}
+
+async function confirmStart() {
+    if (!canStart.value || String(attempt.value?.id) !== String(startDialogAttemptId.value)) return
+    startError.value = ''
+    if (await startAttempt()) showStartDialog.value = false
+    else startError.value = error.value || 'Der Test konnte nicht gestartet werden. Bitte versuche es erneut.'
 }
 
 function isMultiple(question) {

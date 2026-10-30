@@ -1,10 +1,19 @@
 # UPDATES
 
-## 3.53.5 !!!
+## 3.54.0
 
 ### Unterricht
 
 - Berechnung der Punkte
+
+### Schüleransicht
+
+- Leistungsbalken berücksichtigt Mitarbeit
+
+### Arbeiten
+
+- Direkte Freigabe ohne E-Mail-Versand
+- Überarbeitung und UI-Verbesserung
 
 ## 3.53.4
 

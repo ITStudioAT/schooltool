@@ -4,7 +4,7 @@ import { createTestingPinia } from '@pinia/testing'
 import { createVuetify } from 'vuetify'
 import { VBtn } from 'vuetify/components'
 import WorkExerciseExport from '@/pages/admin/teaching/overview/components/WorkExerciseExport.vue'
-import { clearWorkDropboxStates, workDropboxStates } from '@/helpers/workDropbox'
+import { clearWorkDropboxStates, loadWorkExercise, workDropboxStates } from '@/helpers/workDropbox'
 
 const work = { id: 65, teaching_course_id: 2, title: 'E-Mails' }
 const course = { id: 2, title: 'INF' }
@@ -14,14 +14,15 @@ function mountExport(get = vi.fn(), writeText = vi.fn().mockResolvedValue(undefi
     mcOptions: any = { available: true, tests: [{ id: 9, title: 'Vorhandener MC-Test', catalog_id: 3, catalog_title: 'Grundlagen' }], catalogs: [{ id: 3, title: 'Grundlagen' }], linked_test_id: 9 }) {
     vi.stubGlobal('axios', { get: vi.fn((url, options) => url.endsWith('/dropbox') ? status(url, options)
         : url.endsWith('/exercise-options') ? Promise.resolve({ data: { configuration: { locked: false, maximum_points: 5 },
-            linked_mc_points: mcOptions.linked_test_id ? 2 : null, ...mcOptions } }) : get(url, options)),
+            linked_mc_points: mcOptions.linked_test_id ? 2 : null, ...mcOptions,
+            catalogs: (mcOptions.catalogs || []).map((catalog: any) => ({ reviewed_question_count: 10, ...catalog })) } }) : get(url, options)),
         post: vi.fn((url, payload, options) => url.endsWith('/prepare-exercise') ? get(url, payload, options) : status(url, payload, options)) })
     vi.stubGlobal('navigator', { clipboard: { writeText }, userAgent: 'Test' })
     return mount(WorkExerciseExport, { attachTo: document.body, props: { work: currentWork, course, date: '2026-10-20' }, global: {
         plugins: [createTestingPinia({ createSpy: vi.fn, initialState: { AdminAdminStore: { config: { user: { id: 7 } } } } }), createVuetify({ components: { VBtn } })],
         components: { 'v-btn': VBtn }, stubs: { 'v-btn': false, VBtn: false,
             'v-text-field': { props: ['modelValue', 'label', 'disabled', 'type'], emits: ['update:modelValue'],
-                template: '<label>{{ label }}<input :aria-label="label" :type="type" :value="modelValue" :disabled="disabled" @input="$emit(\'update:modelValue\', $event.target.value === \'\' ? null : Number($event.target.value))" /></label>' },
+                template: '<label>{{ label }}<input :aria-label="label" :type="type" :value="modelValue" :disabled="disabled" @input="$emit(\'update:modelValue\', $event.target.value === \'\' ? null : type === \'number\' ? Number($event.target.value) : $event.target.value)" /></label>' },
             'v-dialog': { props: ['modelValue'], template: '<div v-if="modelValue" role="dialog"><slot /></div>' },
             'v-checkbox': { props: ['modelValue', 'label', 'disabled'], emits: ['update:modelValue'],
                 template: '<label><input type="checkbox" :checked="modelValue" :disabled="disabled" @change="$emit(\'update:modelValue\', $event.target.checked)" />{{ label }}</label>' },
@@ -34,13 +35,89 @@ function mountExport(get = vi.fn(), writeText = vi.fn().mockResolvedValue(undefi
 }
 
 function button(wrapper: ReturnType<typeof mountExport>, text: string) {
-    return wrapper.findAll('button').find(item => item.text() === text || (text === 'Erneut prüfen' && item.text().startsWith(text)))!
+    return wrapper.findAll('button, [role="button"]').find(item => item.attributes('aria-label') === text || item.text() === text || (text === 'Erneut prüfen' && item.text().startsWith(text)))!
 }
 
 afterEach(() => {
     clearWorkDropboxStates(); vi.restoreAllMocks(); vi.unstubAllGlobals(); document.body.innerHTML = ''
     if (originalExecCommand) Object.defineProperty(document, 'execCommand', originalExecCommand)
     else delete (document as any).execCommand
+})
+
+it('offers both variants from the red icon and waits for a concrete form decision before calling OpenAI', async () => {
+    const get = vi.fn().mockResolvedValue({ data: { data: { work_id: 65, course_id: 2, roster_complete: true,
+        participants_count: 1, text: 'Bestätigter Auftrag', context: { include_multiple_choice: false } },
+        generation: { ready: true, id: 'generation-1', assignment_markdown: '# Aufgaben\nAufgabe prüfen.',
+            criteria_markdown: '# Kriterien\n5 Punkte.', criteria: [{ title: 'Aufgabe', points: 5, description: 'Prüfen' }],
+            sources: [{ id: 'id:source', path_lower: '/modul/assessment template/vorlage.md', revision: 'r1' }], warnings: [] } } })
+    const wrapper = mountExport(get)
+    try {
+        await flushPromises()
+        expect(wrapper.findAll('button').some(item => item.text() === 'Leistungsfeststellung erstellen')).toBe(false)
+        await button(wrapper, 'Leistungsfeststellung erstellen').trigger('keydown', { key: 'Enter' })
+        expect(button(wrapper, 'Übergabetext kopieren')).toBeDefined()
+        expect(button(wrapper, 'Über OpenAI vorbereiten').attributes('disabled')).toBeDefined()
+        expect(get).not.toHaveBeenCalled()
+        await wrapper.get('select[aria-label="Formabzüge für Betreff, Anrede, Inhalt und Signatur?"]').setValue('0')
+        await button(wrapper, 'Über OpenAI vorbereiten').trigger('click')
+        await flushPromises()
+        expect(get).toHaveBeenCalledWith('/api/admin/teaching/course_works/65/prepare-exercise', expect.objectContaining({
+            execution: 'openai', email_form_policy: 'Keine Formabzüge für Betreff, Anrede, Inhalt und Signatur.', expected_test_id: null,
+        }), expect.any(Object))
+        expect(navigator.clipboard.writeText).not.toHaveBeenCalled()
+        expect(wrapper.text()).toContain('Aufgabe prüfen.')
+        expect(button(wrapper, 'Paket in Dropbox anlegen')).toBeDefined()
+        expect(axios.post).toHaveBeenCalledTimes(1)
+        await wrapper.get('select[aria-label="Formabzüge für Betreff, Anrede, Inhalt und Signatur?"]').setValue('2')
+        expect(button(wrapper, 'Paket in Dropbox anlegen')).toBeUndefined()
+    } finally { wrapper.unmount() }
+})
+
+it('writes only the reviewed generation on explicit confirmation and reports the verified folder', async () => {
+    const preview = { data: { data: { work_id: 65, course_id: 2, roster_complete: true, participants_count: 1,
+        text: 'Auftrag', context: { include_multiple_choice: false } }, generation: { id: 'generation-1', ready: true,
+        assignment_markdown: 'Aufgabe', criteria_markdown: 'Kriterien', sources: [], warnings: [] } } }
+    const folder = { id: 'id:created', name: 'Prüfung', path: '/modul/leistungsfeststellung/pruefung' }
+    let created = false
+    const status = vi.fn((url) => {
+        if (url.endsWith('/store-exercise')) {
+            created = true
+            return Promise.resolve({ data: { data: { status: 'created', folder } } })
+        }
+        return Promise.resolve({ data: { connected: true, module_link: { folder: { id: 'id:module' } },
+            exercise: created ? { status: 'found', assignment_status: 'ready', folder } : { status: 'missing' } } })
+    })
+    const wrapper = mountExport(vi.fn().mockResolvedValue(preview), undefined, status)
+    try {
+        await flushPromises()
+        await button(wrapper, 'Leistungsfeststellung erstellen').trigger('click')
+        await wrapper.get('select[aria-label="Formabzüge für Betreff, Anrede, Inhalt und Signatur?"]').setValue('0')
+        await button(wrapper, 'Über OpenAI vorbereiten').trigger('click')
+        await flushPromises()
+        await button(wrapper, 'Paket in Dropbox anlegen').trigger('click')
+        await flushPromises()
+        expect(axios.post).toHaveBeenCalledWith('/api/admin/teaching/course_works/65/store-exercise',
+            { generation_id: 'generation-1', approved: true }, expect.any(Object))
+        expect(wrapper.text()).toContain('Materialpaket in Dropbox bestätigt: /modul/leistungsfeststellung/pruefung')
+        expect(button(wrapper, 'Paket in Dropbox anlegen')).toBeUndefined()
+        expect(wrapper.emitted('exercise-status')?.at(-1)?.[0]).toMatchObject({ status: 'found', assignmentStatus: 'ready', folder })
+    } finally { wrapper.unmount() }
+})
+
+it('keeps API clarification questions open without a Dropbox action', async () => {
+    const get = vi.fn().mockResolvedValue({ data: { data: { work_id: 65, course_id: 2, roster_complete: true,
+        participants_count: 1, text: 'Auftrag', context: { include_multiple_choice: false } },
+        generation: { ready: false, questions: ['Welcher Formabzug gilt?'], warnings: [] } } })
+    const wrapper = mountExport(get)
+    try {
+        await flushPromises()
+        await button(wrapper, 'Leistungsfeststellung erstellen').trigger('click')
+        await wrapper.get('select[aria-label="Formabzüge für Betreff, Anrede, Inhalt und Signatur?"]').setValue('0')
+        await button(wrapper, 'Über OpenAI vorbereiten').trigger('click')
+        await flushPromises()
+        expect(wrapper.text()).toContain('Welcher Formabzug gilt?')
+        expect(button(wrapper, 'Paket in Dropbox anlegen')).toBeUndefined()
+    } finally { wrapper.unmount() }
 })
 
 it.each(['sent', 'partial'])('does not offer a separate MC button after a confirmed %s participant dispatch', async (dispatchStatus) => {
@@ -184,7 +261,7 @@ it('retains one status recheck for historical work without reopening its folder 
         await flushPromises()
         expect(wrapper.findAll('button').filter(button => button.text().startsWith('Erneut prüfen'))).toHaveLength(1)
         await button(wrapper, 'Erneut prüfen').trigger('click'); await flushPromises()
-        expect(get).toHaveBeenCalledWith(expect.stringContaining('/course_works/65'), { params: { refresh_collection: true, progress_id: expect.any(String) } })
+        expect(get).toHaveBeenCalledWith(expect.stringContaining('/course_works/65'), expect.objectContaining({ params: { refresh_collection: true, progress_id: expect.any(String), stream_progress: true }, onDownloadProgress: expect.any(Function) }))
         expect(wrapper.emitted('deadline-saved')).toEqual([[{ data: saved }]])
         expect(status).not.toHaveBeenCalled()
     } finally { wrapper.unmount() }
@@ -205,6 +282,21 @@ it('retains the last confirmed icon state while a fresh check is pending', async
         expect(wrapper.emitted('check-busy').at(-1)).toEqual([true])
         finish({ data: confirmed }); await flushPromises()
         expect(wrapper.emitted('check-busy').at(-1)).toEqual([false])
+    } finally { wrapper.unmount() }
+})
+
+it('restores the confirmed exercise status on first and repeated opening after release', async () => {
+    const confirmed = { ...linkedExercise, exercise: { ...linkedExercise.exercise, assignment_status: 'ready' } }
+    vi.stubGlobal('axios', { get: vi.fn().mockResolvedValue({ data: confirmed }) })
+    await loadWorkExercise('7:2:65', work, '2026-10-20')
+    clearWorkDropboxStates(false)
+    const released = { ...work, status: { student_distribution: { published_at: '2026-10-29T08:00:00Z', student_ids: [1] } } }
+    const wrapper = mountExport(undefined, undefined, vi.fn(), released)
+    try {
+        expect(wrapper.emitted('exercise-status')?.at(-1)?.[0]).toMatchObject({ status: 'found', assignmentStatus: 'ready', folder: confirmed.exercise.folder })
+        await wrapper.setProps({ active: false })
+        await wrapper.setProps({ active: true })
+        expect(wrapper.emitted('exercise-status')?.at(-1)?.[0]).toMatchObject({ status: 'found', assignmentStatus: 'ready', folder: confirmed.exercise.folder })
     } finally { wrapper.unmount() }
 })
 
@@ -235,6 +327,58 @@ it('opens a short MC choice dialog with MC off and cancels without loading or co
     } finally { wrapper.unmount() }
 })
 
+it.each([false, true])('saves the changed final deadline before preparing the exercise (MC: %s)', async includeMc => {
+    const savedWork = { ...work, finish_until_date: '2026-10-25', finish_until_time: '13:30' }
+    const status = vi.fn((url: string) => Promise.resolve({ data: url.endsWith('/refresh')
+        ? { connected: true, module_link: { folder: { id: 'id:module' } }, exercise: { status: 'missing' }, saved_work: savedWork }
+        : { connected: true, module_link: { folder: { id: 'id:module' } }, exercise: { status: 'missing' } } }))
+    const get = vi.fn().mockResolvedValue({ data: { data: { work_id: 65, course_id: 2, roster_complete: true, participants_count: 3,
+        text: 'Auftrag mit neuer Frist', context: { include_multiple_choice: includeMc, ...(includeMc ? { multiple_choice_test: { test_id: 10 } } : {}) } } } })
+    const wrapper = mountExport(get, undefined, status, { ...work, finish_until_date: '2026-10-20', finish_until_time: null },
+        { available: true, tests: [], catalogs: [{ id: 3, title: 'Grundlagen' }], linked_test_id: null })
+    try {
+        await flushPromises()
+        await button(wrapper, 'Leistungsfeststellung erstellen').trigger('click')
+        expect((wrapper.get('input[aria-label="Endgültige Abgabefrist"]').element as HTMLInputElement).value).toBe('2026-10-20')
+        await wrapper.get('input[aria-label="Endgültige Abgabefrist"]').setValue('2026-10-25')
+        await wrapper.get('input[aria-label="Uhrzeit (optional)"]').setValue('13:30')
+        if (includeMc) {
+            await wrapper.get('input[type="checkbox"]').setValue(true)
+            await flushPromises()
+            await wrapper.get('select[aria-label="Fragenkatalog auswählen"]').setValue('3')
+        }
+        await button(wrapper, includeMc ? 'MC-Test erstellen und Übergabetext kopieren' : 'Übergabetext kopieren').trigger('click')
+        await flushPromises()
+        expect(axios.post).toHaveBeenCalledWith('/api/admin/teaching/course_works/65/dropbox/refresh', expect.objectContaining({
+            finish_until_date: '2026-10-25', finish_until_time: '13:30', expected: { date: '2026-10-20', time: null },
+        }), { timeout: 120000 })
+        expect(wrapper.emitted('deadline-saved')).toEqual([[{ data: savedWork }]])
+        expect(get).toHaveBeenCalledTimes(1)
+        expect(navigator.clipboard.writeText).toHaveBeenCalledWith('Auftrag mit neuer Frist')
+        await wrapper.setProps({ work: savedWork })
+        await flushPromises()
+        expect(wrapper.get('[role="dialog"]').text()).toContain('Übergabetext kopiert')
+    } finally { wrapper.unmount() }
+})
+
+it('does not prepare an exercise if saving the deadline fails', async () => {
+    const status = vi.fn((url: string) => url.endsWith('/refresh')
+        ? Promise.reject({ response: { data: { message: 'Die Frist wurde inzwischen geändert.' } } })
+        : Promise.resolve({ data: { connected: true, module_link: { folder: { id: 'id:module' } }, exercise: { status: 'missing' } } }))
+    const get = vi.fn()
+    const wrapper = mountExport(get, undefined, status, { ...work, finish_until_date: '2026-10-20' })
+    try {
+        await flushPromises()
+        await button(wrapper, 'Leistungsfeststellung erstellen').trigger('click')
+        await wrapper.get('input[aria-label="Endgültige Abgabefrist"]').setValue('2026-10-25')
+        await button(wrapper, 'Übergabetext kopieren').trigger('click')
+        await flushPromises()
+        expect(wrapper.text()).toContain('Die Frist wurde inzwischen geändert.')
+        expect(get).not.toHaveBeenCalled()
+        expect(navigator.clipboard.writeText).not.toHaveBeenCalled()
+    } finally { wrapper.unmount() }
+})
+
 it('opens the same MC dialog immediately after linking without saving the work first', async () => {
     const get = vi.fn()
     const status = vi.fn().mockResolvedValueOnce({ data: { connected: true, module_link: null, exercise: { status: 'missing' } } })
@@ -245,7 +389,7 @@ it('opens the same MC dialog immediately after linking without saving the work f
         expect(button(wrapper, 'Leistungsfeststellung erstellen')).toBeUndefined()
         workDropboxStates.set('7:2:65', { connected: true, module_link: { folder: { id: 'id:just-linked' } }, folder: null, link_version: 'new-link' })
         await flushPromises()
-        expect(wrapper.findAll('button').filter(item => item.text() === 'Leistungsfeststellung erstellen')).toHaveLength(1)
+        expect(wrapper.findAll('[role="button"][aria-label="Leistungsfeststellung erstellen"]')).toHaveLength(1)
         await button(wrapper, 'Leistungsfeststellung erstellen').trigger('click')
         expect(wrapper.get('[role="dialog"]').text()).toContain('Multiple-Choice-Fragen einbeziehen', 'Übergabetext kopieren')
         expect(get).not.toHaveBeenCalled()
@@ -269,8 +413,14 @@ it('requires an explicit MC selection and creates a draft only once while repeat
         expect(button(wrapper, action).attributes('disabled')).toBeDefined()
         expect(axios.post).not.toHaveBeenCalled()
         await wrapper.get('select[aria-label="Fragenkatalog auswählen"]').setValue('3')
-        expect(wrapper.findAll('input[type="number"]')).toHaveLength(3)
+        expect(wrapper.findAll('input[type="number"]')).toHaveLength(4)
+        expect((wrapper.get('input[aria-label="Anzahl der Fragen"]').element as HTMLInputElement).value).toBe('10')
+        expect((wrapper.get('input[aria-label="MC-Bearbeitungszeit in Minuten"]').element as HTMLInputElement).value).toBe('7')
+        expect((wrapper.get('input[aria-label="MC-Punkte"]').element as HTMLInputElement).value).toBe('2')
         expect(wrapper.find('input[aria-label="Maximale MC-Punkte"]').exists()).toBe(false)
+        await wrapper.get('input[aria-label="Anzahl der Fragen"]').setValue('11')
+        expect(button(wrapper, action).attributes('disabled')).toBeDefined()
+        await wrapper.get('input[aria-label="Anzahl der Fragen"]').setValue('7')
         await wrapper.get('input[aria-label="MC-Punkte"]').setValue('0')
         expect(button(wrapper, action).attributes('disabled')).toBeDefined()
         await wrapper.get('input[aria-label="MC-Punkte"]').setValue('2')
@@ -278,7 +428,7 @@ it('requires an explicit MC selection and creates a draft only once while repeat
         expect(button(wrapper, action).attributes('disabled')).toBeUndefined()
         await button(wrapper, action).trigger('click'); await flushPromises()
         const payload = (axios.post as any).mock.calls[0][1]
-        expect(payload).toMatchObject({ mc_mode: 'new', catalog_id: 3, total_points: 2, mc_points: 2, other_points: 3, expected_maximum_points: 5, duration_minutes: 20, expected_test_id: null, date: '2026-10-20' })
+        expect(payload).toMatchObject({ mc_mode: 'new', catalog_id: 3, question_count: 7, total_points: 2, mc_points: 2, other_points: 3, expected_maximum_points: 5, duration_minutes: 7, expected_test_id: null, date: '2026-10-20' })
         await button(wrapper, 'Kopiert').trigger('click'); await flushPromises()
         expect(axios.post).toHaveBeenCalledTimes(1)
         expect(navigator.clipboard.writeText).toHaveBeenCalledTimes(2)
@@ -383,7 +533,7 @@ it.each([false, 'throws'])('keeps a completed handoff and selected text when bot
         await button(wrapper, 'Leistungsfeststellung erstellen').trigger('click')
         await button(wrapper, 'Übergabetext kopieren').trigger('click')
         await flushPromises()
-        const field = wrapper.get('textarea').element as HTMLTextAreaElement
+        const field = wrapper.get('textarea[aria-label="Leistungsfeststellungsauftrag zum Kopieren"]').element as HTMLTextAreaElement
         expect(field.value).toBe('Vollständiger Übergabetext')
         expect(field.closest('details')?.open).toBe(true)
         expect(field.selectionStart).toBe(0)
@@ -511,8 +661,8 @@ it('reuses the last check on reopening, refreshes explicitly and clears it immed
         expect(status).toHaveBeenCalledTimes(2)
         expect(axios.post).toHaveBeenCalledExactlyOnceWith('/api/admin/teaching/course_works/65/dropbox/refresh', {
             date: '2026-10-20', finish_until_date: null, finish_until_time: null, expected: { date: null, time: null },
-            progress_id: expect.any(String),
-        }, { timeout: 120000 })
+            progress_id: expect.any(String), stream_progress: true,
+        }, expect.objectContaining({ timeout: 120000, onDownloadProgress: expect.any(Function) }))
         status.mockResolvedValue({ data: { connected: true, module_link: null, exercise: { status: 'missing', folder: null } } })
         workDropboxStates.set('7:2:65', { connected: true, module_link: null, link_version: 'unlinked' })
         await flushPromises()
@@ -536,8 +686,8 @@ it('saves the edited internal deadline when checking and leaves other form chang
         expect(axios.post).toHaveBeenCalledExactlyOnceWith('/api/admin/teaching/course_works/65/dropbox/refresh', {
             date: '2026-10-20', finish_until_date: '2026-10-24', finish_until_time: '12:30',
             expected: { date: '2026-10-23', time: null },
-            progress_id: expect.any(String),
-        }, { timeout: 120000 })
+            progress_id: expect.any(String), stream_progress: true,
+        }, expect.objectContaining({ timeout: 120000, onDownloadProgress: expect.any(Function) }))
         expect(wrapper.emitted('deadline-saved')).toEqual([[{ data: saved }]])
         expect(wrapper.emitted('exercise-status')?.at(-1)?.[0]).toMatchObject({ status: 'found', emailDispatch: dispatch })
         expect(wrapper.emitted('check-busy')).toEqual([[true], [false]])
@@ -563,18 +713,20 @@ it('reports a synchronization conflict and never publishes it as a saved deadlin
 
 it('shows actual check progress and the completed server result', async () => {
     let finish: (value: unknown) => void = () => {}
+    let notify = (_event: unknown) => {}
     const progress = { state: 'running', active: 'deadline', completed: ['connection', 'folder'],
         steps: ['connection', 'folder', 'deadline', 'verification'] }
     const get = vi.fn().mockResolvedValue({ data: progress })
     const status = vi.fn().mockResolvedValueOnce({ data: linkedExercise })
-        .mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+        .mockImplementationOnce((_url, _body, options) => { notify = options.onDownloadProgress; return new Promise(resolve => { finish = resolve }) })
     const wrapper = mountExport(get, undefined, status)
     try {
         await flushPromises()
         vi.useFakeTimers()
         await button(wrapper, 'Erneut prüfen').trigger('click')
         expect(wrapper.get('[aria-label="Fortschritt der Prüfung"]').text()).toContain('Prüfung wird gestartet')
-        await vi.advanceTimersByTimeAsync(200)
+        notify({ event: { target: { responseText: JSON.stringify({ type: 'progress', data: progress }) + '\n' } } })
+        await vi.runAllTicks()
         expect(wrapper.get('[aria-label="Fortschritt der Prüfung"]').text()).toContain('Frist abgleichenWird geprüft')
         expect(wrapper.get('[aria-label="Fortschritt der Prüfung"]').text()).toContain('Arbeitsordner ermittelnErledigt')
         expect(wrapper.get('[aria-label="Fortschritt der Prüfung"]').text()).toContain('Aktuellen Status ermittelnAusstehend')
@@ -584,9 +736,9 @@ it('shows actual check progress and the completed server result', async () => {
         await flushPromises()
         expect(wrapper.get('[aria-label="Fortschritt der Prüfung"]').text()).toContain('Prüfung abgeschlossen')
         expect(wrapper.get('[aria-label="Fortschritt der Prüfung"]').text()).toContain('Aktuellen Status ermittelnErledigt')
-        expect(get).toHaveBeenCalledTimes(1)
+        expect(get).toHaveBeenCalledTimes(0)
         await vi.advanceTimersByTimeAsync(2000)
-        expect(get).toHaveBeenCalledTimes(1)
+        expect(get).toHaveBeenCalledTimes(0)
     } finally { wrapper.unmount(); vi.useRealTimers() }
 })
 
@@ -599,10 +751,10 @@ it('stops polling when the check view closes', async () => {
         vi.useFakeTimers()
         await button(wrapper, 'Erneut prüfen').trigger('click')
         await vi.advanceTimersByTimeAsync(200)
-        expect(get).toHaveBeenCalledTimes(1)
+        expect(get).toHaveBeenCalledTimes(0)
         wrapper.unmount()
         await vi.advanceTimersByTimeAsync(2000)
-        expect(get).toHaveBeenCalledTimes(1)
+        expect(get).toHaveBeenCalledTimes(0)
     } finally { wrapper.unmount(); vi.useRealTimers() }
 })
 

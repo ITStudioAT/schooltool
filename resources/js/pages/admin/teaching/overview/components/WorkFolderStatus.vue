@@ -1,5 +1,5 @@
 <template>
-    <span v-if="workAutomationEnabled(work) && (linked || needsPreparation)" class="d-inline-flex" :class="{ 'cursor-pointer': linked }"
+    <span v-if="workAutomationEnabled(work) && (linked || needsPreparation || !state)" class="d-inline-flex" :class="{ 'cursor-pointer': linked }"
         :role="linked ? 'button' : undefined" :tabindex="linked ? 0 : undefined" :aria-label="tooltip" :title="tooltip"
         @click.stop="openFolder" @keydown.enter.stop.prevent="openFolder" @keydown.space.stop.prevent="openFolder">
         <v-icon
@@ -48,7 +48,7 @@ watch(() => [key.value, workAutomationEnabled(props.work)], async ([value, enabl
     loadError.value = false
     if (!enabled) return
     try {
-        if (needsPreparation.value && workExerciseCheck(value, props.work, props.date)) await loadWorkExercise(value, props.work, props.date)
+        if (workExerciseCheck(value, props.work, props.date)) await loadWorkExercise(value, props.work, props.date)
         else await loadWorkDropbox(value, props.work.id)
     } catch {
         if (key.value === value) loadError.value = true
