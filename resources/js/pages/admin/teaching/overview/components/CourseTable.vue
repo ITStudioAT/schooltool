@@ -1288,7 +1288,11 @@
                                             <v-btn :value="true" prepend-icon="mdi-brain">Automatische Beurteilung</v-btn>
                                         </v-btn-toggle>
                                         <div class="text-caption text-medium-emphasis mt-2 mb-3">
-                                            {{ workDialogForm.automation_enabled ? 'Beurteilungen importieren; Ordner, Abgaben und Versand verfolgen.' : 'Beurteilungen direkt in Schooltool eintragen.' }}
+                                            {{ workDialogForm.automation_enabled
+                                                ? savedWorkDialogWork && !workAutomationEnabled(savedWorkDialogWork)
+                                                    ? 'Bitte speichern. Danach ist die Dropbox-Ordnerverknüpfung verfügbar.'
+                                                    : 'Beurteilungen importieren; Ordner, Abgaben und Versand verfolgen.'
+                                                : 'Beurteilungen direkt in Schooltool eintragen. Für eine Dropbox-Ordnerverknüpfung „Automatische Beurteilung“ wählen und speichern.' }}
                                         </div>
                                         <v-text-field
                                             v-model="workDialogForm.title"

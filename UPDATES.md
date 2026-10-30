@@ -6,6 +6,10 @@
 
 - Pausiert freigeben
 
+### System
+
+- Einstellungen/Modul-Sichtbarkeiten: Neues UI-Design
+
 ## 3.54.0
 
 ### Unterricht

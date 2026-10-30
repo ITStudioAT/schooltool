@@ -10,12 +10,15 @@
  * Endpoints require admin, teacher, or register_admin roles
  */
 
+use App\Http\Middleware\ToolLicensed;
 use App\Models\Licence;
 use App\Models\School;
 use App\Models\SchoolTool;
 use App\Models\Schoolyear;
 use App\Models\User;
+use App\Services\SchoolToolModuleStatusService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Spatie\Permission\Models\Role;
 
@@ -172,7 +175,7 @@ describe('loadConfig', function () {
             ], moduleVisibilityKeys()));
     });
 
-    test('load config returns school tool of authenticated users school', function () {
+    test('load config keeps school metadata but returns app-wide module settings', function () {
         $otherSchool = School::factory()->create();
         $otherSchool->licences()->attach($this->teachingLicence->id, [
             'valid_until' => now()->addYear()->toDateString(),
@@ -196,7 +199,7 @@ describe('loadConfig', function () {
         $response->assertStatus(200)
             ->assertJson([
                 'id' => $otherSchoolTool->id,
-                'register_visible_user' => false,
+                'register_visible_user' => true,
             ]);
     });
 
@@ -564,4 +567,257 @@ test('regular user cannot set the active schoolyear', function () {
         ->assertForbidden();
 
     expect($this->schoolTool->fresh()->active_schoolyear_id)->toBeNull();
+});
+
+test('saving from another school applies the SEPP user state app-wide without changing school metadata', function (
+    bool $visible,
+    bool $testMode,
+    bool $comingSoon,
+    string $status,
+    int $accessStatus,
+): void {
+    $otherSchool = School::factory()->create(['is_selectable' => true]);
+    $otherSchoolyear = Schoolyear::factory()->create(['school_id' => $otherSchool->id]);
+    $otherSchoolTool = SchoolTool::factory()->create([
+        'school_id' => $otherSchool->id,
+        'active_schoolyear_id' => $otherSchoolyear->id,
+        'students_timetables_visible_admin' => true,
+        'students_timetables_visible_user' => true,
+        'students_timetables_admin_version' => 'v2',
+        'restaurant_service_email' => 'school@example.test',
+    ]);
+    $otherAdmin = User::factory()->create([
+        'school_id' => $otherSchool->id,
+        'schoolyear_id' => $otherSchoolyear->id,
+    ]);
+    $otherAdmin->assignRole('admin');
+    $this->actingAs($otherAdmin);
+
+    $configuration = $this->getJson('/api/admin/school_tools/load_config')
+        ->assertOk()
+        ->assertJsonPath('id', $otherSchoolTool->id)
+        ->assertJsonPath('students_timetables_visible_user', false)
+        ->json();
+    $payload = collect($configuration)->only(app(SchoolToolModuleStatusService::class)->moduleVisibilityFields())->all();
+    $seppFlags = [
+        'students_timetables_visible_admin' => true,
+        'students_timetables_visible_user' => $visible,
+        'students_timetables_user_test_mode' => $testMode,
+        'students_timetables_user_comming_soon' => $comingSoon,
+    ];
+
+    $this->postJson('/api/admin/school_tools/save_module_statuses', [
+        'data' => ['id' => $otherSchoolTool->id, ...$payload, ...$seppFlags],
+    ])->assertOk()
+        ->assertJsonPath('students_timetables_visible_user', $visible)
+        ->assertJsonPath('students_timetables_user_test_mode', $testMode)
+        ->assertJsonPath('students_timetables_user_comming_soon', $comingSoon)
+        ->assertJsonPath('active_schoolyear_id', $otherSchoolyear->id)
+        ->assertJsonPath('students_timetables_admin_version', 'v2');
+
+    $this->assertDatabaseHas('school_tools', ['id' => $this->schoolTool->id, ...$seppFlags]);
+    $this->assertDatabaseHas('school_tools', [
+        'id' => $otherSchoolTool->id,
+        'students_timetables_visible_user' => true,
+        'active_schoolyear_id' => $otherSchoolyear->id,
+        'students_timetables_admin_version' => 'v2',
+        'restaurant_service_email' => 'school@example.test',
+    ]);
+
+    foreach ([$this->school, $otherSchool] as $school) {
+        grantSchoolToolLicenceForTests($school, 'StudentsTimetables');
+        $this->getJson('/api/homepage/config?school='.$school->short_name)
+            ->assertOk()
+            ->assertJsonPath('tool_module_statuses.students_timetables', $status)
+            ->assertJsonPath('students_timetables_active', $accessStatus === 200)
+            ->assertJsonPath('tool_module_statuses.register', 'active');
+
+        $request = Request::create('/api/homepage/students-timetables/overview', 'GET', ['school_id' => $school->id]);
+        $response = app(ToolLicensed::class)->handle(
+            $request,
+            fn () => response()->json(['allowed' => true]),
+            'StudentsTimetables',
+            'auto',
+            'studentstimetables_user',
+        );
+        expect($response->getStatusCode())->toBe($accessStatus);
+    }
+
+    $this->actingAs($this->admin)
+        ->getJson('/api/admin/school_tools/load_config')
+        ->assertOk()
+        ->assertJsonPath('students_timetables_visible_user', $visible)
+        ->assertJsonPath('students_timetables_user_test_mode', $testMode)
+        ->assertJsonPath('students_timetables_user_comming_soon', $comingSoon);
+})->with([
+    'Aus' => [false, false, false, 'inactive', 403],
+    'Anzeige' => [true, false, false, 'active', 200],
+    'Testmodus' => [false, true, false, 'test_modus', 200],
+    'Kommt bald' => [false, false, true, 'comming_soon', 403],
+]);
+
+test('saving a payload without optional SEPP flags preserves the app-wide SEPP setting', function (): void {
+    $this->schoolTool->update([
+        'students_timetables_visible_admin' => true,
+        'students_timetables_visible_user' => true,
+    ]);
+    $payload = $this->schoolTool->only(moduleVisibilityKeys());
+
+    $this->actingAs($this->admin)
+        ->postJson('/api/admin/school_tools/save_module_statuses', ['data' => ['id' => 1, ...$payload]])
+        ->assertOk()
+        ->assertJsonPath('students_timetables_visible_user', true);
+
+    $this->assertDatabaseHas('school_tools', ['id' => 1, 'students_timetables_visible_user' => true]);
+});
+
+test('app-wide SEPP access still requires the selected schools licence', function (bool $testMode): void {
+    $this->schoolTool->update([
+        'students_timetables_visible_admin' => true,
+        'students_timetables_visible_user' => ! $testMode,
+        'students_timetables_user_test_mode' => $testMode,
+    ]);
+    $this->actingAs($this->admin);
+    $request = Request::create('/api/homepage/students-timetables/overview', 'GET', ['school_id' => $this->school->id]);
+
+    $response = app(ToolLicensed::class)->handle(
+        $request,
+        fn () => response()->json(['allowed' => true]),
+        'StudentsTimetables',
+        'auto',
+        'studentstimetables_user',
+    );
+
+    expect($response->getStatusCode())->toBe(403);
+    expect($response->getContent())->toContain('Lizenz nicht vorhanden.');
+})->with(['Anzeige' => false, 'Testmodus' => true]);
+
+test('app-wide module states govern both schools user and admin access independently', function (
+    string $module,
+    string $licence,
+    bool $visible,
+    bool $testMode,
+    bool $comingSoon,
+    string $status,
+    int $accessStatus,
+): void {
+    $otherSchool = School::factory()->create(['is_selectable' => true]);
+    $otherSchoolTool = SchoolTool::factory()->create([
+        'school_id' => $otherSchool->id,
+        "{$module}_visible_admin" => false,
+        "{$module}_visible_user" => true,
+        "{$module}_user_test_mode" => false,
+        "{$module}_user_comming_soon" => false,
+    ]);
+    $moduleStatusService = app(SchoolToolModuleStatusService::class);
+    $payload = $this->schoolTool->only($moduleStatusService->moduleVisibilityFields());
+    $flags = [
+        "{$module}_visible_admin" => true,
+        "{$module}_visible_user" => $visible,
+        "{$module}_user_test_mode" => $testMode,
+        "{$module}_user_comming_soon" => $comingSoon,
+    ];
+    $this->actingAs($this->admin)
+        ->postJson('/api/admin/school_tools/save_module_statuses', [
+            'data' => ['id' => $this->schoolTool->id, ...$payload, ...$flags],
+        ])->assertOk()
+        ->assertJsonPath("{$module}_visible_user", $visible)
+        ->assertJsonPath("{$module}_user_test_mode", $testMode)
+        ->assertJsonPath("{$module}_user_comming_soon", $comingSoon);
+    $this->assertDatabaseHas('school_tools', ['id' => $this->schoolTool->id, ...$flags]);
+
+    foreach ([$this->school, $otherSchool] as $school) {
+        grantSchoolToolLicenceForTests($school, $licence);
+        $schoolUser = User::factory()->create(['school_id' => $school->id]);
+        $schoolUser->assignRole('admin');
+        $this->actingAs($schoolUser);
+
+        $statuses = app(SchoolToolModuleStatusService::class);
+        expect($statuses->userStatusForModule($module, $school))->toBe($status)
+            ->and($statuses->adminVisibleForModule($module, $school))->toBeTrue();
+
+        $userRequest = Request::create("/api/homepage/{$module}/visibility-check", 'GET', ['school_id' => $school->id]);
+        $userResponse = app(ToolLicensed::class)->handle($userRequest, fn () => response('allowed'), $licence);
+        expect($userResponse->getStatusCode())->toBe($accessStatus);
+
+        $adminRequest = Request::create("/api/admin/{$module}/visibility-check");
+        $adminResponse = app(ToolLicensed::class)->handle($adminRequest, fn () => response('allowed'), $licence, 'auth');
+        expect($adminResponse->getStatusCode())->toBe(200);
+
+        if ($module !== 'aba') {
+            $this->getJson('/api/homepage/config?school='.$school->short_name)
+                ->assertOk()
+                ->assertJsonPath("tool_module_statuses.{$module}", $status)
+                ->assertJsonPath("{$module}_active", $accessStatus === 200);
+        }
+    }
+
+    $this->assertDatabaseHas('school_tools', [
+        'id' => $otherSchoolTool->id,
+        "{$module}_visible_admin" => false,
+        "{$module}_visible_user" => true,
+    ]);
+})->with([
+    'Anmeldetool' => ['register', 'Anmeldetool'],
+    'Unterricht' => ['teaching', 'Lehrertool'],
+    'Materialien' => ['materials', 'Materialientool'],
+    'Restaurant' => ['restaurant', 'Restaurant'],
+    'ABA' => ['aba', 'ABA'],
+    'SEPP' => ['students_timetables', 'StudentsTimetables'],
+])->with([
+    'Aus' => [false, false, false, 'inactive', 403],
+    'Anzeige' => [true, false, false, 'active', 200],
+    'Testmodus' => [false, true, false, 'test_modus', 200],
+    'Kommt bald' => [false, false, true, 'comming_soon', 403],
+]);
+
+test('the app-wide admin switch blocks module access despite conflicting school flags', function (
+    string $module,
+    string $licence,
+): void {
+    $this->schoolTool->update(["{$module}_visible_admin" => false, "{$module}_visible_user" => false]);
+    $otherSchool = School::factory()->create();
+    SchoolTool::factory()->create([
+        'school_id' => $otherSchool->id,
+        "{$module}_visible_admin" => true,
+        "{$module}_visible_user" => true,
+    ]);
+
+    foreach ([$this->school, $otherSchool] as $school) {
+        grantSchoolToolLicenceForTests($school, $licence);
+        $schoolUser = User::factory()->create(['school_id' => $school->id]);
+        $schoolUser->assignRole('admin');
+        $this->actingAs($schoolUser);
+
+        $apiRequest = Request::create("/api/admin/{$module}/visibility-check");
+        $apiResponse = app(ToolLicensed::class)->handle($apiRequest, fn () => response('allowed'), $licence, 'auth');
+        expect($apiResponse->getStatusCode())->toBe(403);
+
+        $webRequest = Request::create("/admin/{$module}/visibility-check");
+        $webResponse = app(ToolLicensed::class)->handle($webRequest, fn () => response('allowed'), $licence, 'auth');
+        expect($webResponse->getStatusCode())->toBe(302)
+            ->and($webResponse->headers->get('Location'))->toBe(url('/admin'));
+    }
+})->with([
+    'Anmeldetool' => ['register', 'Anmeldetool'],
+    'Unterricht' => ['teaching', 'Lehrertool'],
+    'Materialien' => ['materials', 'Materialientool'],
+    'Restaurant' => ['restaurant', 'Restaurant'],
+    'ABA' => ['aba', 'ABA'],
+    'SEPP' => ['students_timetables', 'StudentsTimetables'],
+]);
+
+test('module settings expose which modules have an implemented user view', function (): void {
+    Licence::create(['name' => 'StudentsTimetables', 'long_name' => 'SEPP']);
+
+    $response = $this->actingAs($this->admin)->getJson('/api/admin/school_tools/load_config')->assertOk();
+
+    expect(collect($response->json('module_rows'))->pluck('hasUserView', 'key')->all())->toEqual([
+        'aba' => false,
+        'register' => true,
+        'teaching' => true,
+        'materials' => false,
+        'restaurant' => true,
+        'students_timetables' => true,
+    ]);
 });

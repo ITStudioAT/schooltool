@@ -19,7 +19,7 @@ class SchoolToolResource extends JsonResource
         $moduleStatusService = app(SchoolToolModuleStatusService::class);
         $defaultAttributes = $moduleStatusService->defaultAttributes();
         $moduleVisibilityFields = collect($moduleStatusService->moduleVisibilityFields())
-            ->mapWithKeys(fn (string $field): array => [$field => (bool) ($this->{$field} ?? $defaultAttributes[$field])])
+            ->mapWithKeys(fn (string $field): array => [$field => (bool) $defaultAttributes[$field]])
             ->all();
 
         return [
