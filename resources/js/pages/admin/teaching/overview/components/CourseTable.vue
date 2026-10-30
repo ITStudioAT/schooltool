@@ -1607,7 +1607,7 @@
                                     :inert="workSaving" :aria-disabled="workSaving" :class="{ 'work-status-checking': workSaving }">
                                     <WorkFolderStatus :work="savedWorkDialogWork" :date="workDialog.courseDate?.date || ''" :size="30" />
                                     <WorkExerciseStatus :work="savedWorkDialogWork" :course="selected_course" :date="workDialog.courseDate?.date || ''" :state="workDialogExerciseStatus" :size="30" :disabled="!workDialogFolderLinked || workSaving || workDialogTypeEditing || workDialogModeEditing" can-create @create="$refs.workExerciseExport?.openDialog()" />
-                                    <WorkDeliveryStatus :work="savedWorkDialogWork" :date="workDialog.courseDate?.date || ''" :state="workDialogExerciseStatus" :exercise-ready="workDialogExerciseReady" :size="30" :disabled="(!workDialogFolderLinked || !workDialogExerciseReady) && !savedWorkDialogWork?.local_task_copy && !savedWorkDialogWork?.status?.student_distribution?.published_at" @import="openImport" @saved="applySavedCourseWork({ data: $event })" />
+                                    <WorkDeliveryStatus :work="savedWorkDialogWork" :date="workDialog.courseDate?.date || ''" :state="workDialogExerciseStatus" :exercise-ready="workDialogExerciseReady" :size="30" :disabled="(!workDialogFolderLinked || !workDialogExerciseReady) && !savedWorkDialogWork?.local_task_copy && !savedWorkDialogWork?.status?.student_distribution?.published_at && !savedWorkDialogWork?.status?.student_distribution?.prepared_at" @import="openImport" @saved="applySavedCourseWork({ data: $event })" />
                                 </span>
                                 <v-btn
                                     variant="text"

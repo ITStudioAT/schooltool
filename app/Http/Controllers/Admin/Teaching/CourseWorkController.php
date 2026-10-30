@@ -49,7 +49,7 @@ class CourseWorkController extends Controller
         $actor = $this->userHasRole(['admin', 'teaching_admin', 'teacher']);
         abort_unless($actor && $course_work->teachingCourse, 403);
         $this->authorizeTeachingCourseAccess($course_work->teachingCourse, $actor);
-        $data = $request->validate(['publish' => ['required', 'boolean'], 'instructions' => ['nullable', 'string', 'max:20000'],
+        $data = $request->validate(['publish' => ['required', 'boolean'], 'release_now' => ['sometimes', 'boolean'], 'instructions' => ['nullable', 'string', 'max:20000'],
             'files' => ['sometimes', 'array', 'max:5'], 'files.*' => ['file', 'extensions:pdf', 'mimetypes:application/pdf', 'max:8192'],
             'retained_file_ids' => ['sometimes', 'array', 'max:5'], 'retained_file_ids.*' => ['required', 'uuid', 'distinct'],
             'expected_version' => ['required', 'string', 'size:64'], 'mc_tests' => ['nullable', 'string', 'max:65536']]);
@@ -64,8 +64,12 @@ class CourseWorkController extends Controller
                 $this->authorizeTeachingCourseAccess($work->teachingCourse, $actor);
                 abort_unless(hash_equals($distribution->version($work), $data['expected_version']), 409, 'Die Arbeit wurde inzwischen geändert. Bitte neu öffnen.');
                 if ($data['publish']) {
-                    $distribution->publishMcTests($work, $data['mc_tests'] ?? null);
-                    $distribution->publish($work, $data['instructions'] ?? '', $request->file('files', []), $createdPaths, $data['retained_file_ids'] ?? []);
+                    $releaseNow = (bool) ($data['release_now'] ?? false);
+                    if (! $releaseNow && ! empty($work->status['student_distribution']['published_at']) && empty($work->status['student_distribution']['withdrawn_at'])) {
+                        throw ValidationException::withMessages(['release_now' => 'Diese Aufgabe wurde bereits freigegeben. Bitte die bestehende Freigabe bewusst aktualisieren oder zurücknehmen.']);
+                    }
+                    $distribution->publishMcTests($work, $data['mc_tests'] ?? null, $releaseNow);
+                    $distribution->publish($work, $data['instructions'] ?? '', $request->file('files', []), $createdPaths, $data['retained_file_ids'] ?? [], $releaseNow);
                 } else {
                     $status = $work->status ?? [];
                     if (isset($status['student_distribution'])) {

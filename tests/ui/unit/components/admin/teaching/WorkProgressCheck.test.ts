@@ -194,8 +194,13 @@ it('updates the Unterricht collection indicator and simulator time after an expl
         expect(wrapper.get('[data-workflow-stage="collection"]').element.disabled).toBe(false)
         await wrapper.get('[data-workflow-stage="collection"]').trigger('click')
         expect(wrapper.get('[role="dialog"]').text()).toContain('abgeschlossen · Simulation')
-        expect(wrapper.get('[role="dialog"]').text()).toContain('1 gesicherte Rückgaben, 1 vorgesehene Nichtabgaben')
-        expect(wrapper.get('[role="dialog"]').text()).toContain('Letztes Einsammeln im Simulator: 24.10.2026, 17:35 Uhr')
+        const students = wrapper.get('[aria-label="Abgabestatus der Schülerinnen und Schüler"]').findAll('li')
+        expect(students).toHaveLength(2)
+        for (const student of students) {
+            expect(student.text()).toContain('AbgabeUngeklärt')
+            expect(student.text()).toContain('MC-TestKein MC-Test')
+        }
+        expect(wrapper.get('[role="dialog"]').text()).toContain('Simulator: 24.10.2026, 17:35 Uhr')
         expect(wrapper.get('[role="dialog"]').text()).toContain('Simulator öffnen')
         expect(wrapper.get('[role="dialog"]').text()).not.toContain('Erneut einsammeln')
         await wrapper.get('[data-workflow-stage="evaluation"]').trigger('click')

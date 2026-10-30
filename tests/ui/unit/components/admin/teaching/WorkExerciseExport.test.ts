@@ -625,7 +625,7 @@ it('shows the complete externally confirmed folder name instead of creation', as
     const wrapper = mountExport(undefined, undefined, status)
     try {
         await flushPromises()
-        expect(wrapper.get('[aria-label="Leistungsfeststellungsordner"]').text()).toBe(linkedExercise.exercise.folder.name)
+        expect(wrapper.get('[aria-label="Leistungsfeststellungsordner"]').text()).toBe(`LF: ${linkedExercise.exercise.folder.name}`)
         expect(wrapper.findAll('button').some(item => item.text() === 'Leistungsfeststellung erstellen')).toBe(false)
         expect(status).toHaveBeenCalledWith('/api/admin/teaching/course_works/65/dropbox', expect.objectContaining({ params: { include_exercise: 1, date: '2026-10-20' } }))
     } finally { wrapper.unmount() }

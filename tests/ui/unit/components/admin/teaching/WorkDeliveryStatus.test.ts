@@ -30,6 +30,41 @@ it('opens task preparation for a local copy without a Dropbox connection or an e
     } finally { wrapper.unmount() }
 })
 
+it('shows a paused preparation and its release control without requiring Dropbox or an email step', async () => {
+    const wrapper = mount(WorkDeliveryStatus, { props: { exerciseReady: false,
+        work: { id: 91, status: { automation_enabled: false,
+            student_distribution: { prepared_at: '2026-10-30T08:00:00Z', published_at: null, student_ids: [1] } } },
+    }, global: { plugins: [createTestingPinia({ createSpy: vi.fn })], stubs: {
+        'v-btn': { props: ['disabled'], template: '<button :disabled="disabled"><slot /></button>' },
+        'v-dialog': { props: ['modelValue'], template: '<section v-if="modelValue" role="dialog"><slot /></section>' },
+        WorkStudentDistribution: { template: '<button>Pausierte Aufgaben verwalten</button>' },
+    } } })
+    try {
+        await wrapper.get('[aria-label="Aufgaben pausiert vorbereitet · jetzt freigeben"]').trigger('click')
+        expect(wrapper.get('[role="dialog"]').text()).toContain('noch nicht für Schüler:innen freigegeben')
+        expect(wrapper.get('[role="dialog"]').text()).toContain('Pausierte Aufgaben verwalten')
+        expect(wrapper.find('[data-workflow-stage="send"]').exists()).toBe(false)
+        expect(wrapper.get('[data-workflow-stage="collection"]').attributes('disabled')).toBeDefined()
+    } finally { wrapper.unmount() }
+})
+
+it('keeps a withdrawn task accessible for paused preparation without an email step', async () => {
+    const wrapper = mount(WorkDeliveryStatus, { props: { exerciseReady: false,
+        work: { id: 90, status: { automation_enabled: false,
+            student_distribution: { published_at: '2026-10-29T08:00:00Z', withdrawn_at: '2026-10-30T08:00:00Z', student_ids: [1] } } },
+    }, global: { plugins: [createTestingPinia({ createSpy: vi.fn })], stubs: {
+        'v-btn': { props: ['disabled'], template: '<button :disabled="disabled"><slot /></button>' },
+        'v-dialog': { props: ['modelValue'], template: '<section v-if="modelValue" role="dialog"><slot /></section>' },
+        WorkStudentDistribution: { template: '<button>Erneut pausiert vorbereiten</button>' },
+    } } })
+    try {
+        await wrapper.get('[aria-label="Aufgabenfreigabe zurückgenommen · erneut vorbereiten"]').trigger('click')
+        expect(wrapper.get('[role="dialog"]').text()).toContain('erneut pausiert vorbereiten')
+        expect(wrapper.find('[data-workflow-stage="send"]').exists()).toBe(false)
+        expect(wrapper.get('[data-workflow-stage="collection"]').attributes('disabled')).toBeDefined()
+    } finally { wrapper.unmount() }
+})
+
 it('shows released students and their actual MC test status in the preparation dialog', async () => {
     vi.stubGlobal('axios', { get: vi.fn().mockResolvedValue({ data: { attempts: [
         { student_id: 12, status: 'in_progress' }, { student_id: 13, status: 'submitted' },

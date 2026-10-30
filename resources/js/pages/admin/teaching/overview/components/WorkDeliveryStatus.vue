@@ -1,12 +1,12 @@
 <template>
-    <span v-if="work.local_task_copy || workAutomationEnabled(work) || workHasProgress(work)" class="d-inline-flex flex-wrap align-center ga-1" @click.stop @keydown.stop>
-        <v-btn v-if="portalRelease" icon :size="Number(size) > 20 ? 'small' : 'x-small'" :density="Number(size) > 20 ? 'default' : 'compact'" variant="text" color="success" :disabled="disabled" title="Aufgaben im Schülerbereich bereitgestellt" aria-label="Aufgaben im Schülerbereich bereitgestellt" @click.stop="opened = 'preparation'">
+    <span v-if="portalPending || work.local_task_copy || workAutomationEnabled(work) || workHasProgress(work)" class="d-inline-flex flex-wrap align-center ga-1" @click.stop @keydown.stop>
+        <v-btn v-if="portalRelease || portalPending" icon :size="Number(size) > 20 ? 'small' : 'x-small'" :density="Number(size) > 20 ? 'default' : 'compact'" variant="text" :color="portalPending ? 'warning' : 'success'" :disabled="disabled" :title="portalActionLabel" :aria-label="portalActionLabel" @click.stop="opened = 'preparation'">
             <v-icon :size="size">mdi-account-school-outline</v-icon>
         </v-btn>
-        <v-btn v-if="!portalRelease" icon :size="Number(size) > 20 ? 'small' : 'x-small'" :density="Number(size) > 20 ? 'default' : 'compact'" variant="text" :color="preparation.complete ? 'success' : 'error'" :disabled="disabled" :aria-label="preparation.label" :title="preparation.label" data-workflow-stage="preparation" @click.stop="opened = 'preparation'">
+        <v-btn v-if="!portalRelease && !portalPending" icon :size="Number(size) > 20 ? 'small' : 'x-small'" :density="Number(size) > 20 ? 'default' : 'compact'" variant="text" :color="preparation.complete ? 'success' : 'error'" :disabled="disabled" :aria-label="preparation.label" :title="preparation.label" data-workflow-stage="preparation" @click.stop="opened = 'preparation'">
             <v-icon :size="size">mdi-email-edit-outline</v-icon>
         </v-btn>
-        <v-btn v-if="!portalRelease" icon :size="Number(size) > 20 ? 'small' : 'x-small'" :density="Number(size) > 20 ? 'default' : 'compact'" variant="text" :color="sent || manuallyCompleted ? 'success' : 'error'" :disabled="disabled || sendBlocked" :aria-label="sendLabel" :title="sendBlocked ? 'Zuerst die E-Mail-Vorbereitung abschließen' : sendLabel" data-workflow-stage="send" @click.stop="opened = 'send'">
+        <v-btn v-if="!portalRelease && !portalPending" icon :size="Number(size) > 20 ? 'small' : 'x-small'" :density="Number(size) > 20 ? 'default' : 'compact'" variant="text" :color="sent || manuallyCompleted ? 'success' : 'error'" :disabled="disabled || sendBlocked" :aria-label="sendLabel" :title="sendBlocked ? 'Zuerst die E-Mail-Vorbereitung abschließen' : sendLabel" data-workflow-stage="send" @click.stop="opened = 'send'">
             <v-icon :size="size">mdi-send-outline</v-icon>
         </v-btn>
         <v-btn v-for="stage in stages" :key="stage.key" icon :size="Number(size) > 20 ? 'small' : 'x-small'" :density="Number(size) > 20 ? 'default' : 'compact'" variant="text" :color="stage.color"
@@ -19,7 +19,7 @@
             <v-card-title class="text-wrap">{{ opened === 'preparation' ? 'Aufgaben bereitstellen' : opened === 'send' ? 'E-Mail-Versand' : selectedStage?.title }} · {{ work.title }}</v-card-title>
             <v-card-text>
                 <v-alert v-if="completionError" type="error" variant="tonal" class="mb-3" role="alert">{{ completionError }}</v-alert>
-                <v-alert :type="opened === 'preparation' && portalRelease ? 'success' : opened === 'send' ? (sent || manuallyCompleted ? 'success' : 'warning') : (selectedStage?.complete ? 'success' : 'info')" variant="tonal">{{ opened === 'preparation' && portalRelease ? 'Im Schülerbereich bereitgestellt' : opened === 'send' ? sendLabel : selectedStage?.label }}</v-alert>
+                <v-alert :type="opened === 'preparation' && portalPending ? 'warning' : opened === 'preparation' && portalRelease ? 'success' : opened === 'send' ? (sent || manuallyCompleted ? 'success' : 'warning') : (selectedStage?.complete ? 'success' : 'info')" variant="tonal">{{ opened === 'preparation' && portalWithdrawn ? 'Aufgabenfreigabe zurückgenommen · erneut pausiert vorbereiten' : opened === 'preparation' && portalPrepared ? 'Pausiert vorbereitet · noch nicht für Schüler:innen freigegeben' : opened === 'preparation' && portalRelease ? 'Im Schülerbereich bereitgestellt' : opened === 'send' ? sendLabel : selectedStage?.label }}</v-alert>
                 <section v-if="opened === 'preparation' && portalRelease" class="student-status mt-4" aria-label="Schülerinnen und Schüler">
                     <div class="student-status__header">
                         <div>
@@ -73,7 +73,7 @@
                     <p v-if="opened !== 'preparation' && opened !== 'collection'" class="mt-3">{{ selectedStage?.count }} von {{ selectedStage?.total }} Personen mit gespeichertem Nachweis.</p>
                     <p v-if="selectedStage?.detail && opened !== 'collection'" class="mt-2">{{ selectedStage.detail }}</p>
                     <p v-if="selectedStage?.manuallyCompleted && opened !== 'collection'" class="mt-3">Dieser Schritt ist manuell als erledigt markiert. Die Markierung bestätigt keine erstellten E-Mails, Bewertungen, bereitgestellten PDFs oder versandten Nachrichten. Vorhandene Nachweise, Zeitstempel und Punkte bleiben unverändert.</p>
-                    <p v-if="opened === 'preparation' && !selectedStage?.manuallyCompleted" class="mt-3">Die E-Mail-Vorbereitung kann als erledigt markiert und die Markierung wieder aufgehoben werden. Damit werden keine E-Mails erstellt oder versandt.</p>
+                    <p v-if="opened === 'preparation' && !portalPending && !portalRelease && !selectedStage?.manuallyCompleted" class="mt-3">Die E-Mail-Vorbereitung kann als erledigt markiert und die Markierung wieder aufgehoben werden. Damit werden keine E-Mails erstellt oder versandt.</p>
                     <p v-if="opened === 'notification' && selectedStage?.completedAt" class="mt-3"><strong>Abgeschlossen am:</strong> {{ assessmentTimeText(selectedStage.completedAt) }}</p>
                     <v-btn v-if="opened === 'notification' && selectedStage?.simulation" class="mt-2" variant="text" href="http://127.0.0.1:8025" target="_blank" rel="noopener noreferrer">Simulator-Mailpit öffnen</v-btn>
                     <table v-if="opened === 'evaluation' && simulationEvaluation" class="simulation-evaluation mt-3" aria-label="Testbewertungen">
@@ -130,15 +130,15 @@
                     <WorkEvaluationPdf v-if="opened === 'publication' || opened === 'evaluation'" :work="work" class="mt-3" />
                     <p v-if="dispatch.transport === 'mailpit'" class="text-caption text-orange-darken-3 mt-2">Lokaler Entwicklungsdurchlauf nach Testversand über Mailpit.</p>
                 </template>
-                <div v-if="opened === 'preparation' || opened === 'send'" class="d-flex flex-wrap ga-2 mt-4">
+                <div v-if="(opened === 'preparation' || opened === 'send') && !portalPending" class="d-flex flex-wrap ga-2 mt-4">
                     <WorkEmailPreparation :work="work" :date="date" :state="state" :disabled="savingCompletion" :action="opened === 'send' ? 'send' : 'prepare'" />
                     <WorkStudentDistribution v-if="opened === 'preparation' && !portalRelease" :work="work" :date="date" :available="exerciseReady || work.local_task_copy" :disabled="savingCompletion" @saved="emit('saved', $event)" />
                 </div>
             </v-card-text>
             <v-card-actions class="d-flex flex-wrap ga-2" aria-label="Dialogaktionen">
                 <v-btn v-if="opened === 'preparation' && portalRelease" color="warning" variant="tonal" :disabled="savingCompletion || !!testActionBusy" @click="withdrawConfirm = true">Freigabe zurücknehmen</v-btn>
-                <WorkStudentDistribution v-if="opened === 'preparation' && portalRelease" :work="work" :date="date" :available="exerciseReady" :disabled="savingCompletion" @saved="emit('saved', $event)" />
-                <WorkEmailPreparation v-if="opened === 'preparation'" :work="work" :date="date" :state="state" :disabled="savingCompletion" status-only>
+                <WorkStudentDistribution v-if="opened === 'preparation' && (portalRelease || portalPending)" :work="work" :date="date" :available="exerciseReady" :disabled="savingCompletion" @saved="emit('saved', $event)" />
+                <WorkEmailPreparation v-if="opened === 'preparation' && !portalPending" :work="work" :date="date" :state="state" :disabled="savingCompletion" status-only>
                     <template #status-activator="{ open, available, label }">
                         <v-btn v-show="available" variant="tonal" prepend-icon="mdi-eye-outline" :title="label" @click.stop="open">Versandbereitschaft ansehen</v-btn>
                     </template>
@@ -146,7 +146,7 @@
                 <v-btn v-if="opened === 'send' && (!sent || manuallyCompleted)" variant="tonal" :prepend-icon="manuallyCompleted ? 'mdi-undo' : 'mdi-check'" :loading="savingCompletion" :disabled="savingCompletion" @click="saveCompletion('task_dispatch_completed', !manuallyCompleted)">
                     {{ manuallyCompleted ? 'Markierung aufheben' : 'Als erledigt markieren' }}
                 </v-btn>
-                <v-btn v-if="selectedStage?.completionField" variant="tonal" :prepend-icon="selectedStage?.manuallyCompleted ? 'mdi-undo' : 'mdi-check'" :loading="savingCompletion" :disabled="savingCompletion || selectedStage.blocked" @click="saveCompletion(selectedStage.completionField, !selectedStage.manuallyCompleted)">
+                <v-btn v-if="selectedStage?.completionField && !(opened === 'preparation' && portalPending)" variant="tonal" :prepend-icon="selectedStage?.manuallyCompleted ? 'mdi-undo' : 'mdi-check'" :loading="savingCompletion" :disabled="savingCompletion || selectedStage.blocked" @click="saveCompletion(selectedStage.completionField, !selectedStage.manuallyCompleted)">
                     {{ selectedStage?.manuallyCompleted ? 'Markierung aufheben' : 'Als erledigt markieren' }}
                 </v-btn>
                 <WorkSubmissionCollection v-if="opened === 'collection' && !selectedStage?.simulation" :work="work" :date="date" :dispatch="dispatch" :repeat="(!selectedStage?.manuallyCompleted && selectedStage?.complete) || Boolean(lastCollectionAt)" :disabled="savingCompletion" />
@@ -203,6 +203,11 @@ const courseStore = useCourseStore()
 const emit = defineEmits(['import', 'saved'])
 const manuallyCompleted = computed(() => workTaskDispatchCompleted(props.work))
 const portalRelease = computed(() => workStudentDistribution(props.work))
+const portalPrepared = computed(() => Boolean(props.work.status?.student_distribution?.prepared_at && !props.work.status.student_distribution.published_at))
+const portalWithdrawn = computed(() => Boolean(props.work.status?.student_distribution?.published_at && props.work.status.student_distribution.withdrawn_at))
+const portalPending = computed(() => portalPrepared.value || portalWithdrawn.value)
+const portalActionLabel = computed(() => portalWithdrawn.value ? 'Aufgabenfreigabe zurückgenommen · erneut vorbereiten'
+    : portalPrepared.value ? 'Aufgaben pausiert vorbereitet · jetzt freigeben' : 'Aufgaben im Schülerbereich bereitgestellt')
 const linkedTests = computed(() => {
     const tests = props.work.status?.multiple_choice_tests || {}
     return [...new Set([tests[props.date || props.work.date_for_all_groups], tests.all].map(test => test?.test_id).filter(Boolean))]

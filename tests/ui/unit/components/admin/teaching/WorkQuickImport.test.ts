@@ -63,7 +63,7 @@ describe('Quick-Import reuses only a proven per-work directory and always previe
     it('absorbs disabled button clicks inside an actionable work card and routes enabled Quick-Import to its preview', async () => {
         vi.stubGlobal('showDirectoryPicker', vi.fn())
         vi.stubGlobal('indexedDB', {})
-        workDropboxStates.set('7:2:65', { can_quick_import: false })
+        workDropboxStates.set('7:2:65', { can_quick_import: false, folder: null })
         const wrapper = mountImport(WorkImportActions, { work, disabled: true })
         const cardClick = vi.fn()
         const card = document.createElement('div')
@@ -72,7 +72,7 @@ describe('Quick-Import reuses only a proven per-work directory and always previe
         try {
             await flushPromises()
             expect(wrapper.find('.work-quick-import').exists()).toBe(false)
-            workDropboxStates.set('7:2:65', { can_quick_import: true })
+            workDropboxStates.set('7:2:65', { can_quick_import: true, folder: { id: 'id:confirmed' } })
             await flushPromises()
             const quick = wrapper.get('.work-quick-import')
             expect(quick.attributes('disabled')).toBeDefined()

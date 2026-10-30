@@ -101,10 +101,12 @@ class CourseStudentEntryController extends Controller
 
             if ($entry->teachingCourseWork) {
                 $workObj = $entry->teachingCourseWork;
+                $taskPrepared = ! empty($workObj->status['student_distribution']['prepared_at'])
+                    && empty($workObj->status['student_distribution']['published_at']);
                 // If there's an associated work, use its title (or description as fallback) as the title
-                $title = $workObj->title ?? $workObj->description ?? null;
+                $title = $workObj->title ?? ($taskPrepared ? null : $workObj->description);
                 // Use work description (if different from title)
-                $description = $workObj->description ?? null;
+                $description = $taskPrepared ? null : $workObj->description;
                 if ($description === $title) {
                     $description = null;
                 }
@@ -161,7 +163,7 @@ class CourseStudentEntryController extends Controller
                 $work = [
                     'id' => $workObj->id,
                     'title' => $workObj->title,
-                    'description' => $workObj->description,
+                    'description' => $taskPrepared ? null : $workObj->description,
                     'is_group_work' => $workObj->is_group_work ?? false,
                     'group_size' => $workObj->group_size ?? null,
                     'group_members' => $groupMembers,

@@ -6,6 +6,7 @@ use App\Models\McAttempt;
 use App\Models\McCatalog;
 use App\Models\McTest;
 use App\Models\User;
+use App\Services\TeachingWorkStudentDistribution;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -487,6 +488,7 @@ class McTestService
             [$test, $locked] = $this->lockAttempt($attempt);
             $this->assertAttemptVersion($locked, $version);
             $this->assertPublished($test);
+            $this->assertTaskReleased($test, $locked);
             $this->assertNotPaused($test);
             $this->assertAttemptNotPaused($locked);
             if (! $locked->startsIndividually($test)) {
@@ -541,6 +543,7 @@ class McTestService
         return DB::transaction(function () use ($attempt): McAttempt {
             [$test, $locked] = $this->lockAttempt($attempt);
             $this->assertPublished($test);
+            $this->assertTaskReleased($test, $locked);
             if ($test->paused_at !== null || $locked->individualPausedAt() !== null) {
                 return $locked;
             }
@@ -585,6 +588,7 @@ class McTestService
             [$test, $locked] = $this->lockAttempt($attempt);
             $this->assertAttemptVersion($locked, $version);
             $this->assertPublished($test);
+            $this->assertTaskReleased($test, $locked);
             if ($locked->completed_at !== null) {
                 return $locked;
             }
@@ -617,6 +621,9 @@ class McTestService
                 $completed = 0;
                 $test->attempts()->whereNull('completed_at')->orderBy('id')->lockForUpdate()->chunkById(100, function ($attempts) use ($test, &$completed): void {
                     foreach ($attempts as $attempt) {
+                        if (! app(TeachingWorkStudentDistribution::class)->mcAccessAllowed($attempt->setRelation('test', $test))) {
+                            continue;
+                        }
                         if ($attempt->individualPausedAt() !== null) {
                             continue;
                         }
@@ -654,6 +661,7 @@ class McTestService
     private function assertWritable(McTest $test, McAttempt $attempt): void
     {
         $this->assertPublished($test);
+        $this->assertTaskReleased($test, $attempt);
         $this->assertNotPaused($test);
         $this->assertAttemptNotPaused($attempt);
         if ($attempt->completed_at !== null) {
@@ -665,6 +673,13 @@ class McTestService
         $deadline = $attempt->effectiveDeadline($test);
         if ($deadline === null || now()->greaterThanOrEqualTo($deadline)) {
             throw ValidationException::withMessages(['attempt' => 'Die Bearbeitungszeit ist abgelaufen.']);
+        }
+    }
+
+    private function assertTaskReleased(McTest $test, McAttempt $attempt): void
+    {
+        if (! app(TeachingWorkStudentDistribution::class)->mcAccessAllowed($attempt->setRelation('test', $test))) {
+            throw ValidationException::withMessages(['attempt' => 'Die Aufgabe ist vorbereitet und noch nicht freigegeben.']);
         }
     }
 

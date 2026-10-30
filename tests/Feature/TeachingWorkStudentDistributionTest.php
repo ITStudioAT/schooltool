@@ -8,6 +8,7 @@ use App\Models\School;
 use App\Models\SchoolTool;
 use App\Models\Schoolyear;
 use App\Models\TeachingCourse;
+use App\Models\TeachingCourseStudentEntry;
 use App\Models\TeachingCourseWork;
 use App\Models\User;
 use App\Services\MultipleChoice\McTestService;
@@ -15,13 +16,18 @@ use App\Services\TeachingWorkStudentDistribution;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\ValidationException;
 use Spatie\Permission\Models\Role;
+
+require_once dirname(__DIR__).'/Support/MultipleChoiceTestDatabase.php';
+requireMultipleChoiceTestDatabase();
 
 uses(RefreshDatabase::class);
 
@@ -51,7 +57,7 @@ beforeEach(function (): void {
         'status' => ['automation_enabled' => false, 'manual' => 'keep']]);
     $this->publishUrl = "/api/admin/teaching/course_works/{$this->work->id}/student-distribution";
     $this->tasksUrl = "/api/homepage/student/courses/{$this->course->id}/tasks";
-    $this->payload = fn (array $changes = []): array => array_merge(['publish' => true, 'instructions' => 'Ordne deine Dateien.',
+    $this->payload = fn (array $changes = []): array => array_merge(['publish' => true, 'release_now' => true, 'instructions' => 'Ordne deine Dateien.',
         'expected_version' => app(TeachingWorkStudentDistribution::class)->version($this->work->fresh())], $changes);
 });
 
@@ -63,7 +69,7 @@ function studentTaskMcFixture(TeachingCourseWork $work, User $teacher, array $st
         'question_count' => 1, 'total_points' => 2, 'duration_seconds' => 420, 'start_mode' => 'individual',
         'closes_at' => now()->addDays(3), 'snapshot' => ['questions' => [], 'start_mode' => 'individual']]);
     foreach ($students as $student) {
-        $token = 'test-token-'.$test->id.'-'.$student->id;
+        $token = hash('sha256', 'test-token-'.$test->id.'-'.$student->id);
         McAttempt::query()->create(['test_id' => $test->id, 'student_id' => $student->id, 'student_name' => $student->first_name,
             'email' => $student->email, 'questions' => [], 'answers' => [], 'access_token' => $token, 'access_token_hash' => hash('sha256', $token)]);
     }
@@ -73,6 +79,176 @@ function studentTaskMcFixture(TeachingCourseWork $work, User $teacher, array $st
 
     return $test;
 }
+
+test('new task preparation defaults to locked access until an explicit release', function (): void {
+    $payload = ($this->payload)(['files' => [UploadedFile::fake()->createWithContent('Aufgabe.pdf', '%PDF-1.4 task')]]);
+    unset($payload['release_now']);
+    $prepared = $this->actingAs($this->teacher, 'web')->postJson($this->publishUrl, $payload)->assertOk()
+        ->assertJsonPath('data.status.student_distribution.published_at', null)->json('data.status.student_distribution');
+    expect($prepared['prepared_at'])->not->toBeEmpty();
+    $download = route('student.course-work.task-file', ['courseId' => $this->course->id, 'course_work' => $this->work->id, 'fileId' => $prepared['file_ids'][0]], false);
+    $this->actingAs($this->student, 'web')->getJson($this->tasksUrl)->assertOk()->assertJsonCount(0, 'tasks');
+    $this->get($download)->assertNotFound();
+    $this->actingAs($this->peer, 'web')->get($download)->assertNotFound();
+    $this->actingAs($this->teacher, 'web')->postJson($this->publishUrl, ($this->payload)(['retained_file_ids' => $prepared['file_ids']]))->assertOk();
+    $this->actingAs($this->student, 'web')->getJson($this->tasksUrl)->assertOk()->assertJsonCount(1, 'tasks');
+    $this->get($download)->assertOk();
+    Mail::assertNothingOutgoing();
+    Notification::assertNothingSent();
+});
+
+test('preparing a draft keeps its personal test locked and manual release preserves individual start', function (): void {
+    Queue::fake();
+    $test = studentTaskMcFixture($this->work, $this->teacher, [$this->student]);
+    $attempt = $test->attempts()->sole();
+    $before = $attempt->getRawOriginal();
+    $preview = $this->actingAs($this->teacher, 'web')->getJson($this->publishUrl.'-preview')->assertOk()->json('data.tests.0');
+    $choices = json_encode([['id' => $test->id, 'expected_version' => $preview['version'], 'start_mode' => 'individual']], JSON_THROW_ON_ERROR);
+    $this->postJson($this->publishUrl, ($this->payload)(['release_now' => false, 'mc_tests' => $choices]))->assertOk();
+    expect($test->fresh()->status)->toBe('draft');
+    expect($attempt->fresh()->getRawOriginal())->toBe($before);
+    $this->actingAs($this->student, 'web')->getJson('/api/multiple-choice/attempts/'.$attempt->id)->assertNotFound();
+    $this->withHeader('X-MC-Access', $attempt->access_token)->getJson('/api/multiple-choice/access')->assertNotFound();
+    $this->flushHeaders();
+    Queue::assertNothingPushed();
+    $preview = $this->actingAs($this->teacher, 'web')->getJson($this->publishUrl.'-preview')->assertOk()->json('data.tests.0');
+    $choices = json_encode([['id' => $test->id, 'expected_version' => $preview['version'], 'start_mode' => 'individual']], JSON_THROW_ON_ERROR);
+    $this->postJson($this->publishUrl, ($this->payload)(['mc_tests' => $choices]))->assertOk();
+    expect($test->fresh()->status)->toBe('published');
+    expect($attempt->fresh()->getRawOriginal())->toBe($before);
+    $this->actingAs($this->student, 'web')->getJson('/api/multiple-choice/attempts/'.$attempt->id)->assertOk();
+    expect($attempt->fresh()->started_at)->toBeNull();
+    $this->postJson('/api/multiple-choice/attempts/'.$attempt->id.'/start')->assertOk();
+    expect($attempt->fresh()->started_at)->not->toBeNull();
+    Queue::assertPushed(FinalizeMultipleChoiceTest::class);
+});
+
+test('preparation blocks existing published personal links and all learner actions before any attempt mutation', function (): void {
+    $test = studentTaskMcFixture($this->work, $this->teacher, [$this->student], 'published');
+    $attempt = $test->attempts()->sole();
+    $before = $attempt->getRawOriginal();
+    $preview = $this->actingAs($this->teacher, 'web')->getJson($this->publishUrl.'-preview')->assertOk()->json('data.tests.0');
+    $choices = json_encode([['id' => $test->id, 'expected_version' => $preview['version'], 'start_mode' => 'individual']], JSON_THROW_ON_ERROR);
+    $this->postJson($this->publishUrl, ($this->payload)(['release_now' => false, 'mc_tests' => $choices]))->assertOk();
+    $this->actingAs($this->student, 'web')->getJson('/api/multiple-choice/attempts')->assertOk()->assertJsonCount(0, 'attempts');
+    $url = '/api/multiple-choice/attempts/'.$attempt->id;
+    $this->getJson($url)->assertStatus(423);
+    Auth::guard('web')->logout();
+    $this->withHeader('X-MC-Access', $attempt->access_token)->getJson('/api/multiple-choice/access')->assertStatus(423);
+    foreach (['ready', 'start', 'submit', 'activity'] as $action) {
+        $this->postJson($url.'/'.$action)->assertStatus(423);
+    }
+    $this->putJson($url.'/answers', ['answers' => []])->assertStatus(423);
+    $this->flushHeaders();
+    expect(fn () => app(McTestService::class)->startIndividual($attempt))->toThrow(ValidationException::class);
+    expect($attempt->fresh()->getRawOriginal())->toBe($before);
+    $this->travel(4)->days();
+    expect(app(McTestService::class)->finalizeExpired($test->id))->toBe(0);
+    expect($attempt->fresh()->getRawOriginal())->toBe($before);
+});
+
+test('preparation preserves already started and completed attempts', function (bool $completed): void {
+    $this->freezeSecond();
+    $test = studentTaskMcFixture($this->work, $this->teacher, [$this->student], 'published');
+    $attempt = $test->attempts()->sole();
+    $attempt->update(['ready_at' => now()->subMinute(), 'started_at' => now()->subMinute(), 'completed_at' => $completed ? now() : null,
+        'completion_reason' => $completed ? 'submitted' : null, 'answers' => ['q1' => ['a']]]);
+    $before = $attempt->fresh()->getRawOriginal();
+    $testBefore = $test->fresh()->getRawOriginal();
+    $preview = $this->actingAs($this->teacher, 'web')->getJson($this->publishUrl.'-preview')->assertOk()->json('data.tests.0');
+    $choices = json_encode([['id' => $test->id, 'expected_version' => $preview['version'], 'start_mode' => 'individual']], JSON_THROW_ON_ERROR);
+    $this->postJson($this->publishUrl, ($this->payload)(['release_now' => false, 'mc_tests' => $choices]))->assertOk();
+    expect($test->fresh()->getRawOriginal())->toBe($testBefore);
+    expect($attempt->fresh()->getRawOriginal())->toBe($before);
+    $this->actingAs($this->student, 'web')->getJson('/api/multiple-choice/attempts/'.$attempt->id)->assertOk();
+    expect($attempt->fresh()->getRawOriginal())->toBe($before);
+})->with([false, true]);
+
+test('preparation cannot silently pause an existing task release', function (): void {
+    $this->actingAs($this->teacher, 'web')->postJson($this->publishUrl, ($this->payload)())->assertOk();
+    $before = $this->work->fresh()->status;
+    $this->postJson($this->publishUrl, ($this->payload)(['release_now' => false]))->assertUnprocessable();
+    expect($this->work->fresh()->status)->toBe($before);
+});
+
+test('a withdrawn task can be prepared paused again without changing its published MC deadline or attempts', function (string $state): void {
+    $this->travelTo(CarbonImmutable::parse('2026-10-30 12:00:00', 'Europe/Vienna'));
+    $test = studentTaskMcFixture($this->work, $this->teacher, [$this->student], 'published');
+    McTest::query()->whereKey($test->id)->update(['closes_at' => CarbonImmutable::parse('2026-11-04 00:00:07', 'Europe/Vienna')]);
+    $attempt = $test->attempts()->sole();
+    if ($state !== 'not_started') {
+        $attempt->update(['ready_at' => now()->subMinute(), 'started_at' => now()->subMinute(),
+            'answers' => ['q1' => ['a']], 'completed_at' => $state === 'completed' ? now() : null,
+            'completion_reason' => $state === 'completed' ? 'submitted' : null]);
+    }
+    $testBefore = $test->fresh()->getRawOriginal();
+    $attemptBefore = $attempt->fresh()->getRawOriginal();
+    $preview = $this->actingAs($this->teacher, 'web')->getJson($this->publishUrl.'-preview')->assertOk()->json('data.tests.0');
+    $choices = json_encode([['id' => $test->id, 'expected_version' => $preview['version'], 'start_mode' => 'individual']], JSON_THROW_ON_ERROR);
+    $release = $this->postJson($this->publishUrl, ($this->payload)(['mc_tests' => $choices,
+        'files' => [UploadedFile::fake()->createWithContent('Aufgabe.pdf', '%PDF-1.4 task')]]))->assertOk()->json('data.status.student_distribution');
+    $this->postJson($this->publishUrl, ($this->payload)(['publish' => false]))->assertOk();
+    $payload = ($this->payload)(['mc_tests' => $choices, 'retained_file_ids' => $release['file_ids']]);
+    unset($payload['release_now']);
+    $this->postJson($this->publishUrl, $payload)->assertOk()
+        ->assertJsonPath('data.status.student_distribution.published_at', null)
+        ->assertJsonPath('data.status.student_distribution.withdrawn_at', null);
+    expect($test->fresh()->getRawOriginal())->toBe($testBefore);
+    expect($attempt->fresh()->getRawOriginal())->toBe($attemptBefore);
+    $this->actingAs($this->student, 'web')->getJson($this->tasksUrl)->assertOk()->assertJsonCount(0, 'tasks');
+    $download = route('student.course-work.task-file', ['courseId' => $this->course->id, 'course_work' => $this->work->id, 'fileId' => $release['file_ids'][0]], false);
+    $this->get($download)->assertNotFound();
+    $this->getJson('/api/multiple-choice/attempts/'.$attempt->id)->assertStatus($state === 'not_started' ? 423 : 200);
+    expect($attempt->fresh()->getRawOriginal())->toBe($attemptBefore);
+    $this->actingAs($this->teacher, 'web')->postJson($this->publishUrl,
+        ($this->payload)(['mc_tests' => $choices, 'retained_file_ids' => $release['file_ids']]))->assertOk();
+    expect($test->fresh()->getRawOriginal())->toBe($testBefore);
+    expect($attempt->fresh()->getRawOriginal())->toBe($attemptBefore);
+    $this->actingAs($this->student, 'web')->getJson($this->tasksUrl)->assertOk()->assertJsonCount(1, 'tasks');
+    $this->get($download)->assertOk();
+})->with(['not_started', 'in_progress', 'completed']);
+
+test('paused task descriptions cannot leak through student performance entries', function (): void {
+    $this->work->update(['description' => 'Vertrauliche Aufgabenstellung']);
+    TeachingCourseStudentEntry::query()->create(['teaching_course_id' => $this->course->id,
+        'teaching_course_work_id' => $this->work->id, 'user_id' => $this->student->id, 'type' => 'TW',
+        'source' => 'course_work', 'grade' => '2']);
+    $this->actingAs($this->teacher, 'web')->postJson($this->publishUrl, ($this->payload)(['release_now' => false]))->assertOk();
+    $url = '/api/homepage/student/courses/'.$this->course->id.'/entries';
+    $response = $this->actingAs($this->student, 'web')->getJson($url)->assertOk()
+        ->assertJsonPath('entries.0.description', null)->assertJsonPath('entries.0.work.description', null)
+        ->assertJsonPath('entries.0.grade', '2');
+    expect($response->getContent())->not->toContain('Vertrauliche Aufgabenstellung');
+    $this->actingAs($this->teacher, 'web')->postJson($this->publishUrl, ($this->payload)())->assertOk();
+    $this->actingAs($this->student, 'web')->getJson($url)->assertOk()
+        ->assertJsonPath('entries.0.description', 'Vertrauliche Aufgabenstellung');
+});
+
+test('an individual draft can be prepared without inventing a missing deadline but cannot be released', function (): void {
+    $this->work->update(['finish_until_date' => null, 'finish_until_time' => null]);
+    $test = studentTaskMcFixture($this->work, $this->teacher, [$this->student]);
+    $test->update(['closes_at' => null]);
+    $preview = $this->actingAs($this->teacher, 'web')->getJson($this->publishUrl.'-preview')->assertOk()->json('data.tests.0');
+    $choices = json_encode([['id' => $test->id, 'expected_version' => $preview['version'], 'start_mode' => 'individual']], JSON_THROW_ON_ERROR);
+    $this->postJson($this->publishUrl, ($this->payload)(['release_now' => false, 'mc_tests' => $choices]))->assertOk();
+    expect($test->fresh()->closes_at)->toBeNull();
+    $preview = $this->getJson($this->publishUrl.'-preview')->assertOk()->json('data.tests.0');
+    $choices = json_encode([['id' => $test->id, 'expected_version' => $preview['version'], 'start_mode' => 'individual']], JSON_THROW_ON_ERROR);
+    $this->postJson($this->publishUrl, ($this->payload)(['mc_tests' => $choices]))->assertUnprocessable();
+    expect($this->work->fresh()->status['student_distribution']['published_at'])->toBeNull();
+    expect($test->fresh()->status)->toBe('draft');
+});
+
+test('preparing a task cannot block a published test shared with another work', function (): void {
+    $test = studentTaskMcFixture($this->work, $this->teacher, [$this->student], 'published');
+    TeachingCourseWork::factory()->create(['teaching_course_id' => $this->course->id,
+        'status' => ['multiple_choice_tests' => ['all' => ['work_id' => 99999, 'test_id' => $test->id]]]]);
+    $preview = $this->actingAs($this->teacher, 'web')->getJson($this->publishUrl.'-preview')->assertOk()->json('data.tests.0');
+    $choices = json_encode([['id' => $test->id, 'expected_version' => $preview['version'], 'start_mode' => 'individual']], JSON_THROW_ON_ERROR);
+    $this->postJson($this->publishUrl, ($this->payload)(['release_now' => false, 'mc_tests' => $choices]))->assertUnprocessable();
+    expect($test->fresh()->status)->toBe('published');
+    expect($this->work->fresh()->status)->not->toHaveKey('student_distribution');
+});
 
 test('task release also publishes its assigned MC test using the selected start mode', function (string $mode): void {
     Queue::fake();
@@ -238,14 +414,15 @@ test('publication validates content and files without creating partial releases'
         ->and(Storage::disk('local')->allFiles())->toBe([]);
 })->with(['empty', 'fake PDF', 'foreign file', 'oversize']);
 
-test('publication requires ownership and cannot be performed by learners', function (string $actor): void {
+test('publication requires ownership and cannot be performed by learners', function (string $actor, bool $releaseNow): void {
     $user = $actor === 'student' ? $this->student : User::factory()->create([
         'school_id' => $actor === 'foreign school' ? School::factory()->create()->id : $this->school->id,
         'schoolyear_id' => $this->year->id,
     ])->assignRole('teacher');
-    $this->actingAs($user, 'web')->postJson($this->publishUrl, ($this->payload)())->assertForbidden();
+    $this->actingAs($user, 'web')->postJson($this->publishUrl, ($this->payload)(['release_now' => $releaseNow]))->assertForbidden();
     expect($this->work->fresh()->status)->not->toHaveKey('student_distribution');
-})->with(['student', 'other teacher', 'foreign school']);
+})->with([['student', true], ['other teacher', true], ['foreign school', true],
+    ['student', false], ['other teacher', false], ['foreign school', false]]);
 
 test('task reads recheck enrollment school year and current assignment', function (string $case): void {
     $this->actingAs($this->teacher, 'web')->postJson($this->publishUrl, ($this->payload)())->assertOk();

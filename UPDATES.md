@@ -1,5 +1,11 @@
 # UPDATES
 
+## 3.54.1 !!!
+
+### Arbeiten
+
+- Pausiert freigeben
+
 ## 3.54.0
 
 ### Unterricht

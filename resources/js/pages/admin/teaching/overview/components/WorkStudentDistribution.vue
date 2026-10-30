@@ -1,6 +1,6 @@
 <template>
-    <v-btn v-if="work?.id && (available || published)" size="small" variant="tonal" :color="published ? 'success' : 'primary'" prepend-icon="mdi-account-school-outline" :disabled="disabled" @click.stop="open">
-        {{ published ? 'Freigabe verwalten' : 'Im Schülerbereich bereitstellen' }}
+    <v-btn v-if="work?.id && (available || published || prepared || withdrawn)" size="small" variant="tonal" :color="published ? 'success' : prepared || withdrawn ? 'warning' : 'primary'" prepend-icon="mdi-account-school-outline" :disabled="disabled" @click.stop="open">
+        {{ published ? 'Freigabe verwalten' : prepared ? 'Pausierte Aufgaben verwalten' : withdrawn ? 'Erneut pausiert vorbereiten' : 'Im Schülerbereich bereitstellen' }}
     </v-btn>
     <v-dialog v-model="dialog" max-width="640" :persistent="saving || loading" scrollable>
         <v-card>
@@ -9,7 +9,9 @@
                 <v-alert v-if="error" type="error" class="mb-3" role="alert">{{ error }}</v-alert>
                 <p v-if="loading" class="mb-4">Aktueller Stand der Arbeit wird geladen …</p>
                 <template v-if="ready">
-                <p class="mb-4">Die zugeordneten Schüler:innen finden diese Aufgaben unter „Meine Aufgaben“ in ihrem Fach. Die Abgabe bleibt per E-Mail oder im persönlichen MC-Test.</p>
+                <p class="mb-4">Neue Aufgaben werden zuerst pausiert vorbereitet. Erst nach „Jetzt freigeben“ erscheinen sie unter „Meine Aufgaben“ und sind zugänglich. Die Abgabe bleibt per E-Mail oder im persönlichen MC-Test.</p>
+                <v-alert v-if="dialogPrepared" type="warning" variant="tonal" class="mb-3">Pausiert vorbereitet: Aufgabe, PDFs und neue MC-Starts sind gesperrt, auch über bereits bekannte Links. Begonnene und abgeschlossene Versuche bleiben erhalten.</v-alert>
+                <v-alert v-else-if="currentWork.status?.student_distribution?.withdrawn_at" type="info" variant="tonal" class="mb-3">Die Aufgabenfreigabe wurde zurückgenommen. Du kannst die Aufgabe erneut pausiert vorbereiten und später bewusst freigeben. Gespeicherte MC-Zeiten und vorhandene Versuche bleiben erhalten.</v-alert>
                 <v-textarea v-model="instructions" label="Aufgabentext" :disabled="saving" :maxlength="20000" auto-grow rows="5" />
                 <v-checkbox v-for="file in existingFiles" :key="file.id" v-model="retainedFileIds" :value="file.id" :label="file.name" :disabled="saving" density="compact" hide-details />
                 <div v-if="assignmentFile" class="mb-3">
@@ -33,7 +35,7 @@
                         <fieldset class="mc-start-options mt-3" :disabled="saving || mcLoading || !test.mode_editable">
                             <legend>Startart</legend>
                             <label><input v-model="test.selectedMode" type="radio" :name="`mc-start-${test.id}`" value="individual"> Selbstständig starten</label>
-                            <p class="text-caption">Jede Person startet ihre eigene Bearbeitungszeit.</p>
+                            <p class="text-caption">Nach der Freigabe beginnt die persönliche Bearbeitungszeit beim Öffnen des Links.</p>
                             <label><input v-model="test.selectedMode" type="radio" :name="`mc-start-${test.id}`" value="common"> Gemeinsam starten</label>
                             <p class="text-caption">Die Lehrkraft startet den Countdown später.</p>
                         </fieldset>
@@ -51,7 +53,8 @@
                 <v-spacer />
                 <v-btn :disabled="saving || loading" @click="dialog = false">Abbrechen</v-btn>
                 <v-btn v-if="!ready && !loading" @click="open">Erneut laden</v-btn>
-                <v-btn v-if="ready" color="primary" variant="flat" :loading="saving" :disabled="mcLoading || !!mcError" @click="save(true)">{{ dialogPublished ? 'Freigabe aktualisieren' : 'Jetzt bereitstellen' }}</v-btn>
+                <v-btn v-if="ready && !dialogPublished" color="primary" variant="flat" :loading="saving" :disabled="mcLoading || !!mcError" @click="save(false)">{{ dialogPrepared ? 'Vorbereitung speichern' : 'Pausiert vorbereiten' }}</v-btn>
+                <v-btn v-if="ready && (dialogPrepared || dialogPublished)" color="success" variant="flat" :loading="saving" :disabled="mcLoading || !!mcError" @click="save(true)">{{ dialogPublished ? 'Freigabe aktualisieren' : 'Jetzt freigeben' }}</v-btn>
             </v-card-actions>
         </v-card>
     </v-dialog>
@@ -95,7 +98,10 @@ const expectedVersion = ref('')
 const retainedFileIds = ref([])
 const existingFiles = computed(() => (currentWork.value?.status?.student_task_files || []).filter(file => currentWork.value?.status?.student_distribution?.file_ids?.includes(file.id)))
 const published = computed(() => Boolean(props.work.status?.student_distribution?.published_at && !props.work.status.student_distribution.withdrawn_at))
+const prepared = computed(() => Boolean(props.work.status?.student_distribution?.prepared_at && !props.work.status.student_distribution.published_at))
+const withdrawn = computed(() => Boolean(props.work.status?.student_distribution?.published_at && props.work.status.student_distribution.withdrawn_at))
 const dialogPublished = computed(() => Boolean(currentWork.value?.status?.student_distribution?.published_at && !currentWork.value.status.student_distribution.withdrawn_at))
+const dialogPrepared = computed(() => Boolean(currentWork.value?.status?.student_distribution?.prepared_at && !currentWork.value.status.student_distribution.published_at))
 const assignmentParams = computed(() => ({ contents: 1, exercise: 1, section: 'Angaben', ...(props.date ? { date: props.date } : {}) }))
 
 function clearPreview() {
@@ -197,7 +203,7 @@ async function open() {
         retainedFileIds.value = existingFiles.value.map(file => file.id)
         files.value = []
         if (Object.keys(work.status?.multiple_choice_tests || {}).length) await loadMcTests()
-        if (!work.local_task_copy && !work.status?.student_distribution?.published_at && props.available) {
+        if (!work.local_task_copy && !work.status?.student_distribution?.published_at && !work.status?.student_distribution?.prepared_at && props.available) {
             try {
                 await loadAssignment()
             } catch (failure) {
@@ -216,16 +222,16 @@ async function open() {
     }
 }
 
-async function save(publish) {
-    if (publish && (mcLoading.value || mcError.value)) return
-    if (publish && !instructions.value?.trim() && !assignmentFile.value && files.value.length === 0 && retainedFileIds.value.length === 0) {
+async function save(releaseNow) {
+    if (saving.value || mcLoading.value || mcError.value) return
+    if (!instructions.value?.trim() && !assignmentFile.value && files.value.length === 0 && retainedFileIds.value.length === 0) {
         error.value = 'Bitte einen Aufgabentext eingeben oder ein Aufgaben-PDF auswählen.'
         return
     }
     saving.value = true
     error.value = ''
     try {
-        if (publish && assignmentFile.value) {
+        if (assignmentFile.value) {
             const latest = await readAssignmentPdf(assignmentFileId.value)
             const [selectedBytes, latestBytes] = await Promise.all([assignmentFile.value.arrayBuffer(), latest.arrayBuffer()])
             const selected = new Uint8Array(selectedBytes)
@@ -235,12 +241,13 @@ async function save(publish) {
             }
         }
         const data = new FormData()
-        data.append('publish', publish ? '1' : '0')
+        data.append('publish', '1')
+        data.append('release_now', releaseNow ? '1' : '0')
         data.append('instructions', instructions.value)
         data.append('expected_version', expectedVersion.value)
-        if (publish) data.append('mc_tests', JSON.stringify(mcTests.value.map(test => ({ id: test.id, expected_version: test.version, start_mode: test.selectedMode }))))
+        data.append('mc_tests', JSON.stringify(mcTests.value.map(test => ({ id: test.id, expected_version: test.version, start_mode: test.selectedMode }))))
         for (const id of retainedFileIds.value) data.append('retained_file_ids[]', id)
-        if (publish && assignmentFile.value) data.append('files[]', assignmentFile.value)
+        if (assignmentFile.value) data.append('files[]', assignmentFile.value)
         for (const file of files.value) data.append('files[]', file)
         const response = await axios.post(studentDistribution.url(props.work.id), data)
         emit('saved', response.data.data)

@@ -25,7 +25,7 @@ class TeachingWorkStudentDistribution
         return array_map(fn (array $item): array => $this->mcPreviewItem($work, $item), $this->mcTests($work));
     }
 
-    public function publishMcTests(TeachingCourseWork $work, ?string $selection): void
+    public function publishMcTests(TeachingCourseWork $work, ?string $selection, bool $releaseNow = false): void
     {
         $items = $this->mcTests($work, true);
         if ($items === []) {
@@ -51,11 +51,17 @@ class TeachingWorkStudentDistribution
             $choice = $choices->get((int) $test->id);
             abort_unless(hash_equals($this->mcVersion($item), $choice['expected_version']), 409, 'Der MC-Test wurde inzwischen geändert. Bitte den Dialog erneut öffnen.');
             $this->assertMcReady($test, $item['attempts']);
+            if (! $releaseNow) {
+                $this->assertMcNotShared($work, $test);
+            }
             if ($test->status !== 'draft' && $choice['start_mode'] !== $test->start_mode) {
                 throw ValidationException::withMessages(['mc_tests' => 'Die Startart eines bereits freigegebenen Tests kann hier nicht geändert werden.']);
             }
             if ($test->status === 'draft') {
-                $this->configureMcStart($work, $test, $item['attempts'], $choice['start_mode']);
+                $this->configureMcStart($work, $test, $item['attempts'], $choice['start_mode'], $releaseNow);
+            }
+            if (! $releaseNow) {
+                continue;
             }
             if ($test->status === 'published') {
                 continue;
@@ -199,10 +205,10 @@ class TeachingWorkStudentDistribution
     }
 
     /** @param Collection<int, McAttempt> $attempts */
-    private function configureMcStart(TeachingCourseWork $work, McTest $test, $attempts, string $mode): void
+    private function configureMcStart(TeachingCourseWork $work, McTest $test, $attempts, string $mode, bool $requireDeadline = true): void
     {
         $deadline = $mode === 'individual' ? $this->individualMcDeadline($work, $test) : null;
-        if ($mode === 'individual' && (! $deadline || ! $deadline->isFuture())) {
+        if ($requireDeadline && $mode === 'individual' && (! $deadline || ! $deadline->isFuture())) {
             throw ValidationException::withMessages(['mc_tests' => 'Für den individuellen MC-Test ist eine zukünftige Schlussfrist erforderlich. Bitte die Frist prüfen.']);
         }
         if ($this->mcStarted($test, $attempts) && ($test->start_mode !== $mode || ($mode === 'individual' && ! $test->closes_at?->equalTo($deadline)))) {
@@ -245,11 +251,28 @@ class TeachingWorkStudentDistribution
             && collect($work->groups ?? [])->contains(fn (array $group): bool => in_array((int) $student->id, array_map('intval', $group['student_ids'] ?? []), true));
     }
 
+    public function mcAccessAllowed(McAttempt $attempt): bool
+    {
+        if ($attempt->started_at !== null || $attempt->completed_at !== null || ($attempt->answers ?? []) !== []) {
+            return true;
+        }
+
+        return ! TeachingCourseWork::query()
+            ->whereNotNull('status->student_distribution->prepared_at')
+            ->whereNull('status->student_distribution->published_at')
+            ->whereHas('teachingCourse', fn ($query) => $query->where('school_id', $attempt->test->school_id)
+                ->where('schoolyear_id', $attempt->test->schoolyear_id)->where('user_id', $attempt->test->owner_id))
+            ->where(function ($query) use ($attempt): void {
+                $query->whereRaw('JSON_CONTAINS(JSON_EXTRACT(status, ?), ?)', ['$.multiple_choice_tests.*.test_id', json_encode((int) $attempt->test_id, JSON_THROW_ON_ERROR)])
+                    ->orWhereRaw('JSON_CONTAINS(JSON_EXTRACT(status, ?), ?)', ['$.multiple_choice_tests.*.test_id', json_encode((string) $attempt->test_id, JSON_THROW_ON_ERROR)]);
+            })->exists();
+    }
+
     /** @param list<UploadedFile> $uploads
      * @param  list<string>  $createdPaths
      * @param  list<string>  $retainedFileIds
      */
-    public function publish(TeachingCourseWork $work, string $instructions, array $uploads, array &$createdPaths, array $retainedFileIds = []): void
+    public function publish(TeachingCourseWork $work, string $instructions, array $uploads, array &$createdPaths, array $retainedFileIds = [], bool $releaseNow = false): void
     {
         $recipients = $this->recipients($work, true);
         if ($recipients === []) {
@@ -280,7 +303,8 @@ class TeachingWorkStudentDistribution
             $activeFiles[] = end($files);
         }
         $work->status = array_merge($work->status ?? [], ['student_task_files' => $files, 'student_distribution' => [
-            'published_at' => now()->toIso8601String(), 'withdrawn_at' => null, 'instructions' => trim($instructions), 'student_ids' => $recipients,
+            'prepared_at' => $work->status['student_distribution']['prepared_at'] ?? now()->toIso8601String(),
+            'published_at' => $releaseNow ? now()->toIso8601String() : null, 'withdrawn_at' => null, 'instructions' => trim($instructions), 'student_ids' => $recipients,
             'file_ids' => array_column($activeFiles, 'id'),
         ]]);
         $work->save();

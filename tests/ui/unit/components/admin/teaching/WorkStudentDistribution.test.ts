@@ -27,9 +27,9 @@ it('prepares a local test copy from its saved PDF without accessing Dropbox or p
         await flushPromises()
         expect(get).toHaveBeenCalledOnce()
         expect(wrapper.findComponent({ name: 'v-checkbox' }).attributes('label')).toBe('Aufgabenstellung_E-Mails.pdf')
-        expect(wrapper.text()).toContain('Jetzt bereitstellen')
+        expect(wrapper.text()).toContain('Pausiert vorbereiten')
         expect(post).not.toHaveBeenCalled()
-        await wrapper.findAll('button').find(button => button.text() === 'Jetzt bereitstellen')!.trigger('click')
+        await wrapper.findAll('button').find(button => button.text() === 'Pausiert vorbereiten')!.trigger('click')
         await flushPromises()
         expect((post.mock.calls[0][1] as FormData).get('retained_file_ids[]')).toBe('local-pdf')
     } finally { wrapper.unmount() }
@@ -71,12 +71,12 @@ it.each(['Angaben', 'Quellunterlagen'])('previews the assignment PDF from %s and
         expect(wrapper.getComponent({ name: 'CurriculumPdfPreview' }).attributes('src')).toBe('blob:assignment-preview')
         await wrapper.findAll('button').find(button => button.text() === 'Schließen')!.trigger('click')
         expect(revokeObjectURL).toHaveBeenCalledWith('blob:assignment-preview')
-        expect(wrapper.text()).toContain('Jetzt bereitstellen')
+        expect(wrapper.text()).toContain('Pausiert vorbereiten')
         expect(post).not.toHaveBeenCalled()
     } finally { wrapper.unmount() }
 })
 
-it('publishes the saved assignment description with explicit version protection and no email send', async () => {
+it('prepares the saved assignment description paused with explicit version protection and no email send', async () => {
     const saved = { id: 12, status: { student_distribution: { published_at: '2026-10-28T12:00:00Z' } } }
     const post = vi.fn().mockResolvedValue({ data: { data: saved } })
     const get = vi.fn().mockResolvedValue({ data: { data: { id: 12, description: '<p>Ordne deine Dateien.</p>', student_distribution_version: 'b'.repeat(64) } } })
@@ -85,16 +85,70 @@ it('publishes the saved assignment description with explicit version protection 
     try {
         await wrapper.get('button').trigger('click')
         await flushPromises()
-        await wrapper.findAll('button').find(button => button.text() === 'Jetzt bereitstellen')!.trigger('click')
+        await wrapper.findAll('button').find(button => button.text() === 'Pausiert vorbereiten')!.trigger('click')
         await flushPromises()
         expect(post).toHaveBeenCalledOnce()
         expect(post.mock.calls[0][0]).toBe('/api/admin/teaching/course_works/12/student-distribution')
         const data = post.mock.calls[0][1] as FormData
         expect(data.get('publish')).toBe('1')
+        expect(data.get('release_now')).toBe('0')
         expect(data.get('instructions')).toBe('Ordne deine Dateien.')
         expect(data.get('expected_version')).toBe('b'.repeat(64))
         expect(wrapper.emitted('saved')?.[0]).toEqual([saved])
         expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+    } finally { wrapper.unmount() }
+})
+
+it('reopens a paused preparation without Dropbox and requires an explicit release action', async () => {
+    const work = { id: 12, student_distribution_version: 'a'.repeat(64), status: {
+        student_distribution: { prepared_at: '2026-10-30T08:00:00Z', published_at: null,
+            instructions: 'Aufgabe', student_ids: [1], file_ids: ['pdf'] },
+        student_task_files: [{ id: 'pdf', name: 'Aufgabe.pdf' }],
+    } }
+    const get = vi.fn().mockResolvedValue({ data: { data: work } })
+    const post = vi.fn().mockResolvedValue({ data: { data: work } })
+    vi.stubGlobal('axios', { get, post })
+    const wrapper = mount(WorkStudentDistribution, { props: { work, available: false }, global: { stubs } })
+    try {
+        expect(wrapper.get('button').text()).toBe('Pausierte Aufgaben verwalten')
+        await wrapper.get('button').trigger('click')
+        await flushPromises()
+        expect(get).toHaveBeenCalledOnce()
+        expect(wrapper.text()).toContain('neue MC-Starts sind gesperrt')
+        expect(wrapper.findAll('button').map(button => button.text())).toContain('Vorbereitung speichern')
+        expect(post).not.toHaveBeenCalled()
+        await wrapper.findAll('button').find(button => button.text() === 'Jetzt freigeben')!.trigger('click')
+        await flushPromises()
+        const data = post.mock.calls[0][1] as FormData
+        expect(data.get('release_now')).toBe('1')
+        expect(data.get('retained_file_ids[]')).toBe('pdf')
+        expect(wrapper.emitted('saved')).toHaveLength(1)
+    } finally { wrapper.unmount() }
+})
+
+it('prepares a withdrawn task paused again instead of immediately releasing it', async () => {
+    const work = { id: 12, student_distribution_version: 'a'.repeat(64), status: {
+        student_distribution: { published_at: '2026-10-29T08:00:00Z', withdrawn_at: '2026-10-30T08:00:00Z',
+            instructions: 'Aufgabe', student_ids: [1], file_ids: ['pdf'] },
+        student_task_files: [{ id: 'pdf', name: 'Aufgabe.pdf' }],
+    } }
+    const get = vi.fn().mockResolvedValue({ data: { data: work } })
+    const post = vi.fn().mockResolvedValue({ data: { data: work } })
+    vi.stubGlobal('axios', { get, post })
+    const wrapper = mount(WorkStudentDistribution, { props: { work, available: false }, global: { stubs } })
+    try {
+        expect(wrapper.get('button').text()).toBe('Erneut pausiert vorbereiten')
+        await wrapper.get('button').trigger('click')
+        await flushPromises()
+        expect(get).toHaveBeenCalledOnce()
+        expect(wrapper.text()).toContain('Die Aufgabenfreigabe wurde zurückgenommen')
+        expect(wrapper.findAll('button').map(button => button.text())).not.toContain('Jetzt freigeben')
+        await wrapper.findAll('button').find(button => button.text() === 'Pausiert vorbereiten')!.trigger('click')
+        await flushPromises()
+        const data = post.mock.calls[0][1] as FormData
+        expect(data.get('release_now')).toBe('0')
+        expect(data.get('retained_file_ids[]')).toBe('pdf')
+        expect(wrapper.emitted('saved')).toHaveLength(1)
     } finally { wrapper.unmount() }
 })
 
@@ -105,7 +159,7 @@ it('keeps a rejected release open and shows the server error without emitting sa
     try {
         await wrapper.get('button').trigger('click')
         await flushPromises()
-        await wrapper.findAll('button').find(button => button.text() === 'Jetzt bereitstellen')!.trigger('click')
+        await wrapper.findAll('button').find(button => button.text() === 'Pausiert vorbereiten')!.trigger('click')
         await flushPromises()
         expect(wrapper.get('[role="alert"]').text()).toContain('Der MC-Test wurde inzwischen geändert')
         expect(wrapper.get('[role="alert"]').text()).toContain('Aufgabentext bei Bedarf kopieren')
@@ -123,7 +177,7 @@ it('explains that an empty task cannot be published without sending a request', 
     try {
         await wrapper.get('button').trigger('click')
         await flushPromises()
-        await wrapper.findAll('button').find(button => button.text() === 'Jetzt bereitstellen')!.trigger('click')
+        await wrapper.findAll('button').find(button => button.text() === 'Pausiert vorbereiten')!.trigger('click')
         expect(wrapper.get('[role="alert"]').text()).toContain('Aufgabentext eingeben oder ein Aufgaben-PDF auswählen')
         expect(post).not.toHaveBeenCalled()
     } finally { wrapper.unmount() }
@@ -139,7 +193,7 @@ it('does not offer publication when loading the current work fails', async () =>
         await flushPromises()
         expect(wrapper.get('[role="alert"]').text()).toContain('konnte nicht geladen werden')
         expect(wrapper.text()).toContain('Erneut laden')
-        expect(wrapper.text()).not.toContain('Jetzt bereitstellen')
+        expect(wrapper.text()).not.toContain('Pausiert vorbereiten')
         expect(post).not.toHaveBeenCalled()
     } finally { wrapper.unmount() }
 })
@@ -170,7 +224,7 @@ it('offers the assignment PDF from Angaben and submits it with the default text'
         expect(wrapper.text()).toContain('Aufgabenstellung_E-Mails.pdf')
         expect(wrapper.findComponent({ name: 'v-textarea' }).attributes('modelvalue')).toBe('Siehe Aufgaben-PDF.')
         expect(get.mock.calls[1][1].params).toMatchObject({ section: 'Angaben', exercise: 1, date: '2026-10-20' })
-        await wrapper.findAll('button').find(button => button.text() === 'Jetzt bereitstellen')!.trigger('click')
+        await wrapper.findAll('button').find(button => button.text() === 'Pausiert vorbereiten')!.trigger('click')
         await vi.waitFor(() => expect(post).toHaveBeenCalledOnce())
         const data = post.mock.calls[0][1] as FormData
         expect(data.get('instructions')).toBe('Siehe Aufgaben-PDF.')
@@ -238,7 +292,7 @@ it('does not publish if the selected assignment PDF changes after the dialog ope
     try {
         await wrapper.get('button').trigger('click')
         await flushPromises()
-        await wrapper.findAll('button').find(button => button.text() === 'Jetzt bereitstellen')!.trigger('click')
+        await wrapper.findAll('button').find(button => button.text() === 'Pausiert vorbereiten')!.trigger('click')
         await vi.waitFor(() => expect(wrapper.get('[role="alert"]').text()).toContain('Aufgabenstellung wurde geändert'))
         expect(post).not.toHaveBeenCalled()
         expect(wrapper.findComponent({ name: 'v-textarea' }).attributes('modelvalue')).toBe('Siehe Aufgaben-PDF.')

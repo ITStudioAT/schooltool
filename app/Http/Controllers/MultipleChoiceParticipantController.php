@@ -10,6 +10,7 @@ use App\Services\MultipleChoice\McAttemptActivityService;
 use App\Services\MultipleChoice\McTestService;
 use App\Services\ParentStudentAccessService;
 use App\Services\SchoolToolModuleStatusService;
+use App\Services\TeachingWorkStudentDistribution;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -29,7 +30,8 @@ class MultipleChoiceParticipantController extends Controller
             ->whereHas('test', fn ($query) => $query->where('school_id', $student->school_id)->where('schoolyear_id', $student->schoolyear_id)->where('status', 'published'))
             ->latest('id')->get();
 
-        return $this->respond(['attempts' => $attempts->map(fn (McAttempt $attempt): array => $this->serialize($attempt, false))->all()]);
+        return $this->respond(['attempts' => $attempts->filter(fn (McAttempt $attempt): bool => app(TeachingWorkStudentDistribution::class)->mcAccessAllowed($attempt))
+            ->map(fn (McAttempt $attempt): array => $this->serialize($attempt, false))->values()->all()]);
     }
 
     public function access(Request $request): JsonResponse
@@ -162,6 +164,8 @@ class MultipleChoiceParticipantController extends Controller
         }
 
         $this->assertLicensed($student);
+
+        abort_unless($ownerPreview || app(TeachingWorkStudentDistribution::class)->mcAccessAllowed($attempt), 423, 'Die Aufgabe ist vorbereitet und noch nicht freigegeben.');
 
         return $ownerPreview;
     }
