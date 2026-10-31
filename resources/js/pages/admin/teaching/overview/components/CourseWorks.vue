@@ -1411,7 +1411,8 @@ export default {
         workSupportsPoints(work) {
             if (!work) return false
 
-            return Boolean(work.points_note_enabled || (work.has_properties && work.properties_mode === 'points'))
+            return Boolean((work.points_note_enabled && this.settings?.teaching_calculations_enabled !== false)
+                || (work.has_properties && work.properties_mode === 'points'))
         },
         toBoolean(value) {
             if (typeof value === 'string') {

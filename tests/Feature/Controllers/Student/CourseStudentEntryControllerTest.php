@@ -153,6 +153,19 @@ beforeEach(function () {
     ]);
 });
 
+test('teacher disabling calculations hides student points progress without changing its course setting', function () {
+    $this->course->update(['teaching_student_grade_columns' => ['show_points_progress' => true]]);
+    $this->teacher->forceFill(['teaching_grade_columns_by_schoolyear' => ['calculations_enabled' => false]])->save();
+    $this->actingAs($this->student);
+
+    $this->getJson("/api/homepage/student/courses/{$this->course->id}")->assertOk()->assertJsonPath('course.show_points_progress', false);
+    $this->getJson("/api/homepage/student/courses/{$this->course->id}/entries")->assertOk()->assertJsonPath('points_progress', null);
+    expect($this->course->fresh()->teaching_student_grade_columns['show_points_progress'])->toBeTrue();
+
+    $this->teacher->forceFill(['teaching_grade_columns_by_schoolyear' => ['calculations_enabled' => true]])->save();
+    $this->getJson("/api/homepage/student/courses/{$this->course->id}")->assertOk()->assertJsonPath('course.show_points_progress', true);
+});
+
 test('index returns entries with type labels and group members for enrolled student', function () {
     $work = TeachingCourseWork::query()->create([
         'teaching_course_id' => $this->course->id,

@@ -1404,6 +1404,14 @@ describe('CourseWorks points mode', () => {
         })).toBe(false)
     })
 
+    it('disables legacy point-to-grade conversion while retaining modern point entry', () => {
+        const supportsPoints = (CourseWorks as any).methods.workSupportsPoints
+        const context = { settings: { teaching_calculations_enabled: false } }
+        expect(supportsPoints.call(context, { points_note_enabled: true })).toBe(false)
+        expect(supportsPoints.call(context, { has_properties: true, properties_mode: 'points' })).toBe(true)
+        expect(supportsPoints.call({ settings: { teaching_calculations_enabled: true } }, { points_note_enabled: true })).toBe(true)
+    })
+
     it('serializes numeric points with student ids for saving', () => {
         const methods = (CourseWorks as any).methods
         const ctx: Record<string, any> = {

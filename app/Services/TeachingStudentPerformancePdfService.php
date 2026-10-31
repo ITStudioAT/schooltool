@@ -80,7 +80,7 @@ class TeachingStudentPerformancePdfService
             ])])
             : $this->activeCourseStudents($course);
 
-        $calculated = $course->teaching_entry_area_id
+        $calculated = $course->teaching_entry_area_id && $course->calculationsEnabled()
             ? collect(app(TeachingCourseEvaluationService::class)->report($course, 3)['students'])->keyBy('course_student_id')
             : collect();
 
@@ -233,7 +233,7 @@ class TeachingStudentPerformancePdfService
         $semesterCount = $this->semesterCountForCourse($course);
         $semesters = $semesterCount === 1 ? [1] : $semesters;
 
-        $calculated = $course->teaching_entry_area_id
+        $calculated = $course->teaching_entry_area_id && $course->calculationsEnabled()
             ? collect(app(TeachingCourseEvaluationService::class)->report($course, 3)['students'])->keyBy('course_student_id')
             : collect();
 

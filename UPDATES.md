@@ -1,11 +1,17 @@
 # UPDATES
 
-## 3.54.1 !!!
+## 3.54.1
 
 ### Arbeiten
 
 - Pausiert freigeben
 - Änderung einer Arbeit auf Bereitstellung statt E-Mail
+
+### Unterricht
+
+- Curricula ein/aus
+- Anwesenheiten ein/aus
+- Berechnungen ein/aus
 
 ### System
 

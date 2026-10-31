@@ -103,6 +103,7 @@
                         </div>
                         <div class="student-grade-switches">
                             <v-switch
+                                v-if="teachingStore?.settings?.teaching_calculations_enabled !== false"
                                 :model-value="studentPointsProgressVisible"
                                 label="Punktefortschritt für Schüler:innen anzeigen"
                                 color="primary"

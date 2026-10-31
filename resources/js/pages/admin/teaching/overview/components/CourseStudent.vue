@@ -66,7 +66,7 @@
         </template>
         <v-card tile flat color="transparent" class="w-100">
             <v-card-text class="text-body-1 d-flex flex-column ga-2">
-                <v-card v-if="hasAuswertungContent && show_auswertung" variant="outlined">
+                <v-card v-if="calculationsEnabled && show_auswertung && hasAuswertungContent" variant="outlined">
                     <v-card-title class="d-flex align-center py-1 px-3">
                         <span class="text-subtitle-2">Auswertung</span>
                         <v-spacer />
@@ -306,7 +306,7 @@
                 </v-dialog>
 
 
-                <v-card v-if="!show_auswertung" variant="outlined" class="mt-4">
+                <v-card v-if="!show_auswertung || !calculationsEnabled" variant="outlined" class="mt-4">
                     <v-card-title class="text-subtitle-1 course-student-card-title">
                         <div class="course-student-card-title__heading">
                             <v-icon size="18">mdi-clipboard-text</v-icon>
@@ -317,6 +317,7 @@
                         </div>
                         <div class="course-student-card-title__actions">
                             <v-btn
+                                v-if="calculationsEnabled"
                                 size="small"
                                 :color="show_auswertung ? 'success' : 'primary'"
                                 :variant="show_auswertung ? 'flat' : 'tonal'"
@@ -974,6 +975,9 @@ export default {
     },
 
     computed: {
+        calculationsEnabled() {
+            return this.teachingStore?.settings?.teaching_calculations_enabled !== false
+        },
         ...mapWritableState(useAdminStore, ['action', 'action_2', 'config']),
         ...mapWritableState(useCourseStore, ['selected_course', 'selected_course_id', 'selected_course_student', 'show_works', 'show_infos', 'show_dates', 'students_sort_mode']),
         ...mapWritableState(useCourseDateStore, ['selected_courseDate']),

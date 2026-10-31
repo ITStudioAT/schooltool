@@ -81,6 +81,13 @@ class TeachingCourse extends Model
         return $this->teachingCourseStudents()->exists();
     }
 
+    public function calculationsEnabled(): bool
+    {
+        $owner = $this->user()->first(['id', 'teaching_grade_columns_by_schoolyear']);
+
+        return data_get($owner?->teaching_grade_columns_by_schoolyear, 'calculations_enabled', true) !== false;
+    }
+
     public function semesterCount(?array $schema = null): int
     {
         $area = $this->teachingEntryArea;

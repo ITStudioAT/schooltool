@@ -764,6 +764,29 @@ test('rejects foreign teachers and other schoolyears on evaluation endpoint', fu
     $this->actingAs($this->teacher->fresh(), 'sanctum')->getJson($url)->assertForbidden();
 });
 
+test('calculation switch blocks reports and preserves settings and entries when reenabled', function () {
+    $definition = evaluationDefinition($this);
+    $entry = evaluationEntry($this, $definition, '2');
+    $this->teacher->forceFill(['teaching_grade_columns_by_schoolyear' => [
+        $this->year->id => ['show_calculated_grade_by_course' => [$this->course->id => true]],
+    ]])->save();
+    $this->actingAs($this->teacher, 'sanctum');
+    $url = "/api/admin/teaching/courses/{$this->course->id}/evaluations";
+    $this->getJson('/api/admin/teaching/load_settings')->assertOk()->assertJsonPath('settings.teaching_calculations_enabled', true);
+    $this->getJson($url)->assertOk();
+
+    $this->postJson('/api/admin/teaching/save_settings', ['teaching_calculations_enabled' => false])
+        ->assertOk()->assertJsonPath('settings.teaching_calculations_enabled', false);
+    $this->getJson('/api/admin/teaching/load_settings')->assertOk()->assertJsonPath('settings.teaching_calculations_enabled', false);
+    $this->getJson($url)->assertForbidden();
+    expect($entry->fresh()->grade)->toBe('2')
+        ->and(data_get($this->teacher->fresh()->teaching_grade_columns_by_schoolyear, "{$this->year->id}.show_calculated_grade_by_course.{$this->course->id}"))->toBeTrue();
+
+    $this->postJson('/api/admin/teaching/save_settings', ['teaching_calculations_enabled' => true])
+        ->assertOk()->assertJsonPath('settings.teaching_calculations_enabled', true);
+    $this->getJson($url)->assertOk()->assertJsonPath('data.students.0.semesters.0.result', 2);
+});
+
 test('uses authoritative area semester weights and work completion date', function () {
     $definition = evaluationDefinition($this);
     evaluationEntry($this, $definition, '1');

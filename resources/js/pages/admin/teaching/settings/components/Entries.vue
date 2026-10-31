@@ -1212,7 +1212,7 @@
                                     v-model="entryForm.fixed_properties"
                                     class="entry-properties-combobox mt-4"
                                     label="Eigenschaften"
-                                    hint="Eigenschaft eingeben und mit Enter bestätigen. Den Wert können Sie direkt darunter zuordnen."
+                                    :hint="calculationsEnabled ? 'Eigenschaft eingeben und mit Enter bestätigen. Den Wert können Sie direkt darunter zuordnen.' : 'Eigenschaft eingeben und mit Enter bestätigen.'"
                                     persistent-hint
                                     variant="outlined"
                                     multiple
@@ -1220,7 +1220,7 @@
                                     closable-chips
                                     clearable
                                     :error-messages="formErrors.fixed_properties" />
-                                <div v-if="selectedPropertyMode === 'free' && editableEntryProperties.length" class="mt-4">
+                                <div v-if="calculationsEnabled && selectedPropertyMode === 'free' && editableEntryProperties.length" class="mt-4">
                                     <div class="text-subtitle-2 mb-3">Wertezuordnung</div>
                                     <fieldset v-for="property in editableEntryProperties" :key="property" class="calculation-score-choice" :disabled="isSaving">
                                         <legend>{{ property }}</legend>
@@ -1342,6 +1342,7 @@ import { standardPercentageGrades } from '@/helpers/gradeCalculation'
 import { isStoredSimulationValue, simulationEntryGrade, simulationPartGrade, simulationPartSummary, simulationPartExplanation, simulationStructure } from '@/helpers/gradingSimulation'
 import { gradingAdjustmentState, gradingAdjustmentChangeError } from '@/helpers/gradingAdjustmentStructure'
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
+import { useTeachingStore } from '@/stores/admin/teaching/TeachingStore'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useNotificationStore } from '@/stores/spa/NotificationStore'
 
@@ -1647,7 +1648,6 @@ export default {
             courseStore: null,
             activeAreaId: null,
             activeCategory: 'Benotung',
-            categoryOptions: ['Benotung', 'Berechnung', 'Verhalten', 'Weitere'],
             tableMarkingColors,
             specialPropertyOptions,
             standardPercentageGrades,
@@ -1720,6 +1720,14 @@ export default {
     },
 
     computed: {
+        calculationsEnabled() {
+            return useTeachingStore().settings?.teaching_calculations_enabled !== false
+        },
+        categoryOptions() {
+            const categories = ['Benotung', 'Verhalten', 'Weitere']
+            if (this.calculationsEnabled) categories.splice(1, 0, 'Berechnung')
+            return categories
+        },
         simulationStorageKey() {
             const config = this.simulationAdminStore?.config
             const context = [config?.user?.id, config?.selected_school?.id, config?.selected_schoolyear?.id, this.activeAreaId]
@@ -2112,6 +2120,9 @@ export default {
     },
 
     watch: {
+        categoryOptions() {
+            this.restoreCategoryFromRoute()
+        },
         simulationStorageKey(key, previousKey) {
             if (!key && !previousKey) return
             this.closeSimulationEntry()

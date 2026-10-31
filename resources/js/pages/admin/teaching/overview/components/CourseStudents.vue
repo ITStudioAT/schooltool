@@ -41,7 +41,7 @@
                 <v-icon start>{{ isDayOverviewMode ? 'mdi-close' : 'mdi-view-list' }}</v-icon>
                 {{ isDayOverviewMode ? 'Heute schließen' : 'Heute' }}
             </v-btn>
-            <v-btn v-if="!isDayOverviewMode" size="default" :color="showCalculatedGrade ? 'success' : 'primary'"
+            <v-btn v-if="!isDayOverviewMode && calculationsEnabled" size="default" :color="showCalculatedGrade ? 'success' : 'primary'"
                 :variant="showCalculatedGrade ? 'flat' : 'outlined'" :prepend-icon="showCalculatedGrade ? 'mdi-check' : 'mdi-calculator'" class="font-weight-bold" :aria-pressed="showCalculatedGrade"
                 :loading="savingCalculatedGradePreference" :disabled="savingCalculatedGradePreference || !settings || !selected_course?.id"
                 @click="toggleCalculatedGrade">Note berechnen: {{ showCalculatedGrade ? 'Ein' : 'Aus' }}</v-btn>
@@ -443,11 +443,14 @@ export default {
     },
 
     computed: {
+        calculationsEnabled() {
+            return this.settings?.teaching_calculations_enabled !== false
+        },
         attendanceVisible() {
             return this.config?.user?.teaching_show_attendance !== false
         },
         showCalculatedGrade() {
-            if (!this.selected_course?.id) return false
+            if (!this.selected_course?.id || this.calculationsEnabled === false) return false
             return (this.settings?.teaching_show_calculated_grade_by_course?.[this.selected_course.id]
                 ?? this.settings?.teaching_show_calculated_grade) === true
         },
@@ -986,7 +989,7 @@ export default {
                 this.entryStore.indexByCourse(courseId).then((success) => ({ success, data: this.entryStore.courseEntries || [] })),
                 this.courseWorkStore.index(courseId).then((success) => ({ success, data: this.courseWorkStore.courseWorks || [] })),
                 this.categoryEvaluationStore.indexByCourse(courseId).then((success) => ({ success, data: this.categoryEvaluationStore.evaluations || [] })),
-                this.usesNewBulkEntryDefinitions
+                this.usesNewBulkEntryDefinitions && this.calculationsEnabled !== false
                     ? axios.get(showCourseEvaluation.url(courseId, { query: { semester: 3 } })).then(({ data }) => ({
                         success: String(data.data?.course_id) === String(courseId) && String(data.data?.schoolyear_id) === String(schoolyearId),
                         data: data.data,

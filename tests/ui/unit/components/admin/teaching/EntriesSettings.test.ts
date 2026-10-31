@@ -5,8 +5,9 @@ import { shallowMount as mountShallow } from '@vue/test-utils'
 import Entries from '@/pages/admin/teaching/settings/components/Entries.vue'
 import { gradingAdjustmentState, gradingAdjustmentChangeError } from '@/helpers/gradingAdjustmentStructure'
 import { simulationEntryGrade, simulationPartGrade, simulationPartSummary, simulationPartExplanation, simulationStructure } from '@/helpers/gradingSimulation'
-import { createPinia } from 'pinia'
+import { createPinia, setActivePinia } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
+import { useTeachingStore } from '@/stores/admin/teaching/TeachingStore'
 
 function shallowMount(component, options: any = {}) {
     return mountShallow(component, { ...options, global: { ...options.global,
@@ -35,6 +36,29 @@ function entryFixture(overrides = {}) {
 }
 
 describe('Teaching entries settings', () => {
+    it('hides the calculation category and redirects its direct link while calculations are disabled', () => {
+        setActivePinia(createPinia())
+        const store = useTeachingStore()
+        store.settings = { teaching_calculations_enabled: false } as any
+        const categoryOptions = (Entries as any).computed.categoryOptions.call({ calculationsEnabled: (Entries as any).computed.calculationsEnabled() })
+        expect(categoryOptions).toEqual(['Benotung', 'Verhalten', 'Weitere'])
+
+        const methods = (Entries as any).methods
+        const replace = vi.fn().mockResolvedValue(undefined)
+        const context: any = {
+            activeCategory: 'Berechnung', categoryOptions,
+            $route: { query: { panel: 'entries', entry_category: 'Berechnung' } },
+            $router: { replace },
+            normalizeCategoryQuery: methods.normalizeCategoryQuery,
+            isEntriesPanelActive: methods.isEntriesPanelActive,
+            syncCategoryQuery: methods.syncCategoryQuery,
+        }
+        methods.restoreCategoryFromRoute.call(context)
+        expect(context.activeCategory).toBe('Benotung')
+        expect(replace).toHaveBeenCalledWith({ query: { panel: 'entries', entry_category: 'Benotung' } })
+        store.settings = { teaching_calculations_enabled: true } as any
+        expect((Entries as any).computed.categoryOptions.call({ calculationsEnabled: (Entries as any).computed.calculationsEnabled() })).toContain('Berechnung')
+    })
     it('labels optional grading parts without changing or duplicating their stored name', () => {
         const name = (Entries as any).methods.gradingPartDisplayName
         const entries = [entryFixture({ fixed_properties: ['1', '2', '3', '4', '5'] })]
@@ -3815,7 +3839,7 @@ describe('Teaching entries settings', () => {
         expect(source).toContain('Quellbereich auswählen')
         expect(source).toContain('@click="copyEntriesFromArea"')
         expect(source).toContain('class="entry-area-grid mt-4"')
-        expect(source).toContain("categoryOptions: ['Benotung', 'Berechnung', 'Verhalten', 'Weitere']")
+        expect(source).toContain('v-for="category in categoryOptions"')
         expect(source).toContain('v-for="area in block.parts"')
         expect(source).toContain('v-for="entry in area.entries"')
         expect(source).toContain('class="calculation-area-list mt-3"')

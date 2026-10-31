@@ -53,6 +53,8 @@ class TeachingCourseEvaluationService
 
     public function report(TeachingCourse $course, int $semester): array
     {
+        abort_unless($course->calculationsEnabled(), 403, 'Berechnungen sind ausgeschaltet.');
+
         $course->loadMissing(['user', 'teachingCourseStudents.user', 'teachingCourseStudents.import116']);
         $year = Schoolyear::findOrFail($course->schoolyear_id);
         $definitions = TeachingEntryDefinition::query()->where('user_id', $course->user_id)

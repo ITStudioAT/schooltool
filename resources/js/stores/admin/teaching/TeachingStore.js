@@ -180,7 +180,7 @@ export const useTeachingStore = defineStore('AdminTeachingStore', {
             try {
                 const response = await axios.post(saveTeachingSettings.url(), settings)
                 this.settings = response.data.settings
-                for (const preference of ['teaching_curricula_enabled', 'teaching_show_attendance']) {
+                for (const preference of ['teaching_curricula_enabled', 'teaching_show_attendance', 'teaching_calculations_enabled']) {
                     if (homepageStore.config?.user && typeof this.settings?.[preference] === 'boolean') {
                         homepageStore.config.user[preference] = this.settings[preference]
                     }

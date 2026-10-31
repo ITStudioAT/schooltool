@@ -8,6 +8,13 @@ import Overview from '@/pages/admin/teaching/overview/Overview.vue'
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
 
 describe('Teaching overview controls', () => {
+    it('hides grade evaluation navigation when calculations are disabled', () => {
+        const component = Overview as any
+        const context = { selected_course: { id: 1 }, attendanceVisible: true, calculationsEnabled: false,
+            show_students: true, studentPanel: 'evaluations' }
+        expect(component.computed.functionalPanels.call(context).some((panel: { id: string }) => panel.id === 'evaluations')).toBe(false)
+        expect(component.computed.functionalPanelSelection.get.call(context)).toBe('students')
+    })
     it('hides attendance navigation and falls back to the entries table when the display is disabled', () => {
         const component = Overview as any
         const replace = vi.fn().mockResolvedValue(undefined)

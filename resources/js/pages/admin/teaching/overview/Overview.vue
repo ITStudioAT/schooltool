@@ -40,7 +40,7 @@
 
         <v-row v-if="selected_course && action != 'teaching_course_new_or_edit' && show_students && action_2 != 'course_student_view'">
             <v-col>
-                <CourseEvaluations v-if="studentPanel === 'evaluations'"
+                <CourseEvaluations v-if="studentPanel === 'evaluations' && calculationsEnabled"
                     :course="selected_course" :schoolyear="config?.selected_schoolyear"
                     :active-semester="activeSemester" @update:active-semester="activeSemester = $event" />
                 <CourseStudents v-else />
@@ -115,7 +115,7 @@
         </v-row>
     </v-col>
 
-    <v-col cols="12" v-if="selected_course && (show_performances || show_performances_plus) && action != 'teaching_course_new_or_edit'" :style="contentLockStyle">
+    <v-col cols="12" v-if="calculationsEnabled && selected_course && (show_performances || show_performances_plus) && action != 'teaching_course_new_or_edit'" :style="contentLockStyle">
         <div v-if="semesterCount === 2" class="d-flex align-center ga-2 mb-2">
             <v-btn-toggle v-model="activeSemester" mandatory density="compact" color="primary">
                 <v-btn :value="1" size="small">Sem 1</v-btn>
@@ -239,6 +239,7 @@ export default {
         this.curriculumStore = useCurriculumStore()
         this.schoolHourStore = useSchoolHourStore()
         this.teachingStore = useTeachingStore()
+        if (!this.teachingStore.settings) this.teachingStore.loadSettings()
         this.selected_course_student = null
         this.action_2 = ''
         this.activeSemester = Number(this.config?.user?.teaching_active_semester) || 1
@@ -270,6 +271,9 @@ export default {
     },
 
     computed: {
+        calculationsEnabled() {
+            return this.teachingStore?.settings?.teaching_calculations_enabled !== false
+        },
         attendanceVisible() {
             return this.config?.user?.teaching_show_attendance !== false
         },
@@ -475,7 +479,7 @@ export default {
                 panels.push({ id: 'students', label: 'Schüler:innen', icon: 'mdi-account-group' })
                 panels.push({ id: 'infos', label: 'Infos', icon: 'mdi-information-outline' })
                 panels.push({ id: 'works', label: 'Arbeiten', icon: 'mdi-brain' })
-                panels.push({ id: 'evaluations', label: 'Auswertungen', icon: 'mdi-chart-box-outline' })
+                if (this.calculationsEnabled) panels.push({ id: 'evaluations', label: 'Auswertungen', icon: 'mdi-chart-box-outline' })
                 panels.push({ id: 'print', label: 'Druck', icon: 'mdi-printer-outline' })
                 panels.push({ id: 'lists', label: 'Listen', icon: 'mdi-format-list-bulleted' })
             }
@@ -487,7 +491,7 @@ export default {
         functionalPanelSelection: {
             get() {
                 if (!this.selected_course) return undefined
-                if (this.show_students) return this.studentPanel === 'evaluations' ? 'evaluations' : 'students'
+                if (this.show_students) return this.studentPanel === 'evaluations' && this.calculationsEnabled ? 'evaluations' : 'students'
                 if (this.show_infos) return 'infos'
                 if (this.show_works) return 'works'
                 if (this.show_print) return 'print'
@@ -614,7 +618,7 @@ export default {
                             query,
                         }).catch(() => {})
                     }
-                    this.studentPanel = urlPanel === 'evaluations' ? 'evaluations' : 'students'
+                    this.studentPanel = urlPanel === 'evaluations' && this.calculationsEnabled ? 'evaluations' : 'students'
                     this.show_students = ['students', 'evaluations'].includes(urlPanel)
                     this.show_infos = urlPanel === 'infos'
                     this.show_works = urlPanel === 'works'

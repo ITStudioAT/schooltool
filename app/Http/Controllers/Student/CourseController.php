@@ -360,7 +360,7 @@ class CourseController extends Controller
             'teacher_teaching_notifications' => $this->teachingNotificationsForSchoolyear($course->user, $course->schoolyear_id),
             'teacher_teaching_behaviour' => $showBehaviour ? $this->teachingBehaviourForSchoolyear($course->user, $course->schoolyear_id) : [],
             'teacher_teaching_student_grade_columns' => $studentGradeColumns,
-            'show_points_progress' => (bool) ($course->teaching_student_grade_columns['show_points_progress'] ?? false),
+            'show_points_progress' => (bool) ($course->teaching_student_grade_columns['show_points_progress'] ?? false) && $course->calculationsEnabled(),
             'classes' => $course->classes,
             'students_count' => (int) ($course->active_students_count ?? 0),
             'show_stars' => $studentGradeColumns['show_stars'],

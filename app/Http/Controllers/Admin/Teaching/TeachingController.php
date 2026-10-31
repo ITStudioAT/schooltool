@@ -184,6 +184,7 @@ class TeachingController extends Controller
             'teaching_show_behaviour' => 'nullable|boolean',
             'teaching_curricula_enabled' => ['sometimes', 'boolean'],
             'teaching_show_attendance' => ['sometimes', 'boolean'],
+            'teaching_calculations_enabled' => ['sometimes', 'boolean'],
             'teaching_show_calculated_grade' => ['sometimes', 'boolean'],
             'teaching_student_grade_columns' => ['sometimes', 'array:show_semester_grade,show_behaviour_grade,show_points_progress,show_stars'],
             'teaching_student_grade_columns.show_semester_grade' => ['sometimes', 'boolean'],
@@ -256,6 +257,11 @@ class TeachingController extends Controller
         }
         if (array_key_exists('teaching_show_attendance', $validated)) {
             $auth_user->teaching_show_attendance = (bool) $validated['teaching_show_attendance'];
+        }
+        if (array_key_exists('teaching_calculations_enabled', $validated)) {
+            $gradeColumns = is_array($auth_user->teaching_grade_columns_by_schoolyear) ? $auth_user->teaching_grade_columns_by_schoolyear : [];
+            $gradeColumns['calculations_enabled'] = (bool) $validated['teaching_calculations_enabled'];
+            $auth_user->teaching_grade_columns_by_schoolyear = $gradeColumns;
         }
         if (array_key_exists('teaching_show_calculated_grade', $validated)) {
             $course = TeachingCourse::query()->findOrFail((int) $validated['teaching_course_id']);
@@ -672,6 +678,7 @@ class TeachingController extends Controller
             'teaching_show_behaviour' => $user->teaching_show_behaviour ?? true,
             'teaching_curricula_enabled' => $user->teaching_curricula_enabled ?? true,
             'teaching_show_attendance' => $user->teaching_show_attendance ?? true,
+            'teaching_calculations_enabled' => data_get($user->teaching_grade_columns_by_schoolyear, 'calculations_enabled', true) !== false,
             'teaching_show_attendance_available' => Schema::hasColumn('users', 'teaching_show_attendance'),
             'teaching_show_calculated_grade' => (bool) data_get($user->teaching_grade_columns_by_schoolyear, "{$user->schoolyear_id}.show_calculated_grade", false),
             'teaching_show_calculated_grade_by_course' => (object) data_get($user->teaching_grade_columns_by_schoolyear, "{$user->schoolyear_id}.show_calculated_grade_by_course", []),

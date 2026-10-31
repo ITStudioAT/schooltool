@@ -342,7 +342,7 @@ class CourseStudentEntryController extends Controller
     /** @return array{course_id: int, semester_count: int, parts: list<array<string, mixed>>}|null */
     private function pointsProgressForStudent(TeachingCourse $course, User $student): ?array
     {
-        if (! ($course->teaching_student_grade_columns['show_points_progress'] ?? false)) {
+        if (! ($course->teaching_student_grade_columns['show_points_progress'] ?? false) || ! $course->calculationsEnabled()) {
             return null;
         }
 

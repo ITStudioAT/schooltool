@@ -248,6 +248,22 @@ describe('CourseStudents complete performance loading', () => {
         expect(context.performanceLoadFailed).toBe(reportCourseId !== 18)
         if (reportCourseId === 18) expect(context.performanceData.gradingReport).toEqual(report)
     })
+    it('loads the recorded performances without requesting a grading report when calculations are disabled', async () => {
+        vi.mocked(axios.get).mockClear()
+        const context: any = {
+            performanceRequestId: 0, usesNewBulkEntryDefinitions: true, calculationsEnabled: false,
+            config: { selected_schoolyear: { id: 3 } },
+            behaviourEntryStore: { indexByCourse: vi.fn().mockResolvedValue(true) },
+            entryStore: { indexByCourse: vi.fn().mockResolvedValue(true), courseEntries: [{ id: 1 }] },
+            courseWorkStore: { index: vi.fn().mockResolvedValue(true) },
+            categoryEvaluationStore: { indexByCourse: vi.fn().mockResolvedValue(true) },
+        }
+        await (CourseStudents as any).methods.loadStudentPerformance.call(context, 18)
+        expect(axios.get).not.toHaveBeenCalled()
+        expect(context.performanceLoadFailed).toBe(false)
+        expect(context.performanceData.entries).toEqual([{ id: 1 }])
+        expect(context.performanceData.gradingReport).toBeNull()
+    })
     it.each(['6,25', '0', 'NA'])('saves bulk points %s as a normalized value', async (grade) => {
         const methods = (CourseStudents as any).methods
         const store = vi.fn().mockResolvedValue(true)

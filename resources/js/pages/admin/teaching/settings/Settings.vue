@@ -138,6 +138,7 @@
                                             Arbeiten & Noten
                                         </v-btn>
                                         <v-btn
+                                            v-if="calculationsEnabled"
                                             rounded="pill"
                                             class="teaching-settings-toolbar-btn"
                                             value="grading"
@@ -157,7 +158,7 @@
                                         <v-col cols="12" v-if="isSchemaPanelActive('works')">
                                             <WorksAndGrades :key="`works-${selected_schema_id}-${schema_panel_revision}`" :schema-id="selected_schema_id" />
                                         </v-col>
-                                        <v-col cols="12" v-if="isSchemaPanelActive('grading')">
+                                        <v-col cols="12" v-if="calculationsEnabled && isSchemaPanelActive('grading')">
                                             <Grading :key="`grading-${selected_schema_id}-${schema_panel_revision}`" :schema-id="selected_schema_id" />
                                         </v-col>
                                         <v-col cols="12" v-if="isSchemaPanelActive('category_evaluation')">
@@ -295,6 +296,16 @@
                                     <button
                                         type="button"
                                         class="teaching-display-button"
+                                        :class="{ 'teaching-display-button--enabled': calculationsEnabled }"
+                                        :aria-pressed="calculationsEnabled"
+                                        :disabled="isLocked || !settings"
+                                        @click="toggleCalculations">
+                                        <span class="teaching-display-button__label">Berechnungen</span>
+                                        <strong class="teaching-display-button__state">{{ calculationsSaving ? 'Speichert …' : calculationsEnabled ? 'Ein' : 'Aus' }}</strong>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        class="teaching-display-button"
                                         :class="{ 'teaching-display-button--enabled': attendanceVisible }"
                                         :aria-pressed="attendanceVisible"
                                         :disabled="isLocked || settings?.teaching_show_attendance_available !== true"
@@ -306,6 +317,7 @@
                                 </div>
                                 <p class="text-body-2 mt-3">Curricula für deine Kurse und deren Schüleransichten verwenden. Beim Ausschalten bleiben alle Daten erhalten.</p>
                                 <p class="text-body-2">Anwesenheiten im Kursdetail anzeigen. Die erfassten Anwesenheiten bleiben erhalten.</p>
+                                <p class="text-body-2">Notenberechnungen und ihre Optionen verwenden. Beim Ausschalten bleiben alle Einstellungen und Einträge erhalten.</p>
                             </ItsGridBox>
                         </v-col>
                     </v-row>
@@ -373,19 +385,23 @@ export default {
             schema_settings_saving_action: null,
             curriculaSaving: false,
             attendanceSaving: false,
+            calculationsSaving: false,
         }
     },
 
     computed: {
         ...mapWritableState(useAdminStore, ['config', 'action']),
         isLocked() {
-            return this.action === 'teaching_work_new_or_edit' || this.schema_settings_saving_action !== null || this.curriculaSaving === true || this.attendanceSaving === true
+            return this.action === 'teaching_work_new_or_edit' || this.schema_settings_saving_action !== null || this.curriculaSaving === true || this.attendanceSaving === true || this.calculationsSaving === true
         },
         curriculaEnabled() {
             return this.settings?.teaching_curricula_enabled !== false
         },
         attendanceVisible() {
             return this.settings?.teaching_show_attendance !== false
+        },
+        calculationsEnabled() {
+            return this.settings?.teaching_calculations_enabled !== false
         },
         ...mapWritableState(useTeachingStore, ['settings']),
         ...mapWritableState(useCourseStore, ['courses']),
@@ -527,6 +543,16 @@ export default {
     },
 
     methods: {
+        async toggleCalculations() {
+            if (this.isLocked || !this.settings) return
+
+            this.calculationsSaving = true
+            try {
+                await this.teachingStore.saveSettings({ teaching_calculations_enabled: !this.calculationsEnabled })
+            } finally {
+                this.calculationsSaving = false
+            }
+        },
         async toggleAttendanceDisplay() {
             if (this.isLocked || this.settings?.teaching_show_attendance_available !== true || this.attendanceSaving) return
 
