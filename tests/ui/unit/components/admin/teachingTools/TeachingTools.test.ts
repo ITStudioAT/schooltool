@@ -64,7 +64,7 @@ describe('Teaching tools games navigation', () => {
 
         expect(wrapper.find('[data-test="mc-workspace"]').exists()).toBe(false)
         expect(wrapper.find('a[href="/admin/teaching-tools/games"]').attributes('aria-pressed')).toBe('true')
-        expect(wrapper.findAll('[aria-label="Verfügbare Spiele"] a')).toHaveLength(1)
+        expect(wrapper.findAll('[aria-label="Verfügbare Spiele"] a')).toHaveLength(2)
         expect(wrapper.find('[aria-label="Zahlensysteme öffnen"]').text()).toContain('Zahlensysteme')
         await wrapper.find('[aria-label="Zahlensysteme öffnen"]').trigger('click')
         await flushPromises()
@@ -76,6 +76,24 @@ describe('Teaching tools games navigation', () => {
         await flushPromises()
         expect(wrapper.get('h1').text()).toBe('Spiele')
         expect(wrapper.find('[aria-label="Zahlensysteme öffnen"]').exists()).toBe(true)
+    })
+
+    it('opens Netzwerke from the second tile and directly, then returns to the games list', async () => {
+        const { wrapper, router } = await renderTools('/admin/teaching-tools/games')
+
+        await wrapper.get('[aria-label="Netzwerke öffnen"]').trigger('click')
+        await flushPromises()
+        expect(router.currentRoute.value.path).toBe('/admin/teaching-tools/games/networks')
+        expect(wrapper.get('h1').text()).toBe('Netzwerke')
+        expect(wrapper.findAll('svg [role="button"]')).toHaveLength(88)
+        expect(wrapper.find('iframe').exists()).toBe(false)
+        expect(axios.get).not.toHaveBeenCalled()
+        await wrapper.get('.teaching-games__back').trigger('click')
+        await flushPromises()
+        expect(wrapper.get('h1').text()).toBe('Spiele')
+
+        const direct = await renderTools('/admin/teaching-tools/games/networks')
+        expect(direct.wrapper.get('h1').text()).toBe('Netzwerke')
     })
 
     it('navigates from categories through number systems to management and starts the student view only on request', async () => {

@@ -1,11 +1,12 @@
 <template>
     <section class="teaching-games">
-        <template v-if="game === 'number-systems'">
+        <template v-if="['number-systems', 'networks'].includes(game)">
             <RouterLink to="/admin/teaching-tools/games" class="teaching-games__back">
                 <v-icon icon="mdi-arrow-left" size="18" aria-hidden="true" />
                 Zur Spieleübersicht
             </RouterLink>
-            <NumberSystemsGame />
+            <NetworksGame v-if="game === 'networks'" />
+            <NumberSystemsGame v-else />
         </template>
         <template v-else>
             <header class="teaching-games__heading">
@@ -24,6 +25,16 @@
                         </div>
                     </RouterLink>
                 </li>
+                <li>
+                    <RouterLink to="/admin/teaching-tools/games/networks" class="game-tile"
+                        aria-label="Netzwerke öffnen">
+                        <svg class="game-tile__network" viewBox="0 0 60 44" aria-hidden="true">
+                            <path d="M 5 38 V 5 M 5 22 H 57 M 5 22 C 15 22 17 6 25 6 S 40 37 48 28 S 52 15 57 15" />
+                            <circle cx="25" cy="6" r="3" /><circle cx="48" cy="28" r="3" />
+                        </svg>
+                        <div class="game-tile__caption"><h2>Netzwerke</h2></div>
+                    </RouterLink>
+                </li>
             </ul>
         </template>
     </section>
@@ -32,6 +43,7 @@
 <script setup>
 import { RouterLink } from 'vue-router'
 import NumberSystemsGame from './NumberSystemsGame.vue'
+import NetworksGame from './NetworksGame.vue'
 
 defineProps({ game: { type: String, default: null } })
 </script>
@@ -104,6 +116,7 @@ defineProps({ game: { type: String, default: null } })
 }
 
 .game-tile__caption h2 { font-size: .75rem; font-weight: 700; line-height: 1.15; letter-spacing: -.02em; text-align: center; }
+.game-tile__network { width: 60px; height: 44px; margin: 1px auto 6px; fill: var(--game-night); stroke: var(--game-gold); stroke-width: 2; }
 .teaching-games__back { display: inline-flex; align-items: center; justify-content: center; gap: 10px; min-height: 44px; max-width: 100%; padding: 10px 16px; margin-bottom: 18px; border: 1px solid #c7d0de; border-radius: 10px; background: #f4f6fa; color: #334760; font-size: .9rem; font-weight: 600; line-height: 1.4; text-decoration: none; box-shadow: 0 1px 2px rgb(23 28 40 / .06); }
 .teaching-games__back:hover { background: #e8edf5; border-color: #9aaac0; }
 @media (max-width: 480px) { .teaching-games__back { width: 100%; justify-content: flex-start; } }

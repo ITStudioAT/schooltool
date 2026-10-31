@@ -12,6 +12,7 @@ describe('admin routes', () => {
         ['/admin/teaching-tools/explanations/network-security', { section: 'explanations', explanation: 'network-security' }],
         ['/admin/teaching-tools/explanations/network-operations', { section: 'explanations', explanation: 'network-operations' }],
         ['/admin/teaching-tools/games/number-systems', { section: 'games', game: 'number-systems' }],
+        ['/admin/teaching-tools/games/networks', { section: 'games', game: 'networks' }],
     ])('opens %s with the existing teaching capability', (path, props) => {
         const resolvedRoute = router.resolve(path)
 

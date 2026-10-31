@@ -70,6 +70,7 @@ export const routes = [
     { path: '/admin/teaching-tools/explanations/binary-to-decimal', component: TeachingTools, props: { section: 'explanations', explanation: 'binary-to-decimal' }, meta: { capability: 'teaching' } },
     { path: '/admin/teaching-tools/explanations/hexadecimal-to-decimal', component: TeachingTools, props: { section: 'explanations', explanation: 'hexadecimal-to-decimal' }, meta: { capability: 'teaching' } },
     { path: '/admin/teaching-tools/games/number-systems', component: TeachingTools, props: { section: 'games', game: 'number-systems' }, meta: { capability: 'teaching' } },
+    { path: '/admin/teaching-tools/games/networks', component: TeachingTools, props: { section: 'games', game: 'networks' }, meta: { capability: 'teaching' } },
     { path: '/admin/teaching-tools/games/number-systems/local/:probe', component: NumberSystemLocalProbe, meta: { capability: 'teaching' } },
     { path: '/admin/materials', component: Materials, meta: { capability: 'materials' } },
     { path: '/admin/materials/subjects-overview', component: MaterialsSubjectsOverview, meta: { capability: 'materials' } },
