@@ -13,6 +13,96 @@ const stubs = {
     'v-dialog': { props: ['modelValue'], template: '<section v-if="modelValue" role="dialog"><slot /></section>' },
 }
 
+it('checks off real loading steps only after each response and the complete paginated PDF search', async () => {
+    const responses = Array.from({ length: 5 }, () => {
+        let complete: (value: unknown) => void = () => {}
+        const request = new Promise(resolve => { complete = resolve })
+        return { request, complete }
+    })
+    const get = vi.fn()
+    for (const response of responses) get.mockReturnValueOnce(response.request)
+    const post = vi.fn()
+    vi.stubGlobal('axios', { get, post })
+    const work = { id: 12, student_distribution_version: 'a'.repeat(64), status: { multiple_choice_tests: { all: { test_id: 4 } } } }
+    const wrapper = mount(WorkStudentDistribution, { props: { available: true, work }, global: { stubs } })
+    const steps = () => wrapper.get('[aria-label="Fortschritt beim Laden"]').findAll('li')
+    try {
+        await wrapper.get('button').trigger('click')
+        expect(steps()[0].text()).toContain('Läuft …')
+        expect(steps()[1].text()).toContain('Noch nicht gestartet')
+        expect(wrapper.text()).not.toContain('Abgeschlossen')
+
+        responses[0].complete({ data: { data: work } }); await flushPromises()
+        expect(steps()[0].text()).toContain('✓')
+        expect(steps()[0].text()).toContain('Abgeschlossen')
+        expect(steps()[1].text()).toContain('Läuft …')
+        expect(steps()[2].text()).toContain('Noch nicht gestartet')
+
+        responses[1].complete({ data: { data: { tests: [{ id: 4, version: 'b'.repeat(64), start_mode: 'individual' }] } } }); await flushPromises()
+        expect(steps()[1].text()).toContain('Abgeschlossen')
+        expect(steps()[2].text()).toContain('Läuft …')
+        responses[2].complete({ data: { root: { name: 'Angaben' }, entries: [{ id: 'id:pdf', type: 'file', name: 'Aufgabenstellung_Dateien.pdf' }], cursor: 'next-page' } }); await flushPromises()
+        expect(steps()[2].text()).toContain('Läuft …')
+        expect(steps()[3].text()).toContain('Noch nicht gestartet')
+
+        responses[3].complete({ data: { root: { name: 'Angaben' }, entries: [], cursor: null } }); await flushPromises()
+        expect(steps()[2].text()).toContain('Abgeschlossen')
+        expect(steps()[3].text()).toContain('Läuft …')
+        responses[4].complete({ data: new Blob(['%PDF-1.4 test'], { type: 'application/pdf' }) }); await flushPromises()
+        expect(steps().every(step => step.text().includes('✓') && step.text().includes('Abgeschlossen'))).toBe(true)
+        expect(wrapper.text()).toContain('Vorbereitung geladen')
+        expect(post).not.toHaveBeenCalled()
+    } finally { wrapper.unmount() }
+})
+
+it.each(['work', 'mc', 'assignment', 'pdf'])('marks a failed %s load without checking it off and resets retries', async failedStage => {
+    const work = { id: 12, student_distribution_version: 'a'.repeat(64), status: { multiple_choice_tests: { all: { test_id: 4 } } } }
+    const stages = ['work', 'mc', 'assignment', 'pdf']
+    const results = [
+        { data: { data: work } },
+        { data: { data: { tests: [{ id: 4, version: 'b'.repeat(64), start_mode: 'individual' }] } } },
+        { data: { root: { name: 'Angaben' }, entries: [{ id: 'id:pdf', type: 'file', name: 'Aufgabenstellung_Dateien.pdf' }], cursor: null } },
+        { data: new Blob(['%PDF-1.4 test'], { type: 'application/pdf' }) },
+    ]
+    const get = vi.fn()
+    for (const [index, result] of results.entries()) {
+        if (stages[index] === failedStage) get.mockRejectedValueOnce(new Error('Laden fehlgeschlagen'))
+        else get.mockResolvedValueOnce(result)
+    }
+    const post = vi.fn()
+    vi.stubGlobal('axios', { get, post })
+    const wrapper = mount(WorkStudentDistribution, { props: { available: true, work }, global: { stubs } })
+    const steps = () => wrapper.get('[aria-label="Fortschritt beim Laden"]').findAll('li')
+    try {
+        await wrapper.get('button').trigger('click'); await flushPromises()
+        expect(steps()[stages.indexOf(failedStage)].text()).toContain('Fehlgeschlagen')
+        expect(steps()[stages.indexOf(failedStage)].text()).not.toContain('✓')
+        expect(wrapper.text()).toContain('Laden mit Fehlern beendet')
+        expect(wrapper.text()).not.toContain('Läuft …')
+        if (failedStage === 'assignment') expect(steps()[3].text()).toContain('Nicht geladen')
+        if (failedStage === 'pdf') expect(steps()[2].text()).toContain('Abgeschlossen')
+        if (failedStage === 'work') {
+            expect(steps().slice(1).every(step => step.text().includes('Nicht geladen'))).toBe(true)
+            get.mockReset().mockResolvedValue({ data: { data: { ...work, local_task_copy: true, status: {} } } })
+            await wrapper.findAll('button').find(button => button.text() === 'Erneut laden')!.trigger('click'); await flushPromises()
+            expect(steps()[0].text()).toContain('Abgeschlossen')
+            expect(wrapper.text()).not.toContain('Fehlgeschlagen')
+        }
+        if (failedStage === 'mc') {
+            expect(steps()[3].text()).toContain('Abgeschlossen')
+            let completeRetry: (value: unknown) => void = () => {}
+            get.mockReturnValueOnce(new Promise(resolve => { completeRetry = resolve }))
+            await wrapper.findAll('button').find(button => button.text() === 'MC-Tests erneut laden')!.trigger('click')
+            expect(steps()[1].text()).toContain('Läuft …')
+            expect(wrapper.text()).toContain('Vorbereitung wird geladen …')
+            completeRetry(results[1]); await flushPromises()
+            expect(steps()[1].text()).toContain('Abgeschlossen')
+            expect(wrapper.text()).not.toContain('Laden mit Fehlern beendet')
+        }
+        expect(post).not.toHaveBeenCalled()
+    } finally { wrapper.unmount() }
+})
+
 it('prepares a local test copy from its saved PDF without accessing Dropbox or publishing it', async () => {
     const work = { id: 12, local_task_copy: true, student_distribution_version: 'a'.repeat(64), status: {
         student_task_files: [{ id: 'local-pdf', name: 'Aufgabenstellung_E-Mails.pdf' }],
@@ -26,6 +116,11 @@ it('prepares a local test copy from its saved PDF without accessing Dropbox or p
         await wrapper.get('button').trigger('click')
         await flushPromises()
         expect(get).toHaveBeenCalledOnce()
+        const progress = wrapper.get('[aria-label="Fortschritt beim Laden"]')
+        expect(progress.text()).toContain('Kein MC-Test verknüpft')
+        expect(progress.text()).toContain('Gespeicherte Aufgaben verwenden')
+        expect(progress.text()).toContain('Nicht erforderlich')
+        expect(progress.findAll('li').filter(step => step.text().includes('Abgeschlossen'))).toHaveLength(1)
         expect(wrapper.findComponent({ name: 'v-checkbox' }).attributes('label')).toBe('Aufgabenstellung_E-Mails.pdf')
         expect(wrapper.text()).toContain('Pausiert vorbereiten')
         expect(post).not.toHaveBeenCalled()

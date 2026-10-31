@@ -143,6 +143,49 @@ describe('CourseTable manual work completion', () => {
         return { wrapper, works, courses, date, first, second }
     }
 
+    it.each([
+        { state: 'prepared', distribution: { prepared_at: '2026-10-31T10:00:00Z', published_at: null }, paused: true, automatic: true },
+        { state: 'prepared manual work', distribution: { prepared_at: '2026-10-31T10:00:00Z' }, paused: true, automatic: false },
+        { state: 'published', distribution: { prepared_at: '2026-10-31T10:00:00Z', published_at: '2026-10-31T11:00:00Z' }, paused: false, automatic: true },
+        { state: 'withdrawn', distribution: { prepared_at: '2026-10-31T10:00:00Z', published_at: '2026-10-31T11:00:00Z', withdrawn_at: '2026-10-31T12:00:00Z' }, paused: false, automatic: true },
+        { state: 'not prepared', distribution: undefined, paused: false, automatic: true },
+        { state: 'empty preparation date', distribution: { prepared_at: null, published_at: null }, paused: false, automatic: true },
+    ])('shows the student-area pause marker only for a saved paused preparation: $state', async ({ distribution, paused, automatic }) => {
+        const { wrapper, works, first } = mountCompletionTable()
+        try {
+            works.courseWorks = [{ ...first, status: { automation_enabled: automatic, student_distribution: distribution,
+                multiple_choice_tests: { all: { test_id: 4, paused_at: '2026-10-31T10:00:00Z' } } } }] as never
+            await flushPromises()
+            const card = wrapper.get('.course-table-work-summary')
+            const marker = card.find('[aria-label="Schülerbereich: pausiert"]')
+            expect(marker.exists()).toBe(paused)
+            expect(card.text()).toContain(first.title)
+            if (paused) {
+                expect(marker.text()).toContain('Schülerbereich')
+                expect(marker.text()).toContain('pausiert')
+                expect(marker.attributes('title')).toContain('noch nicht zugänglich')
+                await marker.trigger('click')
+                expect((wrapper.vm as any).workDialogForm.id).toBe(first.id)
+            }
+        } finally { wrapper.unmount() }
+    })
+
+    it('updates the student-area pause marker when a saved work is released and prepared again', async () => {
+        const { wrapper, works, first } = mountCompletionTable()
+        try {
+            works.courseWorks = [{ ...first, status: { student_distribution: { prepared_at: '2026-10-31T10:00:00Z', published_at: null } } }] as never
+            await flushPromises()
+            const marker = () => wrapper.find('.course-table-work-summary [aria-label="Schülerbereich: pausiert"]')
+            expect(marker().exists()).toBe(true)
+            ;(works.courseWorks[0] as any).status.student_distribution.published_at = '2026-10-31T11:00:00Z'
+            await flushPromises()
+            expect(marker().exists()).toBe(false)
+            ;(works.courseWorks[0] as any).status.student_distribution.published_at = null
+            await flushPromises()
+            expect(marker().exists()).toBe(true)
+        } finally { wrapper.unmount() }
+    })
+
     it('disables the subsequent status actions until the work has a linked folder', async () => {
         clearWorkDropboxStates()
         const { wrapper, works, first } = mountCompletionTable()
@@ -370,7 +413,23 @@ describe('CourseTable manual work completion', () => {
         } finally { wrapper.unmount(); clearWorkDropboxStates() }
     })
 
-    it('keeps the manual icon in the overview and dialogs while saved points update completion', async () => {
+    it.each([true, false])('shows the saved manual completion override even when grades suggest otherwise: %s', async completed => {
+        const { wrapper, works, courses, first } = mountCompletionTable()
+        try {
+            courses.selected_course.students_info = [{ id: 901, user_id: 12 }] as never
+            works.courseWorks = [{ ...first, automation_enabled: false,
+                status: { completion_override: completed, student_distribution: { prepared_at: '2026-10-31T10:00:00Z' } },
+                groups: [{ student_ids: [12], use_individual_grades: true, points: [{ student_id: 12, points: completed ? '' : 3 }] }] }] as never
+            await flushPromises()
+            const card = wrapper.get('.course-table-work-summary')
+            const status = card.get(`[aria-label="Manuelle Beurteilung: ${completed ? 'abgeschlossen' : 'offen'}"]`)
+            expect(status.text()).toBe(completed ? 'ABGESCHLOSSEN' : 'OFFEN')
+            expect(status.attributes('title')).toBe(completed ? 'Manuell als abgeschlossen markiert.' : 'Manuell als offen markiert.')
+            expect(card.get('[aria-label="Schülerbereich: pausiert"]').text()).toContain('pausiert')
+        } finally { wrapper.unmount() }
+    })
+
+    it('keeps the manual icon and shows the open or completed state while saved points update completion', async () => {
         const { wrapper, works, courses, first, date } = mountCompletionTable()
         try {
             courses.selected_course.students_info = [{ id: 901, user_id: 12 }, { id: 902, user_id: 13 }] as never
@@ -381,14 +440,17 @@ describe('CourseTable manual work completion', () => {
             expect(completionIcon().attributes('icon')).toBe('mdi-account-check-outline')
             expect(completionIcon().attributes('color')).not.toBe('success')
             expect(completionIcon().attributes('title')).toBe('Manuelle Beurteilung noch nicht vollständig.')
+            expect(wrapper.get('[aria-label="Manuelle Beurteilung: offen"]').text()).toBe('OFFEN')
             ;(works.courseWorks[0] as any).groups[0].points[1].points = 0
             await flushPromises()
             expect(completionIcon().attributes('icon')).toBe('mdi-account-check-outline')
             expect(completionIcon().attributes('color')).toBe('success')
             expect(completionIcon().attributes('title')).toContain('alle manuellen Beurteilungen eingetragen')
+            expect(wrapper.get('[aria-label="Manuelle Beurteilung: abgeschlossen"]').text()).toBe('ABGESCHLOSSEN')
             ;(works.courseWorks[0] as any).groups[0].points[1].points = ''
             await flushPromises()
             expect(completionIcon().attributes('color')).not.toBe('success')
+            expect(wrapper.get('[aria-label="Manuelle Beurteilung: offen"]').text()).toBe('OFFEN')
             const vm = wrapper.vm as any
             const completionToggle = () => wrapper.findAllComponents(VBtn).find(button => button.attributes('data-testid') === 'work-completion-toggle-65')!
             vm.openWorkDialog(date)
@@ -401,6 +463,7 @@ describe('CourseTable manual work completion', () => {
             await flushPromises()
             expect(completionIcon().attributes('icon')).toBe('mdi-brain')
             expect(completionToggle().props('icon')).toBe('mdi-brain')
+            expect(wrapper.find('.course-table-work-summary [aria-label^="Manuelle Beurteilung:"]').exists()).toBe(false)
         } finally { wrapper.unmount() }
     })
 

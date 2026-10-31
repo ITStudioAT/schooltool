@@ -7,7 +7,16 @@
             <v-card-title class="text-wrap">Aufgaben im Schülerbereich · {{ work.title }}</v-card-title>
             <v-card-text>
                 <v-alert v-if="error" type="error" class="mb-3" role="alert">{{ error }}</v-alert>
-                <p v-if="loading" class="mb-4">Aktueller Stand der Arbeit wird geladen …</p>
+                <section v-if="loadSteps.length" class="assignment-load-progress mb-4" aria-label="Fortschritt beim Laden" aria-live="polite">
+                    <strong>{{ loading || mcLoading ? 'Vorbereitung wird geladen …' : loadSteps.some(step => step.state === 'failed') ? 'Laden mit Fehlern beendet' : 'Vorbereitung geladen' }}</strong>
+                    <ul>
+                        <li v-for="step in loadSteps" :key="step.id" :class="`assignment-load-${step.state}`">
+                            <span class="assignment-load-icon" aria-hidden="true">{{ step.state === 'completed' ? '✓' : step.state === 'failed' ? '!' : step.state === 'running' ? '…' : '–' }}</span>
+                            <span>{{ step.label }}</span>
+                            <span class="assignment-load-caption">{{ step.detail || loadStepState(step.state) }}</span>
+                        </li>
+                    </ul>
+                </section>
                 <template v-if="ready">
                 <p class="mb-4">Neue Aufgaben werden zuerst pausiert vorbereitet. Erst nach „Jetzt freigeben“ erscheinen sie unter „Meine Aufgaben“ und sind zugänglich. Die Abgabe bleibt per E-Mail oder im persönlichen MC-Test.</p>
                 <v-alert v-if="dialogPrepared" type="warning" variant="tonal" class="mb-3">Pausiert vorbereitet: Aufgabe, PDFs und neue MC-Starts sind gesperrt, auch über bereits bekannte Links. Begonnene und abgeschlossene Versuche bleiben erhalten.</v-alert>
@@ -96,6 +105,7 @@ const previewOpen = ref(false)
 const previewUrl = ref('')
 const expectedVersion = ref('')
 const retainedFileIds = ref([])
+const loadSteps = ref([])
 const existingFiles = computed(() => (currentWork.value?.status?.student_task_files || []).filter(file => currentWork.value?.status?.student_distribution?.file_ids?.includes(file.id)))
 const published = computed(() => Boolean(props.work.status?.student_distribution?.published_at && !props.work.status.student_distribution.withdrawn_at))
 const prepared = computed(() => Boolean(props.work.status?.student_distribution?.prepared_at && !props.work.status.student_distribution.published_at))
@@ -124,6 +134,16 @@ function mcStatus(status) {
     return ({ draft: 'Noch nicht freigegeben', published: 'Bereits freigegeben', withdrawn: 'Freigabe zurückgenommen' })[status] || 'Status unbekannt'
 }
 
+function setLoadStep(id, state, detail = '') {
+    const step = loadSteps.value.find(step => step.id === id)
+    if (step) Object.assign(step, { state, detail })
+}
+
+function loadStepState(state) {
+    return ({ pending: 'Noch nicht gestartet', running: 'Läuft …', completed: 'Abgeschlossen',
+        failed: 'Fehlgeschlagen', skipped: 'Nicht erforderlich', blocked: 'Nicht geladen' })[state]
+}
+
 function formatDeadline(value) {
     const date = new Date(value)
     if (!Number.isFinite(date.getTime())) return 'Ungültige Schlussfrist'
@@ -133,6 +153,7 @@ function formatDeadline(value) {
 async function loadMcTests() {
     mcLoading.value = true
     mcError.value = ''
+    setLoadStep('mc', 'running')
     try {
         const response = await axios.get(studentDistributionPreview.url(props.work.id))
         const tests = response.data?.data?.tests
@@ -140,9 +161,11 @@ async function loadMcTests() {
             throw new Error('Die MC-Testdaten sind unvollständig.')
         }
         mcTests.value = tests.map(test => ({ ...test, selectedMode: test.start_mode }))
+        setLoadStep('mc', 'completed')
     } catch (failure) {
         mcTests.value = []
         mcError.value = failure.response?.data?.message || 'Die MC-Tests konnten nicht geladen werden. Bitte erneut versuchen.'
+        setLoadStep('mc', 'failed')
     } finally {
         mcLoading.value = false
     }
@@ -178,9 +201,12 @@ async function loadAssignment() {
         .map(entry => [entry.id, entry])).values()]
     if (candidates.length !== 1) throw new Error(`Unter „${assignmentSection.value}“ wurde keine eindeutige Aufgabenstellungs-PDF gefunden. Bitte ein Aufgaben-PDF auswählen.`)
     const candidate = candidates[0]
+    setLoadStep('assignment', 'completed')
+    setLoadStep('pdf', 'running')
     const pdf = await readAssignmentPdf(candidate.id)
     assignmentFile.value = new File([pdf], candidate.name, { type: 'application/pdf' })
     assignmentFileId.value = candidate.id
+    setLoadStep('pdf', 'completed')
 }
 
 async function open() {
@@ -194,6 +220,12 @@ async function open() {
     assignmentFile.value = null
     assignmentFileId.value = ''
     assignmentSection.value = 'Angaben'
+    loadSteps.value = [
+        { id: 'work', label: 'Aktuellen Stand der Arbeit laden', state: 'running' },
+        { id: 'mc', label: 'Verknüpfte MC-Tests laden', state: 'pending' },
+        { id: 'assignment', label: 'Aufgaben-PDF im Prüfungsordner suchen', state: 'pending' },
+        { id: 'pdf', label: 'Aufgaben-PDF laden und prüfen', state: 'pending' },
+    ]
     try {
         const response = await axios.get(show.url(props.work.id))
         const work = response.data?.data
@@ -202,22 +234,37 @@ async function open() {
         expectedVersion.value = work.student_distribution_version
         retainedFileIds.value = existingFiles.value.map(file => file.id)
         files.value = []
+        setLoadStep('work', 'completed')
         if (Object.keys(work.status?.multiple_choice_tests || {}).length) await loadMcTests()
+        else setLoadStep('mc', 'skipped', 'Kein MC-Test verknüpft')
         if (!work.local_task_copy && !work.status?.student_distribution?.published_at && !work.status?.student_distribution?.prepared_at && props.available) {
+            setLoadStep('assignment', 'running')
             try {
                 await loadAssignment()
             } catch (failure) {
+                for (const step of loadSteps.value.filter(step => ['assignment', 'pdf'].includes(step.id))) {
+                    if (step.state === 'running') setLoadStep(step.id, 'failed')
+                    else if (step.state === 'pending') setLoadStep(step.id, 'blocked')
+                }
                 assignmentWarning.value = failure.response?.status === 404
                     ? 'Im verknüpften Prüfungsordner wurde kein Aufgabenbereich gefunden. Bitte ein Aufgaben-PDF auswählen.'
                     : failure.response?.status === 409
                         ? `Die Aufgaben-PDF konnte nicht automatisch geladen werden. ${failure.response?.data?.message || 'Der Prüfungsordner konnte nicht bestätigt werden.'} Bitte ein Aufgaben-PDF auswählen oder einen Aufgabentext eingeben.`
                         : failure.response?.data?.message || failure.message || 'Die Aufgabenstellung konnte nicht geladen werden. Bitte ein Aufgaben-PDF auswählen.'
             }
+        } else {
+            const savedTasks = work.local_task_copy || work.status?.student_distribution?.published_at || work.status?.student_distribution?.prepared_at
+            setLoadStep('assignment', 'skipped', savedTasks ? 'Gespeicherte Aufgaben verwenden' : 'Kein automatischer PDF-Import erforderlich')
+            setLoadStep('pdf', 'skipped')
         }
         instructions.value = work.status?.student_distribution?.instructions
             ?? (assignmentFile.value ? 'Siehe Aufgaben-PDF.' : new DOMParser().parseFromString(work.description || '', 'text/html').body.textContent)
         ready.value = true
     } catch {
+        for (const step of loadSteps.value) {
+            if (step.state === 'running') setLoadStep(step.id, 'failed')
+            else if (step.state === 'pending') setLoadStep(step.id, 'blocked')
+        }
         error.value = 'Der aktuelle Stand konnte nicht geladen werden. Bitte erneut versuchen.'
     } finally {
         loading.value = false
@@ -265,6 +312,16 @@ async function save(releaseNow) {
 </script>
 
 <style scoped>
+.assignment-load-progress { padding: 12px 14px; border: 1px solid #d8e4f0; border-radius: 10px; background: #f7fafc; color: #233b53; }
+.assignment-load-progress ul { list-style: none; padding: 0; margin: 8px 0 0; }
+.assignment-load-progress li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 4px 0; font-size: 0.8rem; }
+.assignment-load-icon { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 20px; width: 20px; height: 20px; border-radius: 50%; background: #e4ebf1; color: #63798c; font-weight: 700; }
+.assignment-load-completed .assignment-load-icon { background: #d6f2e3; color: #08783e; }
+.assignment-load-running .assignment-load-icon { background: #d8eaff; color: #1565b8; }
+.assignment-load-failed .assignment-load-icon { background: #fde3e3; color: #b42318; }
+.assignment-load-caption { margin-left: auto; color: #536d83; font-size: 0.72rem; }
+.assignment-load-completed .assignment-load-caption { color: #08783e; }
+.assignment-load-failed .assignment-load-caption { color: #b42318; }
 .assignment-pdf-preview { height: 70vh; min-height: 320px; }
 .mc-start-options { border: 0; padding: 0; }
 .mc-start-options label { display: block; }

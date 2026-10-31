@@ -286,8 +286,19 @@
                                                 {{ workImportLabel(work.work) }}
                                             </span>
                                             </template>
+                                            <span v-if="workStudentDistributionPaused(work.work)" class="course-table-work-summary-portal text-orange-darken-3"
+                                                aria-label="Schülerbereich: pausiert" title="Pausiert vorbereitet: Die Aufgabe ist im Schülerbereich noch nicht zugänglich.">
+                                                <v-icon icon="mdi-pause-circle-outline" size="13" aria-hidden="true" />
+                                                <span>Schülerbereich<br>pausiert</span>
+                                            </span>
                                             <span v-if="workIsInitial(work.work) && work.submissionCheckComplete" class="course-table-work-summary-lifecycle course-table-work-summary-complete"
                                                 :title="`Prüfstand: ${formatImportDate(work.work.submission_check_status.checked_at)}`">Abgabeprüfung abgeschlossen</span>
+                                            <span v-if="!workAutomationEnabled(work.work)" class="course-table-work-summary-next-action text-caption font-weight-bold"
+                                                :class="[workMarkedComplete(work.work) ? 'text-success' : 'text-orange-darken-2', { 'work-summary-completed': workMarkedComplete(work.work) }]"
+                                                :aria-label="`Manuelle Beurteilung: ${workMarkedComplete(work.work) ? 'abgeschlossen' : 'offen'}`"
+                                                :title="workCompletionLabel(work.work)">
+                                                <span>{{ workMarkedComplete(work.work) ? 'ABGESCHLOSSEN' : 'OFFEN' }}</span>
+                                            </span>
                                             <span v-if="workNextAction(work.work, courseDate.date)" class="course-table-work-summary-next-action text-caption font-weight-bold"
                                                 :class="[ ['Versandbereit', 'Ordner verbunden', 'Abgeschlossen'].includes(workNextAction(work.work, courseDate.date)) ? 'text-success' : 'text-orange-darken-2', { 'work-summary-completed': workNextAction(work.work, courseDate.date) === 'Abgeschlossen' } ]"
                                                 :aria-label="`${workNextAction(work.work, courseDate.date) === 'Abgeschlossen' ? 'Status' : 'Nächste Aktion'}: ${workNextAction(work.work, courseDate.date)}`">
@@ -3488,6 +3499,10 @@ export default {
         workIsInitial(work) {
             const key = workDropboxKey(useAdminStore().config?.user?.id, work)
             return isInitialWork(work, workDropboxStates.get(key)) || (workAutomationEnabled(work) && workHasProgress(work))
+        },
+        workStudentDistributionPaused(work) {
+            const release = work?.status?.student_distribution
+            return Boolean(release?.prepared_at && !release.published_at)
         },
         workConnectionLabel(work) {
             const key = workDropboxKey(useAdminStore().config?.user?.id, work)
@@ -7633,6 +7648,15 @@ export default {
     gap: 4px;
     margin-top: auto;
     padding-top: 4px;
+}
+.course-table-work-summary-portal {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    margin-top: 4px;
+    font-size: 0.62rem;
+    font-weight: 700;
+    line-height: 1.25;
 }
 .course-table-work-summary-next-action > span:first-child { overflow-wrap: anywhere; }
 .work-summary-completed > span:first-child { font-size: 11px; letter-spacing: 0; overflow-wrap: normal; white-space: nowrap; }
