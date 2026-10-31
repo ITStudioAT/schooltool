@@ -182,6 +182,8 @@ class TeachingController extends Controller
             'teaching_notifications.*.short_name' => 'required|string|max:10',
             'teaching_notifications.*.name' => 'required|string|max:255',
             'teaching_show_behaviour' => 'nullable|boolean',
+            'teaching_curricula_enabled' => ['sometimes', 'boolean'],
+            'teaching_show_attendance' => ['sometimes', 'boolean'],
             'teaching_show_calculated_grade' => ['sometimes', 'boolean'],
             'teaching_student_grade_columns' => ['sometimes', 'array:show_semester_grade,show_behaviour_grade,show_points_progress,show_stars'],
             'teaching_student_grade_columns.show_semester_grade' => ['sometimes', 'boolean'],
@@ -190,6 +192,10 @@ class TeachingController extends Controller
             'teaching_student_grade_columns.show_stars' => ['sometimes', 'boolean'],
             'teaching_course_id' => 'required_with:teaching_show_calculated_grade,teaching_student_grade_columns.show_semester_grade,teaching_student_grade_columns.show_behaviour_grade,teaching_student_grade_columns.show_points_progress,teaching_student_grade_columns.show_stars|nullable|integer',
         ]);
+
+        if (array_key_exists('teaching_show_attendance', $validated) && ! Schema::hasColumn('users', 'teaching_show_attendance')) {
+            abort(422, 'Diese Anzeigeeinstellung ist noch nicht verfügbar.');
+        }
 
         if (isset($validated['teaching_schemas'])) {
             $usedNames = $teachingService->hasDependencies($auth_user, $validated['teaching_schemas'], $auth_user->schoolyear_id);
@@ -244,6 +250,12 @@ class TeachingController extends Controller
         }
         if (array_key_exists('teaching_show_behaviour', $validated)) {
             $auth_user->teaching_show_behaviour = (bool) $validated['teaching_show_behaviour'];
+        }
+        if (array_key_exists('teaching_curricula_enabled', $validated)) {
+            $auth_user->teaching_curricula_enabled = (bool) $validated['teaching_curricula_enabled'];
+        }
+        if (array_key_exists('teaching_show_attendance', $validated)) {
+            $auth_user->teaching_show_attendance = (bool) $validated['teaching_show_attendance'];
         }
         if (array_key_exists('teaching_show_calculated_grade', $validated)) {
             $course = TeachingCourse::query()->findOrFail((int) $validated['teaching_course_id']);
@@ -658,6 +670,9 @@ class TeachingController extends Controller
             'teaching_notifications_usage_count' => $this->teachingCourseBehaviourEntryCountForKind($user, $user->schoolyear_id, 'notification'),
             'teaching_notifications_usage_counts' => $this->teachingCourseBehaviourEntryCountsByTypeForKind($user, $user->schoolyear_id, 'notification'),
             'teaching_show_behaviour' => $user->teaching_show_behaviour ?? true,
+            'teaching_curricula_enabled' => $user->teaching_curricula_enabled ?? true,
+            'teaching_show_attendance' => $user->teaching_show_attendance ?? true,
+            'teaching_show_attendance_available' => Schema::hasColumn('users', 'teaching_show_attendance'),
             'teaching_show_calculated_grade' => (bool) data_get($user->teaching_grade_columns_by_schoolyear, "{$user->schoolyear_id}.show_calculated_grade", false),
             'teaching_show_calculated_grade_by_course' => (object) data_get($user->teaching_grade_columns_by_schoolyear, "{$user->schoolyear_id}.show_calculated_grade_by_course", []),
         ];

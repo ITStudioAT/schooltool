@@ -691,6 +691,16 @@ describe.each(['list', 'table'])('MyTimetable lesson statuses without attachment
             await nextTick()
             expect(wrapper.findAll('.timetable-curriculum-status')).toHaveLength(1)
             expect(wrapper.get('.timetable-content-status').attributes('color')).toBe('warning')
+            ;(useAdminStore().config!.user as any).teaching_curricula_enabled = false
+            await nextTick()
+            expect(wrapper.findAll('.timetable-curriculum-status')).toHaveLength(0)
+            ;(useAdminStore().config!.user as any).teaching_curricula_enabled = true
+            ;(store.courses[0] as any).curricula_enabled = false
+            await nextTick()
+            expect(wrapper.findAll('.timetable-curriculum-status')).toHaveLength(0)
+            ;(store.courses[0] as any).curricula_enabled = true
+            await nextTick()
+            expect(wrapper.findAll('.timetable-curriculum-status')).toHaveLength(1)
             courseDate.has_curriculum_assignment = false
             await nextTick()
             expect(wrapper.findAll('.timetable-curriculum-status')).toHaveLength(0)

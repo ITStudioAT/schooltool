@@ -220,7 +220,7 @@ class CourseController extends Controller
             ->keyBy(fn (TeachingSchoolHour $schoolHour): int => (int) $schoolHour->hour);
 
         // Get the course
-        $course = TeachingCourse::with('user:id,first_name,last_name,short,email,teaching_notifications_by_schoolyear,teaching_behaviour_by_schoolyear,teaching_show_behaviour,teaching_count_for_semester_2_date')
+        $course = TeachingCourse::with('user:id,first_name,last_name,short,email,teaching_notifications_by_schoolyear,teaching_behaviour_by_schoolyear,teaching_show_behaviour,teaching_count_for_semester_2_date,teaching_curricula_enabled')
             ->withCount([
                 'teachingCourseStudents as active_students_count' => function ($query) {
                     $query->whereNull('canceled_at');
@@ -306,7 +306,7 @@ class CourseController extends Controller
                     )
                     : null;
 
-                $adoptedMaterials = $courseDate->materials->map(fn ($m) => [
+                $adoptedMaterials = ($course->user?->teaching_curricula_enabled ?? true) ? $courseDate->materials->map(fn ($m) => [
                     'id' => $m->id,
                     'title' => $m->title,
                     'type' => $m->type,
@@ -321,7 +321,7 @@ class CourseController extends Controller
                             : '/api/homepage/student/course-date-materials/attachments/'.$a->id.'/preview',
                         'download_url' => $a->explanation_key ? null : '/api/homepage/student/course-date-materials/attachments/'.$a->id.'/download',
                     ])->values(),
-                ]);
+                ]) : collect();
 
                 return [
                     'id' => $courseDate->id,
@@ -464,6 +464,8 @@ class CourseController extends Controller
         if (! $course) {
             abort(403, 'Sie haben keine Berechtigung');
         }
+
+        abort_unless($course->user?->teaching_curricula_enabled ?? true, 403, 'Curricula sind ausgeschaltet.');
 
         $schoolTool = SchoolTool::where('school_id', $authUser->school_id)->first();
         $activeSchoolyearId = $schoolTool?->active_schoolyear_id ?? $authUser->schoolyear_id;

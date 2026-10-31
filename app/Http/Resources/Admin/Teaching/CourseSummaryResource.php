@@ -27,6 +27,7 @@ class CourseSummaryResource extends JsonResource
             'teaching_schema_id' => $this->teaching_schema_id,
             'teaching_entry_area_id' => $this->teaching_entry_area_id ? (int) $this->teaching_entry_area_id : null,
             'teaching_curriculum_id' => $this->teaching_curriculum_id ? (int) $this->teaching_curriculum_id : null,
+            'curricula_enabled' => $this->resource->user?->teaching_curricula_enabled ?? true,
             'teaching_show_student_age' => (bool) $this->teaching_show_student_age,
             'teaching_show_student_last_login' => (bool) $this->teaching_show_student_last_login,
             'teaching_entry_area' => $this->whenLoaded('teachingEntryArea', fn (): ?array => $this->teachingEntryArea ? [

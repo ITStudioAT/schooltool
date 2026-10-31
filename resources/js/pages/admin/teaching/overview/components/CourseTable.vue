@@ -333,7 +333,7 @@
                                 </td>
                             </tr>
                             <tr
-                                v-if="tableView === 'entries'"
+                                v-if="tableView === 'entries' && curriculaEnabled"
                                 class="course-table-curriculum-row">
                                 <th scope="row" class="course-table-curriculum-label cursor-pointer"
                                     @click="$emit('manage-curriculum')">
@@ -558,7 +558,7 @@
                                         @keydown.space.self.prevent="activateStudentCell(student, courseDate)">
                                         <span v-if="isEntryTransferCellSelected(student, courseDate)" class="course-table-transfer-marker">✓ Ausgewählt</span>
                                         <v-icon
-                                            v-if="tableView === 'entries' && studentAttendanceState(student, courseDate) !== null"
+                                            v-if="attendanceVisible && tableView === 'entries' && studentAttendanceState(student, courseDate) !== null"
                                             class="course-table-entry-cell-attendance-marker"
                                             :color="studentAttendanceState(student, courseDate) ? 'success' : 'error'"
                                             size="14"
@@ -690,7 +690,7 @@
             </v-card-text>
         </v-card>
 
-        <v-dialog v-model="curriculumDialog.open" persistent scrollable max-width="720">
+        <v-dialog v-if="curriculaEnabled" v-model="curriculumDialog.open" persistent scrollable max-width="720">
             <v-card class="course-table-curriculum-dialog-card" data-testid="course-table-curriculum-dialog">
                 <v-card-title class="course-table-curriculum-dialog-title">
                     <v-icon color="deep-purple" size="22">mdi-book-education-outline</v-icon>
@@ -1866,7 +1866,7 @@
                         <div><strong>Schüler:in:</strong> {{ studentName(entryDialog.student) }}</div>
                         <div><strong>Termin:</strong> {{ compactCourseDateTitle(entryDialog.courseDate) }}</div>
                         <div
-                            v-if="isAttendanceToggleable(entryDialog.courseDate)"
+                            v-if="attendanceVisible && isAttendanceToggleable(entryDialog.courseDate)"
                             class="d-flex flex-wrap align-center ga-1"
                             role="group"
                             aria-label="Anwesenheit auswählen">
@@ -2850,6 +2850,9 @@ export default {
     },
 
     watch: {
+        attendanceVisible(visible) {
+            if (!visible) this.tableView = 'entries'
+        },
         workSaving(busy) {
             if (!busy) return
             this.workDialogFinishDateEditing = false
@@ -2916,6 +2919,12 @@ export default {
     },
 
     computed: {
+        attendanceVisible() {
+            return this.config?.user?.teaching_show_attendance !== false
+        },
+        curriculaEnabled() {
+            return this.config?.user?.teaching_curricula_enabled !== false && this.selected_course?.curricula_enabled !== false
+        },
         workFolderRequests() {
             if (this.tableView !== 'entries') return []
             return (this.courseWorks || []).filter(work => workAutomationEnabled(work)
@@ -2926,7 +2935,7 @@ export default {
                     binding: workDropboxBinding(workDropboxStates.get(key)) }))
             })
         },
-        ...mapWritableState(useAdminStore, ['action']),
+        ...mapWritableState(useAdminStore, ['action', 'config']),
         ...mapWritableState(useCourseDateStore, ['selected_courseDate']),
         ...mapWritableState(useCourseStore, ['selected_course', 'students_sort_mode', 'uses_entry_areas_for_grading_schema']),
         ...mapWritableState(useCourseWorkStore, ['courseWorks']),
@@ -2964,6 +2973,7 @@ export default {
             return this.assignedCurriculumId !== null
         },
         assignedCurriculumId() {
+            if (this.curriculaEnabled === false) return null
             const curriculumId = Number(
                 this.selected_course?.teaching_curriculum_id
                 || this.selected_course?.teaching_curriculum?.id,
@@ -3781,6 +3791,7 @@ export default {
             }
         },
         curriculumContentForCourseDate(courseDate) {
+            if (this.curriculaEnabled === false) return []
             const adoptedMaterials = Array.isArray(courseDate?.adopted_materials)
                 ? courseDate.adopted_materials
                 : []
@@ -3857,7 +3868,7 @@ export default {
             return courseDate?.status?.includes('entfaellt') ? 'Entfällt' : 'Frei'
         },
         restoreTableView(view) {
-            this.tableView = view === 'attendance' ? 'attendance' : 'entries'
+            this.tableView = view === 'attendance' && this.attendanceVisible !== false ? 'attendance' : 'entries'
         },
         openEntryDialog(student, courseDate) {
             if (this.tableView !== 'entries') return

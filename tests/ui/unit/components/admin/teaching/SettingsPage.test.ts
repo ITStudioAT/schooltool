@@ -4,6 +4,58 @@ import { resolve } from 'node:path'
 import Settings from '@/pages/admin/teaching/settings/Settings.vue'
 
 describe('Teaching settings page', () => {
+    it('saves the attendance display choice without modifying course attendance and avoids duplicate saves', async () => {
+        const saveSettings = vi.fn().mockResolvedValue(true)
+        const context = {
+            isLocked: false, settings: { teaching_show_attendance: true, teaching_show_attendance_available: true },
+            attendanceVisible: true, attendanceSaving: false,
+            teachingStore: { saveSettings },
+        }
+
+        const saving = (Settings as any).methods.toggleAttendanceDisplay.call(context)
+        expect(context.attendanceSaving).toBe(true)
+        await (Settings as any).methods.toggleAttendanceDisplay.call(context)
+        await saving
+
+        expect(saveSettings).toHaveBeenCalledExactlyOnceWith({ teaching_show_attendance: false })
+        expect(context.attendanceSaving).toBe(false)
+        context.settings = { teaching_show_attendance: true, teaching_show_attendance_available: false } as any
+        await (Settings as any).methods.toggleAttendanceDisplay.call(context)
+        expect(saveSettings).toHaveBeenCalledTimes(1)
+    })
+
+    it('saves the curricula choice once and refreshes courses only after a successful save', async () => {
+        const saveSettings = vi.fn().mockResolvedValueOnce(true).mockResolvedValueOnce(false)
+        const index = vi.fn().mockResolvedValue(true)
+        const context = {
+            isLocked: false, settings: { teaching_curricula_enabled: true },
+            curriculaEnabled: true, curriculaSaving: false,
+            teachingStore: { saveSettings }, courseStore: { index },
+        }
+
+        const pending = (Settings as any).methods.toggleCurricula.call(context)
+        expect(context.curriculaSaving).toBe(true)
+        await (Settings as any).methods.toggleCurricula.call(context)
+        expect(saveSettings).toHaveBeenCalledTimes(1)
+        await pending
+
+        expect(saveSettings).toHaveBeenCalledWith({ teaching_curricula_enabled: false })
+        expect(index).toHaveBeenCalledTimes(1)
+        expect(context.curriculaSaving).toBe(false)
+
+        await (Settings as any).methods.toggleCurricula.call(context)
+        expect(index).toHaveBeenCalledTimes(1)
+        expect(context.curriculaSaving).toBe(false)
+    })
+
+    it('keeps curricula enabled by default and respects the saved disabled preference', () => {
+        const enabled = (Settings as any).computed.curriculaEnabled
+
+        expect(enabled.call({ settings: null })).toBe(true)
+        expect(enabled.call({ settings: { teaching_curricula_enabled: false } })).toBe(false)
+        expect(enabled.call({ settings: { teaching_curricula_enabled: true } })).toBe(true)
+    })
+
     it('computes own-holidays permission from roles', () => {
         const ctx = {
             config: {
@@ -30,6 +82,7 @@ describe('Teaching settings page', () => {
             'schemas',
             'my_holidays',
             'backup',
+            'display',
         ])
     })
 
@@ -48,6 +101,7 @@ describe('Teaching settings page', () => {
             'schemas',
             'my_holidays',
             'backup',
+            'display',
         ])
     })
 
@@ -84,6 +138,7 @@ describe('Teaching settings page', () => {
             'entries',
             'my_holidays',
             'backup',
+            'display',
         ])
     })
 
@@ -122,6 +177,7 @@ describe('Teaching settings page', () => {
                 { id: 'entries' },
                 { id: 'notifications' },
                 { id: 'schemas' },
+                { id: 'display' },
             ],
         }
 
@@ -130,6 +186,9 @@ describe('Teaching settings page', () => {
 
         ;(Settings as any).methods.activatePanel.call(ctx, 'my_holidays')
         expect(ctx.active_panel).toBe('schemas')
+
+        ;(Settings as any).methods.activatePanel.call(ctx, 'display')
+        expect(ctx.active_panel).toBe('display')
     })
 
     it('mirrored submenu delegates selection to primary panel activation', () => {

@@ -6,6 +6,14 @@ import { computed, reactive } from 'vue'
 vi.mock('axios', () => ({ default: { get: vi.fn() } }))
 
 describe('CourseStudents presence in the selected period', () => {
+    it('defaults attendance display to enabled and follows the personal display preference', () => {
+        const visible = (CourseStudents as any).computed.attendanceVisible
+
+        expect(visible.call({ config: {} })).toBe(true)
+        expect(visible.call({ config: { user: { teaching_show_attendance: false } } })).toBe(false)
+        expect(visible.call({ config: { user: { teaching_show_attendance: true } } })).toBe(true)
+    })
+
     it.each([1, 2])('uses assigned area semester count %s and normalizes unavailable stored filters', (count) => {
         const component = CourseStudents as any
         const state = { selected_course: { semester_count: count }, selectedCourseSchema: { grading: { semester_count: 2 } }, activeSemester: 3 }
@@ -755,8 +763,8 @@ describe('CourseStudents attendance editing', () => {
             fs.readFile('resources/js/pages/admin/teaching/overview/components/CourseStudents.vue', 'utf8')
         )
 
-        expect(source).toContain('v-if="canEditAttendance && selectedCourseDateForCourse && !isDayOverviewMode && !show_bulk_entry"')
-        expect(source).toContain('v-if="canEditAttendance && selectedCourseDateForCourse"')
+        expect(source).toContain('v-if="attendanceVisible && canEditAttendance && selectedCourseDateForCourse && !isDayOverviewMode && !show_bulk_entry"')
+        expect(source).toContain('v-if="attendanceVisible && canEditAttendance && selectedCourseDateForCourse"')
     })
 
     it('does not toggle one student when attendance editing is disabled', () => {

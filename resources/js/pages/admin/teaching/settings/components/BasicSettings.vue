@@ -12,6 +12,9 @@
                 <v-btn icon="mdi-close" size="x-small" color="warning" variant="flat" @click="cancel" />
             </template>
         </div>
+        <div class="text-body-2">
+            Beginn des 2. Semesters laut Schuljahr: {{ semester2DateFallback ? formatDate(semester2DateFallback) : 'Nicht hinterlegt' }}
+        </div>
         <div v-if="is_editing" class="d-flex flex-wrap ga-1">
             <v-chip size="x-small" variant="outlined" class="cursor-pointer" @click="semester2DateInput = new Date()">
                 Heute: {{ formatDate(new Date()) }}

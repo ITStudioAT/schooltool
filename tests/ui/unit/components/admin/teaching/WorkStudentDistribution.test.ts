@@ -65,6 +65,9 @@ it.each(['Angaben', 'Quellunterlagen'])('previews the assignment PDF from %s and
         await wrapper.get('button').trigger('click')
         await flushPromises()
         expect(wrapper.text()).toContain(`Aufgabenstellung aus „${section}“`)
+        expect(get).toHaveBeenCalledWith('/api/admin/teaching/course_works/12/dropbox/folders', expect.objectContaining({
+            params: expect.objectContaining({ contents: 1, exercise: 1, verify_exercise: 1, section: 'Angaben' }),
+        }))
         const filename = section === 'Quellunterlagen' ? 'Leistungsfeststellung_Dateimanagement.pdf' : 'Aufgabenstellung_E-Mails.pdf'
         await wrapper.findAll('button').find(button => button.text() === filename)!.trigger('click')
         expect(createObjectURL.mock.calls[0][0].name).toBe(filename)
@@ -267,6 +270,33 @@ it('explains a missing assignment section without showing a raw HTTP error or pu
         expect(wrapper.text()).toContain('kein Aufgabenbereich gefunden')
         expect(wrapper.text()).not.toContain('Request failed')
         expect(post).not.toHaveBeenCalled()
+    } finally { wrapper.unmount() }
+})
+
+it('explains a blocked assignment PDF separately from an already published MC test and prevents empty preparation', async () => {
+    const work = { id: 12, student_distribution_version: 'a'.repeat(64), status: {
+        multiple_choice_tests: { all: { work_id: 12, test_id: 4 } },
+    } }
+    const get = vi.fn().mockResolvedValueOnce({ data: { data: work } })
+        .mockResolvedValueOnce({ data: { data: { tests: [{ id: 4, title: 'MC Dateimanagement', status: 'published',
+            start_mode: 'individual', duration_seconds: 420, mode_editable: false, version: 'c'.repeat(64) }] } } })
+        .mockRejectedValueOnce({ response: { status: 409, data: { message: 'Mehrere Leistungsfeststellungsordner passen.' } } })
+    const post = vi.fn()
+    vi.stubGlobal('axios', { get, post })
+    const wrapper = mount(WorkStudentDistribution, { props: { available: true, work }, global: { stubs } })
+    try {
+        await wrapper.get('button').trigger('click')
+        await flushPromises()
+        expect(wrapper.text()).toContain('Aufgaben-PDF konnte nicht automatisch geladen werden')
+        expect(wrapper.text()).toContain('Mehrere Leistungsfeststellungsordner passen.')
+        expect(wrapper.text()).toContain('Bitte ein Aufgaben-PDF auswählen oder einen Aufgabentext eingeben.')
+        expect(wrapper.text()).toContain('Bereits freigegeben')
+        expect(wrapper.get('fieldset').attributes('disabled')).toBeDefined()
+        expect(wrapper.get('input[value="individual"]').element.checked).toBe(true)
+        await wrapper.findAll('button').find(button => button.text() === 'Pausiert vorbereiten')!.trigger('click')
+        expect(wrapper.get('[role="alert"]').text()).toContain('Aufgabentext eingeben oder ein Aufgaben-PDF auswählen')
+        expect(post).not.toHaveBeenCalled()
+        expect(wrapper.emitted('saved')).toBeUndefined()
     } finally { wrapper.unmount() }
 })
 

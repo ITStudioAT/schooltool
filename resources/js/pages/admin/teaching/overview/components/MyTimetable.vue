@@ -75,7 +75,7 @@
                                             :color="item.contentEntered ? 'success' : 'warning'" role="img" :aria-hidden="false"
                                             :aria-label="item.contentEntered ? 'Unterrichtsstoff eingetragen' : 'Unterrichtsstoff noch nicht eingetragen'"
                                             :title="item.contentEntered ? 'Unterrichtsstoff eingetragen' : 'Unterrichtsstoff noch nicht eingetragen'" />
-                                        <v-icon v-if="item.curriculumAssigned" class="timetable-curriculum-status" size="16"
+                                        <v-icon v-if="config?.user?.teaching_curricula_enabled !== false && item.curriculumAssigned" class="timetable-curriculum-status" size="16"
                                             icon="mdi-book-education-outline" color="deep-purple" role="img" :aria-hidden="false"
                                             aria-label="Curriculum-Eintrag zugeordnet" title="Curriculum-Eintrag zugeordnet" />
                                         <v-icon v-if="item.workScheduled" class="timetable-work-status" size="16"
@@ -191,7 +191,7 @@
                                                         :color="item.contentEntered ? 'success' : 'warning'" role="img" :aria-hidden="false"
                                                         :aria-label="item.contentEntered ? 'Unterrichtsstoff eingetragen' : 'Unterrichtsstoff noch nicht eingetragen'"
                                                         :title="item.contentEntered ? 'Unterrichtsstoff eingetragen' : 'Unterrichtsstoff noch nicht eingetragen'" />
-                                                    <v-icon v-if="item.curriculumAssigned" class="timetable-curriculum-status" size="16"
+                                                    <v-icon v-if="config?.user?.teaching_curricula_enabled !== false && item.curriculumAssigned" class="timetable-curriculum-status" size="16"
                                                         icon="mdi-book-education-outline" color="deep-purple" role="img" :aria-hidden="false"
                                                         aria-label="Curriculum-Eintrag zugeordnet" title="Curriculum-Eintrag zugeordnet" />
                                                     <v-icon v-if="item.workScheduled" class="timetable-work-status" size="16"
@@ -510,9 +510,9 @@ export default {
                             courseTitle: courseTitle || '-',
                             content: (courseDate?.content || '').toString().trim(),
                             contentEntered: this.hasLessonContent(courseDate?.content),
-                            curriculumAssigned: typeof courseDate?.has_curriculum_assignment === 'boolean'
+                            curriculumAssigned: course.curricula_enabled !== false && (typeof courseDate?.has_curriculum_assignment === 'boolean'
                                 ? courseDate.has_curriculum_assignment
-                                : Array.isArray(courseDate?.adopted_materials) && courseDate.adopted_materials.length > 0,
+                                : Array.isArray(courseDate?.adopted_materials) && courseDate.adopted_materials.length > 0),
                             workScheduled: scheduledWorkDates.includes(date),
                             freeReason: (courseDate?.free_reason || '').toString().trim(),
                             status,

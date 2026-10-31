@@ -9,6 +9,7 @@ use App\Http\Controllers\NumberSystemPlayerController;
 use App\Http\Controllers\SharedTeachingExplanationController;
 use App\Http\Controllers\Student\CourseController;
 use App\Http\Controllers\TeachingCourseStudentEntryNotificationConfirmationController;
+use App\Http\Middleware\EnsureTeachingCurriculaEnabled;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Facades\Route;
 
@@ -22,9 +23,9 @@ Route::middleware(['throttle:global', 'throttle:web'])->group(function () {
 
     Route::middleware(['auth', 'students-timetables-impersonation', 'api-allowed:scope:teaching_access', 'tool-licensed:Lehrertool,auth,scope:teaching_access'])->group(function (): void {
         Route::get('/learning-materials/curriculum/{file}', [CurriculumUnitFileController::class, 'explanation'])
-            ->whereNumber('file')->name('curriculum-explanations.show');
+            ->whereNumber('file')->middleware(EnsureTeachingCurriculaEnabled::class)->name('curriculum-explanations.show');
         Route::get('/learning-materials/teaching/{attachment}', [CourseDateController::class, 'explanation'])
-            ->whereNumber('attachment')->name('teaching-material-explanations.show');
+            ->whereNumber('attachment')->middleware(EnsureTeachingCurriculaEnabled::class)->name('teaching-material-explanations.show');
     });
     Route::get('/learning-materials/course/{attachment}', [CourseController::class, 'explanation'])
         ->whereNumber('attachment')->middleware(['auth', 'students-timetables-impersonation', 'tool-licensed:Lehrertool'])->name('student-material-explanations.show');

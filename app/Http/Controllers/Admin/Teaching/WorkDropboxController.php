@@ -264,12 +264,14 @@ class WorkDropboxController extends Controller
         $data = $request->validate(['folder_id' => ['nullable', 'string', 'max:255', 'regex:/\Aid:[A-Za-z0-9_-]+\z/'],
             'cursor' => ['nullable', 'string', 'max:4096'], 'suggest' => ['sometimes', 'boolean'],
             'contents' => ['sometimes', 'boolean'], 'exercise' => ['sometimes', 'boolean'], 'module' => ['sometimes', 'boolean'],
+            'verify_exercise' => ['sometimes', 'boolean'],
             'section' => ['nullable', 'string', 'in:Angaben,Bewertungskriterien,Abgaben,Auswertungen'],
             'pdf' => ['sometimes', 'boolean'],
             'file_id' => ['required_if:pdf,1', 'nullable', 'string', 'max:255', 'regex:/\Aid:[A-Za-z0-9_-]+\z/'],
             'date' => ['nullable', 'date_format:Y-m-d']]);
         if ($request->boolean('contents')) {
             abort_if($request->boolean('module') && $request->boolean('exercise'), 422, 'Bitte entweder Lernmodul oder Leistungsfeststellung öffnen.');
+            abort_if($request->boolean('verify_exercise') && ! $request->boolean('exercise'), 422, 'Eine erneute Ordnerprüfung erfordert eine Leistungsfeststellung.');
             abort_if($request->boolean('pdf') && (! $request->boolean('exercise') || ! filled($data['section'] ?? null)
                 || filled($data['folder_id'] ?? null) || filled($data['cursor'] ?? null)), 422, 'PDFs nur direkt aus einem bestätigten Prüfungsbereich öffnen.');
             abort_unless($course_work->automationEnabled(), 422, 'Automatik ist für diese Arbeit ausgeschaltet.');
@@ -287,9 +289,11 @@ class WorkDropboxController extends Controller
                 $rootId = $confirmed['folder_id'];
                 $excludedFolders = ['Leistungsfeststellung'];
             } elseif ($module && $module->dropbox_connection_id === $connection->id && $module->account_id === $connection->account_id) {
-                $exercise = $modules->exercise($connection, $course_work, $module, $data['date'] ?? null, initial: false);
+                $exercise = $request->boolean('verify_exercise')
+                    ? $modules->exerciseFolder($connection, $course_work, $module, $data['date'] ?? null)
+                    : $modules->exercise($connection, $course_work, $module, $data['date'] ?? null, initial: false);
                 abort_unless($exercise['status'] !== 'unknown' && (! $request->boolean('exercise') || $exercise['status'] === 'found'),
-                    409, 'Die Leistungsfeststellung konnte nicht eindeutig bestätigt werden.');
+                    409, $exercise['message'] ?? 'Die Leistungsfeststellung konnte nicht eindeutig bestätigt werden.');
                 if ($exercise['status'] === 'found') {
                     $rootId = $exercise['folder']['id'];
                 } else {

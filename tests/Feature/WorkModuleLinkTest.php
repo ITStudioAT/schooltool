@@ -19,6 +19,7 @@ use GuzzleHttp\Psr7\Response as PsrResponse;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Factory as HttpFactory;
 use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Spatie\Permission\Models\Role;
 use Tests\Support\TeachingWorkDispatchFixture;
@@ -741,6 +742,41 @@ test('linked folder contents select the requested group date and stop on an unce
     $this->getJson($this->url.'/folders?contents=1')->assertStatus(409);
 });
 
+test('assignment sections can explicitly verify their folder without a current cached exercise check', function (string $cacheState): void {
+    linkExerciseFixture($this);
+    addContentsRootFixture($this);
+    if ($cacheState === 'missing') {
+        $this->getJson($this->url.'?include_exercise=1')->assertOk()->assertJsonPath('exercise.status', 'missing');
+    }
+    addExerciseFixture($this);
+    if ($cacheState === 'absent') {
+        Cache::flush();
+    }
+    if ($cacheState === 'stale') {
+        $this->getJson($this->url.'?include_exercise=1')->assertOk()->assertJsonPath('exercise.status', 'found');
+        $this->work->update(['title' => 'Geänderter Titel']);
+    }
+    $before = $this->work->fresh()->getAttributes();
+
+    $this->getJson($this->url.'/folders?contents=1&exercise=1&verify_exercise=1&section=Angaben&date=2026-10-06')->assertOk()
+        ->assertJsonPath('root.name', 'Angaben')->assertJsonPath('entries', []);
+
+    expect($this->work->fresh()->getAttributes())->toEqual($before);
+    Http::assertNotSent(fn (Request $request): bool => preg_match('#/files/(upload|delete|move|create)#', $request->url()) === 1);
+})->with(['absent', 'missing', 'stale']);
+
+test('assignment sections return 409 for newly ambiguous exercise folders despite a cached successful check', function (): void {
+    linkExerciseFixture($this);
+    addContentsRootFixture($this);
+    addExerciseFixture($this);
+    $this->getJson($this->url.'?include_exercise=1')->assertOk()->assertJsonPath('exercise.status', 'found');
+    addExerciseFixture($this, '2026-10-06_Doppelte-Pruefung');
+
+    $this->getJson($this->url.'/folders?contents=1&exercise=1&verify_exercise=1&section=Angaben&date=2026-10-06')->assertStatus(409)
+        ->assertJsonPath('message', 'Mehrere Leistungsfeststellungsordner passen. Bitte den konkreten Termin auswählen.');
+    Http::assertNotSent(fn (Request $request): bool => preg_match('#/files/(upload|delete|move|create)#', $request->url()) === 1);
+});
+
 test('linked folder contents open only the requested important section and reject sibling navigation', function (): void {
     linkExerciseFixture($this);
     addContentsRootFixture($this);
@@ -765,9 +801,8 @@ test('linked folder contents return only a PDF from its verified section as priv
     $this->exerciseDocuments['rev:pdfrevision1'] = $pdf;
     $this->online[] = ['.tag' => 'file', 'id' => 'id:taskpdf', 'name' => 'Aufgabe.pdf', 'rev' => 'pdfrevision1',
         'path_lower' => $section['path_lower'].'/aufgabe.pdf', 'path_display' => $section['path_display'].'/Aufgabe.pdf', 'size' => strlen($pdf)];
-    $url = $this->url.'/folders?contents=1&exercise=1&section=Angaben&pdf=1&file_id=id:taskpdf';
+    $url = $this->url.'/folders?contents=1&exercise=1&verify_exercise=1&section=Angaben&pdf=1&file_id=id:taskpdf';
 
-    $this->getJson($this->url.'?include_exercise=1')->assertOk();
     $this->get($url)->assertOk()->assertHeader('Content-Type', 'application/pdf')->assertHeader('Content-Disposition', 'inline')
         ->assertContent($pdf);
     $this->getJson(str_replace('id:taskpdf', 'id:handshake', $url))->assertNotFound();

@@ -214,7 +214,7 @@
             <Search v-if="main_action === 'search'" />
             <Schoolyear v-if="main_action === 'schoolyear'" />
             <DataBackup v-if="main_action === 'datensicherung'" />
-            <Curricula v-if="main_action === 'curricula'" />
+            <Curricula v-if="main_action === 'curricula' && curriculaEnabled" />
         </v-row>
     </v-container>
 </template>
@@ -313,6 +313,9 @@ export default {
     },
 
     computed: {
+        curriculaEnabled() {
+            return this.config?.user?.teaching_curricula_enabled !== false
+        },
         ...mapWritableState(useAdminStore, ['config', 'action', 'action_2']),
         ...mapWritableState(useSchoolStore, ['hopper_accounts']),
         ...mapWritableState(useCourseStore, ['courses', 'courses_request_promise', 'selected_course', 'selected_course_id', 'selected_course_student', 'pending_edit_course_id', 'pending_new_course_token']),
@@ -650,7 +653,7 @@ export default {
                     label: 'Curricula',
                     meta: 'Lehrpläne & Raster',
                     icon: 'mdi-book-education-outline',
-                    visible: this.hasAnyRole(['super_admin', 'admin', 'teaching_admin', 'teacher']),
+                    visible: this.curriculaEnabled !== false && this.hasAnyRole(['super_admin', 'admin', 'teaching_admin', 'teacher']),
                 },
                 {
                     key: 'datensicherung',
@@ -678,6 +681,11 @@ export default {
     },
 
     watch: {
+        curriculaEnabled(enabled) {
+            if (!enabled && this.main_action === 'curricula') {
+                this.syncSection('curricula')
+            }
+        },
         lessonContextKey: 'reloadLessonContext',
         main_action(section) {
             if (section !== 'overview') {
@@ -758,6 +766,9 @@ export default {
             return parts.join(' ')
         },
         normalizedSection(section) {
+            if (section === 'curricula' && this.curriculaEnabled === false) {
+                return 'overview'
+            }
             if (section === 'administration' && !this.canManageTeachingAdministration) {
                 return 'overview'
             }
@@ -766,7 +777,7 @@ export default {
         },
         syncSection(section) {
             this.main_action = this.normalizedSection(section)
-            if (section === 'administration' && this.main_action !== 'administration') {
+            if (['administration', 'curricula'].includes(section) && this.main_action !== section) {
                 this.$router.replace({ path: '/admin/teaching', query: { panel: 'table' } })
             }
         },
@@ -801,6 +812,7 @@ export default {
             this.$router.replace({ path: '/admin/teaching', query: { panel: 'table' } })
         },
         navigateTo(section) {
+            if (section === 'curricula' && this.curriculaEnabled === false) return
             if (section === 'administration') {
                 if (!this.canManageTeachingAdministration) {
                     return

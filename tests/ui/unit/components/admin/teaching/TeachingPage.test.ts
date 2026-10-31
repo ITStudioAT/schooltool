@@ -24,6 +24,28 @@ vi.mock('@/stores/admin/teaching/SchoolHourStore', () => ({
 }))
 
 describe('Teaching page navigation', () => {
+    it('removes the curricula menu and redirects direct navigation when disabled', () => {
+        const methods = (Teaching as any).methods
+        const computed = (Teaching as any).computed
+        const context = {
+            config: { roles: ['teacher'], user: { teaching_curricula_enabled: false } },
+            curriculaEnabled: false,
+            hasAnyRole: methods.hasAnyRole,
+            normalizedSection: methods.normalizedSection,
+            main_action: 'curricula',
+            $router: { replace: vi.fn() },
+        }
+
+        expect(computed.curriculaEnabled.call(context)).toBe(false)
+        expect(computed.visibleNavigationItems.call(context).some((item: { key: string }) => item.key === 'curricula')).toBe(false)
+        methods.syncSection.call(context, 'curricula')
+        expect(context.main_action).toBe('overview')
+        expect(context.$router.replace).toHaveBeenCalledWith({ path: '/admin/teaching', query: { panel: 'table' } })
+
+        context.curriculaEnabled = true
+        expect(computed.visibleNavigationItems.call(context).some((item: { key: string }) => item.key === 'curricula')).toBe(true)
+    })
+
     beforeEach(() => {
         vi.mocked(useAdminStore).mockReset()
         vi.mocked(useSchoolStore).mockReset()

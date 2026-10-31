@@ -277,6 +277,39 @@
                 <v-window-item value="backup">
                     <PersonalDataBackup :locked="isLocked" :can-review-recovery="config?.roles?.some((role) => ['admin', 'super_admin'].includes(role))" />
                 </v-window-item>
+                <v-window-item value="display">
+                    <v-row class="w-100 ma-0" dense>
+                        <v-col cols="12" class="teaching-settings-panel-col">
+                            <ItsGridBox variant="overview" color="primary" title="Anzeige" icon="mdi-monitor" class="w-100">
+                                <div class="teaching-display-controls">
+                                    <button
+                                        type="button"
+                                        class="teaching-display-button"
+                                        :class="{ 'teaching-display-button--enabled': curriculaEnabled }"
+                                        :aria-pressed="curriculaEnabled"
+                                        :disabled="isLocked || !settings || curriculaSaving"
+                                        @click="toggleCurricula">
+                                        <span class="teaching-display-button__label">Curricula</span>
+                                        <strong class="teaching-display-button__state">{{ curriculaSaving ? 'Speichert …' : curriculaEnabled ? 'Ein' : 'Aus' }}</strong>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        class="teaching-display-button"
+                                        :class="{ 'teaching-display-button--enabled': attendanceVisible }"
+                                        :aria-pressed="attendanceVisible"
+                                        :disabled="isLocked || settings?.teaching_show_attendance_available !== true"
+                                        :title="settings?.teaching_show_attendance_available !== true ? 'Einstellung noch nicht verfügbar' : undefined"
+                                        @click="toggleAttendanceDisplay">
+                                        <span class="teaching-display-button__label">Anwesenheiten</span>
+                                        <strong class="teaching-display-button__state">{{ attendanceSaving ? 'Speichert …' : attendanceVisible ? 'Ein' : 'Aus' }}</strong>
+                                    </button>
+                                </div>
+                                <p class="text-body-2 mt-3">Curricula für deine Kurse und deren Schüleransichten verwenden. Beim Ausschalten bleiben alle Daten erhalten.</p>
+                                <p class="text-body-2">Anwesenheiten im Kursdetail anzeigen. Die erfassten Anwesenheiten bleiben erhalten.</p>
+                            </ItsGridBox>
+                        </v-col>
+                    </v-row>
+                </v-window-item>
             </v-window>
         </section>
     </v-col>
@@ -338,13 +371,21 @@ export default {
             schema_reset_loading: false,
             schema_panel_revision: 0,
             schema_settings_saving_action: null,
+            curriculaSaving: false,
+            attendanceSaving: false,
         }
     },
 
     computed: {
         ...mapWritableState(useAdminStore, ['config', 'action']),
         isLocked() {
-            return this.action === 'teaching_work_new_or_edit' || this.schema_settings_saving_action !== null
+            return this.action === 'teaching_work_new_or_edit' || this.schema_settings_saving_action !== null || this.curriculaSaving === true || this.attendanceSaving === true
+        },
+        curriculaEnabled() {
+            return this.settings?.teaching_curricula_enabled !== false
+        },
+        attendanceVisible() {
+            return this.settings?.teaching_show_attendance !== false
         },
         ...mapWritableState(useTeachingStore, ['settings']),
         ...mapWritableState(useCourseStore, ['courses']),
@@ -446,6 +487,7 @@ export default {
             }
 
             panels.push({ id: 'backup', label: 'Datensicherung', icon: 'mdi-database-check-outline' })
+            panels.push({ id: 'display', label: 'Anzeige', icon: 'mdi-monitor' })
 
             return panels
         },
@@ -485,6 +527,27 @@ export default {
     },
 
     methods: {
+        async toggleAttendanceDisplay() {
+            if (this.isLocked || this.settings?.teaching_show_attendance_available !== true || this.attendanceSaving) return
+
+            this.attendanceSaving = true
+            try {
+                await this.teachingStore.saveSettings({ teaching_show_attendance: !this.attendanceVisible })
+            } finally {
+                this.attendanceSaving = false
+            }
+        },
+        async toggleCurricula() {
+            if (this.isLocked || !this.settings || this.curriculaSaving) return
+
+            this.curriculaSaving = true
+            try {
+                const saved = await this.teachingStore.saveSettings({ teaching_curricula_enabled: !this.curriculaEnabled })
+                if (saved) await this.courseStore.index()
+            } finally {
+                this.curriculaSaving = false
+            }
+        },
         async runSchemaSettingsMutation(action, callback) {
             if (this.schema_settings_saving_action) {
                 return false
@@ -711,5 +774,110 @@ export default {
     border: 1px solid rgba(16, 38, 58, 0.09);
     background: rgba(255, 255, 255, 0.76);
     padding: 10px;
+}
+
+.teaching-display-controls {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+    max-width: 560px;
+    gap: 10px;
+    padding: 9px 9px 13px;
+    border: 1px solid #4b5563;
+    border-radius: 14px;
+    background: linear-gradient(160deg, #303946, #17202b);
+    box-shadow: inset 0 2px 5px #0b111b, 0 1px 0 #ffffff;
+}
+
+.teaching-display-button {
+    position: relative;
+    isolation: isolate;
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+    min-height: 88px;
+    padding: 10px 16px;
+    border: 3px solid #0b111b;
+    border-radius: 12px;
+    color: #f1f5f9;
+    background:
+        radial-gradient(ellipse at 50% 0%, rgba(148, 163, 184, 0.06), transparent 85%),
+        linear-gradient(160deg, #303b49, #19222e);
+    text-align: left;
+    cursor: default;
+    opacity: 1;
+    box-shadow:
+        inset 0 2px 2px rgba(255, 255, 255, 0.18),
+        inset 0 -4px 5px rgba(0, 0, 0, 0.45),
+        0 5px 0 #080d14,
+        0 7px 7px rgba(0, 0, 0, 0.4);
+}
+
+.teaching-display-button::after {
+    content: '';
+    position: absolute;
+    inset: 6px;
+    z-index: -1;
+    pointer-events: none;
+    border: 1px solid #748091;
+    border-radius: 5px;
+}
+
+.teaching-display-button::before {
+    content: '';
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+    background: #748091;
+    box-shadow: inset 0 1px 2px #3b4655;
+}
+
+.teaching-display-button__label {
+    padding-right: 12px;
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+
+.teaching-display-button__state {
+    color: #e2e8f0;
+    font-size: 1.05rem;
+    line-height: 1.2;
+    overflow-wrap: anywhere;
+}
+
+.teaching-display-button:not(:disabled) {
+    cursor: pointer;
+}
+
+.teaching-display-button:not(:disabled):hover {
+    filter: brightness(1.1);
+}
+
+.teaching-display-button:focus-visible {
+    outline: 3px solid #ffffff;
+    outline-offset: 2px;
+}
+
+.teaching-display-button--enabled::after {
+    border-color: #79e7ab;
+    box-shadow: 0 0 5px rgba(76, 222, 143, 0.45), inset 0 0 5px rgba(76, 222, 143, 0.45);
+}
+
+.teaching-display-button--enabled::before {
+    background: #b5fbd2;
+    box-shadow: 0 0 10px rgba(76, 222, 143, 0.75);
+}
+
+.teaching-display-button--enabled .teaching-display-button__state {
+    color: #b5fbd2;
+}
+
+@media (max-width: 380px) {
+    .teaching-display-controls {
+        grid-template-columns: minmax(0, 1fr);
+    }
 }
 </style>

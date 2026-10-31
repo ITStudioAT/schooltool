@@ -13,6 +13,37 @@ vi.mock('@/stores/spa/NotificationStore', () => ({
 }))
 
 describe('TeachingStore', () => {
+    it('updates attendance display only after successful persistence', async () => {
+        const user = adminStoreMock.config.user as typeof adminStoreMock.config.user & { teaching_show_attendance?: boolean }
+        user.teaching_show_attendance = true
+        const store = useTeachingStore()
+        store.settings = { teaching_show_attendance: true } as never
+        axiosMock.post.mockResolvedValueOnce({ data: { settings: { teaching_show_attendance: false } } })
+
+        expect(await store.saveSettings({ teaching_show_attendance: false })).toBe(true)
+        expect(user.teaching_show_attendance).toBe(false)
+        axiosMock.post.mockRejectedValueOnce({ response: { status: 500 } })
+        expect(await store.saveSettings({ teaching_show_attendance: true })).toBe(false)
+        expect(user.teaching_show_attendance).toBe(false)
+        expect(store.settings).toEqual({ teaching_show_attendance: false })
+    })
+
+    it('applies the saved curricula preference to navigation and preserves it after a failed save', async () => {
+        const store = useTeachingStore()
+        const user = adminStoreMock.config.user as typeof adminStoreMock.config.user & { teaching_curricula_enabled?: boolean }
+        user.teaching_curricula_enabled = true
+        store.settings = { teaching_curricula_enabled: true } as never
+        axiosMock.post.mockResolvedValueOnce({ data: { settings: { teaching_curricula_enabled: false } } })
+
+        expect(await store.saveSettings({ teaching_curricula_enabled: false })).toBe(true)
+        expect(user.teaching_curricula_enabled).toBe(false)
+
+        axiosMock.post.mockRejectedValueOnce({ response: { status: 500 } })
+        expect(await store.saveSettings({ teaching_curricula_enabled: true })).toBe(false)
+        expect(user.teaching_curricula_enabled).toBe(false)
+        expect(store.settings).toEqual({ teaching_curricula_enabled: false })
+    })
+
     const notifyMock = vi.fn()
     const adminStoreMock = {
         is_loading: 0,

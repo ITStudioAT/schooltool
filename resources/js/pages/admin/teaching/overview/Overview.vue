@@ -147,7 +147,7 @@
         <MyCourses />
     </div>
 
-    <v-dialog v-model="curriculumEditMode" persistent scrollable max-width="800">
+    <v-dialog v-if="curriculaEnabled" v-model="curriculumEditMode" persistent scrollable max-width="800">
         <v-card title="Curriculum zuordnen">
             <v-card-text>
                 <v-autocomplete v-model="curriculumSelectionId" :items="curriculumOptions"
@@ -270,6 +270,12 @@ export default {
     },
 
     computed: {
+        attendanceVisible() {
+            return this.config?.user?.teaching_show_attendance !== false
+        },
+        curriculaEnabled() {
+            return this.config?.user?.teaching_curricula_enabled !== false && this.selected_course?.curricula_enabled !== false
+        },
         ...mapWritableState(useAdminStore, ['action', 'action_2', 'config']),
         ...mapWritableState(useCourseStore, [
             'selected_course',
@@ -330,6 +336,7 @@ export default {
             return this.selectedCourseCurriculum
         },
         selectedCourseCurriculumId() {
+            if (this.curriculaEnabled === false) return null
             const value = this.selected_course?.teaching_curriculum_id ?? this.selectedCourseCurriculum?.id ?? null
             const normalized = Number(value)
             return Number.isFinite(normalized) && normalized > 0 ? normalized : null
@@ -461,7 +468,9 @@ export default {
             const panels = []
             if (this.selected_course) {
                 panels.push({ id: 'table', label: 'Tabelle', icon: 'mdi-table-large' })
-                panels.push({ id: 'attendance', label: 'Anwesenheiten', icon: 'mdi-account-check' })
+                if (this.attendanceVisible !== false) {
+                    panels.push({ id: 'attendance', label: 'Anwesenheiten', icon: 'mdi-account-check' })
+                }
                 panels.push({ id: 'dates', label: 'Termine', icon: 'mdi-calendar-clock-outline' })
                 panels.push({ id: 'students', label: 'Schüler:innen', icon: 'mdi-account-group' })
                 panels.push({ id: 'infos', label: 'Infos', icon: 'mdi-information-outline' })
@@ -485,12 +494,13 @@ export default {
                 if (this.show_lists) return 'lists'
                 if (this.show_dates) return 'dates'
                 if (this.show_table) return 'table'
-                if (this.show_attendance) return 'attendance'
+                if (this.show_attendance) return this.attendanceVisible === false ? 'table' : 'attendance'
                 if (this.show_performances) return 'performances'
                 if (this.show_performances_plus) return 'performances_plus'
                 return undefined
             },
             set(value) {
+                if (value === 'attendance' && this.attendanceVisible === false) value = 'table'
                 this.studentPanel = value === 'evaluations' ? 'evaluations' : 'students'
                 this.show_students = ['students', 'evaluations'].includes(value)
                 this.show_infos = value === 'infos'
@@ -519,6 +529,9 @@ export default {
     },
 
     watch: {
+        attendanceVisible(visible) {
+            if (!visible && this.show_attendance) this.functionalPanelSelection = 'table'
+        },
         selected_course: {
             immediate: true,
             async handler(newCourse, oldCourse) {
@@ -539,9 +552,10 @@ export default {
             if (!this._urlPanelRestored) {
                 const requestedPanel = this.$route?.query?.panel
                 const requestedView = this.$route?.query?.view
-                const urlPanel = requestedPanel === 'table' && requestedView === 'attendance'
+                let urlPanel = requestedPanel === 'table' && requestedView === 'attendance'
                     ? 'attendance'
                     : requestedPanel
+                if (urlPanel === 'attendance' && this.attendanceVisible === false) urlPanel = 'table'
                 const urlGrades = this.$route?.query?.grades
                 if (urlPanel === 'curriculum') {
                     this.studentPanel = 'students'
@@ -585,7 +599,7 @@ export default {
                 this._lastCourseId = newCourse.id
                 if (urlPanel && validPanels.includes(urlPanel)) {
                     if (
-                        requestedView !== undefined
+                        (requestedView !== undefined || urlPanel !== requestedPanel)
                         && ['attendance', 'table'].includes(urlPanel)
                         && this.$route
                         && this.$router
@@ -760,6 +774,7 @@ export default {
             }
         },
         async startCurriculumEdit() {
+            if (this.curriculaEnabled === false) return
             if (!this.selected_course?.id || this.curriculumSaveLoading) return
             const courseId = this.selected_course.id
             await this.loadCurricula()

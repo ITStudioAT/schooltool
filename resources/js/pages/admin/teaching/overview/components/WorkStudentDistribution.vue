@@ -102,7 +102,7 @@ const prepared = computed(() => Boolean(props.work.status?.student_distribution?
 const withdrawn = computed(() => Boolean(props.work.status?.student_distribution?.published_at && props.work.status.student_distribution.withdrawn_at))
 const dialogPublished = computed(() => Boolean(currentWork.value?.status?.student_distribution?.published_at && !currentWork.value.status.student_distribution.withdrawn_at))
 const dialogPrepared = computed(() => Boolean(currentWork.value?.status?.student_distribution?.prepared_at && !currentWork.value.status.student_distribution.published_at))
-const assignmentParams = computed(() => ({ contents: 1, exercise: 1, section: 'Angaben', ...(props.date ? { date: props.date } : {}) }))
+const assignmentParams = computed(() => ({ contents: 1, exercise: 1, verify_exercise: 1, section: 'Angaben', ...(props.date ? { date: props.date } : {}) }))
 
 function clearPreview() {
     if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
@@ -209,7 +209,9 @@ async function open() {
             } catch (failure) {
                 assignmentWarning.value = failure.response?.status === 404
                     ? 'Im verknüpften Prüfungsordner wurde kein Aufgabenbereich gefunden. Bitte ein Aufgaben-PDF auswählen.'
-                    : failure.response?.data?.message || failure.message || 'Die Aufgabenstellung konnte nicht geladen werden. Bitte ein Aufgaben-PDF auswählen.'
+                    : failure.response?.status === 409
+                        ? `Die Aufgaben-PDF konnte nicht automatisch geladen werden. ${failure.response?.data?.message || 'Der Prüfungsordner konnte nicht bestätigt werden.'} Bitte ein Aufgaben-PDF auswählen oder einen Aufgabentext eingeben.`
+                        : failure.response?.data?.message || failure.message || 'Die Aufgabenstellung konnte nicht geladen werden. Bitte ein Aufgaben-PDF auswählen.'
             }
         }
         instructions.value = work.status?.student_distribution?.instructions

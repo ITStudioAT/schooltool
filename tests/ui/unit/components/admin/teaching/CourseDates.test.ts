@@ -13,6 +13,23 @@ vi.mock('axios', () => ({
 }))
 
 describe('CourseDates course-specific schema', () => {
+    it('omits curriculum selections and adopted content when the teacher disables curricula', () => {
+        const computed = (CourseDates as any).computed
+        const context = {
+            config: { user: { teaching_curricula_enabled: false } },
+            selected_course: { teaching_curriculum_id: 12, teaching_curriculum: { id: 12, title: 'Curriculum' } },
+            curriculaEnabled: false,
+        }
+
+        expect(computed.curriculaEnabled.call(context)).toBe(false)
+        expect(computed.selectedCourseCurriculumId.call(context)).toBe(null)
+        expect(computed.selectedCourseCurriculumTitle.call(context)).toBe('')
+        expect(computed.selectedCourseCurriculumTopics.call(context)).toEqual([])
+        expect((CourseDates as any).methods.courseDateAdoptedMaterials.call(context, {
+            adopted_materials: [{ title: 'Einheit' }],
+        })).toEqual([])
+    })
+
     beforeEach(() => {
         vi.clearAllMocks()
     })
@@ -87,7 +104,7 @@ describe('CourseDates course-specific schema', () => {
         expect(curriculumCard).toContain('in selectedCourseCurriculumTopics')
         expect(curriculumCard).toContain('in topic.units')
         expect(source).toContain('class="course-date-curriculum-connector"')
-        expect(source).toContain('v-if="selected_courseDate && selectedCurriculumItem && !isSelectedCurriculumItemLinked"')
+        expect(source).toContain('v-if="curriculaEnabled && selected_courseDate && selectedCurriculumItem && !isSelectedCurriculumItemLinked"')
         expect(source).toContain('data-testid="connect-date-curriculum-item"')
         expect(source).toContain('<v-icon size="14" color="success" class="mr-1">mdi-link-variant</v-icon>')
         expect(source.match(/^\s+icon="mdi-link-off"$/gm)).toHaveLength(3)
@@ -114,14 +131,14 @@ describe('CourseDates course-specific schema', () => {
         expect(source).toContain('top: 50vh;')
         expect(source).toContain('transform: translateY(-50%);')
         expect(curriculumCard).toContain('Dieses Curriculum enthält keine Inhalte.')
-        expect(source).toContain('<v-dialog v-model="curriculumAssignmentDialogOpen" persistent max-width="520">')
+        expect(source).toContain('<v-dialog v-if="curriculaEnabled" v-model="curriculumAssignmentDialogOpen" persistent max-width="520">')
         expect(source).toContain('v-model="curriculumAssignmentSelectionId"')
         expect(source).toContain('label="Curriculum auswählen"')
         expect(source).toContain('@click="cancelCurriculumAssignment"')
         expect(source).toContain('@click="saveCurriculumAssignment"')
         expect(curriculumCard).toContain('data-testid="remove-course-curriculum"')
         expect(curriculumCard).toContain('@click="openCurriculumRemovalDialog"')
-        expect(source).toContain('<v-dialog v-model="curriculumRemovalDialogOpen" persistent max-width="560">')
+        expect(source).toContain('<v-dialog v-if="curriculaEnabled" v-model="curriculumRemovalDialogOpen" persistent max-width="560">')
         expect(source).toContain('v-if="curriculumDateAssignmentCount > 0"')
         expect(source).toContain('@click="confirmCurriculumRemoval"')
         expect(source).toContain('courseDateInlineContent(courseDate)')

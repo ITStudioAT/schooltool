@@ -38,6 +38,21 @@ vi.mock('@/pages/admin/teaching/overview/components/WorkStudentDistribution.vue'
 } }))
 
 describe('CourseTable manual work completion', () => {
+    it('hides curriculum assignments and content when curricula are disabled', () => {
+        const computed = (CourseTable as any).computed
+        const context = {
+            config: { user: { teaching_curricula_enabled: true } },
+            selected_course: { curricula_enabled: false, teaching_curriculum_id: 12 },
+            curriculaEnabled: false,
+        }
+
+        expect(computed.curriculaEnabled.call(context)).toBe(false)
+        expect(computed.assignedCurriculumId.call(context)).toBe(null)
+        expect((CourseTable as any).methods.curriculumContentForCourseDate.call(context, {
+            adopted_materials: [{ title: 'Thema: Einheit' }],
+        })).toEqual([])
+    })
+
     it('updates only the saved deadline in the open work draft', () => {
         const methods = (CourseTable as any).methods
         const context: any = { workDialogForm: { id: 65, title: 'Ungespeicherter Titel', finish_until_date: '2026-10-20', finish_until_time: null },
@@ -5484,6 +5499,19 @@ describe('CourseTable', () => {
             expect(entryCells[1].find('.course-table-entry-cell-attendance-marker.mdi-close').exists()).toBe(true)
             expect(entryCells[2].find('.course-table-entry-cell-attendance-marker.mdi-check').exists()).toBe(true)
             expect(entryCells[2].get('.course-table-entry-cell-attendance-marker').classes()).toContain('text-success')
+            const savedDates = JSON.stringify(store.selected_course.course_dates)
+            const updateCount = updateStatus.mock.calls.length
+            const adminStore = useAdminStore(pinia)
+            adminStore.config = { ...adminStore.config, user: { ...adminStore.config?.user, teaching_show_attendance: false } } as any
+            await flushPromises()
+            expect(wrapper.findAll('.course-table-entry-cell-attendance-marker')).toHaveLength(0)
+            await wrapper.setProps({ view: 'attendance' })
+            expect((wrapper.vm as any).tableView).toBe('entries')
+            expect(updateStatus).toHaveBeenCalledTimes(updateCount)
+            expect(JSON.stringify(store.selected_course.course_dates)).toBe(savedDates)
+            ;(adminStore.config as any).user.teaching_show_attendance = true
+            await flushPromises()
+            expect(wrapper.findAll('.course-table-entry-cell-attendance-marker')).toHaveLength(2)
         } finally {
             wrapper.unmount()
             vi.unstubAllGlobals()
@@ -5728,7 +5756,7 @@ describe('CourseTable', () => {
         expect(source).toContain('@click="openCurriculumDialog(courseDate)"')
         expect(source).toContain('@keydown.enter.prevent="openCurriculumDialog(courseDate)"')
         expect(source).toContain('@keydown.space.prevent="openCurriculumDialog(courseDate)"')
-        expect(source).toContain('<v-dialog v-model="curriculumDialog.open" persistent scrollable max-width="720">')
+        expect(source).toContain('<v-dialog v-if="curriculaEnabled" v-model="curriculumDialog.open" persistent scrollable max-width="720">')
         expect(source).toContain('data-testid="course-table-curriculum-dialog"')
         expect(source).toContain('v-for="topic in curriculumDialogTopics"')
         expect(source).toContain('v-for="unit in topic.units"')
@@ -5987,7 +6015,7 @@ describe('CourseTable', () => {
         expect(source).toContain("'course-table-entry-cell--interactive': true")
         expect(source).toContain("'course-table-entry-cell--absent': tableView === 'entries' && studentAttendanceState(student, courseDate) === false")
         expect(source).toContain('.course-table-entry-cell--absent {')
-        expect(source).toContain("v-if=\"tableView === 'entries' && studentAttendanceState(student, courseDate) !== null\"")
+        expect(source).toContain("v-if=\"attendanceVisible && tableView === 'entries' && studentAttendanceState(student, courseDate) !== null\"")
         expect(source).toContain('class="course-table-entry-cell-attendance-marker"')
         expect(source).toContain(":aria-label=\"studentAttendanceState(student, courseDate) ? 'Anwesend' : 'Abwesend'\"")
         expect(source).toContain('.course-table-entry-cell-attendance-marker {')

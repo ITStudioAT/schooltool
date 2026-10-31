@@ -20,7 +20,7 @@
         </v-card>
         <div class="students-action-bar d-flex align-center ga-2 mx-3 mt-2 flex-wrap">
             <v-btn
-                v-if="canEditAttendance && selectedCourseDateForCourse && !isDayOverviewMode && !show_bulk_entry"
+                v-if="attendanceVisible && canEditAttendance && selectedCourseDateForCourse && !isDayOverviewMode && !show_bulk_entry"
                 size="small"
                 class="students-attendance-check-btn"
                 :variant="'flat'"
@@ -171,7 +171,7 @@
                                     <div class="student-identity d-flex align-center ga-2">
                                         <div class="student-presence student-presence--left">
                                             <v-btn
-                                                v-if="canEditAttendance && selectedCourseDateForCourse"
+                                                v-if="attendanceVisible && canEditAttendance && selectedCourseDateForCourse"
                                                 :key="`presence-${student.id}-${isStudentPresentForSelectedDate(student.id) ? '1' : '0'}`"
                                                 size="x-small"
                                                 :color="studentAttendanceStateForSelectedDate(student.id) === null ? undefined : studentAttendanceStateForSelectedDate(student.id) ? 'success' : 'error'"
@@ -229,7 +229,7 @@
                                                     {{ copiedEmailId === student.id ? 'mdi-check' : 'mdi-content-copy' }}
                                                 </v-icon>
                                             </div>
-                                            <div class="student-meta-line text-caption" title="Anteil der anwesenden Termine mit erfasster Anwesenheit im gewählten Zeitraum.">
+                                            <div v-if="attendanceVisible" class="student-meta-line text-caption" title="Anteil der anwesenden Termine mit erfasster Anwesenheit im gewählten Zeitraum.">
                                                 Anwesenheit: {{ Number.isFinite(studentPresencePercentages[student.id]) ? `${studentPresencePercentages[student.id]} %` : '—' }}
                                             </div>
                                             <div
@@ -443,6 +443,9 @@ export default {
     },
 
     computed: {
+        attendanceVisible() {
+            return this.config?.user?.teaching_show_attendance !== false
+        },
         showCalculatedGrade() {
             if (!this.selected_course?.id) return false
             return (this.settings?.teaching_show_calculated_grade_by_course?.[this.selected_course.id]

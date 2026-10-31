@@ -8,6 +8,29 @@ import Overview from '@/pages/admin/teaching/overview/Overview.vue'
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
 
 describe('Teaching overview controls', () => {
+    it('hides attendance navigation and falls back to the entries table when the display is disabled', () => {
+        const component = Overview as any
+        const replace = vi.fn().mockResolvedValue(undefined)
+        const context = {
+            config: { user: { teaching_show_attendance: false } },
+            attendanceVisible: false, selected_course: { id: 1 },
+            show_students: false, show_attendance: true, show_table: false,
+            $route: { path: '/admin/teaching', query: { panel: 'attendance' } },
+            $router: { replace },
+        }
+
+        expect(component.computed.attendanceVisible.call(context)).toBe(false)
+        expect(component.computed.functionalPanels.call(context).some((panel: { id: string }) => panel.id === 'attendance')).toBe(false)
+        expect(component.computed.functionalPanelSelection.get.call(context)).toBe('table')
+        component.computed.functionalPanelSelection.set.call(context, 'attendance')
+        expect(context.show_table).toBe(true)
+        expect(context.show_attendance).toBe(false)
+        expect(replace).toHaveBeenCalledWith({ path: '/admin/teaching', query: { panel: 'table' } })
+
+        context.attendanceVisible = true
+        expect(component.computed.functionalPanels.call(context).some((panel: { id: string }) => panel.id === 'attendance')).toBe(true)
+    })
+
     it('places Auswertungen after works and renders the dedicated report when selected or restored', async () => {
         setActivePinia(createPinia())
         const courseStore = useCourseStore()
@@ -254,10 +277,11 @@ describe('Teaching overview controls', () => {
         expect(ctx.show_performances).toBe(false)
     })
 
-    it('moves the legacy table attendance view to the attendance panel', () => {
+    it.each([true, false])('restores the legacy attendance link according to display preference %s', (attendanceVisible) => {
         const routerReplace = vi.fn().mockResolvedValue(undefined)
         const ctx = {
             selectedCourseCurriculumId: null,
+            attendanceVisible,
             curriculumSelectionId: null,
             curriculumEditMode: false,
             show_students: true,
@@ -286,12 +310,12 @@ describe('Teaching overview controls', () => {
         })
 
         expect(ctx.show_students).toBe(false)
-        expect(ctx.show_table).toBe(false)
-        expect(ctx.show_attendance).toBe(true)
+        expect(ctx.show_table).toBe(!attendanceVisible)
+        expect(ctx.show_attendance).toBe(attendanceVisible)
         expect(ctx.show_performances).toBe(false)
         expect(routerReplace).toHaveBeenCalledWith({
             path: '/admin/teaching',
-            query: { course: '16', panel: 'attendance' },
+            query: { course: '16', panel: attendanceVisible ? 'attendance' : 'table' },
         })
     })
 

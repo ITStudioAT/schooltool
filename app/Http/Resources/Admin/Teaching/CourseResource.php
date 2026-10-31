@@ -28,6 +28,7 @@ class CourseResource extends JsonResource
         unset($data['user']);
 
         return array_merge($data, [
+            'curricula_enabled' => $this->resource->user?->teaching_curricula_enabled ?? true,
             'semester_count' => $this->resource->semesterCount($this->teacher_teaching_schema),
             'students' => $this->students ?? [],
             'students_deleted' => $this->students_deleted ?? [],

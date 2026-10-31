@@ -29,6 +29,8 @@ class PersonalTeachingBackupService
         'teaching_behaviour', 'teaching_behaviour_by_schoolyear',
         'teaching_notifications', 'teaching_notifications_by_schoolyear',
         'teaching_show_behaviour', 'teaching_grade_columns_by_schoolyear',
+        'teaching_curricula_enabled',
+        'teaching_show_attendance',
         'teaching_student_grade_columns_by_schoolyear',
     ];
 
@@ -109,7 +111,9 @@ class PersonalTeachingBackupService
             'version' => 1,
             'user_id' => (int) $user->id,
             'school_id' => (int) $user->school_id,
-            'settings' => (array) DB::table('users')->where('id', $user->id)->first(self::SETTINGS),
+            'settings' => (array) DB::table('users')->where('id', $user->id)->first(
+                array_values(array_intersect(self::SETTINGS, Schema::getColumnListing('users'))),
+            ),
             'tables' => $tables,
             'files' => $files,
             'identities' => $this->identities($user, $tables),
@@ -178,7 +182,9 @@ class PersonalTeachingBackupService
                         DB::table($table)->insert($row);
                     }
                 }
-                DB::table('users')->where('id', $lockedUser->id)->update($payload['settings']);
+                DB::table('users')->where('id', $lockedUser->id)->update(
+                    array_intersect_key($payload['settings'], array_flip(Schema::getColumnListing('users'))),
+                );
                 PersonalTeachingBackup::query()->whereKey($freshBackup->id)->update(['recovery_requested_at' => null]);
             });
         } catch (Throwable $exception) {
@@ -268,9 +274,10 @@ class PersonalTeachingBackupService
     private function validatePayload(User $user, array $payload, array $current): void
     {
         $this->sharedReferenceChecks = [];
+        $requiredSettings = array_diff(self::SETTINGS, ['teaching_curricula_enabled', 'teaching_show_attendance']);
         if (($payload['version'] ?? null) !== 1 || ($payload['user_id'] ?? null) !== (int) $user->id || ($payload['school_id'] ?? null) !== (int) $user->school_id
             || ! is_array($payload['tables'] ?? null) || array_keys($payload['tables']) !== array_keys($current)
-            || ! is_array($payload['settings'] ?? null) || array_diff(array_keys($payload['settings']), self::SETTINGS) !== [] || count($payload['settings']) !== count(self::SETTINGS)
+            || ! is_array($payload['settings'] ?? null) || array_diff(array_keys($payload['settings']), self::SETTINGS) !== [] || array_diff($requiredSettings, array_keys($payload['settings'])) !== []
             || ! is_array($payload['files'] ?? null)) {
             $this->invalid();
         }

@@ -5,6 +5,7 @@
 ### Arbeiten
 
 - Pausiert freigeben
+- Änderung einer Arbeit auf Bereitstellung statt E-Mail
 
 ### System
 

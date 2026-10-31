@@ -221,6 +221,8 @@ class User extends Authenticatable implements MustVerifyEmailContract
             'teaching_notifications' => 'array',
             'teaching_notifications_by_schoolyear' => 'array',
             'teaching_show_behaviour' => 'boolean',
+            'teaching_curricula_enabled' => 'boolean',
+            'teaching_show_attendance' => 'boolean',
             'teaching_grade_columns_by_schoolyear' => 'array',
             'teaching_student_grade_columns_by_schoolyear' => 'array',
             'restaurant_booking_defaults' => 'array',

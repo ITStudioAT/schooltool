@@ -1107,6 +1107,8 @@ class TeachingBackupService
                 (int) $backup->schoolyear_id
             ),
             'teaching_show_behaviour' => $backupUser['teaching_show_behaviour'] ?? true,
+            'teaching_curricula_enabled' => $backupUser['teaching_curricula_enabled'] ?? true,
+            'teaching_show_attendance' => $backupUser['teaching_show_attendance'] ?? true,
             'teaching_grade_columns_by_schoolyear' => $this->settingColumnValue(
                 'teaching_grade_columns_by_schoolyear',
                 $backupUser['teaching_grade_columns_by_schoolyear'] ?? null,
@@ -2186,6 +2188,8 @@ class TeachingBackupService
     {
         return match ($settingKey) {
             'basic_settings' => $this->restoreUserSettings($tables, $backup, $settingKey, [
+                'teaching_curricula_enabled',
+                'teaching_show_attendance',
                 'teaching_active_semester',
                 'teaching_count_for_semester_2_date',
                 'teaching_grade_columns_by_schoolyear',
@@ -2492,10 +2496,12 @@ class TeachingBackupService
                 'teaching_notifications_by_schoolyear',
                 'teaching_show_behaviour',
                 'teaching_grade_columns_by_schoolyear',
+                'teaching_curricula_enabled',
                 'teaching_student_grade_columns_by_schoolyear',
                 'created_at',
                 'updated_at',
             ])
+            ->when(Schema::hasColumn('users', 'teaching_show_attendance'), fn (Builder $query): Builder => $query->addSelect('teaching_show_attendance'))
             ->where('school_id', $schoolId)
             ->orderBy('id')
             ->get()
@@ -2999,12 +3005,16 @@ class TeachingBackupService
             ->map(fn (object $row): array => (array) $row);
 
         $basicCount = $this->countUsersWithAnyTeachingSetting($users, [
+            'teaching_curricula_enabled',
+            'teaching_show_attendance',
             'teaching_active_semester',
             'teaching_count_for_semester_2_date',
             'teaching_grade_columns_by_schoolyear',
             'teaching_student_grade_columns_by_schoolyear',
         ]);
         $currentBasicCount = $this->countUsersWithAnyTeachingSetting($currentUsers, [
+            'teaching_curricula_enabled',
+            'teaching_show_attendance',
             'teaching_active_semester',
             'teaching_count_for_semester_2_date',
             'teaching_grade_columns_by_schoolyear',
@@ -3090,12 +3100,16 @@ class TeachingBackupService
                     $basicCount,
                     $currentBasicCount,
                     $this->userSettingsComparableData($users, [
+                        'teaching_curricula_enabled',
+                        'teaching_show_attendance',
                         'teaching_active_semester',
                         'teaching_count_for_semester_2_date',
                         'teaching_grade_columns_by_schoolyear',
                         'teaching_student_grade_columns_by_schoolyear',
                     ]),
                     $this->userSettingsComparableData($currentUsers, [
+                        'teaching_curricula_enabled',
+                        'teaching_show_attendance',
                         'teaching_active_semester',
                         'teaching_count_for_semester_2_date',
                         'teaching_grade_columns_by_schoolyear',

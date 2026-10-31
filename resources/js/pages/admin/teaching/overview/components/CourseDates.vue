@@ -38,6 +38,7 @@
         <div
             v-if="selected_course && action != 'new_course_dates'"
             class="course-dates-panels"
+            :style="!curriculaEnabled ? { gridTemplateColumns: 'minmax(0, 1fr)' } : undefined"
             :class="[
                 semesterCount === 2 ? 'mt-0' : 'mt-4',
                 {
@@ -307,7 +308,7 @@
         </v-card>
 
         <div
-            v-if="selected_courseDate && selectedCurriculumItem && !isSelectedCurriculumItemLinked"
+            v-if="curriculaEnabled && selected_courseDate && selectedCurriculumItem && !isSelectedCurriculumItemLinked"
             class="course-date-curriculum-connector"
             @click="clearDateAndCurriculumSelection">
             <div
@@ -330,6 +331,7 @@
         </div>
 
         <v-card
+            v-if="curriculaEnabled"
             variant="outlined"
             class="course-curriculum-panel"
             data-testid="course-dates-curriculum-card">
@@ -443,7 +445,7 @@
         </v-card>
         </div>
 
-        <v-dialog v-model="curriculumAssignmentDialogOpen" persistent max-width="520">
+        <v-dialog v-if="curriculaEnabled" v-model="curriculumAssignmentDialogOpen" persistent max-width="520">
             <v-card>
                 <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
                     <v-icon size="20">mdi-book-open-variant</v-icon>
@@ -484,7 +486,7 @@
             </v-card>
         </v-dialog>
 
-        <v-dialog v-model="curriculumRemovalDialogOpen" persistent max-width="560">
+        <v-dialog v-if="curriculaEnabled" v-model="curriculumRemovalDialogOpen" persistent max-width="560">
             <v-card>
                 <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
                     <v-icon size="20" color="error">mdi-alert</v-icon>
@@ -847,6 +849,9 @@ export default {
     },
 
     computed: {
+        curriculaEnabled() {
+            return this.config?.user?.teaching_curricula_enabled !== false && this.selected_course?.curricula_enabled !== false
+        },
         ...mapWritableState(useAdminStore, ['action', 'config']),
         ...mapWritableState(useCourseStore, ['selected_course', 'show_dates', 'show_students', 'show_works']),
         ...mapWritableState(useCourseDateStore, ['courseDates', 'selected_courseDate']),
@@ -861,6 +866,7 @@ export default {
             return schemaId ? this.teachingStore?.schemaById(schemaId) : null
         },
         selectedCourseCurriculumId() {
+            if (this.curriculaEnabled === false) return null
             const rawCandidates = [
                 this.selected_course?.teaching_curriculum_id,
                 this.selected_course?.teaching_curriculum?.id,
@@ -877,6 +883,7 @@ export default {
             return null
         },
         selectedCourseCurriculumForContent() {
+            if (this.curriculaEnabled === false) return null
             if (
                 this.selectedCurriculumDetail
                 && Number(this.selectedCurriculumDetail.id) === Number(this.selectedCourseCurriculumId)
@@ -890,12 +897,14 @@ export default {
             return Number(this.selectedCurriculumDetailLoadingId) === Number(this.selectedCourseCurriculumId)
         },
         selectedCourseCurriculumTitle() {
+            if (this.curriculaEnabled === false) return ''
             const curriculum = this.selectedCourseCurriculumForContent || this.selected_course?.teaching_curriculum
             if (!curriculum?.id) return ''
 
             return curriculum.title || `Curriculum #${curriculum.id}`
         },
         selectedCourseCurriculumTopics() {
+            if (this.curriculaEnabled === false) return []
             const topics = Array.isArray(this.selectedCourseCurriculumForContent?.topics)
                 ? this.selectedCourseCurriculumForContent.topics
                 : []
@@ -2017,6 +2026,7 @@ export default {
             return `${visible} von ${total} Anhängen freigegeben`
         },
         courseDateAdoptedMaterials(courseDate) {
+            if (this.curriculaEnabled === false) return []
             return Array.isArray(courseDate?.adopted_materials) ? courseDate.adopted_materials : []
         },
         adoptedMaterialDisplayTitle(adopted) {

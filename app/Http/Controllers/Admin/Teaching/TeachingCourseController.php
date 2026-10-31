@@ -47,6 +47,7 @@ class TeachingCourseController extends Controller
         }
 
         $coursesQuery = TeachingCourse::with([
+            'user:id,teaching_curricula_enabled',
             'teachingEntryArea:id,name,school_id,schoolyear_id,user_id,semester_count',
             'teachingCourseWorks:id,teaching_course_id,is_group_work,date_for_all_groups,groups',
             'teachingCourseDates' => fn ($query) => $query
@@ -534,6 +535,10 @@ class TeachingCourseController extends Controller
             'teaching_show_student_last_login' => ['sometimes', 'boolean'],
         ]);
 
+        if (! empty($validated['teaching_curriculum_id'])) {
+            abort_unless($auth_user->teaching_curricula_enabled ?? true, 403, 'Curricula sind ausgeschaltet.');
+        }
+
         $sortedClasses = $validated['classes'];
         sort($sortedClasses);
 
@@ -604,7 +609,7 @@ class TeachingCourseController extends Controller
         Gate::authorize('view', $course);
 
         $course->load([
-            'user:id,first_name,last_name,short,email,teaching_behaviour_by_schoolyear,teaching_notifications_by_schoolyear,teaching_show_behaviour',
+            'user:id,first_name,last_name,short,email,teaching_behaviour_by_schoolyear,teaching_notifications_by_schoolyear,teaching_show_behaviour,teaching_curricula_enabled',
             'teachingCurriculum:id,school_id,schoolyear_id,user_id,title,description,semester_count',
             'teachingEntryArea:id,name,school_id,schoolyear_id,user_id,semester_count',
             'teachingEntryArea.entryDefinitions' => fn ($query) => $query
@@ -835,6 +840,10 @@ class TeachingCourseController extends Controller
         $curriculumId = array_key_exists('teaching_curriculum_id', $validated)
             ? $validated['teaching_curriculum_id']
             : $course->teaching_curriculum_id;
+
+        if ((int) $curriculumId !== (int) $course->teaching_curriculum_id) {
+            abort_unless(($auth_user->teaching_curricula_enabled ?? true) && ($courseActor->teaching_curricula_enabled ?? true), 403, 'Curricula sind ausgeschaltet.');
+        }
 
         DB::transaction(function () use (
             $course,
