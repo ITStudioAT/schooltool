@@ -37,7 +37,7 @@ class NumberSystemGameController extends Controller
             ->when($teacher->schoolyear_id, fn ($query) => $query->where('schoolyear_id', $teacher->schoolyear_id))
             ->orderBy('title')->get(['id', 'title']);
         $sessions = NumberSystemGameSession::query()->where('school_id', $teacher->school_id)->where('teacher_id', $teacher->id)
-            ->withCount('runs')->latest('id')->get();
+            ->with('course:id,title')->withCount('runs')->latest('id')->get();
 
         $probes = app(NumberSystemLocalProbe::class);
         $local = $probes->available($request);
@@ -68,7 +68,7 @@ class NumberSystemGameController extends Controller
     public function show(Request $request, NumberSystemGameSession $session): JsonResponse
     {
         $this->authorizeSession($session);
-        $session->load(['runs.members:id,first_name,last_name']);
+        $session->load(['course:id,title', 'runs.members:id,first_name,last_name']);
         if (Schema::hasTable('number_system_game_guests')) {
             $session->load('runs.guests');
         }
@@ -89,7 +89,7 @@ class NumberSystemGameController extends Controller
                 'with_help' => count(array_filter($history, fn (array $item): bool => $item['hints'] > 0))];
         });
 
-        return response()->json(['session' => $session->withoutRelations(), 'runs' => $runs, 'enrolled' => $enrolled,
+        return response()->json(['session' => $session->withoutRelations()->setRelation('course', $session->course), 'runs' => $runs, 'enrolled' => $enrolled,
             'clock' => $results->clock($session), 'ranking' => $results->ranking($session),
             'total' => $this->engine->count($session->planned_minutes),
             'invitation' => $session->status === 'ended' ? null : app(NumberSystemInvitation::class)->make($session->join_code)])->header('Cache-Control', 'private, no-store');
@@ -116,6 +116,16 @@ class NumberSystemGameController extends Controller
         $this->games->control($session, $data['action']);
 
         return $this->show($request, $session->fresh());
+    }
+
+    public function update(Request $request, NumberSystemGameSession $session): JsonResponse
+    {
+        $this->authorizeSession($session);
+        $data = $request->validate(['title' => ['required', 'string', 'max:120']]);
+        $session->update(['title' => $data['title']]);
+
+        return response()->json(['id' => $session->id, 'title' => $session->title])
+            ->header('Cache-Control', 'private, no-store');
     }
 
     public function remove(Request $request, NumberSystemGameSession $session): JsonResponse

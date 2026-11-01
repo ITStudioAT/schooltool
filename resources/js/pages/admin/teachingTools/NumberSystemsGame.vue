@@ -20,8 +20,8 @@
             <p v-if="!sessions.length" class="ns-muted" style="margin-top:12px">Noch keine Runde vorbereitet. Beginne mit „Neues Abenteuer“.</p>
             <ul class="ns-session-list">
                 <li v-for="session in sessions" :key="session.id" class="ns-session-row">
-                    <div><h3>{{ session.title }}</h3><p class="ns-small ns-muted">{{ session.planned_minutes }} Minuten geplant · {{ levels[session.difficulty] }} · {{ states[session.status] }} · {{ audiences[session.audience || 'course'] }}</p></div>
-                    <div class="ns-toolbar"><button class="ns-button ns-button-secondary" @click="open(session.id)">{{ session.status === 'ended' ? 'Fortschritt ansehen' : 'Runde öffnen / fortsetzen' }}</button><button class="ns-button ns-button-quiet" :disabled="busy || !['waiting', 'ended'].includes(session.status)" :aria-label="`Klassenrunde ${session.title} löschen`" @click="openDelete(session)">Runde löschen</button></div>
+                    <div><h3>{{ session.title }}</h3><p class="ns-small">{{ courseLabel(session) }}</p><p class="ns-small ns-muted">{{ session.planned_minutes }} Minuten geplant · {{ levels[session.difficulty] }} · {{ states[session.status] }} · {{ audiences[session.audience || 'course'] }}</p><p class="ns-small ns-muted">{{ modes[session.mode || 'solo'] }} · {{ timerLabel(session) }}{{ session.ranking_enabled ? ' · Reihung aktiviert' : '' }}</p></div>
+                    <div class="ns-toolbar"><button class="ns-button ns-button-quiet" :disabled="busy" :aria-label="`Bezeichnung von ${session.title} ändern`" @click="openRename(session)">Bezeichnung ändern</button><button class="ns-button ns-button-secondary" @click="open(session.id)">{{ session.status === 'ended' ? 'Fortschritt ansehen' : 'Runde öffnen / fortsetzen' }}</button><button class="ns-button ns-button-quiet" :disabled="busy || !['waiting', 'ended'].includes(session.status)" :aria-label="`Klassenrunde ${session.title} löschen`" @click="openDelete(session)">Runde löschen</button></div>
                 </li>
             </ul>
             <p v-if="sessions.length" class="ns-small ns-muted" style="margin-top:12px">Zum Löschen laufende oder pausierte Runden zuerst beenden.</p>
@@ -29,7 +29,7 @@
         <template v-else>
             <button class="ns-button ns-button-quiet" style="margin:20px 0" @click="closeMonitor">Zur Rundenübersicht</button>
             <section class="ns-panel ns-stack">
-                <div class="ns-toolbar"><div><h2>{{ selected.session.title }}</h2><p class="ns-muted">{{ states[selected.session.status] }} · {{ selected.session.planned_minutes }} Minuten geplant · {{ levels[selected.session.difficulty] }}</p></div></div>
+                <div class="ns-toolbar"><div><h2>{{ selected.session.title }}</h2><p>{{ courseLabel(selected.session) }}</p><p class="ns-muted">{{ states[selected.session.status] }} · {{ selected.session.planned_minutes }} Minuten geplant · {{ levels[selected.session.difficulty] }}</p><p class="ns-small ns-muted">{{ audiences[selected.session.audience || 'course'] }} · {{ modes[selected.session.mode || 'solo'] }} · {{ timerLabel(selected.session) }}{{ selected.session.ranking_enabled ? ' · Reihung aktiviert' : '' }}</p></div><button class="ns-button ns-button-quiet" :disabled="busy" @click="openRename(selected.session)">Bezeichnung ändern</button></div>
                 <NumberSystemClock :clock="selected.clock" />
                 <div v-if="selected.session.status !== 'ended'">
                     <p class="ns-small ns-muted">Rundencode für den Beitritt</p><p class="ns-code">{{ selected.session.join_code }}</p>
@@ -57,6 +57,14 @@
             </section>
             <NumberSystemRanking :ranking="selected.ranking" />
         </template>
+        <v-dialog :model-value="Boolean(renameTarget)" persistent max-width="540">
+            <v-card v-if="renameTarget" class="ns-dialog"><form @submit.prevent="rename">
+                <h2>Bezeichnung ändern</h2>
+                <label class="ns-field"><span>Bezeichnung</span><input v-model="renameTitle" required maxlength="120" autofocus /></label>
+                <p v-if="renameError" role="alert">{{ renameError }}</p>
+                <div class="ns-toolbar"><button type="button" class="ns-button ns-button-quiet" :disabled="busy" @click="renameTarget = null">Abbrechen</button><button class="ns-button" :disabled="busy || !renameTitle.trim()">{{ busy ? 'Wird gespeichert …' : 'Bezeichnung speichern' }}</button></div>
+            </form></v-card>
+        </v-dialog>
         <v-dialog v-model="createDialog" persistent max-width="660">
             <v-card class="ns-dialog"><form @submit.prevent="create">
                 <h2>Neues Abenteuer vorbereiten</h2>
@@ -91,7 +99,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import axios from 'axios'
-import { index, create as createSession, show, resultsPdf, control as controlSession, remove as removeSession } from '@/actions/App/Http/Controllers/Admin/NumberSystemGameController'
+import { index, create as createSession, show, resultsPdf, control as controlSession, update as updateSession, remove as removeSession } from '@/actions/App/Http/Controllers/Admin/NumberSystemGameController'
 import NumberSystemInvitation from '@/pages/components/numberSystems/NumberSystemInvitation.vue'
 import NumberSystemStartOptions from '@/pages/components/numberSystems/NumberSystemStartOptions.vue'
 import NumberSystemClock from '@/pages/components/numberSystems/NumberSystemClock.vue'
@@ -104,12 +112,14 @@ const chapters = ['Maschinenraum', 'Fehlerarchiv', 'Tresor', 'Funkzentrale']
 const levels = { 1: 'Leicht', 2: 'Mittel', 3: 'Anspruchsvoll' }
 const states = { waiting: 'Warteraum', running: 'Runde läuft', paused: 'Pausiert', ended: 'Beendet' }
 const audiences = { course: 'Nur Kurs', mixed: 'Kurs und Externe', external: 'Nur Externe' }
+const modes = { solo: 'Einzeln / gemeinsames Gerät', teams: 'Teams (2–4 Personen)' }
 const courses = ref([]), sessions = ref([]), selected = ref(null), available = ref(true), loading = ref(false), busy = ref(false), error = ref('')
 const createDialog = ref(false), endDialog = ref(false)
 const downloading = ref(false)
 const timingAvailable = ref(true)
 const externalAvailable = ref(false)
 const deleteTarget = ref(null)
+const renameTarget = ref(null), renameTitle = ref(''), renameError = ref('')
 const form = reactive({ title: 'Signal Null', audience: 'course', course_id: '', planned_minutes: 40, difficulty: 2, mode: 'solo', timer_mode: 'none', countdown_minutes: null, ranking_enabled: false })
 const router = useRouter()
 const localProbeAvailable = ref(false), probeDialog = ref(false)
@@ -120,6 +130,32 @@ const joinedCount = computed(() => (selected.value?.runs ?? []).reduce((sum, run
 const courseJoinedCount = computed(() => (selected.value?.runs ?? []).reduce((sum, run) => sum + (run.course_members ?? run.members.length), 0))
 const externalJoinedCount = computed(() => (selected.value?.runs ?? []).reduce((sum, run) => sum + (run.external_members ?? 0), 0))
 const failureMessage = failure => failure.response?.data?.message || Object.values(failure.response?.data?.errors ?? {}).flat()[0] || 'Die Verbindung ist unterbrochen. Bitte versuche es erneut.'
+function courseLabel(session) {
+    if (session.audience === 'external') { return 'Ohne Kurs · nur externe Teilnehmende' }
+    const course = session.course ?? courses.value.find(course => Number(course.id) === Number(session.teaching_course_id))
+    return course?.title ? `Kurs: ${course.title}` : 'Kurs nicht mehr verfügbar'
+}
+function timerLabel(session) {
+    if (session.timer_mode === 'countdown') { return session.countdown_seconds ? `Countdown: ${session.countdown_seconds / 60} Minuten` : 'Countdown' }
+    return session.timer_mode === 'elapsed' ? 'Stoppuhr' : 'Ohne Zeitmessung'
+}
+function openRename(session) {
+    renameTarget.value = session
+    renameTitle.value = session.title
+    renameError.value = ''
+}
+async function rename() {
+    if (busy.value || !renameTarget.value || !renameTitle.value.trim()) { return }
+    ++monitorGeneration
+    busy.value = true; renameError.value = ''
+    try {
+        const { data } = await axios.patch(updateSession.url(renameTarget.value.id), { title: renameTitle.value.trim() })
+        sessions.value = sessions.value.map(session => session.id === data.id ? { ...session, title: data.title } : session)
+        if (selected.value?.session.id === data.id) { selected.value.session.title = data.title }
+        renameTarget.value = null
+    } catch (failure) { renameError.value = failureMessage(failure) }
+    finally { busy.value = false }
+}
 async function load() {
     loading.value = true; error.value = ''
     try { const { data } = await axios.get(index.url()); courses.value = data.courses; sessions.value = data.sessions; available.value = data.available; timingAvailable.value = data.timing_available !== false; externalAvailable.value = data.external_available === true; localProbeAvailable.value = data.local_probe_available === true }
@@ -176,7 +212,7 @@ async function control(action) {
     try { const { data } = await axios.post(controlSession.url(selected.value.session.id), { action }); selected.value = data; endDialog.value = false; await load() }
     catch (failure) { error.value = failureMessage(failure) } finally { busy.value = false }
 }
-onMounted(() => { void load(); poll = setInterval(async () => { if (selected.value && !busy.value && !polling && !createDialog.value && !endDialog.value && !document.hidden) { polling = true; try { await open(selected.value.session.id, true) } finally { polling = false } } }, 4000) })
+onMounted(() => { void load(); poll = setInterval(async () => { if (selected.value && !busy.value && !polling && !createDialog.value && !endDialog.value && !renameTarget.value && !document.hidden) { polling = true; try { await open(selected.value.session.id, true) } finally { polling = false } } }, 4000) })
 onBeforeUnmount(() => { disposed = true; downloadController?.abort(); clearInterval(poll) })
 </script>
 <style scoped>

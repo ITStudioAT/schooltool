@@ -49,6 +49,49 @@ beforeEach(function () {
     $this->session = NumberSystemGameSession::factory()->create(['teaching_course_id' => $this->course->id, 'school_id' => $this->school->id, 'teacher_id' => $this->teacher->id]);
 });
 
+test('teachers rename rounds in every status without changing progress or settings', function (string $status) {
+    $this->session->update(['status' => $status]);
+    $run = NumberSystemGameRun::factory()->create(['session_id' => $this->session->id]);
+    $before = $this->session->fresh()->getAttributes();
+    $progress = $run->fresh()->getAttributes();
+
+    nsGameAs($this, $this->teacher)->patchJson('/api/admin/number-systems/sessions/'.$this->session->id, [
+        'title' => ' Neues Abenteuer – 3B ', 'status' => 'waiting', 'teaching_course_id' => null,
+    ])->assertOk()->assertJsonPath('title', 'Neues Abenteuer – 3B');
+
+    expect($this->session->fresh()->getAttributes())->toMatchArray([...$before, 'title' => 'Neues Abenteuer – 3B', 'updated_at' => $this->session->fresh()->getRawOriginal('updated_at')]);
+    expect($run->fresh()->getAttributes())->toBe($progress);
+})->with(['waiting', 'running', 'paused', 'ended']);
+
+test('round renaming rejects invalid titles without saving', function (mixed $title) {
+    $before = $this->session->fresh()->getAttributes();
+    nsGameAs($this, $this->teacher)->patchJson('/api/admin/number-systems/sessions/'.$this->session->id, ['title' => $title])
+        ->assertUnprocessable()->assertJsonValidationErrors('title');
+    expect($this->session->fresh()->getAttributes())->toBe($before);
+})->with(['empty' => [''], 'whitespace' => ['   '], 'too long' => [str_repeat('a', 121)], 'wrong type' => [[]]]);
+
+test('round renaming rejects guests students other teachers and other schools', function () {
+    $url = '/api/admin/number-systems/sessions/'.$this->session->id;
+    $title = $this->session->title;
+    $this->patchJson($url, ['title' => 'Fremder Titel'])->assertUnauthorized();
+    nsGameAs($this, $this->students[0])->patchJson($url, ['title' => 'Fremder Titel'])->assertForbidden();
+    $other = User::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->year->id, 'is_active' => true]);
+    $other->assignRole('teacher');
+    nsGameAs($this, $other)->patchJson($url, ['title' => 'Fremder Titel'])->assertNotFound();
+    $this->session->update(['school_id' => School::factory()->create()->id]);
+    nsGameAs($this, $this->teacher)->patchJson($url, ['title' => 'Fremder Titel'])->assertNotFound();
+    expect($this->session->fresh()->title)->toBe($title);
+});
+
+test('round overview and monitor include the course even outside the selected schoolyear', function () {
+    $this->course->update(['title' => 'DGB 3B Gruppe 2']);
+    $this->teacher->update(['schoolyear_id' => Schoolyear::factory()->create(['school_id' => $this->school->id])->id]);
+    $response = nsGameAs($this, $this->teacher)->getJson('/api/admin/number-systems')->assertOk();
+    $response->assertJsonCount(0, 'courses')->assertJsonPath('sessions.0.course.title', 'DGB 3B Gruppe 2');
+    nsGameAs($this, $this->teacher)->getJson('/api/admin/number-systems/sessions/'.$this->session->id)
+        ->assertOk()->assertJsonPath('session.course.title', 'DGB 3B Gruppe 2');
+});
+
 test('teachers download a real private PDF of an empty round without changing the round', function () {
     config(['laravel-pdf.driver' => 'dompdf']);
     $before = $this->session->fresh()->getAttributes();

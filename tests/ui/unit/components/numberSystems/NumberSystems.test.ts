@@ -7,7 +7,7 @@ import NumberSystemsGame from '@/pages/admin/teachingTools/NumberSystemsGame.vue
 import { useNumberSystemPlayer } from '@/pages/components/numberSystems/useNumberSystemPlayer'
 import { createMemoryHistory, createRouter } from 'vue-router'
 
-vi.mock('axios', () => ({ default: { get: vi.fn(), post: vi.fn(), delete: vi.fn() } }))
+vi.mock('axios', () => ({ default: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() } }))
 const wrappers = []
 const state = (changes = {}) => ({ id: 7, revision: 0, position: 0, total: 12, solved: false, completed: false,
     mission: { id: 'mission-a', fields: [] }, draft: {}, session: { status: 'running' }, ...changes })
@@ -162,6 +162,64 @@ describe('Number systems interaction and persistence', () => {
         expect(api.canPlay.value).toBe(false)
         expect(api.draft.value.answer).toBe('local')
     })
+})
+
+it.each(['running', 'ended'])('renames a %s round while keeping its course and settings visible', async status => {
+    const session = { id: 4, title: 'Alte Bezeichnung', status, planned_minutes: 40, difficulty: 2, course: { id: 8, title: 'DGB 3B Gruppe 2' }, mode: 'teams', timer_mode: 'countdown', countdown_seconds: 2400, audience: 'mixed' }
+    vi.mocked(axios.get).mockResolvedValue({ data: { available: true, courses: [], sessions: [session] } })
+    vi.mocked(axios.patch).mockResolvedValue({ data: { id: 4, title: 'Neue Bezeichnung' } })
+    const dialog = defineComponent({ props: ['modelValue'], setup(props, { slots }) { return () => props.modelValue ? h('div', { role: 'dialog' }, slots.default?.()) : null } })
+    const wrapper = mount(NumberSystemsGame, { global: { stubs: { 'v-dialog': dialog } } }); wrappers.push(wrapper)
+    await flushPromises()
+    expect(wrapper.get('.ns-session-row').text()).toContain('Kurs: DGB 3B Gruppe 2')
+    expect(wrapper.get('.ns-session-row').text()).toContain('Teams (2–4 Personen) · Countdown: 40 Minuten')
+    await wrapper.get('[aria-label="Bezeichnung von Alte Bezeichnung ändern"]').trigger('click')
+    await wrapper.get('[role="dialog"] input').setValue('Abgebrochen')
+    await wrapper.get('[role="dialog"] button[type="button"]').trigger('click')
+    expect(axios.patch).not.toHaveBeenCalled()
+    expect(wrapper.get('.ns-session-row').text()).toContain('Alte Bezeichnung')
+    await wrapper.get('[aria-label="Bezeichnung von Alte Bezeichnung ändern"]').trigger('click')
+    await wrapper.get('[role="dialog"] input').setValue('   ')
+    expect(wrapper.get('[role="dialog"] button:not([type="button"])').attributes('disabled')).toBeDefined()
+    await wrapper.get('[role="dialog"] input').setValue(' Neue Bezeichnung ')
+    await wrapper.get('[role="dialog"] form').trigger('submit'); await flushPromises()
+    expect(axios.patch).toHaveBeenCalledExactlyOnceWith('/api/admin/number-systems/sessions/4', { title: 'Neue Bezeichnung' })
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+    expect(wrapper.get('.ns-session-row').text()).toContain('Neue Bezeichnung').toContain('Kurs: DGB 3B Gruppe 2')
+    expect(wrapper.get('.ns-session-row').text()).not.toContain('Alte Bezeichnung')
+})
+
+it('keeps a failed rename editable and updates both monitor and overview after retrying', async () => {
+    const session = { id: 4, title: 'Bisheriger Titel', status: 'ended', course: { id: 8, title: 'DGB 3B' } }
+    vi.mocked(axios.get).mockImplementation(async url => ({ data: String(url).endsWith('/sessions/4') ? { session: { ...session }, runs: [], enrolled: 0 } : { available: true, courses: [], sessions: [{ ...session }] } }))
+    vi.mocked(axios.patch).mockRejectedValueOnce({ response: { data: { message: 'Speichern fehlgeschlagen' } } }).mockResolvedValue({ data: { id: 4, title: 'Neuer Titel' } })
+    const dialog = defineComponent({ props: ['modelValue'], setup(props, { slots }) { return () => props.modelValue ? h('div', { role: 'dialog' }, slots.default?.()) : null } })
+    const wrapper = mount(NumberSystemsGame, { global: { stubs: { 'v-dialog': dialog } } }); wrappers.push(wrapper)
+    await flushPromises()
+    const button = text => wrapper.findAll('button').find(item => item.text() === text)
+    await button('Fortschritt ansehen').trigger('click'); await flushPromises()
+    expect(wrapper.text()).toContain('Kurs: DGB 3B')
+    await button('Bezeichnung ändern').trigger('click')
+    await wrapper.get('[role="dialog"] input').setValue('Neuer Titel')
+    await wrapper.get('[role="dialog"] form').trigger('submit'); await flushPromises()
+    expect(wrapper.get('[role="dialog"] [role="alert"]').text()).toBe('Speichern fehlgeschlagen')
+    expect(wrapper.get('h2').text()).toBe('Bisheriger Titel')
+    expect(wrapper.get('[role="dialog"] input').element.value).toBe('Neuer Titel')
+    await wrapper.get('[role="dialog"] form').trigger('submit'); await flushPromises()
+    expect(wrapper.get('h2').text()).toBe('Neuer Titel')
+    await button('Zur Rundenübersicht').trigger('click')
+    expect(wrapper.get('.ns-session-row').text()).toContain('Neuer Titel')
+})
+
+it('identifies external rounds and missing courses without inventing a course', async () => {
+    vi.mocked(axios.get).mockResolvedValue({ data: { available: true, courses: [], sessions: [
+        { id: 4, title: 'Extern', audience: 'external', course: null },
+        { id: 5, title: 'Früherer Kurs', audience: 'course', course: null },
+    ] } })
+    const wrapper = mount(NumberSystemsGame, { global: { stubs: { 'v-dialog': true } } }); wrappers.push(wrapper)
+    await flushPromises()
+    expect(wrapper.findAll('.ns-session-row')[0].text()).toContain('Ohne Kurs · nur externe Teilnehmende')
+    expect(wrapper.findAll('.ns-session-row')[1].text()).toContain('Kurs nicht mehr verfügbar')
 })
 
 it('names the round and consequences before deletion and preserves the list when cancelled', async () => {
