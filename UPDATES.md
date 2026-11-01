@@ -1,5 +1,11 @@
 # UPDATES
 
+## 3.54.2
+
+### System
+
+- Sicherheitsupdates
+
 ## 3.54.1
 
 ### Arbeiten
