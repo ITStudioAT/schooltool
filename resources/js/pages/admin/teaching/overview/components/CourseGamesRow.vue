@@ -13,8 +13,11 @@
                             <p v-if="!sessions.length">Für diesen Kurs sind noch keine Spielrunden vorhanden.</p>
                             <ul v-else class="course-game-list">
                                 <li v-for="session in orderedSessions" :key="session.id">
-                                    <button type="button" class="course-game-link" @click="selectedSessionId = session.id">Signal Null · {{ session.title }}</button>
-                                    <p>{{ numberSystemSessionDates(session) }}</p>
+                                    <button type="button" class="course-game-card" @click="selectedSessionId = session.id">
+                                        <span class="course-game-type">Zahlensysteme</span>
+                                        <span class="course-game-title">{{ session.title }}</span>
+                                        <span class="course-game-time">{{ numberSystemSessionDates(session) }}</span>
+                                    </button>
                                     <p>{{ states[session.status] }} · {{ session.runs_count ?? 0 }} Spielstände</p>
                                 </li>
                             </ul>
@@ -30,10 +33,11 @@
             </v-dialog>
         </th>
         <td v-for="(courseDate, dateIndex) in dates" :key="courseDate.id || courseDate.date" class="course-games-cell">
-            <div v-for="session in sessionsForDate(courseDate, dateIndex)" :key="session.id">
-                <button type="button" class="course-game-link" :aria-label="`Ergebnisse von ${session.title} ansehen`" @click="showSession(session)">{{ session.title }}</button>
-                <p class="text-caption">{{ numberSystemSessionDates(session) }}</p>
-            </div>
+            <button v-for="session in sessionsForDate(courseDate, dateIndex)" :key="session.id" type="button" class="course-game-card" :aria-label="`Ergebnisse von ${session.title} ansehen`" @click="showSession(session)">
+                <span class="course-game-type">Zahlensysteme</span>
+                <span class="course-game-title">{{ session.title }}</span>
+                <span class="course-game-time">{{ numberSystemSessionDates(session) }}</span>
+            </button>
         </td>
     </tr>
 </template>
@@ -84,7 +88,12 @@ onBeforeUnmount(() => request?.abort())
 .course-games-label { position: sticky; left: 0; z-index: 2; }
 .course-game-link { display: block; color: #075985; text-align: left; text-decoration: underline; overflow-wrap: anywhere; cursor: pointer; }
 .course-game-link:focus-visible { outline: 2px solid #075985; outline-offset: 2px; }
-.course-games-cell > div + div { margin-top: 8px; }
+.course-game-card { display: flex; flex-direction: column; gap: 4px; width: max-content; min-width: 112px; box-sizing: border-box; padding: 5px 6px; border: 1px solid rgba(37, 99, 235, 0.3); border-radius: 7px; background: rgba(37, 99, 235, 0.12); box-shadow: 0 1px 3px rgba(15, 23, 42, 0.18); color: #1e3a8a; text-align: left; cursor: pointer; }
+.course-game-card + .course-game-card { margin-top: 8px; }
+.course-game-card:hover, .course-game-card:focus-visible { background: rgba(37, 99, 235, 0.2); outline: 2px solid #2563eb; outline-offset: 1px; }
+.course-game-type { font-size: 0.62rem; font-weight: 800; line-height: 1; }
+.course-game-title { max-width: 100px; font-size: 0.7rem; font-weight: 400; line-height: 1.25; overflow-wrap: anywhere; }
+.course-game-time { font-size: 0.55rem; font-weight: 400; line-height: 1.25; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .course-game-list { list-style: none; padding: 0; font-weight: 400; }
 .course-game-list li + li { margin-top: 16px; }
 </style>
