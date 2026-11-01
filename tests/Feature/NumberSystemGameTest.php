@@ -134,7 +134,7 @@ test('PDF snapshots preserve personal progress helpers and the configured final 
     $run->update(['history' => [['hints' => 1], ['hints' => 0]], 'position' => 2]);
     $this->session->update(['status' => $status, 'active_seconds' => 123]);
     $before = $run->fresh()->getAttributes();
-    $expectedRanking = app(NumberSystemGameResults::class)->ranking($this->session);
+    $expectedRanking = app(NumberSystemGameResults::class)->ranking($this->session, showParticipantNames: true);
 
     nsGameAs($this, $this->teacher)->get('/api/admin/number-systems/sessions/'.$this->session->id.'/results/pdf')->assertOk();
 
@@ -335,6 +335,19 @@ test('final ranking is round scoped puts progress before speed and gives ties th
     expect($ranking['entries'][0]['seconds'])->toBeNull()->and($ranking['entries'][1]['rank'])->toBe(1);
     $this->session->update(['ranking_enabled' => false]);
     expect($results->ranking($this->session))->toBeNull();
+});
+
+test('teacher final rankings identify course students and external guests by name', function () {
+    $games = app(NumberSystemGameService::class);
+    $this->students[0]->update(['first_name' => 'Anna', 'last_name' => 'Muster']);
+    $run = $games->join($this->students[0], $this->session->join_code, null, null);
+    $this->session->update(['audience' => 'mixed', 'ranking_enabled' => true]);
+    $this->postJson('/api/number-systems/join', ['code' => $this->session->join_code, 'display_name' => 'Gast Černý'])->assertOk();
+    $this->session->update(['status' => 'ended']);
+
+    $response = nsGameAs($this, $this->teacher)->getJson('/api/admin/number-systems/sessions/'.$this->session->id)->assertOk();
+    expect(array_column($response->json('ranking.entries'), 'label'))->toBe(['Anna Muster', 'Gast Černý']);
+    expect(app(NumberSystemGameResults::class)->ranking($this->session, $run->id)['entries'][0]['label'])->toBe('Spielweg 1');
 });
 
 test('connection signals identify each team member and recover without altering the saved run', function () {

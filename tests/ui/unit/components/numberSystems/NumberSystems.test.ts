@@ -165,9 +165,11 @@ describe('Number systems interaction and persistence', () => {
 })
 
 it.each([
-    { status: 'waiting', created_at: '2026-11-01T08:00:00Z', started_at: null, ended_at: null, expected: 'Noch nicht gestartet · Erstellt: 01.11.2026 um 09:00 Uhr' },
-    { status: 'running', started_at: '2026-07-01T22:30:00Z', ended_at: null, expected: 'Gestartet: 02.07.2026 um 00:30 Uhr' },
-    { status: 'ended', started_at: '2026-11-01T08:00:00Z', ended_at: '2026-11-01T08:40:00Z', expected: 'Gestartet: 01.11.2026 um 09:00 Uhr · Beendet: 01.11.2026 um 09:40 Uhr' },
+    { status: 'waiting', created_at: '2026-11-01T08:00:00Z', started_at: null, ended_at: null, expected: 'Vorbereitet: 01.11. 09:00' },
+    { status: 'running', started_at: '2026-07-01T22:30:00Z', ended_at: null, expected: '02.07. 00:30' },
+    { status: 'ended', started_at: '2026-10-23T09:41:00Z', ended_at: '2026-10-23T09:47:00Z', expected: '23.10. 11:41–11:47' },
+    { status: 'ended', started_at: '2026-07-01T21:30:00Z', ended_at: '2026-07-01T22:30:00Z', expected: '01.07. 23:30–02.07. 00:30' },
+    { status: 'ended', started_at: '2026-12-31T22:30:00Z', ended_at: '2026-12-31T23:30:00Z', expected: '31.12.2026 23:30–01.01.2027 00:30' },
 ])('shows actual round dates in Vienna time for $status', async sample => {
     vi.mocked(axios.get).mockResolvedValue({ data: { available: true, courses: [], sessions: [{ id: 4, title: 'Zeitangaben', ...sample }] } })
     const wrapper = mount(NumberSystemsGame, { global: { stubs: { 'v-dialog': true } } }); wrappers.push(wrapper)
@@ -180,7 +182,7 @@ it('opens a course result directly and shows its dates without loading all round
     const wrapper = mount(NumberSystemsGame, { props: { sessionId: 4 }, global: { stubs: { 'v-dialog': true } } }); wrappers.push(wrapper)
     await flushPromises()
     expect(axios.get).toHaveBeenCalledExactlyOnceWith('/api/admin/number-systems/sessions/4')
-    expect(wrapper.text()).toContain('Kursrunde').toContain('Gestartet: 01.11.2026 um 09:00 Uhr')
+    expect(wrapper.text()).toContain('Kursrunde').toContain('01.11. 09:00')
     expect(wrapper.text()).not.toContain('Neues Abenteuer')
 })
 

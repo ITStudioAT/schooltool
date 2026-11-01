@@ -95,7 +95,7 @@ class NumberSystemGameController extends Controller
         });
 
         return response()->json(['session' => $session->withoutRelations()->setRelation('course', $session->course), 'runs' => $runs, 'enrolled' => $enrolled,
-            'clock' => $results->clock($session), 'ranking' => $results->ranking($session),
+            'clock' => $results->clock($session), 'ranking' => $results->ranking($session, showParticipantNames: true),
             'total' => $this->engine->count($session->planned_minutes),
             'invitation' => $session->status === 'ended' ? null : app(NumberSystemInvitation::class)->make($session->join_code)])->header('Cache-Control', 'private, no-store');
     }

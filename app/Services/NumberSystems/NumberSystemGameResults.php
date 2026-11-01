@@ -2,8 +2,11 @@
 
 namespace App\Services\NumberSystems;
 
+use App\Models\NumberSystemGameGuest;
 use App\Models\NumberSystemGameRun;
 use App\Models\NumberSystemGameSession;
+use App\Models\User;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
 
 class NumberSystemGameResults
@@ -33,7 +36,7 @@ class NumberSystemGameResults
             'expired' => $mode === 'countdown' && $seconds >= $session->countdown_seconds];
     }
 
-    public function ranking(NumberSystemGameSession $session, ?int $ownRun = null): ?array
+    public function ranking(NumberSystemGameSession $session, ?int $ownRun = null, bool $showParticipantNames = false): ?array
     {
         if (! $session->ranking_enabled) {
             return null;
@@ -44,11 +47,29 @@ class NumberSystemGameResults
         if ($session->status !== 'ended') {
             return ['final' => false, 'rules' => $rules, 'entries' => []];
         }
-        $rows = $session->runs()->orderBy('id')->get()->map(fn (NumberSystemGameRun $run, int $index): array => [
-            'id' => $run->id, 'label' => $run->team_name ?: 'Spielweg '.($index + 1), 'own' => $run->id === $ownRun,
-            'completed' => $run->completed_at !== null, 'solved' => count($run->history ?? []), 'total' => count($run->puzzles),
-            'seconds' => $session->timer_mode === 'none' ? null : ($run->finished_seconds ?? $this->elapsed($session)),
-        ])->all();
+        $query = $session->runs()->orderBy('id');
+        if ($showParticipantNames) {
+            $query->with(['members:id,first_name,last_name', 'student:id,first_name,last_name']);
+            if (Schema::hasTable('number_system_game_guests')) {
+                $query->with('guests');
+            }
+        }
+        $rows = $query->get()->map(function (NumberSystemGameRun $run, int $index) use ($session, $ownRun, $showParticipantNames): array {
+            $label = $run->team_name;
+            if (! $label && $showParticipantNames) {
+                $label = $run->participants()->map(fn (User|NumberSystemGameGuest $member): string => trim($member->first_name.' '.$member->last_name))
+                    ->filter()->implode(', ');
+                if ($label === '') {
+                    $label = trim(($run->student?->first_name ?? '').' '.($run->student?->last_name ?? '')) ?: 'Name nicht mehr verfügbar';
+                }
+            }
+
+            return [
+                'id' => $run->id, 'label' => $label ?: 'Spielweg '.($index + 1), 'own' => $run->id === $ownRun,
+                'completed' => $run->completed_at !== null, 'solved' => count($run->history ?? []), 'total' => count($run->puzzles),
+                'seconds' => $session->timer_mode === 'none' ? null : ($run->finished_seconds ?? $this->elapsed($session)),
+            ];
+        })->all();
         usort($rows, fn (array $a, array $b): int => ($b['completed'] <=> $a['completed']) ?: ($b['solved'] <=> $a['solved']) ?: ($a['seconds'] <=> $b['seconds']));
         $previous = null;
         $rank = 0;
