@@ -1,13 +1,13 @@
 <template>
     <div class="ns-game">
-        <header class="ns-toolbar">
+        <header v-if="!sessionId" class="ns-toolbar">
             <div><h1>Signal Null</h1><p class="ns-muted" style="margin-top:8px">Das Zahlensystem-Abenteuer für deinen Kurs</p></div>
             <div class="ns-toolbar"><button v-if="localProbeAvailable" class="ns-button ns-button-secondary" @click="probeDialog = true">Lokal ausprobieren</button><button class="ns-button" :disabled="busy || !available || !timingAvailable || (!courses.length && !externalAvailable)" @click="createDialog = true">Neues Abenteuer</button></div>
         </header>
         <div v-if="error" class="ns-alert ns-alert-error" role="alert">{{ error }} <button class="ns-button ns-button-quiet" @click="load">Erneut laden</button></div>
         <p v-if="loading" role="status" style="margin-top:20px">Die Abenteuer werden geladen …</p>
         <div v-else-if="!available" class="ns-alert">Die Spieltabellen müssen noch lokal aktiviert werden.</div>
-        <template v-else-if="!selected">
+        <template v-else-if="!selected && !sessionId">
             <p v-if="!timingAvailable" class="ns-alert">Die lokale Datenbank-Erweiterung für neue Runden mit Zeitmessung und Reihung ist vorbereitet und muss noch freigegeben werden. Bestehende Runden und lokale Probeläufe bleiben verfügbar.</p>
             <section class="ns-briefing">
                 <h2>Ein Rechenzentrum ist verstummt.</h2>
@@ -20,16 +20,17 @@
             <p v-if="!sessions.length" class="ns-muted" style="margin-top:12px">Noch keine Runde vorbereitet. Beginne mit „Neues Abenteuer“.</p>
             <ul class="ns-session-list">
                 <li v-for="session in sessions" :key="session.id" class="ns-session-row">
-                    <div><h3>{{ session.title }}</h3><p class="ns-small">{{ courseLabel(session) }}</p><p class="ns-small ns-muted">{{ session.planned_minutes }} Minuten geplant · {{ levels[session.difficulty] }} · {{ states[session.status] }} · {{ audiences[session.audience || 'course'] }}</p><p class="ns-small ns-muted">{{ modes[session.mode || 'solo'] }} · {{ timerLabel(session) }}{{ session.ranking_enabled ? ' · Reihung aktiviert' : '' }}</p></div>
+                    <div><h3>{{ session.title }}</h3><p class="ns-small">{{ courseLabel(session) }}</p><p class="ns-small ns-muted">{{ numberSystemSessionDates(session) }}</p><p class="ns-small ns-muted">{{ session.planned_minutes }} Minuten geplant · {{ levels[session.difficulty] }} · {{ states[session.status] }} · {{ audiences[session.audience || 'course'] }}</p><p class="ns-small ns-muted">{{ modes[session.mode || 'solo'] }} · {{ timerLabel(session) }}{{ session.ranking_enabled ? ' · Reihung aktiviert' : '' }}</p></div>
                     <div class="ns-toolbar"><button class="ns-button ns-button-quiet" :disabled="busy" :aria-label="`Bezeichnung von ${session.title} ändern`" @click="openRename(session)">Bezeichnung ändern</button><button class="ns-button ns-button-secondary" @click="open(session.id)">{{ session.status === 'ended' ? 'Fortschritt ansehen' : 'Runde öffnen / fortsetzen' }}</button><button class="ns-button ns-button-quiet" :disabled="busy || !['waiting', 'ended'].includes(session.status)" :aria-label="`Klassenrunde ${session.title} löschen`" @click="openDelete(session)">Runde löschen</button></div>
                 </li>
             </ul>
             <p v-if="sessions.length" class="ns-small ns-muted" style="margin-top:12px">Zum Löschen laufende oder pausierte Runden zuerst beenden.</p>
         </template>
-        <template v-else>
-            <button class="ns-button ns-button-quiet" style="margin:20px 0" @click="closeMonitor">Zur Rundenübersicht</button>
+        <template v-else-if="selected">
+            <button v-if="!sessionId" class="ns-button ns-button-quiet" style="margin:20px 0" @click="closeMonitor">Zur Rundenübersicht</button>
             <section class="ns-panel ns-stack">
                 <div class="ns-toolbar"><div><h2>{{ selected.session.title }}</h2><p>{{ courseLabel(selected.session) }}</p><p class="ns-muted">{{ states[selected.session.status] }} · {{ selected.session.planned_minutes }} Minuten geplant · {{ levels[selected.session.difficulty] }}</p><p class="ns-small ns-muted">{{ audiences[selected.session.audience || 'course'] }} · {{ modes[selected.session.mode || 'solo'] }} · {{ timerLabel(selected.session) }}{{ selected.session.ranking_enabled ? ' · Reihung aktiviert' : '' }}</p></div><button class="ns-button ns-button-quiet" :disabled="busy" @click="openRename(selected.session)">Bezeichnung ändern</button></div>
+                <p class="ns-small ns-muted">{{ numberSystemSessionDates(selected.session) }}</p>
                 <NumberSystemClock :clock="selected.clock" />
                 <div v-if="selected.session.status !== 'ended'">
                     <p class="ns-small ns-muted">Rundencode für den Beitritt</p><p class="ns-code">{{ selected.session.join_code }}</p>
@@ -108,6 +109,8 @@ import NumberSystemPresence from '@/pages/components/numberSystems/NumberSystemP
 import { create as createLocalProbe } from '@/actions/App/Http/Controllers/Admin/NumberSystemLocalProbeController'
 import { useRouter } from 'vue-router'
 import '@/pages/components/numberSystems/game.css'
+import { numberSystemSessionDates } from '@/pages/components/numberSystems/sessionDates'
+const props = defineProps({ sessionId: { type: Number, default: null } })
 const chapters = ['Maschinenraum', 'Fehlerarchiv', 'Tresor', 'Funkzentrale']
 const levels = { 1: 'Leicht', 2: 'Mittel', 3: 'Anspruchsvoll' }
 const states = { waiting: 'Warteraum', running: 'Runde läuft', paused: 'Pausiert', ended: 'Beendet' }
@@ -158,6 +161,10 @@ async function rename() {
 }
 async function load() {
     loading.value = true; error.value = ''
+    if (props.sessionId) {
+        try { await open(props.sessionId) } finally { loading.value = false }
+        return
+    }
     try { const { data } = await axios.get(index.url()); courses.value = data.courses; sessions.value = data.sessions; available.value = data.available; timingAvailable.value = data.timing_available !== false; externalAvailable.value = data.external_available === true; localProbeAvailable.value = data.local_probe_available === true }
     catch (failure) { error.value = failureMessage(failure) } finally { loading.value = false }
 }

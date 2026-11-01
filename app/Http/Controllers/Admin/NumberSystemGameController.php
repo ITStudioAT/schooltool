@@ -33,10 +33,15 @@ class NumberSystemGameController extends Controller
         if (! Schema::hasTable('number_system_game_sessions')) {
             return response()->json(['available' => false, 'courses' => [], 'sessions' => [], 'message' => 'Die Spieltabellen sind noch nicht aktiviert.']);
         }
+        $courseId = $request->validate(['course_id' => ['sometimes', 'integer']])['course_id'] ?? null;
+        if ($courseId !== null) {
+            TeachingCourse::query()->where('school_id', $teacher->school_id)->where('user_id', $teacher->id)->findOrFail($courseId);
+        }
         $courses = TeachingCourse::query()->where('school_id', $teacher->school_id)->where('user_id', $teacher->id)
             ->when($teacher->schoolyear_id, fn ($query) => $query->where('schoolyear_id', $teacher->schoolyear_id))
             ->orderBy('title')->get(['id', 'title']);
         $sessions = NumberSystemGameSession::query()->where('school_id', $teacher->school_id)->where('teacher_id', $teacher->id)
+            ->when($courseId !== null, fn ($query) => $query->where('teaching_course_id', $courseId))
             ->with('course:id,title')->withCount('runs')->latest('id')->get();
 
         $probes = app(NumberSystemLocalProbe::class);

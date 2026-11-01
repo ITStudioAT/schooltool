@@ -343,6 +343,7 @@
                                     </v-tooltip>
                                 </td>
                             </tr>
+                            <CourseGamesRow v-if="tableView === 'entries'" :key="selected_course.id" :course="selected_course" :dates="sortedCourseDates" />
                             <tr
                                 v-if="tableView === 'entries' && curriculaEnabled"
                                 class="course-table-curriculum-row">
@@ -2615,6 +2616,7 @@ import { defineAsyncComponent } from 'vue'
 import { assessmentDeductionComment, assessmentWrongQuestions } from '@/helpers/assessmentDeductions'
 import { downloadEvaluation, update as updateCourseWork } from '@/actions/App/Http/Controllers/Admin/Teaching/CourseWorkController'
 import CourseStudentNotes from './CourseStudentNotes.vue'
+import CourseGamesRow from './CourseGamesRow.vue'
 import CourseStudentIndicators from './CourseStudentIndicators.vue'
 import axios from 'axios'
 import { mapWritableState } from 'pinia'
@@ -2671,7 +2673,7 @@ const courseContentBlockedTags = new Set([
 ])
 
 export default {
-    components: { ItsRichTextEditor, CourseStudentNotes, CourseStudentIndicators, CurriculumPdfPreview, WorkEvaluationImport, WorkImportActions, WorkExerciseExport, WorkStudentDeadline, WorkDropboxLink, WorkFolderStatus, WorkDeliveryStatus, WorkSimulationBadge, WorkFolderBrowser, WorkExerciseStatus, WorkContextCopy, WorkEvaluationPdf, WorkDispatchLog, WorkDispatchStatus, WorkCellStatus, WorkTimeInput },
+    components: { ItsRichTextEditor, CourseStudentNotes, CourseGamesRow, CourseStudentIndicators, CurriculumPdfPreview, WorkEvaluationImport, WorkImportActions, WorkExerciseExport, WorkStudentDeadline, WorkDropboxLink, WorkFolderStatus, WorkDeliveryStatus, WorkSimulationBadge, WorkFolderBrowser, WorkExerciseStatus, WorkContextCopy, WorkEvaluationPdf, WorkDispatchLog, WorkDispatchStatus, WorkCellStatus, WorkTimeInput },
 
     emits: ['update:activeSemester', 'manage-curriculum'],
 

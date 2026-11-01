@@ -164,6 +164,26 @@ describe('Number systems interaction and persistence', () => {
     })
 })
 
+it.each([
+    { status: 'waiting', created_at: '2026-11-01T08:00:00Z', started_at: null, ended_at: null, expected: 'Noch nicht gestartet · Erstellt: 01.11.2026 um 09:00 Uhr' },
+    { status: 'running', started_at: '2026-07-01T22:30:00Z', ended_at: null, expected: 'Gestartet: 02.07.2026 um 00:30 Uhr' },
+    { status: 'ended', started_at: '2026-11-01T08:00:00Z', ended_at: '2026-11-01T08:40:00Z', expected: 'Gestartet: 01.11.2026 um 09:00 Uhr · Beendet: 01.11.2026 um 09:40 Uhr' },
+])('shows actual round dates in Vienna time for $status', async sample => {
+    vi.mocked(axios.get).mockResolvedValue({ data: { available: true, courses: [], sessions: [{ id: 4, title: 'Zeitangaben', ...sample }] } })
+    const wrapper = mount(NumberSystemsGame, { global: { stubs: { 'v-dialog': true } } }); wrappers.push(wrapper)
+    await flushPromises()
+    expect(wrapper.get('.ns-session-row').text()).toContain(sample.expected)
+})
+
+it('opens a course result directly and shows its dates without loading all rounds', async () => {
+    vi.mocked(axios.get).mockResolvedValue({ data: { session: { id: 4, title: 'Kursrunde', status: 'ended', started_at: '2026-11-01T08:00:00Z' }, runs: [], enrolled: 0 } })
+    const wrapper = mount(NumberSystemsGame, { props: { sessionId: 4 }, global: { stubs: { 'v-dialog': true } } }); wrappers.push(wrapper)
+    await flushPromises()
+    expect(axios.get).toHaveBeenCalledExactlyOnceWith('/api/admin/number-systems/sessions/4')
+    expect(wrapper.text()).toContain('Kursrunde').toContain('Gestartet: 01.11.2026 um 09:00 Uhr')
+    expect(wrapper.text()).not.toContain('Neues Abenteuer')
+})
+
 it.each(['running', 'ended'])('renames a %s round while keeping its course and settings visible', async status => {
     const session = { id: 4, title: 'Alte Bezeichnung', status, planned_minutes: 40, difficulty: 2, course: { id: 8, title: 'DGB 3B Gruppe 2' }, mode: 'teams', timer_mode: 'countdown', countdown_seconds: 2400, audience: 'mixed' }
     vi.mocked(axios.get).mockResolvedValue({ data: { available: true, courses: [], sessions: [session] } })

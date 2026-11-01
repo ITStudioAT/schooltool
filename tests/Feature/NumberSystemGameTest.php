@@ -92,6 +92,24 @@ test('round overview and monitor include the course even outside the selected sc
         ->assertOk()->assertJsonPath('session.course.title', 'DGB 3B Gruppe 2');
 });
 
+test('course game listings return only the selected owned course with actual dates', function () {
+    $otherCourse = TeachingCourse::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->year->id, 'user_id' => $this->teacher->id]);
+    NumberSystemGameSession::factory()->create(['school_id' => $this->school->id, 'teacher_id' => $this->teacher->id, 'teaching_course_id' => $otherCourse->id]);
+    $this->session->update(['started_at' => '2026-11-01 09:00:00', 'ended_at' => '2026-11-01 09:40:00', 'status' => 'ended']);
+    $response = nsGameAs($this, $this->teacher)->getJson('/api/admin/number-systems?course_id='.$this->course->id)
+        ->assertOk()->assertJsonCount(1, 'sessions')->assertJsonPath('sessions.0.id', $this->session->id);
+    expect($response->json('sessions.0.started_at'))->not->toBeNull();
+    expect($response->json('sessions.0.ended_at'))->not->toBeNull();
+});
+
+test('course game listings reject another teachers course another school and invalid course IDs', function () {
+    $otherCourse = TeachingCourse::factory()->create(['school_id' => $this->school->id]);
+    nsGameAs($this, $this->teacher)->getJson('/api/admin/number-systems?course_id='.$otherCourse->id)->assertNotFound();
+    $otherCourse->update(['user_id' => $this->teacher->id, 'school_id' => School::factory()->create()->id]);
+    nsGameAs($this, $this->teacher)->getJson('/api/admin/number-systems?course_id='.$otherCourse->id)->assertNotFound();
+    nsGameAs($this, $this->teacher)->getJson('/api/admin/number-systems?course_id=invalid')->assertUnprocessable();
+});
+
 test('teachers download a real private PDF of an empty round without changing the round', function () {
     config(['laravel-pdf.driver' => 'dompdf']);
     $before = $this->session->fresh()->getAttributes();

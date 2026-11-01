@@ -118,6 +118,19 @@ describe('CourseTable manual work completion', () => {
         } finally { wrapper.unmount(); clearWorkDropboxStates(); vi.unstubAllGlobals() }
     })
 
+    it('places the games row between works and curriculum in the course table', async () => {
+        const { wrapper } = mountCompletionTable()
+        try {
+            await flushPromises()
+            const rows = wrapper.findAll('tbody > tr')
+            const games = rows.findIndex(row => row.classes().includes('course-games-row'))
+            const curriculum = rows.findIndex(row => row.classes().includes('course-table-curriculum-row'))
+            expect(games).toBeGreaterThan(0)
+            expect(curriculum).toBe(games + 1)
+            expect(rows[games - 1].text()).toContain('Arbeiten')
+        } finally { wrapper.unmount() }
+    })
+
     function mountCompletionTable() {
         const pinia = createTestingPinia({ createSpy: vi.fn })
         const date = { id: 1, date: '2026-10-12' }
