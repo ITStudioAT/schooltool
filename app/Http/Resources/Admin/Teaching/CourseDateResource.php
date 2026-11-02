@@ -62,6 +62,7 @@ class CourseDateResource extends JsonResource
             'id' => $this->id,
             'date' => $this->date?->format('Y-m-d'),
             'hours' => $this->hours,
+            'games' => $this->games ?? [],
             'cancelled_hours' => $this->resource->cancelledHours(),
             'content' => $this->content,
             'status' => $status,

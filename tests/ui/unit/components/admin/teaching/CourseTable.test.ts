@@ -119,7 +119,7 @@ describe('CourseTable manual work completion', () => {
     })
 
     it('places the games row between works and curriculum in the course table', async () => {
-        const { wrapper } = mountCompletionTable()
+        const { wrapper, courses, date } = mountCompletionTable()
         try {
             await flushPromises()
             const rows = wrapper.findAll('tbody > tr')
@@ -128,6 +128,9 @@ describe('CourseTable manual work completion', () => {
             expect(games).toBeGreaterThan(0)
             expect(curriculum).toBe(games + 1)
             expect(rows[games - 1].text()).toContain('Arbeiten')
+            wrapper.getComponent({ name: 'CourseGamesRow' }).vm.$emit('games-updated', { id: date.id, games: ['networks'] })
+            await flushPromises()
+            expect(courses.selected_course.course_dates[0]).toEqual({ ...date, games: ['networks'] })
         } finally { wrapper.unmount() }
     })
 

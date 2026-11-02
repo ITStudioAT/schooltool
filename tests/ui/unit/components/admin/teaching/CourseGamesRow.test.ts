@@ -4,9 +4,9 @@ import { flushPromises, mount } from '@vue/test-utils'
 import axios from 'axios'
 import CourseGamesRow from '@/pages/admin/teaching/overview/components/CourseGamesRow.vue'
 
-vi.mock('axios', () => ({ default: { get: vi.fn() } }))
+vi.mock('axios', () => ({ default: { get: vi.fn(), post: vi.fn() } }))
 vi.mock('@/pages/admin/teachingTools/NumberSystemsGame.vue', () => ({ __esModule: true, default: {
-    props: ['sessionId'], template: '<div data-test="game-result">Ergebnis {{ sessionId }}</div>',
+    props: ['sessionId', 'courseId', 'courseDateId'], template: '<div data-test="game-result">Ergebnis {{ sessionId }}<span v-if="courseId">Kurs {{ courseId }} Termin {{ courseDateId }}</span></div>',
 } }))
 const wrappers = []
 afterEach(() => { wrappers.splice(0).forEach(wrapper => wrapper.unmount()); vi.resetAllMocks() })
@@ -29,8 +29,8 @@ it('places course rounds on their Vienna start date once and opens the existing 
     expect(axios.get).toHaveBeenCalledExactlyOnceWith('/api/admin/number-systems?course_id=18', { signal: expect.any(AbortSignal) })
     const cells = wrapper.findAll('td')
     expect(cells[0].text()).toContain('Abendrunde').toContain('Zweite Runde').toContain('02.07. 00:30')
-    expect(cells[1].text()).toBe('')
-    expect(cells[2].text()).toBe('')
+    expect(cells[1].findAll('.course-game-card')).toHaveLength(0)
+    expect(cells[2].findAll('.course-game-card')).toHaveLength(0)
     expect(wrapper.text()).not.toContain('Fremder Kurs')
     await wrapper.get('[aria-label="Ergebnisse von Abendrunde ansehen"]').trigger('click'); await flushPromises()
     expect(wrapper.get('[data-test="game-result"]').text()).toBe('Ergebnis 4')
@@ -42,12 +42,55 @@ it('keeps rounds outside course dates and unstarted rounds accessible without in
         { id: 5, title: 'Vorbereitung', teaching_course_id: 18, created_at: '2026-07-01T08:00:00Z', status: 'waiting' },
     ] } })
     const wrapper = render(); await flushPromises()
-    expect(wrapper.findAll('td').every(cell => cell.text() === '')).toBe(true)
+    expect(wrapper.findAll('td .course-game-card')).toHaveLength(0)
     await wrapper.get('th > button').trigger('click')
     const list = wrapper.get('[role="dialog"]')
     expect(list.text()).toContain('Ferienrunde').toContain('01.08. 10:00')
     expect(list.text()).toContain('Vorbereitung').toContain('Vorbereitet: 01.07. 10:00')
     expect(list.findAll('li')[0].text()).toContain('Ferienrunde')
+})
+
+it('adds the selected game to the exact course date and reopens it with that context', async () => {
+    vi.mocked(axios.get).mockResolvedValue({ data: { sessions: [] } })
+    vi.mocked(axios.post).mockResolvedValue({ data: { id: 2, games: ['networks', 'number-systems'] } })
+    const wrapper = render(); await flushPromises()
+    await wrapper.findAll('.course-game-add')[1].trigger('click'); await vi.dynamicImportSettled(); await flushPromises()
+    expect(wrapper.get('[role="dialog"]').text()).toContain('DGB 3B').toContain('02.07.2026')
+    await wrapper.get('[aria-label="Zahlensysteme hinzufügen"]').trigger('click'); await flushPromises()
+    expect(axios.post).toHaveBeenCalledExactlyOnceWith('/api/admin/teaching/course_dates/2/games', { game: 'number-systems' })
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+    expect(wrapper.findAll('td')[0].findAll('.course-game-card')).toHaveLength(0)
+    expect(wrapper.findAll('td')[1].text()).toContain('Netzwerke').toContain('Zahlensysteme')
+    await wrapper.get('[aria-label="Zahlensysteme für 02.07.2026 öffnen"]').trigger('click'); await flushPromises()
+    expect(wrapper.get('[data-test="game-result"]').text()).toContain('Kurs 18 Termin 2')
+})
+
+it('keeps a failed selection open for retry and disables duplicate assignments', async () => {
+    vi.mocked(axios.get).mockResolvedValue({ data: { sessions: [] } })
+    vi.mocked(axios.post).mockRejectedValueOnce(new Error('offline')).mockResolvedValue({ data: { id: 1, games: ['networks'] } })
+    const wrapper = render(); await flushPromises()
+    await wrapper.findAll('.course-game-add')[0].trigger('click'); await vi.dynamicImportSettled(); await flushPromises()
+    await wrapper.get('[aria-label="Netzwerke hinzufügen"]').trigger('click'); await flushPromises()
+    expect(wrapper.get('[role="alert"]').text()).toContain('konnte nicht hinzugefügt werden')
+    expect(wrapper.findAll('td .course-game-card')).toHaveLength(0)
+    await wrapper.get('[aria-label="Netzwerke hinzufügen"]').trigger('click'); await flushPromises()
+    await wrapper.findAll('.course-game-add')[0].trigger('click'); await flushPromises()
+    expect(wrapper.get('[aria-label="Netzwerke hinzufügen"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[aria-label="Zahlensysteme hinzufügen"]').attributes('disabled')).toBeUndefined()
+    await wrapper.findAll('[role="dialog"] button').find(button => button.text() === 'Abbrechen').trigger('click')
+    expect(axios.post).toHaveBeenCalledTimes(2)
+})
+
+it('restores saved assignments and places unstarted dated rounds in the exact column', async () => {
+    vi.mocked(axios.get).mockResolvedValue({ data: { sessions: [
+        { id: 8, title: 'Geplante Runde', teaching_course_id: 18, teaching_course_date_id: 2, status: 'waiting' },
+    ] } })
+    const wrapper = render()
+    await wrapper.setProps({ dates: [{ id: 1, date: '2026-07-02', games: ['networks'] }, { id: 2, date: '2026-07-02', games: ['number-systems'] }] })
+    await flushPromises()
+    expect(wrapper.findAll('td')[0].text()).toContain('Netzwerke')
+    expect(wrapper.findAll('td')[0].text()).not.toContain('Geplante Runde')
+    expect(wrapper.findAll('td')[1].text()).toContain('Zahlensysteme').toContain('Geplante Runde')
 })
 
 it('discards a late response after switching courses and provides retry after a failed load', async () => {

@@ -15,11 +15,36 @@ use App\Services\TeachingCourseDateService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 
 class CourseDateController extends Controller
 {
+    public function addGame(Request $request, TeachingCourseDate $course_date): JsonResponse
+    {
+        $user = $this->userHasRole(['admin', 'teaching_admin', 'teacher']);
+        abort_unless($user && $course_date->teachingCourse, 403, 'Sie haben keine Berechtigung');
+        $this->authorizeTeachingCourseAccess($course_date->teachingCourse, $user);
+        $data = $request->validate(['game' => ['required', Rule::in(['number-systems', 'networks'])]]);
+        abort_unless(Schema::hasColumn('teaching_course_dates', 'games'), 503, 'Die Erweiterung für Spiele am Kurstermin muss noch aktiviert werden.');
+
+        $games = DB::transaction(function () use ($course_date, $data): array {
+            $date = TeachingCourseDate::query()->lockForUpdate()->findOrFail($course_date->id);
+            $games = $date->games ?? [];
+            if (! in_array($data['game'], $games, true)) {
+                $games[] = $data['game'];
+                $date->games = $games;
+                $date->save();
+            }
+
+            return $games;
+        }, 3);
+
+        return response()->json(['id' => $course_date->id, 'games' => $games]);
+    }
+
     public function index(Request $request)
     {
         if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {

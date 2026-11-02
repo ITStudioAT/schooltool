@@ -5,6 +5,7 @@
 ### Spiele
 
 - Bessere Übersicht und Umbenennen
+- Spiel hinzufügen im Kurs
 
 ## 3.54.2
 

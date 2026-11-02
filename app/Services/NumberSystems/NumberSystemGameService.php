@@ -24,6 +24,9 @@ class NumberSystemGameService
             abort_unless((int) $course->user_id === (int) $teacher->id && (int) $course->school_id === (int) $teacher->school_id, 404);
         }
         $this->engine->count((int) $data['planned_minutes']);
+        if (isset($data['course_date_id'])) {
+            abort_unless($course && $course->teachingCourseDates()->whereKey($data['course_date_id'])->exists(), 404);
+        }
 
         return NumberSystemGameSession::query()->create([
             'school_id' => $teacher->school_id, 'teacher_id' => $teacher->id, 'teaching_course_id' => $audience === 'external' ? null : $course->id,
@@ -33,6 +36,7 @@ class NumberSystemGameService
             'timer_mode' => $data['timer_mode'] ?? 'none', 'ranking_enabled' => $data['ranking_enabled'] ?? false,
             'countdown_seconds' => ($data['timer_mode'] ?? 'none') === 'countdown' ? 60 * ($data['countdown_minutes'] ?? $data['planned_minutes']) : null,
             ...(array_key_exists('audience', $data) ? ['audience' => $audience] : []),
+            ...(isset($data['course_date_id']) ? ['teaching_course_date_id' => $data['course_date_id']] : []),
         ]);
     }
 

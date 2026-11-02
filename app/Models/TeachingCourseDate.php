@@ -26,6 +26,7 @@ class TeachingCourseDate extends Model
     protected $casts = [
         'date' => 'date',
         'hours' => 'array',
+        'games' => 'array',
         'status' => 'array',
         'attendance' => 'array',
         'attendance_checked' => 'boolean',

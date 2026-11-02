@@ -343,7 +343,7 @@
                                     </v-tooltip>
                                 </td>
                             </tr>
-                            <CourseGamesRow v-if="tableView === 'entries'" :key="selected_course.id" :course="selected_course" :dates="sortedCourseDates" />
+                            <CourseGamesRow v-if="tableView === 'entries'" :key="selected_course.id" :course="selected_course" :dates="sortedCourseDates" @games-updated="applyUpdatedCourseDate($event, true)" />
                             <tr
                                 v-if="tableView === 'entries' && curriculaEnabled"
                                 class="course-table-curriculum-row">

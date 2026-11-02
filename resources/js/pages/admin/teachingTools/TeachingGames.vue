@@ -11,29 +11,32 @@
         <template v-else>
             <header class="teaching-games__heading">
                 <h1>Spiele</h1>
-                <p>Wähle ein Spiel aus.</p>
+                <p>{{ selection ? 'Wähle ein Spiel für diesen Kurstermin aus.' : 'Wähle ein Spiel aus.' }}</p>
             </header>
             <ul class="teaching-games__grid" aria-label="Verfügbare Spiele">
                 <li>
-                    <RouterLink to="/admin/teaching-tools/games/number-systems" class="game-tile"
-                        aria-label="Zahlensysteme öffnen">
+                    <component :is="selection ? 'button' : RouterLink" :to="selection ? undefined : '/admin/teaching-tools/games/number-systems'" class="game-tile"
+                        :type="selection ? 'button' : undefined" :disabled="selection && (busy || assigned.includes('number-systems'))"
+                        :aria-label="selection ? 'Zahlensysteme hinzufügen' : 'Zahlensysteme öffnen'" @click="selection && emit('select', 'number-systems')">
                         <div class="game-tile__board" aria-hidden="true">
                             <span>2</span><span>01</span><span>10</span><span>16</span>
                         </div>
                         <div class="game-tile__caption">
                             <h2>Zahlen<wbr>systeme</h2>
+                            <span v-if="selection && assigned.includes('number-systems')">Hinzugefügt</span>
                         </div>
-                    </RouterLink>
+                    </component>
                 </li>
                 <li>
-                    <RouterLink to="/admin/teaching-tools/games/networks" class="game-tile"
-                        aria-label="Netzwerke öffnen">
+                    <component :is="selection ? 'button' : RouterLink" :to="selection ? undefined : '/admin/teaching-tools/games/networks'" class="game-tile"
+                        :type="selection ? 'button' : undefined" :disabled="selection && (busy || assigned.includes('networks'))"
+                        :aria-label="selection ? 'Netzwerke hinzufügen' : 'Netzwerke öffnen'" @click="selection && emit('select', 'networks')">
                         <svg class="game-tile__network" viewBox="0 0 60 44" aria-hidden="true">
                             <path d="M 5 38 V 5 M 5 22 H 57 M 5 22 C 15 22 17 6 25 6 S 40 37 48 28 S 52 15 57 15" />
                             <circle cx="25" cy="6" r="3" /><circle cx="48" cy="28" r="3" />
                         </svg>
-                        <div class="game-tile__caption"><h2>Netzwerke</h2></div>
-                    </RouterLink>
+                        <div class="game-tile__caption"><h2>Netzwerke</h2><span v-if="selection && assigned.includes('networks')">Hinzugefügt</span></div>
+                    </component>
                 </li>
             </ul>
         </template>
@@ -45,7 +48,13 @@ import { RouterLink } from 'vue-router'
 import NumberSystemsGame from './NumberSystemsGame.vue'
 import NetworksGame from './NetworksGame.vue'
 
-defineProps({ game: { type: String, default: null } })
+defineProps({
+    game: { type: String, default: null },
+    selection: { type: Boolean, default: false },
+    busy: { type: Boolean, default: false },
+    assigned: { type: Array, default: () => [] },
+})
+const emit = defineEmits(['select'])
 </script>
 
 <style scoped>
@@ -90,6 +99,8 @@ defineProps({ game: { type: String, default: null } })
     border-color: var(--game-gold);
     box-shadow: inset 0 0 0 2px var(--game-night), inset 0 0 0 3px var(--game-line), 0 3px 9px rgb(23 28 40 / .2);
 }
+.game-tile:disabled { opacity: .6; cursor: default; }
+.game-tile__caption span { display: block; margin-top: 4px; font-size: .6rem; text-align: center; }
 
 .game-tile:focus-visible, .teaching-games__back:focus-visible {
     outline: 3px solid #ad7c1e;

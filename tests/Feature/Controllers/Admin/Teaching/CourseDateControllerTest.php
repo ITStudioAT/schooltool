@@ -19,6 +19,35 @@ use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
 
+it('adds games once to the selected date and preserves its other data and dates', function (): void {
+    $date = TeachingCourseDate::create(['teaching_course_id' => $this->course->id, 'date' => '2026-11-02', 'hours' => [3], 'content' => 'Vorhandener Inhalt', 'status' => ['pruefung'], 'attendance' => ['s_1' => false]]);
+    $other = TeachingCourseDate::create(['teaching_course_id' => $this->course->id, 'date' => '2026-11-03', 'hours' => [3]]);
+    $before = $date->fresh()->getAttributes();
+    $this->actingAs($this->admin, 'sanctum');
+    $url = "/api/admin/teaching/course_dates/{$date->id}/games";
+
+    $this->postJson($url, ['game' => 'networks'])->assertOk()->assertJsonPath('games', ['networks']);
+    $this->postJson($url, ['game' => 'number-systems'])->assertOk()->assertJsonPath('games', ['networks', 'number-systems']);
+    $this->postJson($url, ['game' => 'networks'])->assertOk()->assertJsonPath('games', ['networks', 'number-systems']);
+
+    expect($date->fresh()->games)->toBe(['networks', 'number-systems']);
+    expect($date->fresh()->getAttributes())->toMatchArray(collect($before)->except(['updated_at', 'games'])->all());
+    expect($other->fresh()->games)->toBeNull();
+    $this->getJson("/api/admin/teaching/course_dates/{$date->id}")->assertOk()->assertJsonPath('games', ['networks', 'number-systems']);
+});
+
+it('rejects unknown games and users without access to the course date', function (): void {
+    $date = TeachingCourseDate::create(['teaching_course_id' => $this->course->id, 'date' => '2026-11-02', 'hours' => [3]]);
+    $url = "/api/admin/teaching/course_dates/{$date->id}/games";
+    $this->actingAs($this->admin, 'sanctum')->postJson($url, ['game' => 'unknown'])->assertUnprocessable();
+    $this->postJson($url, [])->assertUnprocessable();
+    $this->actingAs($this->regularUser, 'sanctum')->postJson($url, ['game' => 'networks'])->assertForbidden();
+    $this->actingAs($this->teacher, 'sanctum')->postJson($url, ['game' => 'networks'])->assertForbidden();
+    $this->admin->update(['school_id' => $this->otherSchool->id]);
+    $this->actingAs($this->admin->fresh(), 'sanctum')->postJson($url, ['game' => 'networks'])->assertForbidden();
+    expect($date->fresh()->games)->toBeNull();
+});
+
 function curriculumVisibilityFixture(object $test): array
 {
     Storage::fake('local');

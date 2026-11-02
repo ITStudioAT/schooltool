@@ -7,6 +7,7 @@ use App\Models\School;
 use App\Models\SchoolTool;
 use App\Models\Schoolyear;
 use App\Models\TeachingCourse;
+use App\Models\TeachingCourseDate;
 use App\Models\TeachingCourseStudent;
 use App\Models\TeachingCourseStudentEntry;
 use App\Models\User;
@@ -25,6 +26,19 @@ require_once dirname(__DIR__).'/Support/MultipleChoiceTestDatabase.php';
 requireMultipleChoiceTestDatabase();
 
 uses(RefreshDatabase::class);
+
+test('new course rounds retain their selected lesson without changing existing rounds', function () {
+    $date = TeachingCourseDate::create(['teaching_course_id' => $this->course->id, 'date' => '2026-11-02', 'hours' => [3]]);
+    $before = $this->session->fresh()->getAttributes();
+    $data = ['title' => 'Terminrunde', 'course_id' => $this->course->id, 'course_date_id' => $date->id, 'planned_minutes' => 40, 'difficulty' => 2, 'mode' => 'solo'];
+    $response = nsGameAs($this, $this->teacher)->postJson('/api/admin/number-systems/sessions', $data)
+        ->assertCreated()->assertJsonPath('session.teaching_course_date_id', $date->id)->assertJsonPath('session.started_at', null);
+    $this->assertDatabaseHas('number_system_game_sessions', ['id' => $response->json('session.id'), 'teaching_course_date_id' => $date->id, 'teaching_course_id' => $this->course->id]);
+    expect($this->session->fresh()->getAttributes())->toBe($before);
+    $foreign = TeachingCourseDate::create(['teaching_course_id' => TeachingCourse::factory()->create()->id, 'date' => '2026-11-02', 'hours' => [3]]);
+    $this->postJson('/api/admin/number-systems/sessions', [...$data, 'course_date_id' => $foreign->id])->assertNotFound();
+    $this->postJson('/api/admin/number-systems/sessions', [...$data, 'audience' => 'external'])->assertUnprocessable();
+});
 
 beforeEach(function () {
     config(['app.key' => 'base64:'.base64_encode(str_repeat('n', 32)), 'schooltool.preview.instance' => false]);

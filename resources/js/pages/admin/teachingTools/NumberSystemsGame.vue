@@ -71,11 +71,11 @@
                 <h2>Neues Abenteuer vorbereiten</h2>
                 <p>Die Runde beginnt im Warteraum. Beitreten und gemeinsames Starten sind getrennte Schritte.</p>
                 <label class="ns-field"><span>Bezeichnung</span><input v-model="form.title" required maxlength="120" autofocus /></label>
-                <label class="ns-field"><span>Teilnahme</span><select v-model="form.audience"><option value="course">Nur Kurs</option><option v-if="externalAvailable" value="mixed">Kurs und Externe</option><option v-if="externalAvailable" value="external">Nur Externe</option></select></label>
+                <label class="ns-field"><span>Teilnahme</span><select v-model="form.audience"><option value="course">Nur Kurs</option><option v-if="externalAvailable" value="mixed">Kurs und Externe</option><option v-if="externalAvailable && !courseId" value="external">Nur Externe</option></select></label>
                 <p v-if="!externalAvailable" class="ns-small">Die Erweiterung für externe Teilnehmende muss noch aktiviert werden.</p>
                 <p v-if="form.audience !== 'course'" class="ns-small">Externe benötigen kein Konto. Ihr Spielstand bleibt in derselben Browser-Sitzung verfügbar. Jede Person nutzt einen eigenen Browser oder ein eigenes Gerät.</p>
                 <div class="ns-form">
-                    <label v-if="form.audience !== 'external'" class="ns-field"><span>Kurs</span><select v-model="form.course_id" required><option value="">Kurs auswählen</option><option v-for="course in courses" :key="course.id" :value="course.id">{{ course.title }}</option></select></label>
+                    <label v-if="form.audience !== 'external'" class="ns-field"><span>Kurs</span><select v-model="form.course_id" :disabled="Boolean(courseId)" required><option value="">Kurs auswählen</option><option v-for="course in courses" :key="course.id" :value="course.id">{{ course.title }}</option></select></label>
                     <label class="ns-field"><span>Geplante Spielzeit</span><select v-model.number="form.planned_minutes"><option v-for="minutes in [30,40,60,75]" :key="minutes" :value="minutes">{{ minutes }} Minuten</option></select></label>
                     <label class="ns-field"><span>Schwierigkeit</span><select v-model.number="form.difficulty"><option v-for="(label, value) in levels" :key="value" :value="Number(value)">{{ label }}</option></select></label>
                     <label class="ns-field"><span>Zusammenarbeit</span><select v-model="form.mode"><option value="solo">Einzeln / gemeinsames Gerät</option><option value="teams">Teams, getrennte Hinweise (2–4)</option></select></label>
@@ -110,7 +110,11 @@ import { create as createLocalProbe } from '@/actions/App/Http/Controllers/Admin
 import { useRouter } from 'vue-router'
 import '@/pages/components/numberSystems/game.css'
 import { numberSystemSessionDates } from '@/pages/components/numberSystems/sessionDates'
-const props = defineProps({ sessionId: { type: Number, default: null } })
+const props = defineProps({
+    sessionId: { type: Number, default: null },
+    courseId: { type: Number, default: null },
+    courseDateId: { type: Number, default: null },
+})
 const chapters = ['Maschinenraum', 'Fehlerarchiv', 'Tresor', 'Funkzentrale']
 const levels = { 1: 'Leicht', 2: 'Mittel', 3: 'Anspruchsvoll' }
 const states = { waiting: 'Warteraum', running: 'Runde läuft', paused: 'Pausiert', ended: 'Beendet' }
@@ -123,7 +127,7 @@ const timingAvailable = ref(true)
 const externalAvailable = ref(false)
 const deleteTarget = ref(null)
 const renameTarget = ref(null), renameTitle = ref(''), renameError = ref('')
-const form = reactive({ title: 'Signal Null', audience: 'course', course_id: '', planned_minutes: 40, difficulty: 2, mode: 'solo', timer_mode: 'none', countdown_minutes: null, ranking_enabled: false })
+const form = reactive({ title: 'Signal Null', audience: 'course', course_id: props.courseId ?? '', planned_minutes: 40, difficulty: 2, mode: 'solo', timer_mode: 'none', countdown_minutes: null, ranking_enabled: false })
 const router = useRouter()
 const localProbeAvailable = ref(false), probeDialog = ref(false)
 const probeForm = reactive({ title: 'Mein Abenteuer', planned_minutes: 30, difficulty: 2, timer_mode: 'none', countdown_minutes: null })
@@ -165,7 +169,7 @@ async function load() {
         try { await open(props.sessionId) } finally { loading.value = false }
         return
     }
-    try { const { data } = await axios.get(index.url()); courses.value = data.courses; sessions.value = data.sessions; available.value = data.available; timingAvailable.value = data.timing_available !== false; externalAvailable.value = data.external_available === true; localProbeAvailable.value = data.local_probe_available === true }
+    try { const { data } = await axios.get(index.url(props.courseId ? { query: { course_id: props.courseId } } : undefined)); courses.value = data.courses; sessions.value = props.courseDateId ? data.sessions.filter(session => Number(session.teaching_course_date_id) === props.courseDateId) : data.sessions; available.value = data.available; timingAvailable.value = data.timing_available !== false; externalAvailable.value = data.external_available === true; localProbeAvailable.value = data.local_probe_available === true && !props.courseId }
     catch (failure) { error.value = failureMessage(failure) } finally { loading.value = false }
 }
 function closeMonitor() { ++monitorGeneration; downloadController?.abort(); selected.value = null }
@@ -196,7 +200,7 @@ async function open(id, background = false) {
 async function create() {
     if (busy.value) { return }
     busy.value = true; error.value = ''
-    try { const { data } = await axios.post(createSession.url(), { ...form, title: form.title.trim() }); createDialog.value = false; await load(); await open(data.session.id) }
+    try { const { data } = await axios.post(createSession.url(), { ...form, title: form.title.trim(), ...(props.courseId ? { course_id: props.courseId } : {}), ...(props.courseDateId ? { course_date_id: props.courseDateId } : {}) }); createDialog.value = false; await load(); await open(data.session.id) }
     catch (failure) { error.value = failureMessage(failure) } finally { busy.value = false }
 }
 function openDelete(session) { error.value = ''; deleteTarget.value = session }

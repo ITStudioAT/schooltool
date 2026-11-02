@@ -9,6 +9,28 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 
 vi.mock('axios', () => ({ default: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() } }))
 const wrappers = []
+
+it('keeps course and lesson fixed when preparing an adventure from the course table', async () => {
+    const sessions = [
+        { id: 4, title: 'Passende Terminrunde', teaching_course_date_id: 2, status: 'waiting' },
+        { id: 5, title: 'Andere Terminrunde', teaching_course_date_id: 3, status: 'waiting' },
+    ]
+    vi.mocked(axios.get).mockResolvedValue({ data: { available: true, external_available: true, courses: [{ id: 18, title: 'DGB 3B' }], sessions } })
+    vi.mocked(axios.post).mockRejectedValue({ response: { data: { message: 'Bitte erneut versuchen' } } })
+    const dialog = defineComponent({ props: ['modelValue'], setup(props, { slots }) { return () => props.modelValue ? h('div', { role: 'dialog' }, slots.default?.()) : null } })
+    const wrapper = mount(NumberSystemsGame, { props: { courseId: 18, courseDateId: 2 }, global: { stubs: { 'v-dialog': dialog } } })
+    wrappers.push(wrapper); await flushPromises()
+    expect(axios.get).toHaveBeenCalledExactlyOnceWith('/api/admin/number-systems?course_id=18')
+    expect(wrapper.text()).toContain('Passende Terminrunde')
+    expect(wrapper.text()).not.toContain('Andere Terminrunde')
+    await wrapper.findAll('button').find(button => button.text() === 'Neues Abenteuer').trigger('click')
+    const courseSelect = wrapper.get('[role="dialog"] select[disabled]')
+    expect(courseSelect.element.value).toBe('18')
+    expect(wrapper.find('[role="dialog"] option[value="external"]').exists()).toBe(false)
+    await wrapper.get('[role="dialog"] form').trigger('submit'); await flushPromises()
+    expect(axios.post).toHaveBeenCalledExactlyOnceWith('/api/admin/number-systems/sessions', expect.objectContaining({ course_id: 18, course_date_id: 2, audience: 'course' }))
+    expect(wrapper.get('[role="dialog"]').text()).toContain('Bitte erneut versuchen')
+})
 const state = (changes = {}) => ({ id: 7, revision: 0, position: 0, total: 12, solved: false, completed: false,
     mission: { id: 'mission-a', fields: [] }, draft: {}, session: { status: 'running' }, ...changes })
 const reply = run => ({ data: { run: JSON.parse(JSON.stringify(run)) } })

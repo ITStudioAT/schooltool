@@ -58,6 +58,7 @@ class NumberSystemGameController extends Controller
         abort_unless(Schema::hasColumn('number_system_game_sessions', 'timer_mode'), 503, 'Die Erweiterung für Zeitmessung und Reihung muss noch lokal aktiviert werden. Bestehende Runden bleiben erhalten.');
         $data = $request->validate(['title' => ['required', 'string', 'max:120'], 'course_id' => ['exclude_if:audience,external', 'required_unless:audience,external', 'integer'],
             'audience' => ['sometimes', Rule::in(['course', 'mixed', 'external'])],
+            'course_date_id' => ['nullable', 'integer', 'prohibited_if:audience,external'],
             'planned_minutes' => ['required', 'integer', Rule::in([30, 40, 60, 75])], 'difficulty' => ['required', 'integer', 'between:1,3'],
             'mode' => ['required', Rule::in(['solo', 'teams'])], ...NumberSystemGameResults::rules()]);
         abort_if(($data['audience'] ?? 'course') !== 'course' && ! Schema::hasTable('number_system_game_guests'), 503, 'Die Erweiterung für externe Teilnehmende muss noch aktiviert werden.');
@@ -65,6 +66,9 @@ class NumberSystemGameController extends Controller
             unset($data['audience']);
         }
         $course = ($data['audience'] ?? 'course') === 'external' ? null : TeachingCourse::query()->findOrFail($data['course_id']);
+        if (isset($data['course_date_id'])) {
+            abort_unless(Schema::hasColumn('number_system_game_sessions', 'teaching_course_date_id'), 503, 'Die Erweiterung für Spiele am Kurstermin muss noch aktiviert werden.');
+        }
         $session = $this->games->create($teacher, $course, $data);
 
         return response()->json(['session' => $session->makeHidden(['seed'])], 201);
