@@ -134,6 +134,36 @@ describe('CourseTable manual work completion', () => {
         } finally { wrapper.unmount() }
     })
 
+    it.each(['entries', 'attendance'])('labels every column of the highlighted date and refreshes at midnight in the %s view', async (view) => {
+        vi.useFakeTimers()
+        vi.setSystemTime(new Date('2026-10-07T21:59:59Z'))
+        const { wrapper, courses } = mountCompletionTable()
+        try {
+            await wrapper.setProps({ view })
+            courses.selected_course.course_dates = [
+                { id: 3, date: '2026-10-14', hours: [3] },
+                { id: 2, date: '2026-10-07', hours: [5, 6] },
+                { id: 1, date: '2026-10-07', hours: [1, 2] },
+            ] as never
+            await flushPromises()
+            const currentHeaders = () => wrapper.findAll('thead th[aria-current="date"]')
+            expect(currentHeaders()).toHaveLength(2)
+            expect(currentHeaders().every(header => header.text().includes('Heute'))).toBe(true)
+
+            vi.setSystemTime(new Date('2026-10-07T22:00:00Z'))
+            ;(wrapper.vm as any).refreshDeadlineClock()
+            await flushPromises()
+            expect(currentHeaders()).toHaveLength(1)
+            expect(currentHeaders()[0].text()).toContain('Nächster Unterrichtstag')
+            expect(currentHeaders()[0].text()).toContain('14.10.')
+
+            courses.selected_course.course_dates = [{ id: 1, date: '2026-10-07' }, { id: 2, date: null }] as never
+            await flushPromises()
+            expect(currentHeaders()).toHaveLength(0)
+            expect(wrapper.find('.course-table-date-current-label').exists()).toBe(false)
+        } finally { wrapper.unmount(); vi.useRealTimers() }
+    })
+
     function mountCompletionTable() {
         const pinia = createTestingPinia({ createSpy: vi.fn })
         const date = { id: 1, date: '2026-10-12' }
@@ -835,20 +865,55 @@ describe('CourseTable evaluation PDF links', () => {
         } finally { wrapper.unmount(); vi.useRealTimers() }
     })
 
-    it('outlines todays Vienna date or the most recent past date across the full column', () => {
+    it('outlines todays Vienna date or the next future date across the full column', () => {
         const methods = (CourseTable as any).methods
         const dates = [{ id: 1, date: '2026-10-06' }, { id: 2, date: '2026-10-07' }, { id: 3, date: '2026-10-14' }]
-        const context: any = { sortedCourseDates: dates, normalizeDateKey: methods.normalizeDateKey, dateKey: methods.dateKey }
+        const context: any = { sortedCourseDates: dates, normalizeDateKey: methods.normalizeDateKey,
+            dateKey: methods.dateKey, isFreeCourseDate: methods.isFreeCourseDate }
         expect(methods.targetOutlinedCourseDate.call(context, new Date('2026-10-06T22:30:00Z'))).toEqual(dates[1])
-        expect(methods.targetOutlinedCourseDate.call(context, new Date('2026-10-08T10:00:00Z'))).toEqual(dates[1])
-        expect(methods.targetOutlinedCourseDate.call({ ...context, sortedCourseDates: [dates[0], dates[2]] }, new Date('2026-10-07T10:00:00Z'))).toEqual(dates[0])
+        expect(methods.targetOutlinedCourseDate.call(context, new Date('2026-10-08T10:00:00Z'))).toEqual(dates[2])
+        expect(methods.targetOutlinedCourseDate.call({ ...context, sortedCourseDates: [dates[0], dates[2]] }, new Date('2026-10-07T10:00:00Z'))).toEqual(dates[2])
         expect(methods.targetOutlinedCourseDate.call(context, new Date('2026-10-01T10:00:00Z'))).toEqual(dates[0])
+        expect(methods.targetOutlinedCourseDate.call(context, new Date('2026-10-15T10:00:00Z'))).toBeNull()
         expect(methods.targetOutlinedCourseDate.call({ ...context, sortedCourseDates: [] }, new Date('2026-10-08T10:00:00Z'))).toBeNull()
         context.outlinedCourseDateKey = dates[1].date
         context.courseDateColumnMarkingColor = () => 'red'
         expect(methods.courseDateColumnMarkingClass.call(context, dates[1])).toBe('course-table-column--marked-red course-table-column--current')
         expect(methods.courseDateColumnMarkingClass.call(context, dates[0])).toBe('course-table-column--marked-red')
     })
+
+    it.each([
+        { now: '2026-10-06T21:59:59Z', expectedId: 6 },
+        { now: '2026-10-06T22:00:00Z', expectedId: 7 },
+        { now: '2026-12-06T22:59:59Z', expectedId: 16 },
+        { now: '2026-12-06T23:00:00Z', expectedId: 17 },
+    ])('selects the nearest teaching date in either date order at Vienna midnight: $now', ({ now, expectedId }) => {
+        const methods = (CourseTable as any).methods
+        const dates = [
+            { id: 6, date: '2026-10-06T12:00:00' }, { id: 7, date: '2026-10-07' },
+            { id: 16, date: '2026-12-06' }, { id: 17, date: '2026-12-07' },
+        ]
+        const context = { sortedCourseDates: dates, normalizeDateKey: methods.normalizeDateKey,
+            dateKey: methods.dateKey, isFreeCourseDate: methods.isFreeCourseDate }
+
+        expect(methods.targetOutlinedCourseDate.call(context, new Date(now))?.id).toBe(expectedId)
+        expect(methods.targetOutlinedCourseDate.call({ ...context, sortedCourseDates: [...dates].reverse() }, new Date(now))?.id).toBe(expectedId)
+        expect(context.sortedCourseDates).toEqual(dates)
+    })
+
+    it('skips free, fully cancelled and invalid dates when choosing the next teaching day', () => {
+        const methods = (CourseTable as any).methods
+        const nextDate = { id: 4, date: '2026-10-14', hours: [1, 2] }
+        const context = { sortedCourseDates: [
+            { id: 1, date: '2026-10-07', status: ['free'] },
+            { id: 2, date: '2026-10-08', status: ['entfaellt'] },
+            { id: 3, date: 'invalid' }, nextDate,
+        ], normalizeDateKey: methods.normalizeDateKey, dateKey: methods.dateKey, isFreeCourseDate: methods.isFreeCourseDate }
+
+        expect(methods.targetOutlinedCourseDate.call(context, new Date('2026-10-07T10:00:00Z'))).toEqual(nextDate)
+        expect(methods.targetOutlinedCourseDate.call({ ...context, sortedCourseDates: context.sortedCourseDates.slice(0, 3) }, new Date('2026-10-07T10:00:00Z'))).toBeNull()
+    })
+
     it('shows collected and completed times beside independent dispatch rows in Vienna summer and winter time', async () => {
         expect(assessmentTimeText('2026-07-01T22:30:00Z')).toBe('02.07.2026, 00:30 Uhr')
         expect(assessmentTimeText('2026-12-01T22:30:00.123456Z')).toBe('01.12.2026, 23:30 Uhr')

@@ -88,12 +88,18 @@
                                     v-for="courseDate in sortedCourseDates"
                                     :key="`date-head-${courseDate.id || courseDate.date}`"
                                     :data-course-date-key="courseDateScrollKey(courseDate)"
+                                    :aria-current="outlinedCourseDateKey && normalizeDateKey(courseDate.date) === outlinedCourseDateKey ? 'date' : undefined"
                                     class="course-table-date-col"
                                     :class="[
                                         { 'course-table-date-col--free': isFreeCourseDate(courseDate) },
                                         courseDateColumnMarkingClass(courseDate),
                                     ]">
                                     <div class="course-table-date-header">
+                                        <span
+                                            v-if="outlinedCourseDateKey && normalizeDateKey(courseDate.date) === outlinedCourseDateKey"
+                                            class="course-table-date-current-label">
+                                            {{ outlinedCourseDateKey === todayDateKey ? 'Heute' : 'Nächster Unterrichtstag' }}
+                                        </span>
                                         <button type="button" class="course-table-date-trigger"
                                             :data-testid="`course-date-cancellation-${courseDate.id}`"
                                             aria-label="Unterrichtsentfall bearbeiten"
@@ -2622,7 +2628,7 @@ import axios from 'axios'
 import { mapWritableState } from 'pinia'
 import { courseOverviewPdf } from '@/actions/App/Http/Controllers/Admin/Teaching/TeachingCourseController'
 import { setCurriculumFileVisibility as curriculumFileVisibility } from '@/actions/App/Http/Controllers/Admin/Teaching/CourseDateController'
-import { parseLocalDate, formatViennaDateTime, scheduledWorkIconColor, workDeadlineExpired, workDeadlineColor } from '@/helpers/date'
+import { applicationDate, parseLocalDate, formatViennaDateTime, scheduledWorkIconColor, workDeadlineExpired, workDeadlineColor } from '@/helpers/date'
 import { currentAssessmentRecord } from '@/helpers/workAssessmentTimes'
 import { isInTeachingSemester } from '@/helpers/teachingSemester'
 import { requiresWorkMaximumPlus, workMaximumPlusError } from '@/helpers/teachingWorkMaximum'
@@ -2979,8 +2985,11 @@ export default {
             })
             return sortedDates.filter((courseDate) => isInTeachingSemester(courseDate?.date, this.selected_course?.semester_count === 1 ? 3 : this.activeSemester, this.semesterTwoStartDate))
         },
+        todayDateKey() {
+            return applicationDate(new Date(this.deadlineNow))
+        },
         outlinedCourseDateKey() {
-            return this.normalizeDateKey(this.targetOutlinedCourseDate()?.date)
+            return this.normalizeDateKey(this.targetOutlinedCourseDate(new Date(this.deadlineNow))?.date)
         },
         hasAssignedCurriculum() {
             return this.assignedCurriculumId !== null
@@ -6626,14 +6635,18 @@ export default {
             }
         },
         targetOutlinedCourseDate(referenceDate = new Date()) {
-            const parts = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Vienna', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(referenceDate)
-            const values = Object.fromEntries(parts.map(part => [part.type, part.value]))
-            const todayKey = `${values.year}-${values.month}-${values.day}`
-            const dates = this.sortedCourseDates.filter(courseDate => this.normalizeDateKey(courseDate?.date))
+            const todayKey = applicationDate(referenceDate)
+            const dates = this.sortedCourseDates.filter((courseDate) => {
+                const dateKey = this.normalizeDateKey(courseDate?.date)
 
-            return dates.find(courseDate => this.normalizeDateKey(courseDate.date) === todayKey)
-                || dates.filter(courseDate => this.normalizeDateKey(courseDate.date) < todayKey).at(-1)
-                || dates[0] || null
+                return dateKey && dateKey >= todayKey && !this.isFreeCourseDate(courseDate)
+            })
+
+            return dates.reduce((nextDate, courseDate) => (
+                !nextDate || this.normalizeDateKey(courseDate.date) < this.normalizeDateKey(nextDate.date)
+                    ? courseDate
+                    : nextDate
+            ), null)
         },
         targetInitialScrollCourseDate(referenceDate = new Date()) {
             const todayKey = this.dateKey(referenceDate)
@@ -6922,6 +6935,17 @@ export default {
     gap: 4px;
     min-height: 44px;
     text-align: center;
+}
+
+.course-table-date-current-label {
+    background: #1d4ed8;
+    border-radius: 6px;
+    color: #ffffff;
+    font-size: 0.66rem;
+    font-weight: 800;
+    line-height: 1.2;
+    padding: 3px 6px;
+    white-space: normal;
 }
 
 .course-table-date-attendance-actions {
@@ -8181,18 +8205,18 @@ export default {
 }
 
 .course-table-column--current {
-    border-left: 1px solid #94a3b8 !important;
-    border-right: 1px solid #94a3b8 !important;
+    border-left: 2px solid #1d4ed8 !important;
+    border-right: 2px solid #1d4ed8 !important;
 }
 
 .course-table-title-row .course-table-column--current {
-    background: #f1f5f9;
-    border-top: 1px solid #94a3b8 !important;
-    box-shadow: inset 0 3px 0 #94a3b8;
+    background: #dbeafe;
+    border-top: 2px solid #1d4ed8 !important;
+    box-shadow: inset 0 3px 0 #1d4ed8;
 }
 
 .course-table tbody tr:last-child .course-table-column--current {
-    border-bottom: 1px solid #94a3b8 !important;
+    border-bottom: 2px solid #1d4ed8 !important;
 }
 
 .course-table-column--marked-blue {
