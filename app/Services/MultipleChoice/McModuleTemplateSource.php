@@ -25,9 +25,13 @@ class McModuleTemplateSource
         }
         $module = $located['candidate'];
         $folders = array_values(array_filter($this->children($connection, $module['folder_id']),
-            fn (array $entry): bool => ($entry['.tag'] ?? null) === 'folder' && strcasecmp($entry['name'] ?? '', 'Multiple Choice Fragen') === 0));
-        if (count($folders) !== 1) {
-            $this->fail('Im bestätigten Lernmodul fehlt der eindeutige Unterordner „Multiple Choice Fragen“.');
+            fn (array $entry): bool => ($entry['.tag'] ?? null) === 'folder'
+                && in_array(strtolower($entry['name'] ?? ''), ['multiple choice fragen', 'fragenkatalog'], true)));
+        if ($folders === []) {
+            $this->fail('Im bestätigten Lernmodul fehlt der Unterordner „Multiple Choice Fragen“ oder „Fragenkatalog“.');
+        }
+        if (count($folders) > 1) {
+            $this->fail('Im bestätigten Lernmodul sind mehrere mögliche Fragenordner vorhanden. Die Quelle ist nicht eindeutig.');
         }
         $folder = $this->dropbox->metadata($connection, $folders[0]['id']);
         $files = array_values(array_filter($this->children($connection, $folder['id']), fn (array $entry): bool => ($entry['.tag'] ?? null) === 'file'
@@ -53,7 +57,7 @@ class McModuleTemplateSource
             $previews[$document['id']] = ['preview' => $preview, 'text' => $document['contents'], 'format' => $format];
         }
         if ($sources === []) {
-            $this->fail('Im Unterordner „Multiple Choice Fragen“ wurde keine kompatible Markdown-, Text- oder JSON-Fragenvorlage gefunden.');
+            $this->fail("Im Unterordner „{$folder['name']}“ wurde keine kompatible Markdown-, Text- oder JSON-Fragenvorlage gefunden.");
         }
         $result = ['module' => $module, 'sources' => $sources];
         if ($sourceId === null && count($sources) > 1) {

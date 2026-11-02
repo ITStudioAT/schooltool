@@ -126,6 +126,36 @@ test('multiple compatible files require a deliberate source selection', function
     expect($this->catalog->fresh()->questions)->toBe([]);
 });
 
+test('a legacy questions folder can be previewed and its source remains verifiable when saving', function (string $folderName): void {
+    $this->entries[2] = array_replace($this->entries[2], ['name' => $folderName, 'path_lower' => $this->root.'/emails/fragenkatalog']);
+    $this->entries[4]['path_lower'] = $this->root.'/emails/fragenkatalog/questions.md';
+    fakeMcModuleSource($this);
+
+    $data = $this->postJson($this->url, mcModuleRequest($this))->assertOk()
+        ->assertJsonPath('preview.valid', true)
+        ->assertJsonCount(40, 'preview.questions')
+        ->assertJsonPath('module_source.source_path', $this->root.'/emails/fragenkatalog/questions.md')->json();
+
+    expect($this->catalog->fresh()->questions)->toBe([]);
+    $this->patchJson('/api/admin/multiple-choice/catalogs/'.$this->catalog->id, ['title' => $this->catalog->title,
+        'questions' => $data['preview']['questions'], 'module_source_proofs' => [$data['source_proof']]])->assertOk();
+    expect($this->catalog->fresh()->questions)->toHaveCount(40);
+    expect($this->catalog->fresh()->module_sources[0]['source_path'])->toBe($this->root.'/emails/fragenkatalog/questions.md');
+})->with(['Fragenkatalog', 'FRAGENKATALOG']);
+
+test('two supported questions folders are rejected without choosing or changing the catalog', function (): void {
+    $this->entries[] = ['.tag' => 'folder', 'id' => 'id:legacy', 'name' => 'Fragenkatalog',
+        'path_lower' => $this->root.'/emails/fragenkatalog'];
+    fakeMcModuleSource($this);
+
+    $this->postJson($this->url, mcModuleRequest($this))->assertUnprocessable()
+        ->assertJsonValidationErrors('handshake')
+        ->assertJsonPath('errors.handshake.0', 'Im bestätigten Lernmodul sind mehrere mögliche Fragenordner vorhanden. Die Quelle ist nicht eindeutig.');
+
+    expect($this->catalog->fresh()->questions)->toBe([]);
+    expect($this->catalog->fresh()->module_sources)->toBeNull();
+});
+
 test('a missing fixed folder does not fall back to arbitrary files or modify the editor catalog', function (): void {
     unset($this->entries[2]);
     fakeMcModuleSource($this);

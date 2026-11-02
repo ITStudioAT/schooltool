@@ -11,7 +11,7 @@
         </span>
         <span v-if="linkedMcTest && !hideMcTest" class="exercise-folder text-body-2">MC-Test: {{ linkedMcTest }}</span>
         <span v-if="!work?.id" class="d-block text-caption mt-1">Arbeit zuerst speichern, damit Arbeitskennung und Prüfungskandidaten bestätigt werden können.</span>
-        <v-btn v-if="active && current && !exerciseChecking" size="small" variant="tonal" prepend-icon="mdi-refresh"
+        <v-btn v-if="active && current && moduleLinked && !exerciseChecking" size="small" variant="tonal" prepend-icon="mdi-refresh"
             class="exercise-check-button" :disabled="disabled" @click="checkExercise(true)">
             <span class="d-flex flex-column align-start">
                 <span>Erneut prüfen</span>
@@ -22,7 +22,7 @@
         <WorkCheckProgress :state="checkProgressState" :unavailable="progressUnavailable" />
     </div>
     <span v-if="!needsPreparation && linkedMcTest && !hideMcTest" class="exercise-folder text-body-2">MC-Test: {{ linkedMcTest }}</span>
-    <WorkProgressCheck v-if="checkProgress && !needsPreparation && active && current" :work="work" :disabled="disabled"
+    <WorkProgressCheck v-if="workAutomationEnabled(work) && checkProgress && !needsPreparation && active && current" :work="work" :disabled="disabled"
         :check-key="workDropboxKey(admin.config?.user?.id, work)" @checked="emit('progress-checked', $event)"
         @saved="emit('deadline-saved', $event)" @busy="emit('check-busy', $event)" />
     <v-dialog v-if="opened" v-model="opened" max-width="640" :persistent="loading">
@@ -123,6 +123,7 @@ import { aiExport, exerciseOptions, prepareExercise, storeExercise } from '@/act
 import { loadWorkExercise, workDropboxKey, workDropboxStates, workExerciseCheck } from '@/helpers/workDropbox'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { workLinkedMcTestTitle, workNeedsPreparation } from '@/helpers/workOverview'
+import { workAutomationEnabled } from '@/helpers/workAutomation'
 import WorkProgressCheck from './WorkProgressCheck.vue'
 import WorkCheckProgress from './WorkCheckProgress.vue'
 import { createWorkCheckStream, useWorkCheckProgress } from './workCheckProgress'
@@ -204,7 +205,7 @@ const checkTime = computed(() => checkedAt.value ? new Intl.DateTimeFormat('de-A
 const moduleLinked = ref(false)
 const exerciseMessage = ref('')
 const binding = computed(() => workDropboxStates.get(workDropboxKey(admin.config?.user?.id, props.work)))
-const needsPreparation = computed(() => workNeedsPreparation(props.work, binding.value))
+const needsPreparation = computed(() => workAutomationEnabled(props.work) && workNeedsPreparation(props.work, binding.value))
 const bindingVersion = computed(() => JSON.stringify([binding.value?.connected, binding.value?.link_version, binding.value?.module_link]))
 let sequence = 0
 let controller = null

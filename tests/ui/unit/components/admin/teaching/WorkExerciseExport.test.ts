@@ -38,6 +38,44 @@ function button(wrapper: ReturnType<typeof mountExport>, text: string) {
     return wrapper.findAll('button, [role="button"]').find(item => item.attributes('aria-label') === text || item.text() === text || (text === 'Erneut prüfen' && item.text().startsWith(text)))!
 }
 
+it.each([
+    { automation_enabled: false },
+    { status: { automation_enabled: false } },
+    { automation_enabled: false, status: { folder_imported_at: '2026-10-13T12:54:00Z' } },
+])('hides rechecking and skips Dropbox preparation for manual work: %j', async manual => {
+    const status = vi.fn().mockResolvedValue({ data: linkedExercise })
+    vi.stubGlobal('axios', { get: status })
+    const wrapper = mount(WorkExerciseExport, { props: { work: { ...work, ...manual }, course, checkProgress: true }, global: {
+        plugins: [createTestingPinia({ createSpy: vi.fn, initialState: { AdminAdminStore: { config: { user: { id: 7 } } } } })],
+        stubs: { 'v-checkbox': true, 'v-btn': { template: '<button><slot /></button>' } },
+    } })
+    try {
+        await wrapper.setProps({ checkProgress: true })
+        await flushPromises()
+        expect(button(wrapper, 'Erneut prüfen')).toBeUndefined()
+        expect(button(wrapper, 'Leistungsfeststellung erstellen')).toBeUndefined()
+        expect(status).not.toHaveBeenCalled()
+
+        await wrapper.setProps({ work: { ...work, ...manual, automation_enabled: true } })
+        await flushPromises()
+        expect(button(wrapper, 'Erneut prüfen')).toBeDefined()
+
+        await wrapper.setProps({ work: { ...work, ...manual, automation_enabled: false } })
+        await flushPromises()
+        expect(button(wrapper, 'Erneut prüfen')).toBeUndefined()
+    } finally { wrapper.unmount() }
+})
+
+it('hides the preparation recheck until an automatic work has a module link', async () => {
+    const status = vi.fn().mockResolvedValue({ data: { connected: true, module_link: null, exercise: { status: 'missing' } } })
+    const wrapper = mountExport(undefined, undefined, status)
+    try {
+        await flushPromises()
+        expect(button(wrapper, 'Erneut prüfen')).toBeUndefined()
+        expect(button(wrapper, 'Leistungsfeststellung erstellen')).toBeUndefined()
+    } finally { wrapper.unmount() }
+})
+
 afterEach(() => {
     clearWorkDropboxStates(); vi.restoreAllMocks(); vi.unstubAllGlobals(); document.body.innerHTML = ''
     if (originalExecCommand) Object.defineProperty(document, 'execCommand', originalExecCommand)
