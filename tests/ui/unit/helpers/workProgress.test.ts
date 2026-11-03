@@ -84,7 +84,7 @@ it('retains actual collection evidence when manual collection completion is revo
 
 it('advances all manual steps without creating downstream evidence and reopens the revoked step', () => {
     const work = { id: 64, groups: [{ student_ids: [12] }], status: {} } as any
-    const nextActions = ['E-Mails versenden', 'Abgaben einsammeln', 'Bewerten', 'Ergebnisse bereitstellen', 'Schüler:innen informieren', 'Abgeschlossen']
+    const nextActions = ['E-Mails versenden', 'Abgaben einsammeln', 'Bewerten', 'Ergebnisse übernehmen', 'Schüler:innen informieren', 'Abgeschlossen']
     Object.values(workManualCompletionFields).forEach((field, index) => {
         work.status[field] = true
         expect(workProgressNextAction(work)).toBe(nextActions[index])
@@ -204,7 +204,7 @@ it('advances a verified grading pass and preserves it on unchanged collection bu
             { student_id: 13, person: 'Person 13', state: 'partial', result: 'Teilbewertung' },
         ] }
     expect(workProgressStages(work)[1]).toMatchObject({ complete: true, count: 1, total: 2, color: 'success' })
-    expect(workProgressNextAction(work)).toBe('Ergebnisse bereitstellen')
+    expect(workProgressNextAction(work)).toBe('Ergebnisse übernehmen')
     expect(workProgressStages(work).map(stage => stage.blocked)).toEqual([false, false, false, true])
     const receipt = historicalWork().status.assessment_json_imports[0]
     receipt.exercise_id = 'simulation:simulator-run:work:86'

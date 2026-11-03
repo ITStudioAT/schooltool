@@ -253,7 +253,7 @@ describe('Work card status placement', () => {
             const header = wrapper.get('.work-list-item .work-row')
             expect(header.get('.work-title-second-line').text()).toBe('Dateimanagement')
             expect(header.findAll('[data-work-status], [data-submission-state]')).toHaveLength(0)
-            expect(header.text()).toContain('06.10.2026').toContain('Ergebnisse bereitstellen')
+            expect(header.text()).toContain('06.10.2026').toContain('Ergebnisse übernehmen')
             expect(header.get('.work-title-second-line').findAll('[data-work-status], [data-submission-state]')).toHaveLength(0)
         } finally { wrapper.unmount() }
     })
@@ -305,7 +305,7 @@ describe('Work card status placement', () => {
             await flushPromises()
             const header = wrapper.get('.course-table-work-summary')
             expect(header.findAll('[data-work-status], [data-submission-state]')).toHaveLength(0)
-            expect(header.get('.course-table-work-summary-next-action').text()).toContain('Ergebnisse bereitstellen')
+            expect(header.get('.course-table-work-summary-next-action').text()).toContain('Ergebnisse übernehmen')
             expect(header.get('.course-table-work-summary-meta').findAll('[data-work-status], [data-submission-state]')).toHaveLength(0)
             expect(header.find('[aria-label="Automatische Beurteilung"]').exists()).toBe(true)
             const cells = wrapper.findAll('.course-table-entry-cell-performance')
@@ -317,11 +317,11 @@ describe('Work card status placement', () => {
             work.status.assessment_json_packages = []
             useCourseWorkStore(pinia).courseWorks = [{ ...work }] as never
             await flushPromises()
-            expect(wrapper.get('.course-table-work-summary-next-action').text()).toContain('Ergebnisse bereitstellen')
+            expect(wrapper.get('.course-table-work-summary-next-action').text()).toContain('Ergebnisse übernehmen')
             work.status.dispatch_notifications = work.status.dispatch_notifications.filter(item => item.purpose !== 'results' || item.student_id !== 14)
             useCourseWorkStore(pinia).courseWorks = [{ ...work }] as never
             await flushPromises()
-            expect(wrapper.get('.course-table-work-summary-next-action').text()).toContain('Ergebnisse bereitstellen')
+            expect(wrapper.get('.course-table-work-summary-next-action').text()).toContain('Ergebnisse übernehmen')
         } finally { wrapper.unmount() }
     })
 

@@ -98,7 +98,7 @@ export function workProgressStages(work, now = Date.now()) {
             detail: simulatedEvaluation ? `Simulation: ${simulatedEvaluation.completed_count} abgeschlossen, ${simulatedEvaluation.partial_count} teilweise bewertet, ${simulatedEvaluation.open_count} offen.`
                 + (gradingRunComplete ? ' Der Bewertungslauf für den aktuellen Bestand ist abgeschlossen; offene Einzelfälle bleiben dokumentiert.' : ' Der aktuelle Bestand muss noch bewertet werden.')
                 : gradingRunComplete ? 'Bewertungslauf für den aktuellen Bestand abgeschlossen. Offene Einzelfälle bleiben dokumentiert.' : 'Abgeschlossene persönliche Bewertungen aus dem gespeicherten Bewertungsbestand.' },
-        { key: 'publication', title: 'Ergebnisse bereitstellen', icon: 'mdi-file-eye-outline', count: published,
+        { key: 'publication', title: 'Ergebnisse übernehmen', icon: 'mdi-file-eye-outline', count: published,
             simulation: Boolean(simulation),
             targetCount: gradingRunComplete ? readyIds.length : total,
             complete: publicationComplete, detail: 'Die abgeschlossenen persönlichen Ergebnisse des aktuellen Bewertungslaufs werden übernommen. Dokumentierte offene Einzelfälle blockieren diesen Schritt nicht.' },
