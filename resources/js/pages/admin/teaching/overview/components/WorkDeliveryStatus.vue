@@ -153,7 +153,9 @@
                 <v-btn v-if="opened === 'collection' && selectedStage?.simulation" variant="tonal" prepend-icon="mdi-flask-outline" to="/admin/teaching-tools/simulator">Simulator öffnen</v-btn>
                 <WorkGradingAction v-if="opened === 'evaluation'" :work="work" :date="date" :repeat="selectedStage?.complete && !selectedStage?.manuallyCompleted"
                     :disabled="selectedStage?.blocked || savingCompletion || (!stages[0]?.complete && !lastCollectionAt)" />
-                <v-btn v-if="opened === 'publication' && !selectedStage?.complete" variant="tonal" prepend-icon="mdi-account-check-outline" :disabled="selectedStage?.blocked || savingCompletion" @click="emit('import', work, false, { date }); opened = null">Ergebnisse übernehmen</v-btn>
+                <v-btn v-if="opened === 'publication'" variant="tonal" prepend-icon="mdi-account-check-outline" :disabled="selectedStage?.blocked || savingCompletion" @click="emit('import', work, false, { date }); opened = null">
+                    {{ selectedStage?.complete ? 'Ergebnisse erneut übernehmen' : 'Ergebnisse übernehmen' }}
+                </v-btn>
                 <WorkResultNotification v-if="opened === 'notification' && !selectedStage?.blocked && !savingCompletion" :work="work" :date="date" @saved="emit('saved', $event)" />
                 <v-spacer />
                 <v-btn :disabled="savingCompletion" @click="opened = null">Schließen</v-btn>

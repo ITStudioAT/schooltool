@@ -39,7 +39,9 @@ class TeachingWorkJsonImport
             } finally {
                 fclose($stream);
             }
-            $this->parser->check($header === '%PDF-' && $upload->getMimeType() === 'application/pdf' && hash_equals($matches[0]['sha256'], hash_file('sha256', $upload->getRealPath())), 'PDF-Inhalt oder Prüfsumme falsch: '.$name);
+            $this->parser->check($header === '%PDF-' && $upload->getMimeType() === 'application/pdf', "Die Datei „{$name}“ ist kein gültiges PDF.");
+            $this->parser->check(hash_equals($matches[0]['sha256'], hash_file('sha256', $upload->getRealPath())),
+                "Die Datei „{$name}“ passt nicht zur Prüfsumme in Schooltool-Bewertungen.json. Bitte das Bewertungspaket mit den zugehörigen PDFs aus demselben Stand bereitstellen und die Vorschau neu laden.");
             $pdfs[$name] = ['name' => $name, 'sha256' => $matches[0]['sha256']];
         }
         $this->parser->check(strlen($text) + strlen($identityExportText ?? '') + array_sum(array_map(fn (UploadedFile $file): int => $file->getSize(), $uploads)) <= 6 * 1024 * 1024, 'JSON-Paket überschreitet 6 MiB.');

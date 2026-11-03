@@ -191,7 +191,9 @@ function Invoke-ProjectGitWorkflow {
         Pop-Location
         if (`$completed -and `$Command -cin @('gitstart', 'gitwork', 'gitmain', 'gitrelease')) {
             Set-Location -LiteralPath `$selectedLocation
-            if (`$Command -cin @('gitwork', 'gitmain')) { Show-ProjectGitWorkspace `$selectedLocation }
+            if (`$Command -cin @('gitwork', 'gitmain') -and `$repository -ine 'ITStudioAT/schooltool') {
+                Show-ProjectGitWorkspace `$selectedLocation
+            }
         }
     }
 }

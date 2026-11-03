@@ -493,11 +493,18 @@ it('keeps grading blocked when manual collection completion fails to save', asyn
     } finally { wrapper.unmount() }
 })
 
-it('opens results transfer for the existing work rather than requesting a new folder link', async () => {
-    const work = { id: 86, teaching_course_id: 16, title: 'E-Mails', groups: [{ student_ids: [492] }], status: {
+it.each([false, true])('opens results transfer for the existing work with publication completed: %s', async (published) => {
+    const checksum = 'a'.repeat(64)
+    const work = { id: 86, teaching_course_id: 16, title: 'E-Mails', groups: [{ student_ids: [492, 493] }], status: {
         email_preparation_completed: true, task_dispatch_completed: true, submission_collection_completed: true,
-        assessment_json_imports: [{ student_id: 492, exercise_id: 'exercise', participant_id: 'user:492', record_checksum: 'a'.repeat(64),
-            record: { participant_id: 'user:492', record_checksum: 'a'.repeat(64), submission_state: 'received', evaluation_state: 'complete', evaluation_completed_at: '2026-10-24T16:00:00Z' } }],
+        evaluation_pdfs: (published ? [492, 493] : [492]).map(studentId => ({
+            student_id: studentId, origin: 'evaluation_import', sha256: 'b'.repeat(64), file_path: `report-${studentId}.pdf`,
+        })),
+        assessment_json_imports: [492, 493].map(studentId => ({
+            student_id: studentId, exercise_id: 'exercise', participant_id: `user:${studentId}`, record_checksum: checksum,
+            record: { participant_id: `user:${studentId}`, record_checksum: checksum, submission_state: 'received',
+                evaluation_state: 'complete', evaluation_completed_at: '2026-10-24T16:00:00Z' },
+        })),
     } }
     const wrapper = mount(WorkDeliveryStatus, { props: { work, date: '2026-10-16' }, global: {
         plugins: [createTestingPinia({ createSpy: vi.fn })], stubs: {
@@ -507,7 +514,9 @@ it('opens results transfer for the existing work rather than requesting a new fo
     } })
     try {
         await wrapper.get('[data-workflow-stage="publication"]').trigger('click')
-        await wrapper.findAll('button').find(button => button.text() === 'Ergebnisse übernehmen')!.trigger('click')
+        expect(wrapper.text()).toContain(`${published ? 2 : 1} von 2 Personen mit gespeichertem Nachweis.`)
+        const action = published ? 'Ergebnisse erneut übernehmen' : 'Ergebnisse übernehmen'
+        await wrapper.findAll('button').find(button => button.text() === action)!.trigger('click')
         expect(wrapper.emitted('import')).toEqual([[work, false, { date: '2026-10-16' }]])
     } finally { wrapper.unmount() }
 })

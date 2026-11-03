@@ -27,6 +27,7 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Spatie\Permission\Models\Role;
@@ -1129,15 +1130,59 @@ test('OAuth rejects additional write permissions without storing credentials', f
 test('Dropbox downloads referenced PDFs and validates their hashes through the existing importer', function (): void {
     $package = dropboxAssessmentPackage($this);
     dropboxConnectionForWork($this);
+    Mail::fake();
     $pdf = "%PDF-1.4\n1 0 obj << /Type /Catalog >> endobj\n%%EOF\n";
-    $package['overview_pdf'] = ['filename' => 'Gesamtübersicht.pdf', 'sha256' => hash('sha256', $pdf)];
+    $package['records'][0]['pdf'] = ['filename' => 'Einzelbeurteilung.pdf', 'sha256' => hash('sha256', $pdf)];
     $package = TeachingWorkJsonFixture::sign($package);
-    fakeDropboxWorkFiles(['Beurteilungen/Schooltool-Bewertungen.json' => json_encode($package), 'Beurteilungen/Gesamtübersicht.pdf' => $pdf]);
-    $this->postJson($this->url.'/import')->assertOk()->assertJsonPath('preview.can_import', true);
-    expect(Storage::disk('local')->allFiles())->toBe([]);
-    fakeDropboxWorkFiles(['Beurteilungen/Schooltool-Bewertungen.json' => json_encode($package), 'Beurteilungen/Gesamtübersicht.pdf' => $pdf.'changed']);
-    $this->postJson($this->url.'/import')->assertUnprocessable()->assertJsonValidationErrors('package');
-    expect(Storage::disk('local')->allFiles())->toBe([]);
+    $packagePath = 'Beurteilungen/Schooltool-Bewertungen.json';
+    $pdfPath = 'Beurteilungen/Einzelbeurteilung.pdf';
+    $url = $this->url.'/import';
+    $payload = ['results_only' => true];
+    $before = $this->work->fresh()->getAttributes();
+    fakeDropboxWorkFiles([$packagePath => json_encode($package), $pdfPath => $pdf]);
+    $initialHash = $this->postJson($url, $payload)->assertOk()->assertJsonPath('preview.can_import', true)->json('preview.hash');
+    expect($this->work->fresh()->getAttributes())->toBe($before);
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $initialHash])->assertOk();
+    $before = $this->work->fresh()->getAttributes();
+    $filesBefore = Storage::disk('local')->allFiles();
+    $hash = $this->postJson($url, $payload)->assertOk()->json('preview.hash');
+
+    $correctedPdf = $pdf.'corrected';
+    fakeDropboxWorkFiles([$packagePath => json_encode($package), $pdfPath => $correctedPdf]);
+    $confirmation = $payload + ['apply' => true, 'hash' => $hash];
+    foreach ([$payload, $confirmation] as $request) {
+        $this->postJson($url, $request)->assertUnprocessable()
+            ->assertJsonPath('errors.package.0', 'Die Datei „Einzelbeurteilung.pdf“ passt nicht zur Prüfsumme in Schooltool-Bewertungen.json. Bitte das Bewertungspaket mit den zugehörigen PDFs aus demselben Stand bereitstellen und die Vorschau neu laden.');
+    }
+    expect($this->work->fresh()->getAttributes())->toBe($before);
+    expect(Storage::disk('local')->allFiles())->toBe($filesBefore);
+
+    $package['records'][0]['total_minor'] = $package['records'][0]['criteria'][0]['earned_minor'] = 440;
+    $package['records'][0]['comment'] = 'Korrigierte Einzelbeurteilung.';
+    $package['records'][0]['pdf']['sha256'] = hash('sha256', $correctedPdf);
+    $package = TeachingWorkJsonFixture::sign($package);
+    fakeDropboxWorkFiles([$packagePath => json_encode($package), $pdfPath => $correctedPdf]);
+    $this->postJson($url, $confirmation)->assertConflict();
+    $hash = $this->postJson($url, $payload)->assertOk()->assertJsonPath('preview.can_import', true)->json('preview.hash');
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $hash])->assertOk();
+    $updated = $this->work->fresh();
+    $status = $updated->status;
+    expect($updated->groups[0]['points'][0]['points'])->toBe('4.40');
+    expect($status['assessment_json_imports'][0]['record']['total_minor'])->toBe(440)
+        ->and($status['assessment_json_imports'][0]['record']['comment'])->toBe('Korrigierte Einzelbeurteilung.')
+        ->and($status['assessment_json_imports'][0]['history'])->toHaveCount(1)
+        ->and($status['evaluation_pdfs'])->toHaveCount(1)
+        ->and($status['evaluation_pdfs'][0]['sha256'])->toBe(hash('sha256', $correctedPdf))
+        ->and($status['dispatch_notifications'] ?? [])->toBe([]);
+
+    $filesAfter = Storage::disk('local')->allFiles();
+    for ($attempt = 0; $attempt < 10; $attempt++) {
+        $repeat = $this->postJson($url, $payload)->assertOk()->assertJsonPath('preview.rows.0.will_replace', false)->json('preview.hash');
+        $this->postJson($url, $payload + ['apply' => true, 'hash' => $repeat])->assertOk();
+    }
+    expect($this->work->fresh()->getAttributes())->toBe($updated->getAttributes());
+    expect(Storage::disk('local')->allFiles())->toBe($filesAfter);
+    Mail::assertNothingOutgoing();
 });
 
 test('Dropbox includes recognized result dispatch protocols in the existing preview validation', function (): void {
