@@ -1,5 +1,11 @@
 # UPDATES
 
+## 3.54.4
+
+### Spiele
+
+- Spiele: Wiederholung von Fragen verhindert
+
 ## 3.54.3
 
 ### Spiele

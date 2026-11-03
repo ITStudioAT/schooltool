@@ -12,6 +12,8 @@ export function useNumberSystemPlayer(runId, context = {}) {
     const dirty = ref(false)
     const conflict = ref(false)
     const error = ref('')
+    const advanceError = ref('')
+    const advanceRequest = ref(null)
     const storageUnavailable = ref(false)
     let timer = null
     let poll = null
@@ -24,6 +26,7 @@ export function useNumberSystemPlayer(runId, context = {}) {
     const updateUrl = () => context.probeId ? probeUpdate.url({ probe: context.probeId, participant: context.participant }) : update.url(Number(runId.value))
     const message = failure => failure.response?.data?.message || Object.values(failure.response?.data?.errors ?? {}).flat()[0] || 'Verbindung unterbrochen. Dein Entwurf bleibt in diesem Fenster erhalten. Versuche erneut zu speichern.'
     const canPlay = computed(() => run.value?.session.status === 'running' && !run.value.completed && !run.value.solved)
+    const advancing = computed(() => busy.value && advanceRequest.value !== null)
 
     function cache(revision = run.value?.revision) {
         try {
@@ -33,6 +36,10 @@ export function useNumberSystemPlayer(runId, context = {}) {
     function clearCache() { try { localStorage.removeItem(cacheKey()) } catch { storageUnavailable.value = true } }
     function apply(value, replaceDraft = true) {
         run.value = value
+        if (advanceRequest.value && (value.completed || value.mission?.id !== advanceRequest.value.mission_id)) {
+            advanceRequest.value = null
+            advanceError.value = ''
+        }
         if (replaceDraft) { draft.value = structuredClone(value.draft ?? {}); dirty.value = false; conflict.value = false; clearCache() }
     }
     async function load(discardLocal = false) {
@@ -72,7 +79,9 @@ export function useNumberSystemPlayer(runId, context = {}) {
                 run.value.ranking = data.run.ranking
                 if (data.run.revision !== run.value.revision) { conflict.value = true; error.value = 'Ein anderes Teammitglied oder Gerät hat den Stand verändert. Lade den gespeicherten Stand.' }
             } else { apply(data.run); error.value = '' }
-        } catch (failure) { error.value = message(failure) }
+        } catch (failure) {
+            if (!disposed && currentGeneration === generation && !busy.value) { error.value = message(failure) }
+        }
     }
     function edit(value) { draft.value = value; dirty.value = true; cache(); queueSave() }
     function queueSave() { clearTimeout(timer); if (!conflict.value) { timer = setTimeout(() => void flush(), 650) } }
@@ -95,17 +104,54 @@ export function useNumberSystemPlayer(runId, context = {}) {
             .finally(() => { saving.value = false; savingPromise = null })
         return savingPromise
     }
+    async function advance() {
+        const current = run.value
+        if (busy.value || loading.value || conflict.value || !current?.mission || !current.solved || current.completed || current.session.status !== 'running') { return false }
+
+        const request = { action: 'advance', mission_id: current.mission.id, revision: current.revision }
+        advanceRequest.value = request
+        advanceError.value = ''
+        busy.value = true
+        const currentGeneration = ++generation
+        let reconcile = false
+        try {
+            const { data } = await axios.post(updateUrl(), request, { timeout: 10000 })
+            if (disposed || generation !== currentGeneration) { return false }
+            apply(data.run)
+            return true
+        } catch (failure) {
+            if (disposed || generation !== currentGeneration) { return false }
+            advanceError.value = failure.response?.data?.message || 'Der Aufgabenwechsel konnte nicht bestätigt werden.'
+            reconcile = failure.response?.status === 409
+            return false
+        } finally {
+            if (!disposed && generation === currentGeneration) {
+                busy.value = false
+                if (reconcile) { void refresh() }
+            }
+        }
+    }
     async function act(action) {
+        if (action === 'advance') { return advance() }
         if (busy.value || conflict.value || !run.value) { return false }
-        if (!await flush()) { return false }
-        busy.value = true; error.value = ''; ++generation
+        if (!await flush() || busy.value || conflict.value || !run.value?.mission) { return false }
+        busy.value = true; error.value = ''
+        const currentGeneration = ++generation
         try {
             const { data } = await axios.post(updateUrl(), { action, revision: run.value.revision, mission_id: run.value.mission.id,
                 ...(action === 'answer' ? { draft: draft.value } : {}) })
-            if (!disposed) { apply(data.run) }
+            if (disposed || generation !== currentGeneration) { return false }
+            apply(data.run)
             return true
-        } catch (failure) { error.value = message(failure); if (failure.response?.status === 409) { conflict.value = true } return false }
-        finally { busy.value = false }
+        } catch (failure) {
+            if (!disposed && generation === currentGeneration) {
+                error.value = message(failure)
+                if (failure.response?.status === 409) { conflict.value = true }
+            }
+            return false
+        } finally {
+            if (!disposed && generation === currentGeneration) { busy.value = false }
+        }
     }
     function beforeUnload(event) {
         if ((dirty.value || saving.value) && !run.value?.completed && run.value?.session.status !== 'ended') { event.preventDefault(); event.returnValue = '' }
@@ -119,11 +165,15 @@ export function useNumberSystemPlayer(runId, context = {}) {
         finally { presencePending = false }
     }
     function visibilityChanged() { if (!document.hidden) { void signalPresence() } }
-    watch(runId, () => { run.value = null; dirty.value = false; void load() }, { immediate: true })
+    watch(runId, () => {
+        run.value = null; dirty.value = false; busy.value = false
+        advanceRequest.value = null; advanceError.value = ''
+        void load()
+    }, { immediate: true })
     poll = setInterval(() => void refresh(), 3500)
     const presencePoll = setInterval(() => void signalPresence(), 15000)
     document.addEventListener('visibilitychange', visibilityChanged)
     window.addEventListener('beforeunload', beforeUnload)
     onBeforeUnmount(() => { disposed = true; ++generation; clearTimeout(timer); clearInterval(poll); clearInterval(presencePoll); document.removeEventListener('visibilitychange', visibilityChanged); window.removeEventListener('beforeunload', beforeUnload) })
-    return { run, draft, loading, saving, busy, dirty, conflict, error, storageUnavailable, canPlay, load, edit, flush, act }
+    return { run, draft, loading, saving, busy, dirty, conflict, error, advanceError, advancing, storageUnavailable, canPlay, load, edit, flush, act }
 }

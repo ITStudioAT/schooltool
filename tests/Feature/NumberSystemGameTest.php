@@ -565,6 +565,124 @@ test('stale devices forged mission ids and repeated answers cannot unlock or dup
     nsGameAs($this, $this->students[1])->getJson('/api/number-systems/runs/'.$run->id)->assertNotFound();
 });
 
+test('a repeated advance returns saved progress without consuming the next solved mission', function () {
+    $this->session->update(['status' => 'running']);
+    $joined = nsGameAs($this, $this->students[0])->postJson('/api/number-systems/join', ['code' => $this->session->join_code])->assertOk()->json('run');
+    $run = NumberSystemGameRun::findOrFail($joined['id']);
+    $url = '/api/number-systems/runs/'.$run->id;
+    $this->postJson($url, nsGameUpdate($run, 'answer', ['draft' => nsGameDraft($run->puzzles[0])]))->assertOk();
+    $advance = nsGameUpdate($run, 'advance');
+    $this->postJson($url, $advance)->assertOk()->assertJsonPath('run.position', 1);
+    $this->postJson($url, $advance)->assertOk()->assertJsonPath('run.revision', $advance['revision'] + 1);
+    $this->postJson($url, nsGameUpdate($run, 'answer', ['draft' => nsGameDraft($run->puzzles[1])]))->assertOk();
+
+    $this->postJson($url, $advance)->assertOk()->assertJsonPath('run.position', 1)->assertJsonPath('run.solved', true)
+        ->assertJsonPath('run.revision', $advance['revision'] + 2);
+    $this->postJson($url, [...$advance, 'mission_id' => str_repeat('f', 24)])->assertConflict();
+    expect($run->fresh()->history)->toHaveCount(2);
+});
+
+test('a new solo adventure avoids the current question from the previous adventure for that student', function () {
+    $student = $this->students[0];
+    $this->session->update(['seed' => hash('sha256', 'proof-20'), 'difficulty' => 1, 'status' => 'running']);
+    $candidate = $this->engine->mission($this->session->seed, $student->id, 0, 30, 1);
+    $previousSession = NumberSystemGameSession::factory()->create([
+        'teaching_course_id' => $this->course->id, 'started_at' => now()->subHour(), 'status' => 'ended',
+    ]);
+    $previous = NumberSystemGameRun::factory()->create([
+        'session_id' => $previousSession->id, 'user_id' => $student->id, 'position' => 1,
+        'puzzles' => [0 => $this->engine->mission('earlier', $student->id, 0, 30, 1), 1 => [
+            ...$candidate, 'id' => str_repeat('f', 24), 'position' => 1,
+        ]],
+    ]);
+    $previous->members()->attach($student->id, ['session_id' => $previousSession->id]);
+    $before = $previous->fresh()->getAttributes();
+    $url = '/api/number-systems/join';
+    $payload = ['code' => $this->session->join_code];
+
+    $joined = nsGameAs($this, $student)->postJson($url, $payload)->assertOk()->json('run');
+    expect([$joined['mission']['prompt'], array_column($joined['mission']['fields'], 'initial')])
+        ->not->toBe([$candidate['prompt'], array_column($candidate['fields'], 'initial')]);
+    expect($joined['mission']['directions'])->toBe($candidate['directions']);
+    $this->postJson($url, $payload)->assertOk()->assertJsonPath('run.mission', $joined['mission']);
+    expect($previous->fresh()->getAttributes())->toBe($before);
+
+    $otherStudent = $this->students[1];
+    $otherCandidate = $this->engine->mission($this->session->seed, $otherStudent->id, 0, 30, 1);
+    nsGameAs($this, $otherStudent)->postJson($url, $payload)->assertOk()->assertJsonPath('run.mission.prompt', $otherCandidate['prompt']);
+});
+
+test('the same browser guest avoids a repeated opening question while a different token with the same name stays independent', function () {
+    $this->session->update(['audience' => 'external', 'teaching_course_id' => null, 'status' => 'running']);
+    $previousSession = NumberSystemGameSession::factory()->create([
+        'school_id' => $this->school->id, 'teacher_id' => $this->teacher->id, 'teaching_course_id' => null,
+        'audience' => 'external', 'status' => 'ended', 'started_at' => now()->subHour(),
+    ]);
+    $token = str_repeat('a', 64);
+    $guestData = ['first_name' => 'Gast', 'token_hash' => hash('sha256', $token)];
+    $guest = NumberSystemGameGuest::query()->create([...$guestData, 'session_id' => $this->session->id]);
+    $candidate = $this->engine->mission($this->session->seed, -$guest->id, 0, 30, 2);
+    $previous = NumberSystemGameRun::factory()->create([
+        'session_id' => $previousSession->id, 'user_id' => null, 'puzzles' => [[...$candidate, 'id' => str_repeat('f', 24)]],
+    ]);
+    NumberSystemGameGuest::query()->create([...$guestData, 'session_id' => $previousSession->id, 'run_id' => $previous->id]);
+    $before = $previous->fresh()->getAttributes();
+    $payload = ['code' => $this->session->join_code, 'display_name' => 'Gast'];
+
+    $joined = $this->withSession(['number_systems.guest_token' => $token])
+        ->postJson('/api/number-systems/join', $payload)->assertOk()->json('run');
+    expect($joined['mission']['prompt'])->not->toBe($candidate['prompt']);
+    $this->postJson('/api/number-systems/join', $payload)->assertOk()->assertJsonPath('run.mission', $joined['mission']);
+    expect($previous->fresh()->getAttributes())->toBe($before);
+
+    $otherToken = str_repeat('b', 64);
+    $other = NumberSystemGameGuest::query()->create([
+        'first_name' => 'Gast', 'token_hash' => hash('sha256', $otherToken), 'session_id' => $this->session->id,
+    ]);
+    $otherCandidate = $this->engine->mission($this->session->seed, -$other->id, 0, 30, 2);
+    $previous->update(['puzzles' => [$otherCandidate]]);
+    $this->withSession(['number_systems.guest_token' => $otherToken])->postJson('/api/number-systems/join', $payload)
+        ->assertOk()->assertJsonPath('run.mission.prompt', $otherCandidate['prompt']);
+});
+
+test('a new team avoids the founders parallel team question while invited members get the existing shared question', function () {
+    $student = $this->students[0];
+    $teammate = $this->students[1];
+    $this->session->update(['mode' => 'teams', 'status' => 'running']);
+    $candidate = $this->engine->mission($this->session->seed, $student->id, 0, 30, 2);
+    $parallelSession = NumberSystemGameSession::factory()->create([
+        'teaching_course_id' => $this->course->id, 'mode' => 'teams', 'status' => 'paused', 'started_at' => now()->subHour(),
+    ]);
+    $parallel = NumberSystemGameRun::factory()->create([
+        'session_id' => $parallelSession->id, 'user_id' => $teammate->id, 'updated_at' => now()->subMinute(),
+        'puzzles' => [[...$candidate, 'id' => str_repeat('f', 24)]],
+    ]);
+    $parallel->members()->attach([$student->id, $teammate->id], ['session_id' => $parallelSession->id]);
+    $latestSession = NumberSystemGameSession::factory()->create([
+        'teaching_course_id' => $this->course->id, 'status' => 'ended', 'started_at' => now()->subMinutes(30),
+    ]);
+    $latestMission = $this->engine->mission($this->session->seed, $student->id, 0, 30, 2, 1);
+    $latest = NumberSystemGameRun::factory()->create([
+        'session_id' => $latestSession->id, 'user_id' => $student->id, 'puzzles' => [$latestMission],
+    ]);
+    $latest->members()->attach($student->id, ['session_id' => $latestSession->id]);
+    $before = $parallel->fresh()->getAttributes();
+
+    $joined = nsGameAs($this, $student)->postJson('/api/number-systems/join', [
+        'code' => $this->session->join_code, 'team_name' => 'Neues Team',
+    ])->assertOk()->json('run');
+    expect($joined['mission']['prompt'])->not->toBe($candidate['prompt'])->not->toBe($latestMission['prompt']);
+    expect($parallel->fresh()->getAttributes())->toBe($before);
+    $team = NumberSystemGameRun::findOrFail($joined['id']);
+    $parallel->update(['puzzles' => [$team->puzzles[0]]]);
+    $issuedPuzzles = $team->puzzles;
+
+    nsGameAs($this, $teammate)->postJson('/api/number-systems/join', [
+        'code' => $this->session->join_code, 'team_code' => $joined['team_code'],
+    ])->assertOk()->assertJsonPath('run.id', $joined['id'])->assertJsonPath('run.mission', $joined['mission']);
+    expect($team->fresh()->puzzles)->toBe($issuedPuzzles);
+});
+
 test('teams require private codes and deliver genuinely separate clue cards within the course', function () {
     $this->session->update(['status' => 'running', 'mode' => 'teams']);
     $joined = nsGameAs($this, $this->students[0])->postJson('/api/number-systems/join', ['code' => $this->session->join_code, 'team_name' => 'Archiv'])->assertOk()->json('run');

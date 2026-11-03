@@ -55,11 +55,13 @@
                             <NumberSystemPuzzle :mission="run.mission" :model-value="draft" :disabled="!canPlay || busy || conflict" @update:model-value="edit" />
                             <div class="ns-toolbar" style="margin-top:24px">
                                 <button v-if="!run.solved" type="submit" class="ns-button" :disabled="!canPlay || busy || saving || conflict">{{ busy ? 'Antwort wird geprüft …' : 'Antwort prüfen' }}</button>
-                                <button v-else type="button" class="ns-button" :disabled="busy || run.session.status !== 'running'" @click="act('advance')">
-                                    {{ run.position === run.total - 1 ? 'Rechenzentrum aktivieren' : 'Nächste Aufgabe' }}
+                                <button v-else type="button" class="ns-button" :disabled="busy || loading || conflict || run.session.status !== 'running'" @click="act('advance')">
+                                    {{ advancing ? 'Aufgabenwechsel läuft …' : advanceError ? 'Wechsel erneut versuchen' : run.position === run.total - 1 ? 'Rechenzentrum aktivieren' : 'Nächste Aufgabe' }}
                                 </button>
                                 <span class="ns-saving" role="status">{{ saving ? 'Deine Eingabe wird gespeichert …' : dirty ? 'Eingabe noch nicht gespeichert' : 'Spielstand gespeichert' }}</span>
                             </div>
+                            <p v-if="advancing" class="ns-small" role="status">Bis zur Bestätigung bleibt diese Aufgabe sichtbar.</p>
+                            <p v-if="advanceError" class="ns-alert ns-alert-error" role="alert">{{ advanceError }} Du siehst weiterhin dieselbe Aufgabe.</p>
                         </form>
                         <div v-if="run.feedback" class="ns-alert ns-feedback" :class="{ 'ns-success': run.solved }" role="status">{{ formatNumberSystemText(run.feedback.message) }}</div>
                     </section>
@@ -115,7 +117,7 @@ import { formatNumberSystemText } from '@/helpers/numberSystemNotation'
 import './game.css'
 const props = defineProps({ runId: { type: [Number, String], required: true }, probeId: String, participant: Number })
 defineEmits(['back'])
-const { run, draft, loading, saving, busy, dirty, conflict, error, storageUnavailable, canPlay, load, edit, flush, act } = useNumberSystemPlayer(toRef(props, 'runId'), props)
+const { run, draft, loading, saving, busy, dirty, conflict, error, advanceError, advancing, storageUnavailable, canPlay, load, edit, flush, act } = useNumberSystemPlayer(toRef(props, 'runId'), props)
 const chapters = ['Maschinenraum', 'Fehlerarchiv', 'Tresor', 'Funkzentrale']
 const asciiCharacters = ' ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('')
 const directionLabels = { decimal_binary: 'Dezimal → Dual', binary_decimal: 'Dual → Dezimal', decimal_hex: 'Dezimal → Hex', hex_decimal: 'Hex → Dezimal', binary_hex: 'Dual → Hex', hex_binary: 'Hex → Dual' }

@@ -12,7 +12,7 @@ function Assert-SchooltoolRepository {
     if ((Get-Location).Path.TrimEnd('\', '/') -ne $root.TrimEnd('\', '/').Replace('/', '\')) {
         throw 'Run this command from the project root.'
     }
-    foreach ($state in @('MERGE_HEAD', 'CHERRY_PICK_HEAD', 'REVERT_HEAD', 'rebase-merge', 'rebase-apply', 'BISECT_LOG')) {
+    foreach ($state in @('MERGE_HEAD', 'MERGE_AUTOSTASH', 'CHERRY_PICK_HEAD', 'REVERT_HEAD', 'sequencer', 'rebase-merge', 'rebase-apply', 'BISECT_LOG')) {
         $path = Invoke-SchooltoolGit rev-parse --git-path $state
         if (Test-Path -LiteralPath $path) {
             throw 'A Git operation is unfinished. Resolve or abort it before continuing.'
@@ -633,19 +633,139 @@ function gitsave {
     Write-SchooltoolCompletionTime
 }
 
+function Save-SchooltoolUpdateChanges {
+    $id = [guid]::NewGuid().ToString('N')
+    $backupRef = "refs/schooltool/gitupdate/$id"
+    $base = Invoke-SchooltoolGit rev-parse HEAD
+    $tracked = Invoke-SchooltoolGit stash create "gitupdate $id"
+    $indexCommit = if ($tracked) { Invoke-SchooltoolGit rev-parse "${tracked}^2" }
+    $indexTree = if ($tracked) { Invoke-SchooltoolGit rev-parse "${indexCommit}^{tree}" } else { Invoke-SchooltoolGit write-tree }
+    $workingTree = if ($tracked) { Invoke-SchooltoolGit rev-parse "${tracked}^{tree}" } else { $indexTree }
+    $untracked = @(Invoke-SchooltoolGit -c core.quotePath=true ls-files --others --exclude-standard)
+    if (-not $tracked -and -not $untracked.Count) { throw 'Git could not snapshot the worktree changes. Inspect git status.' }
+    $originalIndex = $env:GIT_INDEX_FILE
+    $temporaryIndex = Invoke-SchooltoolGit rev-parse --path-format=absolute --git-path "gitupdate-$id.index"
+    $pathList = "$temporaryIndex.paths"
+    $backupCommit = $null
+    $saved = $false
+    try {
+        try {
+            $env:GIT_INDEX_FILE = $temporaryIndex
+            $parents = @('-p', $base)
+            if (-not $indexCommit) {
+                $indexCommit = Invoke-SchooltoolGit commit-tree $indexTree -p $base -m "gitupdate $id index"
+            }
+            $parents += @('-p', $indexCommit)
+            if ($untracked.Count) {
+                Invoke-SchooltoolGit read-tree --empty
+                $emptyTree = Invoke-SchooltoolGit write-tree
+                # Feed Git its own quoted paths without PowerShell's native stdin encoding.
+                [System.IO.File]::WriteAllLines($pathList, [string[]]$untracked, [System.Text.Encoding]::ASCII)
+                Invoke-SchooltoolGit --literal-pathspecs add "--pathspec-from-file=$pathList"
+                $captured = @(Invoke-SchooltoolGit -c core.quotePath=true ls-files)
+                if ($captured.Count -ne $untracked.Count -or (Compare-Object -CaseSensitive $untracked $captured)) {
+                    throw 'Git did not capture every untracked path. Inspect git status.'
+                }
+                $untrackedTree = Invoke-SchooltoolGit write-tree
+                $parents += @('-p', (Invoke-SchooltoolGit commit-tree $untrackedTree -m "gitupdate $id untracked files"))
+            }
+
+            # Use the stash commit format without writing to the stash list shared by worktrees.
+            $backupCommit = Invoke-SchooltoolGit commit-tree $workingTree @parents -m "gitupdate $id"
+            Invoke-SchooltoolGit update-ref --no-deref $backupRef $backupCommit ('0' * $base.Length)
+            $saved = $true
+
+            if ($untracked.Count) {
+                Invoke-SchooltoolGit read-tree -m -u $untrackedTree $emptyTree
+            }
+            if ($tracked) {
+                Invoke-SchooltoolGit read-tree $workingTree
+                Invoke-SchooltoolGit update-index --refresh
+                Invoke-SchooltoolGit read-tree -m -u $workingTree $base
+            }
+        }
+        finally {
+            $env:GIT_INDEX_FILE = $originalIndex
+            foreach ($path in @($temporaryIndex, $pathList)) {
+                if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path }
+            }
+        }
+        if ((Invoke-SchooltoolGit write-tree) -cne $indexTree -or (Invoke-SchooltoolGit rev-parse HEAD) -cne $base) {
+            throw 'The Git index or HEAD changed while backing up local edits.'
+        }
+        Invoke-SchooltoolGit read-tree $base
+        Assert-SchooltoolClean
+    }
+    catch {
+        if ($saved) {
+            Write-Warning "Local backup retained at $backupRef. Inspect git status first. The checkout may contain some of your original edits. From a clean checkout, recover with git stash apply --index $backupRef."
+        }
+        throw
+    }
+    [pscustomobject]@{ Ref = $backupRef; Commit = $backupCommit }
+}
+
 function gitupdate {
     [CmdletBinding()]
     param()
     Assert-SchooltoolRepository
     $branch = Assert-SchooltoolFeature
-    Assert-SchooltoolClean
+    if (Invoke-SchooltoolGit ls-files --unmerged) {
+        throw 'The Git index has unresolved conflicts. Resolve them before running gitupdate.'
+    }
     Update-SchooltoolRemote
     $active = Get-SchooltoolActiveFeature
     if ($active.Branch -cne $branch) { throw 'This is not the active feature.' }
     Assert-SchooltoolSaved
-    Invoke-SchooltoolGit merge --ff-only "refs/remotes/origin/$branch"
-    Invoke-SchooltoolGit merge --no-edit refs/remotes/origin/main
-    Invoke-SchooltoolLocalPreparation
+    if (-not (Test-SchooltoolRef "refs/remotes/origin/$branch") -or -not (Test-SchooltoolRef refs/remotes/origin/main)) {
+        throw 'Origin must contain both the feature and main before updating.'
+    }
+    $backup = $null
+    if (Invoke-SchooltoolGit status --porcelain --untracked-files=all) {
+        Assert-SchooltoolRepository
+        if ((Assert-SchooltoolFeature) -cne $branch) { throw 'The feature branch changed. Run gitupdate again.' }
+        $backup = Save-SchooltoolUpdateChanges
+    }
+    $restored = $false
+    try {
+        Invoke-SchooltoolGit merge --ff-only --no-autostash --no-overwrite-ignore "refs/remotes/origin/$branch"
+        Invoke-SchooltoolGit merge --no-edit --no-autostash --no-overwrite-ignore refs/remotes/origin/main
+        $updatedHead = Invoke-SchooltoolGit rev-parse HEAD
+        $preparationFailure = $null
+        try { Invoke-SchooltoolLocalPreparation }
+        catch { $preparationFailure = $_ }
+
+        if ($backup) {
+            try {
+                Assert-SchooltoolRepository
+                if ((Assert-SchooltoolFeature) -cne $branch -or (Invoke-SchooltoolGit rev-parse HEAD) -cne $updatedHead) {
+                    throw 'The feature checkout changed during local preparation.'
+                }
+                Assert-SchooltoolClean
+                Invoke-SchooltoolGit stash apply --index $backup.Commit
+                $restored = $true
+            }
+            catch {
+                if ($preparationFailure) { Write-Warning $preparationFailure.Exception.Message }
+                throw
+            }
+        }
+        if ($preparationFailure) { throw $preparationFailure }
+        if ($backup) {
+            Invoke-SchooltoolGit update-ref --no-deref -d $backup.Ref $backup.Commit
+        }
+    }
+    catch {
+        if ($backup) {
+            if ($restored) {
+                Write-Warning "Local edits were restored. A backup was retained at $($backup.Ref)."
+            }
+            else {
+                Write-Warning "Local backup retained at $($backup.Ref). Inspect git status first. Resolve any restore conflicts in place. To recover separately from a clean checkout, use git stash apply --index $($backup.Ref)."
+            }
+        }
+        throw
+    }
     Write-Host 'main was incorporated. Test the feature, then use gitsave to share this state.' -ForegroundColor Green
     Write-SchooltoolCompletionTime
 }

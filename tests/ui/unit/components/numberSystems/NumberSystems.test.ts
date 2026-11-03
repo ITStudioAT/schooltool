@@ -34,9 +34,9 @@ it('keeps course and lesson fixed when preparing an adventure from the course ta
 const state = (changes = {}) => ({ id: 7, revision: 0, position: 0, total: 12, solved: false, completed: false,
     mission: { id: 'mission-a', fields: [] }, draft: {}, session: { status: 'running' }, ...changes })
 const reply = run => ({ data: { run: JSON.parse(JSON.stringify(run)) } })
-function player(context = {}) {
+function player(context = {}, runId = ref(7)) {
     let api
-    wrappers.push(mount(defineComponent({ setup() { api = useNumberSystemPlayer(ref(7), context); return () => h('div') } })))
+    wrappers.push(mount(defineComponent({ setup() { api = useNumberSystemPlayer(runId, context); return () => h('div') } })))
     return api
 }
 beforeEach(() => { vi.useFakeTimers(); vi.resetAllMocks(); localStorage.clear() })
@@ -171,6 +171,71 @@ describe('Number systems interaction and persistence', () => {
         expect(await api.act('hint')).toBe(false)
         expect(axios.post).toHaveBeenCalledTimes(1)
         expect(localStorage.getItem('schooltool-number-system-draft-7')).toContain('local')
+    })
+
+    it('retries an unconfirmed advance for the same mission and ignores a double click', async () => {
+        const solved = state({ revision: 4, solved: true })
+        const next = state({ revision: 5, position: 1, mission: { id: 'mission-b', fields: [] } })
+        vi.mocked(axios.get).mockResolvedValue(reply(solved))
+        let loseResponse: (error: Error) => void = () => {}
+        vi.mocked(axios.post)
+            .mockImplementationOnce(() => new Promise((_, reject) => { loseResponse = reject }))
+            .mockResolvedValueOnce(reply(next))
+        const api = player()
+        await flushPromises()
+
+        const first = api.act('advance')
+        expect(api.advancing.value).toBe(true)
+        expect(await api.act('advance')).toBe(false)
+        expect(axios.post).toHaveBeenCalledTimes(1)
+        loseResponse(new Error('response lost'))
+        expect(await first).toBe(false)
+        expect(api.advanceError.value).toContain('konnte nicht bestätigt werden')
+        expect(api.run.value.position).toBe(0)
+
+        expect(await api.act('advance')).toBe(true)
+        expect(vi.mocked(axios.post).mock.calls[1]).toEqual(vi.mocked(axios.post).mock.calls[0])
+        expect(api.run.value.position).toBe(1)
+        expect(api.advanceError.value).toBe('')
+    })
+
+    it('ignores a poll from the previous mission after a successful advance', async () => {
+        const solved = state({ revision: 4, solved: true })
+        const next = state({ revision: 5, position: 1, mission: { id: 'mission-b', fields: [] } })
+        vi.mocked(axios.get).mockResolvedValueOnce(reply(solved))
+        let finishPoll: (value: ReturnType<typeof reply>) => void = () => {}
+        vi.mocked(axios.get).mockImplementationOnce(() => new Promise(resolve => { finishPoll = resolve }))
+        vi.mocked(axios.post).mockResolvedValue(reply(next))
+        const api = player()
+        await flushPromises()
+        await vi.advanceTimersByTimeAsync(3500)
+        expect(axios.get).toHaveBeenCalledTimes(2)
+
+        expect(await api.act('advance')).toBe(true)
+        finishPoll(reply(solved))
+        await flushPromises()
+        expect(api.run.value.position).toBe(1)
+        expect(api.run.value.mission.id).toBe('mission-b')
+    })
+
+    it('ignores a late advance response after opening a different adventure', async () => {
+        const runId = ref(7)
+        const solved = state({ revision: 4, solved: true })
+        const next = state({ revision: 5, position: 1, mission: { id: 'mission-b', fields: [] } })
+        vi.mocked(axios.get).mockResolvedValueOnce(reply(solved)).mockResolvedValueOnce(reply(state({ id: 8 })))
+        let finishAdvance: (value: ReturnType<typeof reply>) => void = () => {}
+        vi.mocked(axios.post).mockImplementationOnce(() => new Promise(resolve => { finishAdvance = resolve }))
+        const api = player({}, runId)
+        await flushPromises()
+
+        const pending = api.act('advance')
+        runId.value = 8
+        await flushPromises()
+        finishAdvance(reply(next))
+        expect(await pending).toBe(false)
+        expect(api.run.value.id).toBe(8)
+        expect(api.run.value.position).toBe(0)
+        expect(api.advancing.value).toBe(false)
     })
 
     it('accepts a teacher pause from polling without discarding a local unsaved draft', async () => {

@@ -11,7 +11,7 @@
                     <v-card-text>
                         <p v-if="assignmentError" role="alert" class="text-error">{{ assignmentError }}</p>
                         <p v-if="saving" role="status">Spiel wird hinzugefügt …</p>
-                        <TeachingGames v-if="selecting" selection :busy="saving" :assigned="gamesForDate(selectedDate)" @select="addGame" />
+                        <TeachingGames v-if="selecting" selection :busy="saving" :assigned="gamesForDate(selectedDate)" @select="selectGame" />
                         <NetworksGame v-else-if="selectedGame === 'networks'" />
                         <NumberSystemsGame v-else-if="selectedGame === 'number-systems'" :key="selectedDate.id" :course-id="Number(course.id)" :course-date-id="selectedDate.id" />
                         <template v-else-if="!selectedSessionId">
@@ -37,13 +37,13 @@
                 </v-card>
             </v-dialog>
         </th>
-        <td v-for="(courseDate, dateIndex) in dates" :key="courseDate.id || courseDate.date" class="course-games-cell">
-            <button v-for="game in gamesForDate(courseDate)" :key="game" type="button" class="course-game-card"
+        <td v-for="{ courseDate, games, rounds } in dateEntries" :key="courseDate.id || courseDate.date" class="course-games-cell">
+            <button v-for="game in games" :key="game" type="button" class="course-game-card"
                 :aria-label="`${gameTitles[game]} für ${dateLabel(courseDate)} öffnen`" @click="showGame(game, courseDate)">
                 <span class="course-game-type">{{ gameTitles[game] }}</span>
                 <span class="course-game-title">Spiel öffnen</span>
             </button>
-            <button v-for="session in sessionsForDate(courseDate, dateIndex)" :key="session.id" type="button" class="course-game-card" :aria-label="`Ergebnisse von ${session.title} ansehen`" @click="showSession(session)">
+            <button v-for="session in rounds" :key="session.id" type="button" class="course-game-card" :aria-label="`Ergebnisse von ${session.title} ansehen`" @click="showSession(session)">
                 <span class="course-game-type">Zahlensysteme</span>
                 <span class="course-game-title">{{ session.title }}</span>
                 <span class="course-game-time">{{ numberSystemSessionDates(session) }}</span>
@@ -75,6 +75,12 @@ const sessions = ref([]), loading = ref(false), error = ref(false), dialogOpen =
 let request = null
 const orderedSessions = computed(() => [...sessions.value].sort((left, right) =>
     Date.parse(right.started_at || right.created_at || 0) - Date.parse(left.started_at || left.created_at || 0)))
+const dateEntries = computed(() => props.dates.map((courseDate, dateIndex) => {
+    const rounds = sessionsForDate(courseDate, dateIndex)
+    const games = gamesForDate(courseDate).filter(game => game !== 'number-systems' || rounds.length === 0)
+
+    return { courseDate, games, rounds }
+}))
 
 async function load() {
     request?.abort()
@@ -104,6 +110,14 @@ function showAll() { resetSelection(); dialogOpen.value = true }
 function showSession(session) { resetSelection(); selectedSessionId.value = session.id; dialogOpen.value = true }
 function showSelection(courseDate) { resetSelection(); selectedDate.value = courseDate; selecting.value = true; dialogOpen.value = true }
 function showGame(game, courseDate) { resetSelection(); selectedDate.value = courseDate; selectedGame.value = game; dialogOpen.value = true }
+function selectGame(game) {
+    if (game === 'number-systems' && gamesForDate(selectedDate.value).includes(game)) {
+        showGame(game, selectedDate.value)
+        return
+    }
+
+    void addGame(game)
+}
 async function addGame(game) {
     if (saving.value || !selectedDate.value || gamesForDate(selectedDate.value).includes(game)) { return }
     const courseId = props.course.id

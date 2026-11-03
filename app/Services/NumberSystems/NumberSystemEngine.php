@@ -3,12 +3,15 @@
 namespace App\Services\NumberSystems;
 
 use InvalidArgumentException;
+use RuntimeException;
 
 class NumberSystemEngine
 {
     public const VERSION = 1;
 
     public const DIRECTIONS = ['decimal_binary', 'binary_decimal', 'decimal_hex', 'hex_decimal', 'binary_hex', 'hex_binary'];
+
+    private const MAXIMUM_VALUES = [1 => 31, 2 => 255, 3 => 4095];
 
     public function count(int $minutes): int
     {
@@ -59,19 +62,51 @@ class NumberSystemEngine
         };
     }
 
+    /**
+     * @param  list<array<string, mixed>>  $previousMissions
+     * @return list<array<string, mixed>>
+     */
+    public function adventure(string $seed, int $studentId, int $minutes, int $difficulty, array $previousMissions = []): array
+    {
+        $puzzles = [];
+        $previousQuestion = null;
+        $previousStarts = array_map($this->visibleQuestion(...), $previousMissions);
+        for ($position = 0, $total = $this->count($minutes); $position < $total; $position++) {
+            $variants = $position === 0 ? (self::MAXIMUM_VALUES[$difficulty] ?? 0) + 1 : 32;
+            for ($variant = 0; $variant < $variants; $variant++) {
+                $mission = $this->mission($seed, $studentId, $position, $minutes, $difficulty, $variant);
+                $question = $this->visibleQuestion($mission);
+                if ($question !== $previousQuestion && ($position !== 0 || ! in_array($question, $previousStarts, true))) {
+                    $puzzles[] = $mission;
+                    $previousQuestion = $question;
+
+                    continue 2;
+                }
+            }
+
+            throw new RuntimeException('Für diese Position konnte keine andere sichtbare Aufgabe erzeugt werden.');
+        }
+
+        return $puzzles;
+    }
+
     /** @return array<string, mixed> Internal definition; solution, hints and explanation never enter the initial player payload. */
-    public function mission(string $seed, int $studentId, int $position, int $minutes, int $difficulty): array
+    public function mission(string $seed, int $studentId, int $position, int $minutes, int $difficulty, int $variant = 0): array
     {
         $total = $this->count($minutes);
         if ($position < 0 || $position >= $total || ! in_array($difficulty, [1, 2, 3], true)) {
             throw new InvalidArgumentException('Ungültige Mission.');
         }
         $key = $seed.'|'.$studentId.'|'.$position.'|'.$minutes.'|'.$difficulty.'|v1';
-        $draw = fn (string $label, int $min, int $max): int => $min + (int) (hexdec(substr(hash('sha256', $key.'|'.$label), 0, 8)) % ($max - $min + 1));
-        $maximum = [1 => 31, 2 => 255, 3 => 4095][$difficulty];
+        $drawKey = $variant === 0 || $position === 0 ? $key : $key.'|variant|'.$variant;
+        $draw = fn (string $label, int $min, int $max): int => $min + (int) (hexdec(substr(hash('sha256', $drawKey.'|'.$label), 0, 8)) % ($max - $min + 1));
+        $maximum = self::MAXIMUM_VALUES[$difficulty];
         $edges = [0, 10, 15, 16, 31, 53, 127, 128, 154, 173, 255, 256, 260, 527, 4095];
         $edges = array_values(array_filter($edges, fn (int $value): bool => $value <= $maximum));
         $value = $draw('edge', 0, 2) === 0 ? $edges[$draw('edge-value', 0, count($edges) - 1)] : $draw('value', 0, $maximum);
+        if ($position === 0 && $variant !== 0) {
+            $value = ($value + $variant) % ($maximum + 1);
+        }
         $chapter = min(3, (int) floor($position * 4 / $total));
         $chapters = ['Maschinenraum', 'Fehlerarchiv', 'Tresor', 'Funkzentrale'];
         $stories = ['Wecke die stillgelegten Rechner. Jeder richtige Datenweg bringt Energie zurück.',
@@ -200,6 +235,29 @@ class NumberSystemEngine
         unset($mission['solution'], $mission['hints'], $mission['explanation'], $mission['private_clues']);
 
         return $mission;
+    }
+
+    /** @return array<string, mixed> */
+    private function visibleQuestion(array $mission): array
+    {
+        $public = $this->publicMission($mission);
+        $display = fn (string $text): string => preg_replace('/\b([01]+(?:[ \t]+[01]+)*)\s*\(dual\)/i', '$1₂', $text);
+
+        return [
+            'title' => $public['title'],
+            'prompt' => $display($public['prompt']),
+            'evidence' => array_map($display, $public['evidence'] ?? []),
+            'tokens' => array_map($display, $public['tokens'] ?? []),
+            'fields' => array_map(fn (array $field): array => [
+                'label' => $field['label'],
+                'widget' => $field['widget'],
+                'base' => $field['base'] ?? null,
+                'width' => $field['width'] ?? null,
+                'initial' => $field['initial'] ?? null,
+                'placeholder' => $field['placeholder'] ?? null,
+                'choices' => array_map($display, array_column($field['options'] ?? [], 'label')),
+            ], $public['fields']),
+        ];
     }
 
     /** @return list<string> */

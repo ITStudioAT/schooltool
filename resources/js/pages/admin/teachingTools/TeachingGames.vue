@@ -16,14 +16,15 @@
             <ul class="teaching-games__grid" aria-label="Verfügbare Spiele">
                 <li>
                     <component :is="selection ? 'button' : RouterLink" :to="selection ? undefined : '/admin/teaching-tools/games/number-systems'" class="game-tile"
-                        :type="selection ? 'button' : undefined" :disabled="selection && (busy || assigned.includes('number-systems'))"
-                        :aria-label="selection ? 'Zahlensysteme hinzufügen' : 'Zahlensysteme öffnen'" @click="selection && emit('select', 'number-systems')">
+                        :type="selection ? 'button' : undefined" :disabled="selection && busy"
+                        :aria-label="selection && !assigned.includes('number-systems') ? 'Zahlensysteme hinzufügen' : 'Zahlensysteme öffnen'"
+                        @click="selection && emit('select', 'number-systems')">
                         <div class="game-tile__board" aria-hidden="true">
                             <span>2</span><span>01</span><span>10</span><span>16</span>
                         </div>
                         <div class="game-tile__caption">
                             <h2>Zahlen<wbr>systeme</h2>
-                            <span v-if="selection && assigned.includes('number-systems')">Hinzugefügt</span>
+                            <span v-if="selection && assigned.includes('number-systems')">Spiel öffnen</span>
                         </div>
                     </component>
                 </li>

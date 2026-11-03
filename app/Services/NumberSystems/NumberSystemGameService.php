@@ -110,10 +110,8 @@ class NumberSystemGameService
                     abort_if(NumberSystemGameRun::query()->where('session_id', $session->id)->where('team_name', trim($teamName))->exists(), 422, 'Dieser Teamname ist schon vergeben. Frage nach dem Teamcode oder wähle einen anderen Namen.');
                 }
                 abort_unless($session->engine_version === NumberSystemEngine::VERSION, 409, 'Diese Spielversion kann keine neuen Einstiege mehr erstellen.');
-                $puzzles = [];
-                foreach (range(0, $this->engine->count($session->planned_minutes) - 1) as $position) {
-                    $puzzles[] = $this->engine->mission($session->seed, $student instanceof User ? (int) $student->id : -(int) $student->id, $position, $session->planned_minutes, $session->difficulty);
-                }
+                $puzzles = $this->engine->adventure($session->seed, $student instanceof User ? (int) $student->id : -(int) $student->id,
+                    $session->planned_minutes, $session->difficulty, $this->previousMissions($student, $session));
                 $run = NumberSystemGameRun::query()->create(['session_id' => $session->id, 'user_id' => $student instanceof User ? $student->id : null,
                     'team_name' => $session->mode === 'teams' ? trim($teamName) : null,
                     'team_code' => $session->mode === 'teams' ? strtoupper(bin2hex(random_bytes(4))) : null,
@@ -127,6 +125,33 @@ class NumberSystemGameService
 
             return $run->refresh();
         }, 3);
+    }
+
+    /** @return list<array<string, mixed>> */
+    private function previousMissions(User|NumberSystemGameGuest $student, NumberSystemGameSession $session): array
+    {
+        $runs = NumberSystemGameRun::query()
+            ->where('session_id', '!=', $session->id)
+            ->whereHas('session', fn ($query) => $query->where('school_id', $session->school_id)->whereNotNull('started_at'));
+        if ($student instanceof User) {
+            $runs->whereHas('members', fn ($query) => $query->where('users.id', $student->id))
+                ->whereHas('session.course.teachingCourseStudents', fn ($query) => $query->where('user_id', $student->id)->whereNull('canceled_at'));
+        } else {
+            $runs->whereHas('guests', fn ($query) => $query->where('token_hash', $student->token_hash))
+                ->whereHas('session', fn ($query) => $query->whereIn('audience', ['mixed', 'external']));
+        }
+
+        $columns = ['id', 'position', 'puzzles'];
+        $latest = (clone $runs)->latest('updated_at')->latest('id')->first($columns);
+        $active = $runs->whereNull('completed_at')
+            ->whereHas('session', fn ($query) => $query->whereIn('status', ['running', 'paused']))
+            ->get($columns);
+        if ($latest !== null && ! $active->contains($latest)) {
+            $active->push($latest);
+        }
+
+        return $active->map(fn (NumberSystemGameRun $run): ?array => $run->puzzles[$run->position] ?? null)
+            ->filter()->values()->all();
     }
 
     public function authorizeRun(User|NumberSystemGameGuest $student, NumberSystemGameRun $run): void
@@ -146,6 +171,12 @@ class NumberSystemGameService
             $locked = NumberSystemGameRun::query()->lockForUpdate()->findOrFail($run->id);
             $locked->setRelation('session', $session);
             $this->authorizeRun($student, $locked);
+            if ($action === 'advance' && (int) $data['revision'] < $locked->revision) {
+                $previousPosition = array_column($locked->history ?? [], 'position', 'id')[$data['mission_id']] ?? null;
+                if ($previousPosition !== null && ($previousPosition < $locked->position || $locked->completed_at !== null)) {
+                    return $this->state($locked, $student);
+                }
+            }
             abort_if((int) $data['revision'] !== $locked->revision, 409, 'Der Spielstand wurde in einem anderen Fenster oder Gerät verändert. Lade den gespeicherten Stand, bevor du weiterarbeitest.');
             abort_if($locked->completed_at || $session->status === 'ended', 422, 'Dieses Abenteuer ist abgeschlossen. Der gespeicherte Fortschritt bleibt erhalten.');
             $mission = $locked->puzzles[$locked->position];

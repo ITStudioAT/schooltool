@@ -50,7 +50,7 @@ it('keeps rounds outside course dates and unstarted rounds accessible without in
     expect(list.findAll('li')[0].text()).toContain('Ferienrunde')
 })
 
-it('adds the selected game to the exact course date and reopens it with that context', async () => {
+it('replaces the game card with the named adventure and keeps the game accessible from plus', async () => {
     vi.mocked(axios.get).mockResolvedValue({ data: { sessions: [] } })
     vi.mocked(axios.post).mockResolvedValue({ data: { id: 2, games: ['networks', 'number-systems'] } })
     const wrapper = render(); await flushPromises()
@@ -59,10 +59,32 @@ it('adds the selected game to the exact course date and reopens it with that con
     await wrapper.get('[aria-label="Zahlensysteme hinzufügen"]').trigger('click'); await flushPromises()
     expect(axios.post).toHaveBeenCalledExactlyOnceWith('/api/admin/teaching/course_dates/2/games', { game: 'number-systems' })
     expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
-    expect(wrapper.findAll('td')[0].findAll('.course-game-card')).toHaveLength(0)
-    expect(wrapper.findAll('td')[1].text()).toContain('Netzwerke').toContain('Zahlensysteme')
+    const cells = wrapper.findAll('td')
+    expect(cells[0].findAll('.course-game-card')).toHaveLength(0)
+    expect(cells[1].text()).toContain('Netzwerke').toContain('Zahlensysteme')
     await wrapper.get('[aria-label="Zahlensysteme für 02.07.2026 öffnen"]').trigger('click'); await flushPromises()
     expect(wrapper.get('[data-test="game-result"]').text()).toContain('Kurs 18 Termin 2')
+
+    vi.mocked(axios.get).mockResolvedValue({ data: { sessions: [
+        { id: 8, title: 'Signal Null xxx', teaching_course_id: 18, teaching_course_date_id: 2, status: 'waiting', created_at: '2026-07-01T20:44:00Z' },
+    ] } })
+    await wrapper.findAll('[role="dialog"] button').find(button => button.text() === 'Schließen').trigger('click')
+    await flushPromises()
+
+    expect(cells[1].findAll('.course-game-card')).toHaveLength(2)
+    expect(cells[1].text()).toContain('Netzwerke').toContain('Vorbereitet: 01.07. 22:44')
+    expect(cells[1].find('[aria-label="Zahlensysteme für 02.07.2026 öffnen"]').exists()).toBe(false)
+    await cells[1].get('[aria-label="Ergebnisse von Signal Null xxx ansehen"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-test="game-result"]').text()).toBe('Ergebnis 8')
+
+    await wrapper.findAll('[role="dialog"] button').find(button => button.text() === 'Schließen').trigger('click')
+    await flushPromises()
+    await cells[1].get('.course-game-add').trigger('click')
+    await wrapper.get('[role="dialog"] [aria-label="Zahlensysteme öffnen"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-test="game-result"]').text()).toContain('Kurs 18 Termin 2')
+    expect(axios.post).toHaveBeenCalledTimes(1)
 })
 
 it('keeps a failed selection open for retry and disables duplicate assignments', async () => {
@@ -84,13 +106,18 @@ it('keeps a failed selection open for retry and disables duplicate assignments',
 it('restores saved assignments and places unstarted dated rounds in the exact column', async () => {
     vi.mocked(axios.get).mockResolvedValue({ data: { sessions: [
         { id: 8, title: 'Geplante Runde', teaching_course_id: 18, teaching_course_date_id: 2, status: 'waiting' },
+        { id: 9, title: 'Weitere Runde', teaching_course_id: 18, teaching_course_date_id: 2, status: 'waiting' },
     ] } })
     const wrapper = render()
     await wrapper.setProps({ dates: [{ id: 1, date: '2026-07-02', games: ['networks'] }, { id: 2, date: '2026-07-02', games: ['number-systems'] }] })
     await flushPromises()
     expect(wrapper.findAll('td')[0].text()).toContain('Netzwerke')
     expect(wrapper.findAll('td')[0].text()).not.toContain('Geplante Runde')
-    expect(wrapper.findAll('td')[1].text()).toContain('Zahlensysteme').toContain('Geplante Runde')
+    const cards = wrapper.findAll('td')[1].findAll('.course-game-card')
+    expect(cards.map(card => card.attributes('aria-label'))).toEqual([
+        'Ergebnisse von Geplante Runde ansehen',
+        'Ergebnisse von Weitere Runde ansehen',
+    ])
 })
 
 it('discards a late response after switching courses and provides retry after a failed load', async () => {
