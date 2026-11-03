@@ -12,13 +12,18 @@ use DateTimeImmutable;
 use DateTimeZone;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Validation\ValidationException;
+use JsonException;
 
 class TeachingWorkJsonImport
 {
-    public function __construct(private SchooltoolAssessmentJson $parser, private TeachingCourseStudentEntryService $entries, private TeachingCourseWorkEntrySyncService $sync, private TeachingWorkMarkdownImport $markdown) {}
+    private const LEGACY_BINDING = 'source_fingerprint';
+
+    private const SUBMISSION_BINDING = 'submission_sha256';
+
+    public function __construct(private SchooltoolAssessmentJson $parser, private TeachingCourseStudentEntryService $entries, private TeachingCourseWorkEntrySyncService $sync, private TeachingWorkMarkdownImport $markdown, private TeachingWorkAiExport $identityExport) {}
 
     /** @param list<UploadedFile> $uploads */
-    public function parse(string $text, array $uploads): array
+    public function parse(string $text, array $uploads, ?string $identityExportText = null): array
     {
         $package = $this->parser->parse($text);
         $references = array_values(array_filter([$package['overview_pdf'], ...array_column($package['records'], 'pdf')]));
@@ -37,13 +42,25 @@ class TeachingWorkJsonImport
             $this->parser->check($header === '%PDF-' && $upload->getMimeType() === 'application/pdf' && hash_equals($matches[0]['sha256'], hash_file('sha256', $upload->getRealPath())), 'PDF-Inhalt oder Prüfsumme falsch: '.$name);
             $pdfs[$name] = ['name' => $name, 'sha256' => $matches[0]['sha256']];
         }
-        $this->parser->check(strlen($text) + array_sum(array_map(fn (UploadedFile $file): int => $file->getSize(), $uploads)) <= 6 * 1024 * 1024, 'JSON-Paket überschreitet 6 MiB.');
+        $this->parser->check(strlen($text) + strlen($identityExportText ?? '') + array_sum(array_map(fn (UploadedFile $file): int => $file->getSize(), $uploads)) <= 6 * 1024 * 1024, 'JSON-Paket überschreitet 6 MiB.');
 
-        return ['package' => $package, 'pdfs' => $pdfs];
+        $bundle = ['package' => $package, 'pdfs' => $pdfs];
+        if ($identityExportText !== null) {
+            $this->parser->check(strlen($identityExportText) <= 1048576, 'Arbeitsdatenexport überschreitet 1 MiB.');
+            try {
+                $source = json_decode(str_starts_with($identityExportText, "\xEF\xBB\xBF") ? substr($identityExportText, 3) : $identityExportText, true, flags: JSON_THROW_ON_ERROR);
+            } catch (JsonException) {
+                throw ValidationException::withMessages(['identity_export' => 'Arbeitsdatenexport ist kein gültiges UTF-8-JSON.']);
+            }
+            $this->parser->check(is_array($source) && ($source['schema_version'] ?? null) === 1 && ($source['kind'] ?? null) === 'schooltool.ai-work-export', 'Ungültiger ursprünglicher Arbeitsdatenexport.');
+            $bundle['identity_export'] = ['source' => $source, 'sha256' => hash('sha256', $identityExportText)];
+        }
+
+        return $bundle;
     }
 
     /** @return list<array{student_id: int, first_name: string, last_name: string, class_name: string}> */
-    private function participants(TeachingCourse $course): array
+    public function participants(TeachingCourse $course): array
     {
         $participants = [];
         foreach ($course->teachingCourseStudents()->whereNull('canceled_at')->with(['user', 'import116'])->get() as $student) {
@@ -62,10 +79,12 @@ class TeachingWorkJsonImport
         return $participants;
     }
 
-    public function preview(TeachingCourseWork $work, User $actor, array $bundle): array
+    /** @param list<array<string, mixed>> $availabilitySources */
+    public function preview(TeachingCourseWork $work, User $actor, array $bundle, array $availabilitySources = []): array
     {
         $package = $bundle['package'];
         $course = $work->teachingCourse;
+        $identityBinding = isset($bundle['identity_export']) ? $this->identityBinding($work, $actor, $bundle) : null;
         $deadlineContext = $this->deadlineContext($work, $package);
         $deadlineNeedsReview = $deadlineContext['requires_review'] ?? false;
         if (isset($package['teacher_absence_decision'])) {
@@ -73,6 +92,7 @@ class TeachingWorkJsonImport
                 $this->checkDeadline($work, $package['teacher_absence_decision']);
             }
         }
+        $previousDownload = null;
         if (isset($package['final_download'])) {
             if (! $deadlineNeedsReview) {
                 $this->checkDeadline($work, $package['final_download']);
@@ -124,7 +144,7 @@ class TeachingWorkJsonImport
             $receipt = collect($receipts)->first(fn (array $item): bool => $item['exercise_id'] === $package['exercise_id'] && $item['participant_id'] === $record['participant_id']);
             $error = null;
             if ($studentId === null || count($groupIndexes) !== 1 || SchooltoolAssessmentJson::normalize($groupName) !== SchooltoolAssessmentJson::normalize($identity['group_name'])
-                || ($identity['schooltool_person_id'] !== null && $identity['schooltool_person_id'] !== (string) $studentId)) {
+                || ($identity['schooltool_person_id'] !== null && ($identityBinding['student_ids'][$identity['schooltool_person_id']] ?? $identity['schooltool_person_id']) !== (string) $studentId)) {
                 $error = 'Person, Klasse, Gruppe oder ID nicht eindeutig – Import gesperrt';
             } elseif (($receipt && $receipt['student_id'] !== $studentId) || in_array($studentId, $targets, true)) {
                 $error = 'Teilnehmerkennung umgehängt oder Zielperson mehrfach – Import gesperrt';
@@ -161,6 +181,19 @@ class TeachingWorkJsonImport
         $submissionCheck = $package['submission_check'] ?? null;
         if ($submissionCheck !== null) {
             $this->parser->check(! $blocked && $this->expectedStudentIds($work) === $this->sortedIds($targets), 'Abgabeprüfung benötigt genau alle erwarteten Zielpersonen.');
+            if ($submissionCheck['schema_version'] === 2) {
+                foreach ($submissionCheck['participants'] as $person) {
+                    $row = collect($rows)->firstWhere('participant_id', $person['participant_id']);
+                    $sources = array_values(array_filter($availabilitySources, fn (array $source): bool => (int) $source['student_id'] === (int) $row['student_id']
+                        && in_array($source['log_sha256'], $person['availability_evidence_sha256'], true)
+                        && (! isset($source['exercise_id']) || ($source['exercise_id'] === $package['exercise_id'] && $source['participant_id'] === $person['participant_id']))));
+                    $this->parser->check($sources !== [], 'Abgabeprüfung: personenbezogener Bereitstellungs- oder echter Aufgabenversandbeleg fehlt.');
+                    $earliest = min(array_map(fn (array $source): DateTimeImmutable => $this->parser->instant($source['available_at']), $sources));
+                    $this->parser->check($this->parser->instant($person['available_at']) == $earliest
+                        && collect($sources)->contains(fn (array $source): bool => $source['method'] === $person['availability_method'] && $this->parser->instant($source['available_at']) == $earliest),
+                        'Abgabeprüfung: Verfügbarkeitsbeginn oder Ausgabeweg widerspricht dem gebundenen Beleg.');
+                }
+            }
             if (! $deadlineNeedsReview) {
                 $this->checkDeadline($work, $submissionCheck);
             }
@@ -170,20 +203,32 @@ class TeachingWorkJsonImport
                 $nextTime = $this->parser->instant($submissionCheck['checked_at']);
                 $this->parser->check($nextTime > $previousTime || ($nextTime == $previousTime && $submissionCheck['check_checksum'] === $previousCheck['check']['check_checksum']), 'Abgabeprüfung ist älter oder widerspricht dem gespeicherten Prüfstand.');
                 if ($nextTime == $previousTime) {
+                    $bindingKind = $this->bindingKind($package['records']);
+                    $previousKind = $previousCheck['binding_kind'] ?? self::LEGACY_BINDING;
+                    $this->parser->check($bindingKind === $previousKind, 'Wechsel der Abgabebindung benötigt einen tatsächlich neueren Prüfstand.');
                     $this->parser->check($previousCheck['work_id'] === (int) $work->id && $previousCheck['course_id'] === (int) $course->id
-                        && $previousCheck['roster'] === $this->rosterBinding($work), 'Geänderte Zielbasis benötigt einen neuen Prüfstand.');
+                        && ($previousCheck['roster'] === $this->rosterBinding($work)
+                            || $previousCheck['roster'] === $this->rosterBinding($work, false)
+                            || $this->matchesOriginalRosterOrder($work, $previousCheck, $identityBinding)), 'Geänderte Zielbasis benötigt einen neuen Prüfstand.');
                     $incoming = $receipts;
                     foreach ($package['records'] as $index => $record) {
                         $incoming = array_values(array_filter($incoming, fn (array $receipt): bool => $receipt['exercise_id'] !== $package['exercise_id'] || $receipt['participant_id'] !== $record['participant_id']));
                         $incoming[] = ['exercise_id' => $package['exercise_id'], 'participant_id' => $record['participant_id'], 'student_id' => $rows[$index]['student_id'], 'record' => $record];
                     }
-                    $this->parser->check($previousCheck['bindings'] === $this->recordBindings($incoming), 'Geänderte Abgabefassung benötigt einen neuen Prüfstand.');
+                    $sameSubmissions = $previousCheck['bindings'] === $this->recordBindings($incoming, bindingKind: $bindingKind);
+                    if ($bindingKind === self::LEGACY_BINDING && $previousDownload !== null && isset($package['final_download'])) {
+                        $this->parser->finalDownload($previousDownload, $package['exercise_id'], array_column(array_values(array_filter($receipts,
+                            fn (array $receipt): bool => $receipt['exercise_id'] === $package['exercise_id'])), 'record'));
+                        $sameSubmissions = $this->recordBindings($receipts, $previousDownload) === $this->recordBindings($incoming, $package['final_download']);
+                    }
+                    $this->parser->check($previousCheck['bindings'] === $this->recordBindings($receipts, bindingKind: $previousKind) && $sameSubmissions, 'Geänderte Abgabefassung benötigt einen neuen Prüfstand.');
                 }
             }
         }
 
         return ['target_work' => ['id' => $work->id, 'title' => $work->title, 'course_id' => $course->id, 'course_title' => $course->title],
             'deadline_context' => $deadlineContext,
+            'identity_binding' => $identityBinding,
             'submission_check' => $submissionCheck,
             'teacher_absence_decision' => $package['teacher_absence_decision'] ?? null,
             'final_download' => $package['final_download'] ?? null,
@@ -191,7 +236,7 @@ class TeachingWorkJsonImport
             'package_checksum' => $package['package_checksum'], 'overview_pdf' => $package['overview_pdf'], 'rows' => $rows, 'can_import' => ! $blocked && ! $deadlineNeedsReview,
             'previous_overview_pdf' => collect($work->status['evaluation_pdfs'] ?? [])->firstWhere('student_id', null),
             'overview_will_replace' => ! $deadlineNeedsReview && $package['overview_pdf'] !== null && ! collect($work->status['assessment_json_packages'] ?? [])->contains('package_checksum', $package['package_checksum']),
-            'hash' => hash('sha256', json_encode([$work->getAttributes(), $course->getAttributes(), $participants, $groups, $definition->toArray(), $bundle], JSON_THROW_ON_ERROR))];
+            'hash' => hash('sha256', json_encode([$work->getAttributes(), $course->getAttributes(), $participants, $groups, $definition->toArray(), $bundle, $identityBinding], JSON_THROW_ON_ERROR))];
     }
 
     /** @param list<UploadedFile> $uploads
@@ -251,17 +296,21 @@ class TeachingWorkJsonImport
         $status['assessment_json_imports'] = $receipts;
         if (isset($package['submission_check'])) {
             $checks = $status['submission_checks'] ?? [];
-            $bindings = $this->recordBindings($receipts);
+            $bindingKind = $this->bindingKind($package['records']);
+            $bindings = $this->recordBindings($receipts, bindingKind: $bindingKind);
             $last = collect($checks)->last();
-            if (! $last || $last['check']['check_checksum'] !== $package['submission_check']['check_checksum'] || $last['bindings'] !== $bindings) {
+            if (! $last || $last['check']['check_checksum'] !== $package['submission_check']['check_checksum'] || $last['bindings'] !== $bindings
+                || ($last['binding_kind'] ?? self::LEGACY_BINDING) !== $bindingKind
+                || $last['roster'] !== $this->rosterBinding($work)) {
                 $checks[] = ['check' => $package['submission_check'], 'work_id' => (int) $work->id, 'course_id' => (int) $work->teaching_course_id,
-                    'roster' => $this->rosterBinding($work), 'bindings' => $bindings, 'imported_at' => now()->toISOString()];
+                    'roster' => $this->rosterBinding($work), 'bindings' => $bindings, 'binding_kind' => $bindingKind, 'imported_at' => now()->toISOString()];
             }
             $status['submission_checks'] = $checks;
         }
         $packages = $status['assessment_json_packages'] ?? [];
         if (! collect($packages)->contains('package_checksum', $package['package_checksum'])) {
             $packages[] = ['exercise_id' => $package['exercise_id'], 'package_checksum' => $package['package_checksum'], 'exercise' => $package['exercise'], 'imported_at' => now()->toISOString(),
+                ...(isset($preview['identity_binding']) ? ['identity_binding' => $preview['identity_binding']] : []),
                 ...(isset($package['teacher_absence_decision']) ? ['teacher_absence_decision' => $package['teacher_absence_decision']] : []),
                 ...(isset($package['final_download']) ? ['final_download' => $package['final_download']] : [])];
             $status['folder_imported_at'] = now()->toISOString();
@@ -276,6 +325,159 @@ class TeachingWorkJsonImport
     public static function points(int $minor): string
     {
         return intdiv($minor, 100).'.'.str_pad((string) ($minor % 100), 2, '0', STR_PAD_LEFT);
+    }
+
+    /** @return array<string, mixed> */
+    public function identityBinding(TeachingCourseWork $work, User $actor, array $bundle): array
+    {
+        $source = $bundle['identity_export']['source'];
+        $target = $this->identityExport->build($work, $actor)['context'];
+        $message = 'Arbeitsdatenexport passt nicht vollständig und eindeutig zur Zielarbeit oder Kursliste.';
+        foreach (['school', 'schoolyear', 'course', 'work'] as $section) {
+            $id = $source[$section]['id'] ?? null;
+            $this->parser->check((is_int($id) || is_string($id)) && preg_match('/\A[1-9][0-9]*\z/', (string) $id) === 1, $message);
+        }
+        $exerciseId = $bundle['package']['exercise_id'];
+        $this->parser->check(! ctype_digit($exerciseId) || (string) $source['work']['id'] === $exerciseId, 'Ursprünglicher Arbeitsdatenexport und Bewertungspaket gehören zu verschiedenen Arbeiten.');
+        foreach (['school' => ['name', 'short_name'], 'schoolyear' => ['name'], 'course' => ['title'], 'work' => ['title', 'type']] as $section => $fields) {
+            foreach ($fields as $field) {
+                $value = $source[$section][$field] ?? null;
+                $this->parser->check(is_string($value) && SchooltoolAssessmentJson::normalize($value) === SchooltoolAssessmentJson::normalize((string) $target[$section][$field]), $message);
+            }
+        }
+        $classes = function (mixed $values) use ($message): array {
+            $this->parser->check(is_array($values) && array_is_list($values) && count(array_filter($values, 'is_string')) === count($values), $message);
+            $values = array_map(SchooltoolAssessmentJson::normalize(...), $values);
+            sort($values, SORT_STRING);
+
+            return $values;
+        };
+        $this->parser->check($classes($source['course']['classes'] ?? null) === $classes($target['course']['classes'])
+            && ($source['work']['is_group_work'] ?? null) === $target['work']['is_group_work']
+            && array_key_exists('scheduled_date', $source['work']) && $source['work']['scheduled_date'] === $target['work']['scheduled_date']
+            && isset($source['work']['maximum_points']) && is_numeric($source['work']['maximum_points'])
+            && BigDecimal::of((string) $source['work']['maximum_points'])->isEqualTo((string) $target['work']['maximum_points']), $message);
+        $roster = $source['course_roster'] ?? [];
+        $this->parser->check(is_array($roster) && ($roster['complete'] ?? null) === true && ($roster['scope'] ?? null) === 'all_non_deleted_course_assignments'
+            && is_array($roster['participants'] ?? null) && array_is_list($roster['participants']) && count($roster['participants']) === count($target['course_roster']['participants']), $message);
+        $key = function (array $person, bool $includeEmail = true) use ($message): string {
+            $parts = [];
+            foreach ($includeEmail ? ['first_name', 'last_name', 'class_name', 'email'] : ['first_name', 'last_name', 'class_name'] as $field) {
+                $value = $person[$field] ?? null;
+                $this->parser->check(is_string($value) && trim($value) !== '' && ($field !== 'email' || filter_var($value, FILTER_VALIDATE_EMAIL) !== false), $message);
+                $parts[] = SchooltoolAssessmentJson::normalize($value);
+            }
+            $this->parser->check(is_bool($person['active'] ?? null), $message);
+
+            return json_encode([$parts, $person['active']], JSON_THROW_ON_ERROR);
+        };
+        $targetPeople = [];
+        foreach ($target['course_roster']['participants'] as $person) {
+            $personKey = $key($person, false);
+            $this->parser->check(! isset($targetPeople[$personKey]) && is_string($person['schooltool_person_id']) && preg_match('/\A[1-9][0-9]*\z/', $person['schooltool_person_id']) === 1, $message);
+            $targetPeople[$personKey] = $person;
+        }
+        $map = [];
+        $sourcePeople = [];
+        $sourceKeys = [];
+        foreach ($roster['participants'] as $person) {
+            $this->parser->check(is_array($person), $message);
+            $personKey = $key($person, false);
+            $id = $person['schooltool_person_id'] ?? null;
+            $this->parser->check(is_string($id) && preg_match('/\A[1-9][0-9]*\z/', $id) === 1 && ! isset($map[$id]) && ! isset($sourceKeys[$personKey]) && isset($targetPeople[$personKey]), $message);
+            $this->parser->check(($person['participant_id'] ?? null) === 'user:'.$id, $message);
+            $matched = $targetPeople[$personKey];
+            if ($id !== $matched['schooltool_person_id']) {
+                $this->parser->check($key($person) === $key($matched), $message);
+            }
+            $map[$id] = $targetPeople[$personKey]['schooltool_person_id'];
+            $sourcePeople[$id] = $person;
+            $sourceKeys[$personKey] = true;
+        }
+        foreach ($bundle['package']['records'] as $record) {
+            $this->checkBindingIdentity($record['identity'], $sourcePeople, $message);
+        }
+        $groups = function (mixed $groups, ?array $mapping = null) use ($message): array {
+            $this->parser->check(is_array($groups) && array_is_list($groups), $message);
+            $result = [];
+            foreach ($groups as $group) {
+                $this->parser->check(is_array($group) && array_key_exists('name', $group) && ($group['name'] === null || is_string($group['name']))
+                    && array_key_exists('date', $group) && ($group['date'] === null || is_string($group['date'])) && is_array($group['schooltool_student_ids'] ?? null), $message);
+                $ids = [];
+                foreach ($group['schooltool_student_ids'] as $id) {
+                    $this->parser->check((is_int($id) || is_string($id)) && ($mapping === null || isset($mapping[(string) $id])), $message);
+                    $ids[] = $mapping !== null ? $mapping[(string) $id] : (string) $id;
+                }
+                sort($ids, SORT_STRING);
+                $this->parser->check(count(array_unique($ids)) === count($ids), $message);
+                $result[] = json_encode([SchooltoolAssessmentJson::normalize((string) $group['name']), $group['date'], $ids], JSON_THROW_ON_ERROR);
+            }
+            sort($result, SORT_STRING);
+
+            return $result;
+        };
+        $this->parser->check($groups($source['work']['groups'] ?? null, $map) === $groups($target['work']['groups']), $message);
+        ksort($map, SORT_STRING);
+
+        $people = $this->participants($work->teachingCourse);
+        usort($people, fn (array $left, array $right): int => $left['student_id'] <=> $right['student_id']);
+        $originalGroups = array_map(fn (array $group): array => [
+            'name' => $group['name'] ?? '', 'student_ids' => $this->sortedIds(array_map(fn ($id): int => (int) $map[(string) $id], $group['schooltool_student_ids'])),
+        ], $source['work']['groups']);
+
+        return ['source_sha256' => $bundle['identity_export']['sha256'], 'student_ids' => $map,
+            'source_people' => $sourcePeople,
+            'source_roster' => SchooltoolAssessmentJson::digest([$people, (string) $work->teachingCourse->title, (bool) $work->is_group_work, $originalGroups]),
+            'target_fingerprint' => SchooltoolAssessmentJson::digest([$target['school'], $target['schoolyear'], $target['course'], $target['work'], $target['course_roster']])];
+    }
+
+    /** @param array<string, mixed> $check
+     * @param  array<string, mixed>|null  $binding
+     */
+    private function matchesOriginalRosterOrder(TeachingCourseWork $work, array $check, ?array $binding): bool
+    {
+        if ($work->is_group_work || $binding === null || $check['roster'] !== $binding['source_roster']) {
+            return false;
+        }
+        $previous = collect($work->status['assessment_json_packages'] ?? [])->last(fn (array $package): bool => $package['exercise_id'] === $check['check']['exercise_id']);
+        $savedBinding = $previous['identity_binding'] ?? null;
+
+        return $savedBinding !== null && $savedBinding['source_sha256'] === $binding['source_sha256']
+            && $savedBinding['student_ids'] === $binding['student_ids'];
+    }
+
+    public function checkBindingIdentity(array $identity, array $people, string $message = 'Person im Beleg widerspricht dem ursprünglichen Arbeitsdatenexport.'): void
+    {
+        $person = $people[$identity['schooltool_person_id'] ?? ''] ?? null;
+        $this->parser->check(is_array($person), $message);
+        foreach (['first_name', 'last_name', 'class_name'] as $field) {
+            $this->parser->check(isset($identity[$field]) && SchooltoolAssessmentJson::normalize($identity[$field]) === SchooltoolAssessmentJson::normalize($person[$field]), $message);
+        }
+    }
+
+    public function boundStudentId(array $identity, array $binding, ?string $email = null): string
+    {
+        $people = $binding['source_people'];
+        if (($identity['schooltool_person_id'] ?? null) === null) {
+            $matches = array_filter($people, function (array $person) use ($identity, $email, $binding): bool {
+                foreach (['first_name', 'last_name', 'class_name'] as $field) {
+                    if (SchooltoolAssessmentJson::normalize($person[$field]) !== SchooltoolAssessmentJson::normalize($identity[$field])) {
+                        return false;
+                    }
+                }
+
+                return $email !== null && ($binding['student_ids'][$person['schooltool_person_id']] === $person['schooltool_person_id']
+                    || mb_strtolower(trim($email)) === mb_strtolower(trim($person['email'])));
+            });
+            $this->parser->check(count($matches) === 1, 'Belegperson ist im ursprünglichen Arbeitsdatenexport nicht eindeutig belegt.');
+            $identity['schooltool_person_id'] = (string) array_key_first($matches);
+        }
+        $this->checkBindingIdentity($identity, $people);
+        $person = $people[$identity['schooltool_person_id']];
+        $sameId = $binding['student_ids'][$identity['schooltool_person_id']] === $identity['schooltool_person_id'];
+        $this->parser->check($sameId || $email === null || mb_strtolower(trim($email)) === mb_strtolower(trim($person['email'])), 'Belegadresse widerspricht dem ursprünglichen Arbeitsdatenexport.');
+
+        return $binding['student_ids'][$identity['schooltool_person_id']];
     }
 
     /** @return list<int> */
@@ -299,24 +501,48 @@ class TeachingWorkJsonImport
         return $this->sortedIds($ids);
     }
 
-    private function rosterBinding(TeachingCourseWork $work): string
+    private function rosterBinding(TeachingCourseWork $work, bool $sortGroups = true): string
     {
         $ids = $this->expectedStudentIds($work);
         $people = array_values(array_filter($this->participants($work->teachingCourse), fn (array $person): bool => in_array($person['student_id'], $ids, true)));
         usort($people, fn (array $left, array $right): int => $left['student_id'] <=> $right['student_id']);
         $groups = array_map(fn (array $group): array => ['name' => $group['name'] ?? '', 'student_ids' => $this->sortedIds($group['student_ids'] ?? [])], $this->sync->groupsForWork($work));
+        if ($sortGroups) {
+            usort($groups, fn (array $left, array $right): int => strcmp(SchooltoolAssessmentJson::canonical($left), SchooltoolAssessmentJson::canonical($right)));
+        }
 
         return SchooltoolAssessmentJson::digest([$people, (string) $work->teachingCourse->title, (bool) $work->is_group_work, $groups]);
     }
 
-    /** @return array<int, string> */
-    private function recordBindings(array $receipts): array
+    /** @param list<array<string, mixed>> $records */
+    private function bindingKind(array $records): string
     {
+        return array_key_exists('submission_sha256', $records[0]) ? self::SUBMISSION_BINDING : self::LEGACY_BINDING;
+    }
+
+    /** @return array<int, string> */
+    private function recordBindings(array $receipts, ?array $download = null, string $bindingKind = self::LEGACY_BINDING): array
+    {
+        $this->parser->check(in_array($bindingKind, [self::LEGACY_BINDING, self::SUBMISSION_BINDING], true), 'Unbekannte Abgabebindung.');
         $bindings = [];
         foreach ($receipts as $receipt) {
             $record = $receipt['record'];
+            $source = $record['source_fingerprint'] ?? null;
+            if ($bindingKind === self::SUBMISSION_BINDING) {
+                $this->parser->check(isset($record['submission_sha256']) && is_array($record['submission_sha256']), 'Gespeicherte persönliche Abgabeprüfsummen fehlen.');
+                $hashes = $record['submission_sha256'];
+                sort($hashes, SORT_STRING);
+                $source = ['submission_sha256' => $hashes];
+            }
+            if ($download !== null && $download['exercise_id'] === $receipt['exercise_id']) {
+                $person = collect($download['participants'])->firstWhere('participant_id', $receipt['participant_id']);
+                $this->parser->check($person !== null, 'Abschlussbestand enthält nicht alle gebundenen Personen.');
+                $hashes = $person['submission_sha256'];
+                sort($hashes, SORT_STRING);
+                $source = ['submission_sha256' => $hashes];
+            }
             $bindings[(int) $receipt['student_id']] = SchooltoolAssessmentJson::digest([$receipt['exercise_id'], $receipt['participant_id'], $record['identity'] ?? [],
-                $record['submission_state'] ?? null, $record['source_fingerprint'] ?? null, $record['email_collected_at'] ?? null]);
+                $record['submission_state'] ?? null, $source, $record['email_collected_at'] ?? null]);
         }
         ksort($bindings, SORT_NUMERIC);
 
@@ -385,7 +611,8 @@ class TeachingWorkJsonImport
             $check = $receipt['check'];
             $imports = $work->status['assessment_json_imports'] ?? [];
             $this->parser->check($receipt['work_id'] === (int) $work->id && $receipt['course_id'] === (int) $work->teaching_course_id
-                && $receipt['roster'] === $this->rosterBinding($work) && $receipt['bindings'] === $this->recordBindings($imports), 'Abgabeprüfung: Zielbasis geändert.');
+                && in_array($receipt['roster'], [$this->rosterBinding($work), $this->rosterBinding($work, false)], true)
+                && $receipt['bindings'] === $this->recordBindings($imports, bindingKind: $receipt['binding_kind'] ?? self::LEGACY_BINDING), 'Abgabeprüfung: Zielbasis geändert.');
             $records = array_column(array_values(array_filter($imports, fn (array $item): bool => $item['exercise_id'] === $check['exercise_id'])), 'record');
             $package = collect($work->status['assessment_json_packages'] ?? [])->last(fn (array $item): bool => $item['exercise_id'] === $check['exercise_id']);
             $absenceIds = $package['teacher_absence_decision']['participant_ids'] ?? [];

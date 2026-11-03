@@ -6,7 +6,7 @@ import path from 'node:path';
 import os from 'node:os';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { assertLocalEnvironment, existingWorkspaceSession, ownsDevListener, prepareWorkspaceEnvironment, shouldOpenLocalDev,
+import { assertLocalEnvironment, existingWorkspaceSession, localQueueWorkerArguments, ownsDevListener, prepareWorkspaceEnvironment, shouldOpenLocalDev,
     workspacePorts } from '../../scripts/local-dev.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -15,8 +15,52 @@ const helpers = path.join(root, 'scripts/git_helpers.ps1');
 const temporaryRoot = os.tmpdir();
 const localEnvironment = 'APP_ENV=local\nAPP_KEY=fixture-private-key\nDB_CONNECTION=mysql\nDB_HOST=127.0.0.1\nDB_DATABASE=owned_fixture_not_connected\nDB_PASSWORD=fixture-secret-do-not-log\nSESSION_COOKIE=owned-shared-session\nREDIS_PREFIX=owned_shared_\n';
 
-test('opens an explicit development launch but keeps automatic sessions silent', () => {
-    assert.equal(shouldOpenLocalDev([]), true);
+test('Windows inventory recognizes zero-state listeners and excludes stale, bound and connected endpoints',
+    { skip: process.platform !== 'win32' }, () => {
+    const inventoryScript = path.join(root, 'scripts/dev-processes.ps1').replaceAll("'", "''");
+    const command = `
+function Get-NetTCPConnection {
+    foreach ($row in @(
+        @(8000, 0, '0.0.0.0', 0, 101),
+        @(5173, 0, '::', 'Listen', 102),
+        @(5173, 0, '::', $null, 102),
+        @(8000, 58539, '127.0.0.1', 'Listen', 0),
+        @(5173, 60170, '::1', 5, 102),
+        @(8000, 0, '0.0.0.0', 100, 103),
+        @(8000, 0, '0.0.0.0', 0, 0),
+        @(9000, 0, '0.0.0.0', 0, 104)
+    )) {
+        [pscustomobject]@{LocalPort=$row[0];RemotePort=$row[1];RemoteAddress=$row[2];State=$row[3];OwningProcess=$row[4]}
+    }
+}
+function Get-CimInstance { }
+& '${inventoryScript}' -Ports '8000,5173'
+`;
+    const result = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command],
+        { encoding: 'utf8', windowsHide: true, timeout: 10000 });
+
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(JSON.parse(result.stdout).listeners,
+        [{ port: 8000, pid: 101 }, { port: 5173, pid: 102 }, { port: 5173, pid: 102 }]);
+});
+
+test('Windows inventory fails closed when TCP enumeration fails', { skip: process.platform !== 'win32' }, () => {
+    const inventoryScript = path.join(root, 'scripts/dev-processes.ps1').replaceAll("'", "''");
+    const command = `function Get-NetTCPConnection { throw 'Owned inventory failure' }; & '${inventoryScript}' -Ports '8000,5173'`;
+
+    const result = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command],
+        { encoding: 'utf8', windowsHide: true, timeout: 10000 });
+
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /Owned inventory failure/);
+    assert.equal(result.stdout.trim(), '');
+});
+
+test('keeps development launches silent unless browser opening is explicitly requested', () => {
+    assert.equal(shouldOpenLocalDev([]), false);
+    assert.equal(shouldOpenLocalDev(['--project', root]), false);
+    assert.equal(shouldOpenLocalDev(['--open']), true);
+    assert.equal(shouldOpenLocalDev(['--open', '--no-open']), false);
     assert.equal(shouldOpenLocalDev(['--no-open']), false);
     assert.equal(shouldOpenLocalDev(['--session']), false);
     assert.equal(shouldOpenLocalDev(['--session', '--open']), true);
@@ -237,6 +281,61 @@ function workflow(project, command) {
     assert.equal(result.status, 0, result.stdout + result.stderr);
 }
 
+test('startup probes Laravel once after Vite is ready and tolerates a slow first backend response',
+    { timeout: 45000, skip: process.platform !== 'win32' }, async () => {
+    const fixture = ownedFixture();
+    writeFixtureApplication(fixture.project);
+    fs.mkdirSync(path.join(fixture.project, 'storage/framework'), { recursive: true });
+    fs.writeFileSync(path.join(fixture.project, 'vendor/laravel/framework/src/Illuminate/Foundation/resources/server.php'), `<?php
+$project = realpath(__DIR__."/../../../../../../../");
+file_put_contents($project.'/storage/framework/health-probes.jsonl', json_encode($_SERVER['REQUEST_URI'])."\\n", FILE_APPEND);
+usleep(1200000);
+header('Content-Type: application/json');
+echo json_encode(['status' => 'up']);
+`);
+    fs.writeFileSync(path.join(fixture.project, 'node_modules/vite/bin/vite.js'), `import fs from 'node:fs';
+import http from 'node:http';
+const project = process.cwd();
+const port = Number(process.argv[process.argv.indexOf('--port')+1]);
+let attempts = 0;
+http.createServer((request, response) => {
+    attempts += 1;
+    if (attempts <= 4) {
+        response.writeHead(503);
+    } else {
+        fs.writeFileSync(project+'/public/hot', 'http://localhost:'+port);
+    }
+    fs.writeFileSync(project+'/storage/framework/vite-probes.json', JSON.stringify(attempts));
+    response.end(project);
+}).listen(port, 'localhost', () => fs.writeFileSync(project+'/public/hot', 'http://localhost:1'));
+`);
+    git(fixture.project, 'init', '--initial-branch=main');
+    fs.writeFileSync(path.join(fixture.project, '.env'), localEnvironment);
+    const session = fork(launcher, ['--session', '--project', fixture.project, '--web-only', '--no-open',
+        '--check-port-offset=19999'], { cwd: fixture.project, silent: true, windowsHide: true });
+    let output = '';
+    session.stdout.on('data', data => { output += data; });
+    session.stderr.on('data', data => { output += data; });
+    const exited = new Promise(resolve => session.once('exit', resolve));
+    try {
+        await new Promise((resolve, reject) => {
+            session.on('message', message => { if (message?.ready === true) { resolve(); } });
+            session.once('exit', code => reject(new Error(`Startup exited with ${code}: ${output}`)));
+        });
+        const probes = fs.readFileSync(path.join(fixture.project, 'storage/framework/health-probes.jsonl'), 'utf8')
+            .trim().split(/\r?\n/).map(line => JSON.parse(line));
+        assert.deepEqual(probes, ['/up']);
+        assert.ok(JSON.parse(fs.readFileSync(path.join(fixture.project, 'storage/framework/vite-probes.json'), 'utf8')) >= 5);
+        assert.equal(fs.existsSync(path.join(fixture.project, 'background-was-started')), false);
+    } finally {
+        if (session.connected) {
+            session.send({ stop: true });
+        }
+        await exited;
+        fixture.cleanup();
+    }
+});
+
 async function waitForProject(project, main, output) {
     const ports = workspacePorts(project, main, 20000);
     const deadline = Date.now() + 45000;
@@ -253,6 +352,31 @@ async function waitForProject(project, main, output) {
     }
     assert.fail(`The matching owned services did not start: ${output().slice(-3000)}`);
 }
+
+test('starts all four worker groups using the configured database connection', () => {
+    const fixture = ownedFixture();
+    try {
+        fs.writeFileSync(path.join(fixture.project, '.env'), 'QUEUE_CONNECTION=database\n');
+        fs.writeFileSync(path.join(fixture.project, 'artisan'), `<?php
+$settings = parse_ini_file(__DIR__.'/.env');
+$connection = isset($argv[2]) && !str_starts_with($argv[2], '--') ? $argv[2] : $settings['QUEUE_CONNECTION'];
+$queue = current(array_filter($argv, fn ($value) => str_starts_with($value, '--queue=')));
+echo json_encode(['connection'=>$connection, 'queue'=>$queue]);`);
+        const workers = localQueueWorkerArguments().map(argumentsList => {
+            const result = spawnSync('php', argumentsList,
+                { cwd: fixture.project, encoding: 'utf8', windowsHide: true, timeout: 10000 });
+            assert.equal(result.status, 0, result.stdout + result.stderr);
+            return JSON.parse(result.stdout);
+        });
+        assert.equal(workers.length, 4);
+        assert.ok(workers.every(worker => worker.connection === 'database'));
+        assert.deepEqual([...new Set(workers.map(worker => worker.queue))].sort(), [
+            '--queue=critical,notifications', '--queue=default', '--queue=imports', '--queue=materials,maintenance',
+        ]);
+    } finally {
+        fixture.cleanup();
+    }
+});
 
 test('a persistent launcher follows gitmain and gitwork without jobs, duplicate controllers or foreign process cleanup', { timeout: 150000, skip: process.platform !== 'win32' }, async () => {
     const fixture = ownedFixture();

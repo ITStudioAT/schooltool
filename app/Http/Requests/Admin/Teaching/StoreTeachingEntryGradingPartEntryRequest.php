@@ -44,6 +44,7 @@ class StoreTeachingEntryGradingPartEntryRequest extends FormRequest
                     ->where('teaching_entry_area_id', $gradingPart?->teaching_entry_area_id)
                     ->where('category', 'Benotung')
                     ->when($gradingPart?->allowed_entry_types === 'points', fn ($query) => $query->where('properties_mode', 'points'))
+                    ->when($gradingPart?->allowed_entry_types === 'non_points', fn ($query) => $query->where('properties_mode', '!=', 'points'))
                     ->whereNull('teaching_entry_grading_part_id')),
             ],
         ];

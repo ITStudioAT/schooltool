@@ -19,6 +19,35 @@ use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
 
+it('adds games once to the selected date and preserves its other data and dates', function (): void {
+    $date = TeachingCourseDate::create(['teaching_course_id' => $this->course->id, 'date' => '2026-11-02', 'hours' => [3], 'content' => 'Vorhandener Inhalt', 'status' => ['pruefung'], 'attendance' => ['s_1' => false]]);
+    $other = TeachingCourseDate::create(['teaching_course_id' => $this->course->id, 'date' => '2026-11-03', 'hours' => [3]]);
+    $before = $date->fresh()->getAttributes();
+    $this->actingAs($this->admin, 'sanctum');
+    $url = "/api/admin/teaching/course_dates/{$date->id}/games";
+
+    $this->postJson($url, ['game' => 'networks'])->assertOk()->assertJsonPath('games', ['networks']);
+    $this->postJson($url, ['game' => 'number-systems'])->assertOk()->assertJsonPath('games', ['networks', 'number-systems']);
+    $this->postJson($url, ['game' => 'networks'])->assertOk()->assertJsonPath('games', ['networks', 'number-systems']);
+
+    expect($date->fresh()->games)->toBe(['networks', 'number-systems']);
+    expect($date->fresh()->getAttributes())->toMatchArray(collect($before)->except(['updated_at', 'games'])->all());
+    expect($other->fresh()->games)->toBeNull();
+    $this->getJson("/api/admin/teaching/course_dates/{$date->id}")->assertOk()->assertJsonPath('games', ['networks', 'number-systems']);
+});
+
+it('rejects unknown games and users without access to the course date', function (): void {
+    $date = TeachingCourseDate::create(['teaching_course_id' => $this->course->id, 'date' => '2026-11-02', 'hours' => [3]]);
+    $url = "/api/admin/teaching/course_dates/{$date->id}/games";
+    $this->actingAs($this->admin, 'sanctum')->postJson($url, ['game' => 'unknown'])->assertUnprocessable();
+    $this->postJson($url, [])->assertUnprocessable();
+    $this->actingAs($this->regularUser, 'sanctum')->postJson($url, ['game' => 'networks'])->assertForbidden();
+    $this->actingAs($this->teacher, 'sanctum')->postJson($url, ['game' => 'networks'])->assertForbidden();
+    $this->admin->update(['school_id' => $this->otherSchool->id]);
+    $this->actingAs($this->admin->fresh(), 'sanctum')->postJson($url, ['game' => 'networks'])->assertForbidden();
+    expect($date->fresh()->games)->toBeNull();
+});
+
 function curriculumVisibilityFixture(object $test): array
 {
     Storage::fake('local');
@@ -139,6 +168,61 @@ beforeEach(function () {
         'classes' => ['9Z'],
     ]);
 });
+
+it('persists cancellation per hour without changing attendance or other dates', function (array $cancelled): void {
+    $date = TeachingCourseDate::create([
+        'teaching_course_id' => $this->course->id, 'date' => '2026-10-12', 'hours' => [5, 6],
+        'status' => ['pruefung'], 'attendance' => ['s_'.$this->studentA->id => false], 'attendance_checked' => true,
+    ]);
+    $otherDate = TeachingCourseDate::create([
+        'teaching_course_id' => $this->course->id, 'date' => '2026-10-13', 'hours' => [5, 6], 'status' => [],
+    ]);
+    $this->actingAs($this->admin, 'sanctum')
+        ->patchJson("/api/admin/teaching/course_dates/{$date->id}/status", ['cancelled_hours' => $cancelled])
+        ->assertOk()->assertJsonPath('cancelled_hours', $cancelled);
+
+    $date->refresh();
+    expect($date->cancelledHours())->toBe($cancelled)
+        ->and($date->hours)->toBe([5, 6])
+        ->and($date->status)->toContain('pruefung')
+        ->and(in_array('entfaellt', $date->status, true))->toBe(count($cancelled) === 2)
+        ->and($date->attendance)->toBe(['s_'.$this->studentA->id => false])
+        ->and($date->attendance_checked)->toBeTrue()
+        ->and($otherDate->fresh()->status)->toBe([]);
+})->with([[[]], [[5]], [[6]], [[5, 6]]]);
+
+it('restores one cancelled hour and preserves partial cancellation through ordinary status updates', function (): void {
+    $date = TeachingCourseDate::create([
+        'teaching_course_id' => $this->course->id, 'date' => '2026-10-12', 'hours' => [5, 6], 'status' => ['entfaellt'],
+    ]);
+    $this->actingAs($this->admin, 'sanctum');
+    $url = "/api/admin/teaching/course_dates/{$date->id}/status";
+    $this->patchJson($url, ['cancelled_hours' => [5]])->assertOk()->assertJsonPath('status', [])->assertJsonPath('cancelled_hours', [5]);
+    $this->patchJson($url, ['status' => ['pruefung']])->assertOk()->assertJsonPath('cancelled_hours', [5]);
+    $this->patchJson($url, ['cancelled_hours' => []])->assertOk()->assertJsonPath('cancelled_hours', []);
+    expect($date->fresh()->status)->toBe(['pruefung']);
+});
+
+it('rejects cancellation of an hour outside the course date', function (): void {
+    $date = TeachingCourseDate::create([
+        'teaching_course_id' => $this->course->id, 'date' => '2026-10-12', 'hours' => [5, 6], 'status' => [],
+    ]);
+    $this->actingAs($this->admin, 'sanctum')
+        ->patchJson("/api/admin/teaching/course_dates/{$date->id}/status", ['cancelled_hours' => [7]])
+        ->assertUnprocessable()->assertJsonValidationErrors('cancelled_hours.0');
+    expect($date->fresh()->status)->toBe([]);
+});
+
+it('forbids cancellation for another teachers course and another school', function (bool $otherSchool): void {
+    $date = TeachingCourseDate::create([
+        'teaching_course_id' => $otherSchool ? $this->otherCourse->id : $this->course->id,
+        'date' => '2026-10-12', 'hours' => [5, 6], 'status' => [],
+    ]);
+    $this->actingAs($this->teacher, 'sanctum')
+        ->patchJson("/api/admin/teaching/course_dates/{$date->id}/status", ['cancelled_hours' => [5]])
+        ->assertForbidden();
+    expect($date->fresh()->status)->toBe([]);
+})->with([false, true]);
 
 it('returns 401 for attendance status update when unauthenticated', function () {
     $courseDate = TeachingCourseDate::create([

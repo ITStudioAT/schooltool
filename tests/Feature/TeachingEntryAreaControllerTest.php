@@ -65,6 +65,396 @@ trait RefreshTeachingEntryAreaDatabase
 
 uses(RefreshTeachingEntryAreaDatabase::class);
 
+test('purpose changes remove only adjustment context weights and reject reweighting while preserving inner weights', function (bool $nested) {
+    $area = teachingEntryAreaFor($this->teacher, $this->schoolyear, 'Anpassung');
+    $attributes = ['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id, 'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $area->id];
+    $basis = '18b12f8d-a9a2-4c09-bca4-664e89c6c941';
+    $outer = '18b12f8d-a9a2-4c09-bca4-664e89c6c942';
+    $parts = TeachingEntryGradingPart::factory()->count(2)->create([...$attributes, 'grading_group_id' => $basis]);
+    $adjustment = TeachingEntryGradingPart::factory()->create([...$attributes, 'grading_group_id' => $nested ? $outer : null]);
+    TeachingEntryDefinition::factory()->create([...$attributes, 'teaching_entry_grading_part_id' => $adjustment->id, 'category' => 'Benotung', 'has_properties' => true, 'properties_mode' => 'plus_minus']);
+    $inner = [['teaching_entry_grading_part_id' => $parts[0]->id, 'weight' => 45], ['teaching_entry_grading_part_id' => $parts[1]->id, 'weight' => 55]];
+    $pair = [['grading_group_id' => $basis, 'weight' => 2], ['teaching_entry_grading_part_id' => $adjustment->id, 'weight' => 1]];
+    $groups = [['id' => $basis, 'name' => 'Basisnote', 'parent_group_id' => $nested ? $outer : null, 'weights' => $inner]];
+    if ($nested) {
+        $groups[] = ['id' => $outer, 'name' => 'Gesamtnote', 'weights' => $pair];
+    }
+    $higher = [['grading_group_id' => $outer, 'weight' => 3]];
+    $area->update(['grading_part_groups' => $groups, 'grading_level_weights' => $nested ? $higher : $pair]);
+    $this->actingAs($this->teacher, 'sanctum')->putJson("/api/admin/teaching/entry_grading_parts/{$adjustment->id}", ['name' => $adjustment->name, 'points_assessment_mode' => 'sign_adjust'])->assertOk()->assertJsonPath('entry_area.id', $area->id)->assertJsonPath('entry_area.entry_count', 1);
+    $area->refresh();
+    expect($area->grading_part_groups[0]['weights'])->toEqual($inner);
+    if ($nested) {
+        expect($area->grading_part_groups[1])->not->toHaveKey('weights');
+        expect($area->grading_level_weights)->toEqual($higher);
+    } else {
+        expect($area->grading_level_weights)->toBeNull();
+    }
+    $apiPair = [['group_id' => $basis, 'weight' => 2], ['part_id' => $adjustment->id, 'weight' => 1]];
+    $field = $nested ? 'grading_group_weights' : 'grading_level_weights';
+    $configuration = $nested ? ['group_id' => $outer, 'weights' => $apiPair] : $apiPair;
+    $this->putJson("/api/admin/teaching/entry_areas/{$area->id}", ['name' => $area->name, $field => $configuration])->assertUnprocessable()->assertJsonValidationErrors($field);
+    $this->putJson("/api/admin/teaching/entry_areas/{$area->id}", ['name' => $area->name, 'grading_group_weights' => ['group_id' => $basis, 'weights' => [['part_id' => $parts[0]->id, 'weight' => 40], ['part_id' => $parts[1]->id, 'weight' => 60]]]])->assertOk();
+})->with([false, true]);
+
+test('legacy adjustment weights are hidden on read and only the mutated context is cleaned', function () {
+    $area = teachingEntryAreaFor($this->teacher, $this->schoolyear, 'Altbestand');
+    $attributes = ['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id, 'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $area->id, 'points_assessment_mode' => 'sign_adjust'];
+    $first = '18b12f8d-a9a2-4c09-bca4-664e89c6c941';
+    $second = '18b12f8d-a9a2-4c09-bca4-664e89c6c942';
+    $firstParts = TeachingEntryGradingPart::factory()->count(2)->create([...$attributes, 'grading_group_id' => $first]);
+    $secondParts = TeachingEntryGradingPart::factory()->count(2)->create([...$attributes, 'grading_group_id' => $second]);
+    $weights = fn ($parts): array => $parts->map(fn ($part): array => ['teaching_entry_grading_part_id' => $part->id, 'weight' => 1])->all();
+    $groups = [['id' => $first, 'name' => 'Erste', 'weights' => $weights($firstParts)], ['id' => $second, 'name' => 'Zweite', 'weights' => $weights($secondParts)]];
+    $higher = [['grading_group_id' => $first, 'weight' => 2], ['grading_group_id' => $second, 'weight' => 1]];
+    $area->update(['grading_part_groups' => $groups, 'grading_level_weights' => $higher]);
+    $this->actingAs($this->teacher, 'sanctum')->getJson('/api/admin/teaching/entry_areas')->assertOk()->assertJsonMissingPath('data.0.grading_part_groups.0.weights')->assertJsonMissingPath('data.0.grading_part_groups.1.weights');
+    expect($area->fresh()->grading_part_groups)->toEqual($groups);
+    $submitted = [['id' => $first, 'name' => 'Umbenannt', 'part_ids' => $firstParts->pluck('id')->all()], ['id' => $second, 'name' => 'Zweite', 'part_ids' => $secondParts->pluck('id')->all()]];
+    $this->putJson("/api/admin/teaching/entry_areas/{$area->id}", ['name' => $area->name, 'grading_part_groups' => $submitted])->assertOk();
+    expect($area->fresh()->grading_part_groups[0])->not->toHaveKey('weights');
+    expect($area->fresh()->grading_part_groups[1]['weights'])->toEqual($groups[1]['weights']);
+    expect($area->fresh()->grading_level_weights)->toEqual($higher);
+});
+
+test('adjustment purpose requires exactly one direct non adjustment target', function (string $kind, int $targets, bool $nested, bool $valid) {
+    $area = teachingEntryAreaFor($this->teacher, $this->schoolyear, 'Anpassung');
+    $attributes = ['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id, 'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $area->id];
+    $parent = $nested ? '18b12f8d-a9a2-4c09-bca4-664e89c6c941' : null;
+    $targetGroup = '18b12f8d-a9a2-4c09-bca4-664e89c6c942';
+    $groups = $nested ? [['id' => $parent, 'name' => 'Eltern']] : [];
+    $part = TeachingEntryGradingPart::factory()->create([...$attributes, 'grading_group_id' => $parent]);
+    TeachingEntryDefinition::factory()->create([...$attributes, 'teaching_entry_grading_part_id' => $part->id,
+        'category' => 'Benotung', 'has_properties' => true, 'properties_mode' => 'plus_minus']);
+    if ($kind === 'group') {
+        $groups[] = ['id' => $targetGroup, 'name' => 'Basisnote', 'parent_group_id' => $parent];
+        TeachingEntryGradingPart::factory()->count($targets)->create([...$attributes, 'grading_group_id' => $targetGroup]);
+    } else {
+        TeachingEntryGradingPart::factory()->count($targets)->create([...$attributes, 'grading_group_id' => $parent,
+            'points_assessment_mode' => $kind === 'double' ? 'sign_adjust' : 'individual']);
+    }
+    $area->update(['grading_part_groups' => $groups]);
+    $response = $this->actingAs($this->teacher, 'sanctum')->putJson("/api/admin/teaching/entry_grading_parts/{$part->id}", ['name' => $part->name, 'points_assessment_mode' => 'sign_adjust']);
+    if ($valid) {
+        $response->assertOk()->assertJsonPath('data.points_assessment_mode', 'sign_adjust');
+    } else {
+        $response->assertUnprocessable()->assertJsonValidationErrors('points_assessment_mode');
+        expect($part->fresh()->points_assessment_mode)->not->toBe('sign_adjust');
+    }
+})->with([
+    ['parts', 1, false, true], ['parts', 2, false, false], ['parts', 0, false, false],
+    ['group', 6, false, true], ['double', 1, false, false],
+    ['parts', 1, true, true], ['parts', 2, true, false], ['group', 6, true, true], ['double', 1, true, false],
+]);
+
+test('group mutations and adding a part cannot break a valid adjustment pair but deletion stays available', function () {
+    $area = teachingEntryAreaFor($this->teacher, $this->schoolyear, 'Anpassung');
+    $attributes = ['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id, 'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $area->id];
+    $basis = '18b12f8d-a9a2-4c09-bca4-664e89c6c941';
+    $outer = '18b12f8d-a9a2-4c09-bca4-664e89c6c942';
+    $parts = TeachingEntryGradingPart::factory()->count(2)->create([...$attributes, 'grading_group_id' => $basis]);
+    $adjustment = TeachingEntryGradingPart::factory()->create([...$attributes, 'points_assessment_mode' => 'sign_adjust']);
+    $area->update(['grading_part_groups' => [['id' => $basis, 'name' => 'Basisnote']]]);
+    $url = "/api/admin/teaching/entry_areas/{$area->id}";
+    $this->actingAs($this->teacher, 'sanctum');
+    $this->putJson($url, ['name' => $area->name, 'grading_part_groups' => []])->assertUnprocessable()->assertJsonValidationErrors('grading_part_groups');
+    $this->putJson($url, ['name' => $area->name, 'grading_part_groups' => [['id' => $outer, 'name' => 'Drei', 'part_ids' => [$parts[0]->id, $parts[1]->id, $adjustment->id]]]])->assertUnprocessable();
+    $this->postJson('/api/admin/teaching/entry_grading_parts', ['teaching_entry_area_id' => $area->id, 'name' => 'Dritte Note', 'weight' => 1])->assertUnprocessable();
+    $groups = [['id' => $basis, 'name' => 'Basisnote', 'part_ids' => $parts->pluck('id')->all(), 'parent_group_id' => $outer], ['id' => $outer, 'name' => 'Gesamtnote', 'part_ids' => [$adjustment->id]]];
+    $this->putJson($url, ['name' => $area->name, 'grading_part_groups' => $groups])->assertOk();
+    $this->putJson($url, ['name' => $area->name, 'grading_part_groups' => [$groups[0]]])->assertUnprocessable();
+    $this->deleteJson("/api/admin/teaching/entry_grading_parts/{$adjustment->id}")->assertNoContent();
+});
+
+test('legacy adjustment errors allow unrelated edits and a scoped structural repair', function () {
+    $area = teachingEntryAreaFor($this->teacher, $this->schoolyear, 'Altbestand');
+    $attributes = ['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id, 'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $area->id];
+    $adjustment = TeachingEntryGradingPart::factory()->create([...$attributes, 'points_assessment_mode' => 'sign_adjust']);
+    $parts = TeachingEntryGradingPart::factory()->count(2)->create($attributes);
+    $url = "/api/admin/teaching/entry_areas/{$area->id}";
+    $this->actingAs($this->teacher, 'sanctum')->putJson($url, ['name' => 'Umbenannt'])->assertOk();
+    $this->putJson("/api/admin/teaching/entry_grading_parts/{$adjustment->id}", ['name' => 'Mitarbeit'])->assertOk();
+    $this->putJson($url, ['name' => 'Umbenannt', 'grading_part_groups' => []])->assertOk();
+    $this->putJson($url, ['name' => 'Umbenannt', 'grading_part_groups' => [['id' => '18b12f8d-a9a2-4c09-bca4-664e89c6c941', 'name' => 'Basisnote', 'part_ids' => $parts->pluck('id')->map(fn (int $id): string => (string) $id)->all()]]])->assertOk();
+    expect($adjustment->fresh()->points_assessment_mode)->toBe('sign_adjust');
+});
+
+test('legacy ambiguity can be reduced step by step without creating another invalid adjustment', function () {
+    $area = teachingEntryAreaFor($this->teacher, $this->schoolyear, 'Altbestand');
+    $attributes = ['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id, 'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $area->id];
+    $parts = TeachingEntryGradingPart::factory()->count(2)->create([...$attributes, 'points_assessment_mode' => 'sign_adjust']);
+    $base = TeachingEntryGradingPart::factory()->create($attributes);
+    $this->actingAs($this->teacher, 'sanctum')->putJson("/api/admin/teaching/entry_grading_parts/{$parts[0]->id}", ['name' => $parts[0]->name, 'points_assessment_mode' => 'plus_minus'])->assertOk();
+    $this->putJson("/api/admin/teaching/entry_areas/{$area->id}", ['name' => $area->name, 'grading_part_groups' => [['id' => '18b12f8d-a9a2-4c09-bca4-664e89c6c941', 'name' => 'Basisnote', 'part_ids' => [$parts[0]->id, $base->id]]]])->assertOk();
+    expect($parts[1]->fresh()->points_assessment_mode)->toBe('sign_adjust');
+});
+
+test('adjustment siblings are scoped to the owned area and target deletion remains authorized', function () {
+    $area = teachingEntryAreaFor($this->teacher, $this->schoolyear, 'Anpassung');
+    $attributes = ['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id, 'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $area->id];
+    $part = TeachingEntryGradingPart::factory()->create($attributes);
+    $target = TeachingEntryGradingPart::factory()->create($attributes);
+    TeachingEntryGradingPart::factory()->create([...$attributes, 'user_id' => $this->otherTeacher->id]);
+    TeachingEntryDefinition::factory()->create([...$attributes, 'teaching_entry_grading_part_id' => $part->id, 'category' => 'Benotung', 'has_properties' => true, 'properties_mode' => 'plus_minus']);
+    $this->actingAs($this->teacher, 'sanctum')->putJson("/api/admin/teaching/entry_grading_parts/{$part->id}", ['name' => $part->name, 'points_assessment_mode' => 'sign_adjust'])->assertOk();
+    $this->deleteJson("/api/admin/teaching/entry_grading_parts/{$target->id}")->assertNoContent();
+    $this->getJson('/api/admin/teaching/entry_grading_parts')->assertOk()->assertJsonCount(1, 'data');
+});
+
+test('requires two direct children when forming a group and retains singleton legacy data', function (string $selection) {
+    $area = teachingEntryAreaFor($this->teacher, $this->schoolyear, 'Mindestgröße');
+    $basisId = '18b12f8d-a9a2-4c09-bca4-664e89c6c941';
+    $outerId = '18b12f8d-a9a2-4c09-bca4-664e89c6c942';
+    $parts = TeachingEntryGradingPart::factory()->count(3)->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id, 'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $area->id]);
+    $parts[0]->update(['grading_group_id' => $basisId]);
+    $parts[1]->update(['grading_group_id' => $basisId]);
+    $area->update(['grading_part_groups' => [['id' => $basisId, 'name' => 'Basisnote']]]);
+    $basis = ['id' => $basisId, 'name' => 'Basisnote', 'part_ids' => [$parts[0]->id, $parts[1]->id]];
+    if ($selection === 'group') {
+        $basis['parent_group_id'] = $outerId;
+    }
+    $outer = ['id' => $outerId, 'name' => 'Neue Gruppe', 'part_ids' => $selection === 'part' ? [$parts[2]->id] : []];
+    $url = "/api/admin/teaching/entry_areas/{$area->id}";
+    $this->actingAs($this->teacher, 'sanctum')->putJson($url, ['name' => $area->name, 'grading_part_groups' => [$basis, $outer]])->assertUnprocessable();
+    expect($area->fresh()->grading_part_groups)->toHaveCount(1);
+    $basis['parent_group_id'] = $outerId;
+    $outer['part_ids'] = [$parts[2]->id];
+    $this->putJson($url, ['name' => $area->name, 'grading_part_groups' => [$basis, $outer]])->assertOk();
+    $this->putJson($url, ['name' => $area->name, 'grading_part_groups' => [$basis, [...$outer, 'part_ids' => []]]])->assertUnprocessable();
+})->with(['part', 'group']);
+
+test('nests complete groups and weights only direct children without losing inner ratios', function () {
+    $area = teachingEntryAreaFor($this->teacher, $this->schoolyear, 'Hierarchie');
+    $basisId = '18b12f8d-a9a2-4c09-bca4-664e89c6c941';
+    $outerId = '18b12f8d-a9a2-4c09-bca4-664e89c6c942';
+    $parts = TeachingEntryGradingPart::factory()->count(3)->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id, 'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $area->id]);
+    $parts[0]->update(['grading_group_id' => $basisId]);
+    $parts[1]->update(['grading_group_id' => $basisId]);
+    $inner = [['teaching_entry_grading_part_id' => $parts[0]->id, 'weight' => 40], ['teaching_entry_grading_part_id' => $parts[1]->id, 'weight' => 60]];
+    $area->update(['grading_part_groups' => [['id' => $basisId, 'name' => 'Basisnote', 'weights' => $inner]]]);
+    $inner = $area->fresh()->grading_part_groups[0]['weights'];
+    $url = "/api/admin/teaching/entry_areas/{$area->id}";
+    $groups = [['id' => $basisId, 'name' => 'Basisnote', 'parent_group_id' => $outerId, 'part_ids' => [$parts[0]->id, $parts[1]->id]],
+        ['id' => $outerId, 'name' => 'Gesamtnote', 'part_ids' => [$parts[2]->id]]];
+    $this->actingAs($this->teacher, 'sanctum')->putJson($url, ['name' => $area->name, 'grading_part_groups' => $groups])->assertOk()
+        ->assertJsonPath('data.grading_part_groups.0.parent_group_id', $outerId)->assertJsonPath('data.grading_part_groups.1.child_group_ids', [$basisId]);
+    expect($area->fresh()->grading_part_groups[0]['weights'])->toBe($inner);
+    $this->putJson($url, ['name' => $area->name, 'grading_group_weights' => ['group_id' => $outerId, 'weights' => [['group_id' => $basisId, 'weight' => '1,5'], ['part_id' => $parts[2]->id, 'weight' => '1,3']]]])->assertOk();
+    expect($area->fresh()->grading_part_groups[0]['weights'])->toBe($inner);
+    $this->putJson($url, ['name' => $area->name, 'grading_group_weights' => ['group_id' => $outerId, 'weights' => [['part_id' => $parts[0]->id, 'weight' => 1], ['part_id' => $parts[2]->id, 'weight' => 1]]]])->assertUnprocessable();
+    $this->putJson($url, ['name' => $area->name, 'grading_level_weights' => [['group_id' => $outerId, 'weight' => 2]]])->assertOk();
+    $this->putJson($url, ['name' => $area->name, 'grading_level_weights' => [['group_id' => $basisId, 'weight' => 1], ['group_id' => $outerId, 'weight' => 1]]])->assertUnprocessable();
+    $groups[0]['parent_group_id'] = null;
+    $this->putJson($url, ['name' => $area->name, 'grading_part_groups' => [$groups[0]]])->assertOk()->assertJsonPath('data.grading_level_weights', null);
+    expect($parts[2]->fresh()->grading_group_id)->toBeNull();
+    expect($area->fresh()->grading_part_groups[0]['weights'])->toBe($inner);
+});
+
+test('rejects cyclic self and foreign group parents atomically', function (string $invalid) {
+    $area = teachingEntryAreaFor($this->teacher, $this->schoolyear, 'Hierarchie');
+    $first = '18b12f8d-a9a2-4c09-bca4-664e89c6c941';
+    $second = '18b12f8d-a9a2-4c09-bca4-664e89c6c942';
+    $third = '18b12f8d-a9a2-4c09-bca4-664e89c6c943';
+    $parts = TeachingEntryGradingPart::factory()->count(4)->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id, 'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $area->id]);
+    $groups = [['id' => $first, 'name' => 'Erste', 'part_ids' => [$parts[0]->id, $parts[1]->id], 'parent_group_id' => $second], ['id' => $second, 'name' => 'Zweite', 'part_ids' => [$parts[2]->id, $parts[3]->id]]];
+    if ($invalid === 'cycle') {
+        $groups[1]['parent_group_id'] = $first;
+    } elseif ($invalid === 'self') {
+        $groups[0]['parent_group_id'] = $first;
+    } else {
+        $groups[0]['parent_group_id'] = $third;
+    }
+    $this->actingAs($this->teacher, 'sanctum')->putJson("/api/admin/teaching/entry_areas/{$area->id}", ['name' => 'Geändert', 'grading_part_groups' => $groups])->assertUnprocessable()->assertJsonValidationErrors('grading_part_groups');
+    expect($area->fresh()->name)->toBe('Hierarchie')->and($area->fresh()->grading_part_groups)->toBeNull();
+})->with(['cycle', 'self', 'foreign']);
+
+test('stores and removes outer weights independently of inner group weights', function () {
+    $area = teachingEntryAreaFor($this->teacher, $this->schoolyear, 'Ebenen');
+    $groupId = '18b12f8d-a9a2-4c09-bca4-664e89c6c941';
+    $parts = TeachingEntryGradingPart::factory()->count(3)->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id, 'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $area->id]);
+    $parts[0]->update(['grading_group_id' => $groupId]);
+    $inner = [['teaching_entry_grading_part_id' => $parts[0]->id, 'weight' => 1.5]];
+    $area->update(['grading_part_groups' => [['id' => $groupId, 'name' => 'Basisnote', 'weights' => $inner]]]);
+    $inner = $area->fresh()->grading_part_groups[0]['weights'];
+    $url = "/api/admin/teaching/entry_areas/{$area->id}";
+    $weights = [['group_id' => $groupId, 'weight' => '1,5'], ['part_id' => $parts[1]->id, 'weight' => '1,3'], ['part_id' => $parts[2]->id, 'weight' => 2]];
+    $this->actingAs($this->teacher, 'sanctum')->putJson($url, ['name' => $area->name, 'grading_level_weights' => $weights])->assertOk()
+        ->assertJsonPath('data.grading_level_weights.0.weight', 1.5)->assertJsonPath('data.grading_level_weights.1.part_id', $parts[1]->id);
+    $this->getJson('/api/admin/teaching/entry_areas')->assertOk()->assertJsonPath('data.0.grading_level_weights.1.weight', 1.3);
+    expect($area->fresh()->grading_part_groups[0]['weights'])->toBe($inner);
+    $outer = $area->fresh()->grading_level_weights;
+    $this->putJson($url, ['name' => $area->name, 'grading_group_weights' => ['group_id' => $groupId, 'weights' => null]])->assertOk();
+    expect($area->fresh()->grading_level_weights)->toBe($outer);
+    $this->putJson($url, ['name' => $area->name, 'grading_level_weights' => null])->assertOk()->assertJsonPath('data.grading_level_weights', null);
+    $this->getJson('/api/admin/teaching/entry_areas')->assertOk()->assertJsonPath('data.0.grading_level_weights', null);
+    expect($parts[1]->fresh()->weight)->toBe($parts[1]->weight);
+});
+
+test('rejects invalid outer membership without replacing existing configuration', function (string $invalid) {
+    $area = teachingEntryAreaFor($this->teacher, $this->schoolyear, 'Ebenen');
+    $groupId = '18b12f8d-a9a2-4c09-bca4-664e89c6c941';
+    $parts = TeachingEntryGradingPart::factory()->count(2)->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id, 'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $area->id]);
+    $parts[0]->update(['grading_group_id' => $groupId]);
+    $area->update(['grading_part_groups' => [['id' => $groupId, 'name' => 'Basisnote']]]);
+    $weights = [['group_id' => $groupId, 'weight' => 1], ['part_id' => $parts[1]->id, 'weight' => 1]];
+    if ($invalid === 'member') {
+        $weights[0] = ['part_id' => $parts[0]->id, 'weight' => 1];
+    } elseif ($invalid === 'missing') {
+        array_pop($weights);
+    } elseif ($invalid === 'duplicate') {
+        $weights[] = $weights[1];
+    } elseif ($invalid === 'foreign') {
+        $weights[1]['part_id'] = TeachingEntryGradingPart::factory()->create(['user_id' => $this->otherTeacher->id])->id;
+    } elseif ($invalid === 'group') {
+        $weights[0]['group_id'] = '18b12f8d-a9a2-4c09-bca4-664e89c6c942';
+    } else {
+        $weights[1]['weight'] = $invalid;
+    }
+    $this->actingAs($this->teacher, 'sanctum')->putJson("/api/admin/teaching/entry_areas/{$area->id}", ['name' => $area->name, 'grading_level_weights' => $weights])->assertUnprocessable();
+    expect($area->fresh()->grading_level_weights)->toBeNull();
+})->with(['member', 'missing', 'duplicate', 'foreign', 'group', '0', '-1', 'Infinity']);
+
+test('clears outer configuration on reparenting and hides stale weights after deletion', function () {
+    $area = teachingEntryAreaFor($this->teacher, $this->schoolyear, 'Ebenen');
+    $groupId = '18b12f8d-a9a2-4c09-bca4-664e89c6c941';
+    $parts = TeachingEntryGradingPart::factory()->count(2)->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id, 'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $area->id]);
+    $area->update(['grading_level_weights' => $parts->map(fn ($part) => ['teaching_entry_grading_part_id' => $part->id, 'weight' => 1.5])->all()]);
+    $url = "/api/admin/teaching/entry_areas/{$area->id}";
+    $this->actingAs($this->teacher, 'sanctum')->putJson($url, ['name' => $area->name, 'grading_part_groups' => [['id' => $groupId, 'name' => 'Basisnote', 'part_ids' => [$parts[0]->id, $parts[1]->id]]]])->assertOk()->assertJsonPath('data.grading_level_weights', null);
+    expect($area->fresh()->grading_level_weights)->toBeNull();
+    $area->update(['grading_level_weights' => [['grading_group_id' => $groupId, 'weight' => 2], ['teaching_entry_grading_part_id' => $parts[1]->id, 'weight' => 1]]]);
+    $this->deleteJson("/api/admin/teaching/entry_grading_parts/{$parts[1]->id}")->assertNoContent();
+    $this->getJson('/api/admin/teaching/entry_areas')->assertOk()->assertJsonPath('data.0.grading_level_weights', null);
+    expect($area->fresh()->grading_level_weights)->toBeNull();
+});
+
+test('saves reloads and removes relative group weights without changing parts or other groups', function () {
+    $area = teachingEntryAreaFor($this->teacher, $this->schoolyear, 'Gewichte');
+    $parts = TeachingEntryGradingPart::factory()->count(4)->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id, 'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $area->id]);
+    $id = '18b12f8d-a9a2-4c09-bca4-664e89c6c941';
+    $otherId = '18b12f8d-a9a2-4c09-bca4-664e89c6c942';
+    $groups = [['id' => $id, 'name' => 'Basisnote', 'part_ids' => [$parts[0]->id, $parts[1]->id]], ['id' => $otherId, 'name' => 'Andere', 'part_ids' => [$parts[2]->id, $parts[3]->id]]];
+    $url = "/api/admin/teaching/entry_areas/{$area->id}";
+    $this->actingAs($this->teacher, 'sanctum')->putJson($url, ['name' => $area->name, 'grading_part_groups' => $groups])->assertOk();
+    $before = $parts->map(fn ($part) => $part->fresh()->getRawOriginal())->all();
+    $this->getJson('/api/admin/teaching/entry_areas')->assertOk()->assertJsonMissingPath('data.0.grading_part_groups.0.weights');
+    foreach ([[40, 60], ['1,5', '1,3']] as $values) {
+        $weights = [['part_id' => $parts[0]->id, 'weight' => $values[0]], ['part_id' => $parts[1]->id, 'weight' => $values[1]]];
+        $this->putJson($url, ['name' => $area->name, 'grading_group_weights' => ['group_id' => $id, 'weights' => $weights]])->assertOk();
+        $this->getJson('/api/admin/teaching/entry_areas')->assertOk()->assertJsonPath('data.0.grading_part_groups.0.weights.0.weight', fn (mixed $value): bool => (float) $value === (float) str_replace(',', '.', (string) $values[0]));
+    }
+    $groups[0]['name'] = 'Neue Basisnote';
+    $this->putJson($url, ['name' => $area->name, 'grading_part_groups' => $groups])->assertOk()->assertJsonPath('data.grading_part_groups.0.weights.1.weight', 1.3);
+    $this->putJson($url, ['name' => $area->name, 'grading_group_weights' => ['group_id' => $id, 'weights' => null]])->assertOk()->assertJsonMissingPath('data.grading_part_groups.0.weights');
+    $this->getJson('/api/admin/teaching/entry_areas')->assertOk()->assertJsonMissingPath('data.0.grading_part_groups.0.weights');
+    expect($parts->map(fn ($part) => $part->fresh()->getRawOriginal())->all())->toBe($before);
+    expect($area->fresh()->grading_part_groups[1])->toBe(['id' => $otherId, 'name' => 'Andere']);
+});
+
+test('rejects invalid group ratios without persisting any weight', function (mixed $invalid) {
+    $area = teachingEntryAreaFor($this->teacher, $this->schoolyear, 'Gewichte');
+    $id = '18b12f8d-a9a2-4c09-bca4-664e89c6c941';
+    $area->update(['grading_part_groups' => [['id' => $id, 'name' => 'Basisnote']]]);
+    $part = TeachingEntryGradingPart::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id, 'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $area->id, 'grading_group_id' => $id]);
+    $this->actingAs($this->teacher, 'sanctum')->putJson("/api/admin/teaching/entry_areas/{$area->id}", ['name' => $area->name,
+        'grading_group_weights' => ['group_id' => $id, 'weights' => [['part_id' => $part->id, 'weight' => $invalid]]]])->assertUnprocessable();
+    expect($area->fresh()->grading_part_groups[0])->not->toHaveKey('weights');
+})->with([0, -1, '', 'Infinity', '1e999', 'invalid', true, null]);
+
+test('rejects group weights outside exact current membership and owner scope', function (string $boundary) {
+    $area = teachingEntryAreaFor($this->teacher, $this->schoolyear, 'Gewichte');
+    $id = '18b12f8d-a9a2-4c09-bca4-664e89c6c941';
+    $area->update(['grading_part_groups' => [['id' => $id, 'name' => 'Basisnote']]]);
+    $attributes = ['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id, 'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $area->id, 'grading_group_id' => $id];
+    $own = TeachingEntryGradingPart::factory()->create($attributes);
+    $attributes[$boundary] = match ($boundary) {
+        'user_id' => $this->otherTeacher->id, 'school_id' => School::factory()->create()->id,
+        'schoolyear_id' => Schoolyear::factory()->create(['school_id' => $this->school->id])->id,
+        'grading_group_id' => null,
+        default => teachingEntryAreaFor($this->teacher, $this->schoolyear, 'Anderer Bereich')->id,
+    };
+    $foreign = TeachingEntryGradingPart::factory()->create($attributes);
+    $this->actingAs($this->teacher, 'sanctum')->putJson("/api/admin/teaching/entry_areas/{$area->id}", ['name' => $area->name,
+        'grading_group_weights' => ['group_id' => $id, 'weights' => [['part_id' => $own->id, 'weight' => 1], ['part_id' => $foreign->id, 'weight' => 2]]]])->assertUnprocessable();
+    expect($area->fresh()->grading_part_groups[0])->not->toHaveKey('weights');
+})->with(['user_id', 'school_id', 'schoolyear_id', 'teaching_entry_area_id', 'grading_group_id']);
+
+test('clears group weights when membership changes while retaining grading parts', function () {
+    $area = teachingEntryAreaFor($this->teacher, $this->schoolyear, 'Gewichte');
+    $id = '18b12f8d-a9a2-4c09-bca4-664e89c6c941';
+    $parts = TeachingEntryGradingPart::factory()->count(3)->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id, 'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $area->id, 'grading_group_id' => $id]);
+    $area->update(['grading_part_groups' => [['id' => $id, 'name' => 'Basisnote', 'weights' => $parts->map(fn ($part) => ['teaching_entry_grading_part_id' => $part->id, 'weight' => 1.5])->all()]]]);
+    $this->actingAs($this->teacher, 'sanctum')->putJson("/api/admin/teaching/entry_areas/{$area->id}", ['name' => $area->name, 'grading_part_groups' => [['id' => $id, 'name' => 'Basisnote', 'part_ids' => [$parts[0]->id, $parts[1]->id]]]])->assertOk()->assertJsonMissingPath('data.grading_part_groups.0.weights');
+    expect($parts[2]->fresh()->grading_group_id)->toBeNull();
+    expect($area->fresh()->grading_part_groups[0])->not->toHaveKey('weights');
+});
+
+test('groups existing grading parts and preserves all entry settings when renamed moved or dissolved', function () {
+    $area = teachingEntryAreaFor($this->teacher, $this->schoolyear, 'Gruppen');
+    $parts = TeachingEntryGradingPart::factory()->count(3)->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id, 'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $area->id]);
+    $entry = TeachingEntryDefinition::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id, 'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $area->id, 'teaching_entry_grading_part_id' => $parts[0]->id]);
+    $entryBefore = $entry->refresh()->getRawOriginal();
+    $groupId = '18b12f8d-a9a2-4c09-bca4-664e89c6c941';
+    $url = "/api/admin/teaching/entry_areas/{$area->id}";
+    $this->actingAs($this->teacher, 'sanctum')->putJson($url, ['name' => $area->name, 'grading_part_groups' => [['id' => $groupId, 'name' => 'Basis', 'part_ids' => [$parts[0]->id, $parts[1]->id]]]])
+        ->assertOk()->assertJsonPath('data.grading_part_groups.0.part_ids', [$parts[0]->id, $parts[1]->id]);
+    expect($parts[0]->fresh()->grading_group_id)->toBe($groupId)->and($parts[2]->fresh()->grading_group_id)->toBeNull();
+    $this->putJson($url, ['name' => $area->name])->assertOk()->assertJsonPath('data.grading_part_groups.0.name', 'Basis');
+    $this->putJson($url, ['name' => $area->name, 'grading_part_groups' => [['id' => $groupId, 'name' => 'Neue Basis', 'part_ids' => [$parts[1]->id, $parts[2]->id]]]])->assertOk();
+    expect($parts[0]->fresh()->grading_group_id)->toBeNull()->and($parts[2]->fresh()->grading_group_id)->toBe($groupId);
+    $this->getJson('/api/admin/teaching/entry_areas')->assertOk()->assertJsonPath('data.0.grading_part_groups.0.name', 'Neue Basis');
+    $this->putJson($url, ['name' => $area->name, 'grading_part_groups' => []])->assertOk()->assertJsonPath('data.grading_part_groups', []);
+    foreach ($parts as $part) {
+        expect($part->fresh()->grading_group_id)->toBeNull()->and($part->fresh()->weight)->toBe($part->weight);
+    }
+    expect($entry->fresh()->getRawOriginal())->toBe($entryBefore);
+});
+
+test('rejects grouping across owner school year and area boundaries without partial changes', function (string $boundary) {
+    $area = teachingEntryAreaFor($this->teacher, $this->schoolyear, 'Gruppen');
+    $attributes = ['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id, 'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $area->id];
+    $own = TeachingEntryGradingPart::factory()->create($attributes);
+    $attributes[$boundary] = match ($boundary) {
+        'user_id' => $this->otherTeacher->id, 'school_id' => School::factory()->create()->id,
+        'schoolyear_id' => Schoolyear::factory()->create(['school_id' => $this->school->id])->id,
+        default => teachingEntryAreaFor($this->teacher, $this->schoolyear, 'Anderer Bereich')->id,
+    };
+    $foreign = TeachingEntryGradingPart::factory()->create($attributes);
+    $this->actingAs($this->teacher, 'sanctum')->putJson("/api/admin/teaching/entry_areas/{$area->id}", ['name' => 'Geändert', 'grading_part_groups' => [['id' => '18b12f8d-a9a2-4c09-bca4-664e89c6c941', 'name' => 'Basis', 'part_ids' => [$own->id, $foreign->id]]]])->assertUnprocessable();
+    expect($area->fresh()->name)->toBe('Gruppen')->and($own->fresh()->grading_group_id)->toBeNull()->and($foreign->fresh()->grading_group_id)->toBeNull();
+})->with(['user_id', 'school_id', 'schoolyear_id', 'teaching_entry_area_id']);
+
+test('rejects duplicate part membership and malformed group structure', function (string $invalid) {
+    $area = teachingEntryAreaFor($this->teacher, $this->schoolyear, 'Gruppen');
+    $part = TeachingEntryGradingPart::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id, 'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $area->id]);
+    $group = ['id' => '18b12f8d-a9a2-4c09-bca4-664e89c6c941', 'name' => 'Basis', 'part_ids' => [$part->id]];
+    $groups = [$group];
+    if ($invalid === 'membership') {
+        $groups[] = [...$group, 'id' => '18b12f8d-a9a2-4c09-bca4-664e89c6c942'];
+    } elseif ($invalid === 'id') {
+        $groups[] = [...$group, 'part_ids' => []];
+    } elseif ($invalid === 'name') {
+        $groups[0]['name'] = '';
+    } else {
+        $groups[0]['children'] = [];
+    }
+    $this->actingAs($this->teacher, 'sanctum')->putJson("/api/admin/teaching/entry_areas/{$area->id}", ['name' => $area->name, 'grading_part_groups' => $groups])->assertUnprocessable();
+    expect($part->fresh()->grading_group_id)->toBeNull()->and($area->fresh()->grading_part_groups)->toBeNull();
+})->with(['membership', 'id', 'name', 'nested']);
+
+test('group membership disappears when a part is deleted without duplicating other parts', function () {
+    $groupId = '18b12f8d-a9a2-4c09-bca4-664e89c6c941';
+    $area = teachingEntryAreaFor($this->teacher, $this->schoolyear, 'Gruppen');
+    $area->update(['grading_part_groups' => [['id' => $groupId, 'name' => 'Basis']]]);
+    $parts = TeachingEntryGradingPart::factory()->count(2)->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id, 'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $area->id, 'grading_group_id' => $groupId]);
+    $area->update(['grading_part_groups' => [['id' => $groupId, 'name' => 'Basis', 'weights' => $parts->map(fn ($part) => ['teaching_entry_grading_part_id' => $part->id, 'weight' => 1.5])->all()]],
+        'grading_level_weights' => [['grading_group_id' => $groupId, 'weight' => 2]]]);
+    $this->actingAs($this->teacher, 'sanctum')->deleteJson("/api/admin/teaching/entry_grading_parts/{$parts[0]->id}")->assertNoContent();
+    $this->getJson('/api/admin/teaching/entry_areas')->assertJsonPath('data.0.grading_part_groups.0.part_ids', [$parts[1]->id]);
+    expect($area->fresh()->grading_part_groups[0])->not->toHaveKey('weights');
+    expect($area->fresh()->grading_level_weights[0]['weight'])->toBe(2);
+});
+
 beforeEach(function () {
     Role::firstOrCreate(['name' => 'teacher', 'guard_name' => 'web']);
     Role::firstOrCreate(['name' => 'user', 'guard_name' => 'web']);

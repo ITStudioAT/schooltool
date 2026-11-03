@@ -1107,6 +1107,8 @@ class TeachingBackupService
                 (int) $backup->schoolyear_id
             ),
             'teaching_show_behaviour' => $backupUser['teaching_show_behaviour'] ?? true,
+            'teaching_curricula_enabled' => $backupUser['teaching_curricula_enabled'] ?? true,
+            'teaching_show_attendance' => $backupUser['teaching_show_attendance'] ?? true,
             'teaching_grade_columns_by_schoolyear' => $this->settingColumnValue(
                 'teaching_grade_columns_by_schoolyear',
                 $backupUser['teaching_grade_columns_by_schoolyear'] ?? null,
@@ -1366,7 +1368,7 @@ class TeachingBackupService
             ->where('id', $sourceId)
             ->where('teaching_curriculum_id', $document['teaching_curriculum_id']);
 
-        foreach (['topic_id', 'unit_id', 'source_type', 'name', 'file_path'] as $column) {
+        foreach (['topic_id', 'unit_id', 'source_type', 'name', 'file_path', 'explanation_key'] as $column) {
             $query->where($column, $document[$column] ?? null);
         }
 
@@ -1486,6 +1488,34 @@ class TeachingBackupService
                 'user_id' => $userIdMap[(int) $part['user_id']],
                 'teaching_entry_area_id' => $areaId,
             ]);
+        }
+
+        foreach ($tables['teaching_entry_areas'] ?? [] as $area) {
+            if (isset($area['grading_level_weights'], $areaIdMap[(int) $area['id']])) {
+                $weights = json_decode($area['grading_level_weights'], true, 512, JSON_THROW_ON_ERROR);
+                foreach ($weights as &$item) {
+                    if (isset($item['teaching_entry_grading_part_id'])) {
+                        $item['teaching_entry_grading_part_id'] = $partIdMap[(int) $item['teaching_entry_grading_part_id']]
+                            ?? throw new RuntimeException('Benotungsteil der äußeren Gewichtung fehlt.');
+                    }
+                }
+                unset($item);
+                DB::table('teaching_entry_areas')->where('id', $areaIdMap[(int) $area['id']])->update(['grading_level_weights' => json_encode($weights, JSON_THROW_ON_ERROR)]);
+            }
+            if (! isset($area['grading_part_groups'], $areaIdMap[(int) $area['id']])) {
+                continue;
+            }
+            $groups = json_decode($area['grading_part_groups'], true, 512, JSON_THROW_ON_ERROR) ?? [];
+            foreach ($groups as &$group) {
+                foreach ($group['weights'] ?? [] as $index => $item) {
+                    if (isset($item['teaching_entry_grading_part_id'])) {
+                        $group['weights'][$index]['teaching_entry_grading_part_id'] = $partIdMap[(int) $item['teaching_entry_grading_part_id']]
+                            ?? throw new RuntimeException('Benotungsteil der Gruppengewichtung fehlt.');
+                    }
+                }
+            }
+            unset($group);
+            DB::table('teaching_entry_areas')->where('id', $areaIdMap[(int) $area['id']])->update(['grading_part_groups' => json_encode($groups, JSON_THROW_ON_ERROR)]);
         }
 
         foreach ($tables['teaching_entry_definitions'] ?? [] as $definition) {
@@ -2158,6 +2188,8 @@ class TeachingBackupService
     {
         return match ($settingKey) {
             'basic_settings' => $this->restoreUserSettings($tables, $backup, $settingKey, [
+                'teaching_curricula_enabled',
+                'teaching_show_attendance',
                 'teaching_active_semester',
                 'teaching_count_for_semester_2_date',
                 'teaching_grade_columns_by_schoolyear',
@@ -2464,10 +2496,12 @@ class TeachingBackupService
                 'teaching_notifications_by_schoolyear',
                 'teaching_show_behaviour',
                 'teaching_grade_columns_by_schoolyear',
+                'teaching_curricula_enabled',
                 'teaching_student_grade_columns_by_schoolyear',
                 'created_at',
                 'updated_at',
             ])
+            ->when(Schema::hasColumn('users', 'teaching_show_attendance'), fn (Builder $query): Builder => $query->addSelect('teaching_show_attendance'))
             ->where('school_id', $schoolId)
             ->orderBy('id')
             ->get()
@@ -2591,7 +2625,7 @@ class TeachingBackupService
                 ->flatMap(function (array $row): array {
                     $status = $this->arrayValue($row['status'] ?? []);
 
-                    return array_merge($status['evaluation_pdfs'] ?? [], $status['dispatch_logs'] ?? []);
+                    return array_merge($status['evaluation_pdfs'] ?? [], $status['dispatch_logs'] ?? [], $status['student_task_files'] ?? []);
                 })
                 ->map(fn (array $pdf): array => $this->filePayload($pdf['file_path'], 'local', true)))
             ->merge(collect($tables['teaching_course_date_material_attachments'] ?? [])
@@ -2971,12 +3005,16 @@ class TeachingBackupService
             ->map(fn (object $row): array => (array) $row);
 
         $basicCount = $this->countUsersWithAnyTeachingSetting($users, [
+            'teaching_curricula_enabled',
+            'teaching_show_attendance',
             'teaching_active_semester',
             'teaching_count_for_semester_2_date',
             'teaching_grade_columns_by_schoolyear',
             'teaching_student_grade_columns_by_schoolyear',
         ]);
         $currentBasicCount = $this->countUsersWithAnyTeachingSetting($currentUsers, [
+            'teaching_curricula_enabled',
+            'teaching_show_attendance',
             'teaching_active_semester',
             'teaching_count_for_semester_2_date',
             'teaching_grade_columns_by_schoolyear',
@@ -3062,12 +3100,16 @@ class TeachingBackupService
                     $basicCount,
                     $currentBasicCount,
                     $this->userSettingsComparableData($users, [
+                        'teaching_curricula_enabled',
+                        'teaching_show_attendance',
                         'teaching_active_semester',
                         'teaching_count_for_semester_2_date',
                         'teaching_grade_columns_by_schoolyear',
                         'teaching_student_grade_columns_by_schoolyear',
                     ]),
                     $this->userSettingsComparableData($currentUsers, [
+                        'teaching_curricula_enabled',
+                        'teaching_show_attendance',
                         'teaching_active_semester',
                         'teaching_count_for_semester_2_date',
                         'teaching_grade_columns_by_schoolyear',
@@ -3799,6 +3841,13 @@ class TeachingBackupService
             return null;
         }
         $status = $this->arrayValue($status);
+        foreach ($status['student_task_files'] ?? [] as $index => $file) {
+            $status['student_task_files'][$index]['file_path'] = $this->restoreFilePath($file['file_path'], $files, "teaching/work_tasks/{$schoolId}/restored");
+            $status['student_task_files'][$index]['storage_disk'] = 'local';
+        }
+        if (isset($status['student_distribution']['student_ids']) && $userIdMap !== []) {
+            $status['student_distribution']['student_ids'] = array_map(fn (int $id): int => $userIdMap[$id] ?? throw new RuntimeException('Schülerzuordnung der Aufgabenfreigabe fehlt.'), $status['student_distribution']['student_ids']);
+        }
         foreach ($status['evaluation_pdfs'] ?? [] as $index => $pdf) {
             $status['evaluation_pdfs'][$index]['file_path'] = $this->restoreFilePath($pdf['file_path'], $files, "teaching/work_evaluations/{$schoolId}/restored");
             $status['evaluation_pdfs'][$index]['storage_disk'] = 'local';
@@ -3810,7 +3859,7 @@ class TeachingBackupService
             $status['dispatch_logs'][$index]['file_path'] = $this->restoreFilePath($log['file_path'], $files, "teaching/work_dispatches/{$schoolId}/restored");
             $status['dispatch_logs'][$index]['storage_disk'] = 'local';
         }
-        foreach (['dispatch_notifications', 'dispatch_attempts'] as $key) {
+        foreach (['dispatch_notifications', 'dispatch_attempts', 'provision_events', 'provision_imports'] as $key) {
             foreach ($status[$key] ?? [] as $index => $notification) {
                 if ($userIdMap !== []) {
                     $status[$key][$index]['student_id'] = $userIdMap[$notification['student_id']] ?? throw new RuntimeException('Schülerzuordnung des Versandnachweises fehlt.');

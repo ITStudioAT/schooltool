@@ -37,6 +37,7 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: '8.4'
+          tools: composer:2.11.1
           extensions: gd, intl, zip
           coverage: none
       - name: Classify against a fully verified policy v3 baseline
@@ -95,6 +96,7 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: '8.4'
+          tools: composer:2.11.1
           coverage: none
 
       - name: Set up Node.js
@@ -151,6 +153,7 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: '8.4'
+          tools: composer:2.11.1
           extensions: gd, intl, zip
           coverage: none
       - name: Install locked verification dependencies without application scripts
@@ -185,6 +188,7 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: '8.4'
+          tools: composer:2.11.1
           coverage: none
       - name: Recheck the frontend-only delta against the proven baseline
         env:
@@ -213,6 +217,7 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: '8.4'
+          tools: composer:2.11.1
           extensions: gd, intl, zip
           coverage: none
 
@@ -253,6 +258,7 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: '8.4'
+          tools: composer:2.11.1
           extensions: gd, intl, zip
           coverage: none
 
@@ -335,6 +341,7 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: '8.4'
+          tools: composer:2.11.1
           extensions: gd, intl, pcntl, pdo_mysql, pdo_sqlite, posix, sodium, zip
           coverage: pcov
 
@@ -434,6 +441,7 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: '8.4'
+          tools: composer:2.11.1
           extensions: gd, intl, pcntl, pdo_mysql, posix, zip
           coverage: none
 
@@ -493,6 +501,7 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: '8.4'
+          tools: composer:2.11.1
           coverage: none
 
       - name: Verify safe archive structure, source, and release parent
@@ -501,12 +510,16 @@ jobs:
           php scripts/release-policy.php assets --base "$release_sha" --head "$release_sha"
           php scripts/frontend-release.php verify "$(git rev-parse HEAD^)"
 
-  windows-workflow:
-    name: Windows PowerShell workflow tests
+  windows-workflow-shards:
+    name: Windows PowerShell workflow shard ${{ matrix.shard }}/8
     needs: classify
     if: needs.classify.outputs.lane == 'full'
     runs-on: windows-latest
     timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
     env:
       APP_ENV: testing
       APP_DEBUG: false
@@ -524,6 +537,7 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: '8.4'
+          tools: composer:2.11.1
           extensions: fileinfo, gd, intl, pdo_sqlite, sockets, zip
           coverage: none
       - name: Set up Node.js
@@ -547,14 +561,26 @@ jobs:
       - name: Install locked frontend tools required by native workflow fixtures
         run: npm ci
       - name: Run Windows workflow tests without connecting to a database or server
-        run: php scripts/ci-php-tests.php windows
+        run: php scripts/ci-php-tests.php windows ${{ matrix.shard }} 8
       - name: Preserve Windows workflow test logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: windows-workflow-${{ github.run_id }}-${{ github.run_attempt }}
+          name: windows-workflow-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.shard }}
           path: storage/logs/ci-php-*
           retention-days: 14
+
+  windows-workflow:
+    name: Windows PowerShell workflow tests
+    needs: [classify, windows-workflow-shards]
+    if: always() && needs.classify.outputs.lane == 'full'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every native Windows shard
+        env:
+          SHARDS_RESULT: ${{ needs.windows-workflow-shards.result }}
+        run: test "$SHARDS_RESULT" = success
 
   release-approval:
     name: Release approval (policy v3)

@@ -5,7 +5,7 @@
                 <div class="text-overline module-status-card__eyebrow">Grundeinstellungen</div>
                 <div class="text-h6 module-status-card__title">Sichtbarkeit der Module</div>
                 <div class="text-body-2 module-status-card__subtitle">
-                    Steuert die Anzeige und Freigabe app-weit.
+                    Je Taste klicken, um den Zustand zu wechseln. Änderungen werden sofort gespeichert.
                 </div>
             </div>
 
@@ -14,87 +14,46 @@
             </v-chip>
         </div>
 
-        <div class="module-status-card__grid">
+        <div class="module-status-card__grid" :aria-busy="isSaving">
             <div v-for="item in moduleRows" :key="item.key" class="module-status-card__row">
                 <div class="module-status-card__copy">
                     <div class="module-status-card__module">{{ item.label }}</div>
                     <div class="module-status-card__meta">{{ item.meta }}</div>
                 </div>
 
-                <div class="module-status-card__switches">
-                    <div class="module-status-card__toggle module-status-card__toggle--admin">
-                        <v-switch
-                            :model-value="form[item.adminVisibleField]"
-                            color="primary"
-                            inset
-                            hide-details
-                            density="compact"
-                            :label="'Angezeigt Admin'"
-                            @update:modelValue="setAdminVisible(item, $event)" />
-                    </div>
+                <div class="module-status-card__controls">
+                    <button
+                        type="button"
+                        class="module-status-card__button"
+                        :class="form[item.adminVisibleField] ? 'module-status-card__button--admin' : 'module-status-card__button--off'"
+                        :disabled="isSaving || !schoolToolStore?.data?.id"
+                        :aria-pressed="Boolean(form[item.adminVisibleField])"
+                        :aria-label="`${item.label}: Admin ${form[item.adminVisibleField] ? 'Angezeigt' : 'Aus'}. Nächster Klick: ${form[item.adminVisibleField] ? 'Aus' : 'Angezeigt'}`"
+                        @click="toggleAdmin(item)">
+                        <span class="module-status-card__audience">Admin</span>
+                        <strong class="module-status-card__state">{{ form[item.adminVisibleField] ? 'Angezeigt' : 'Aus' }}</strong>
+                    </button>
 
-                    <div class="module-status-card__toggle module-status-card__toggle--user">
-                        <v-switch
-                            :model-value="form[item.userVisibleField]"
-                            color="success"
-                            inset
-                            hide-details
-                            density="compact"
-                            :label="'Angezeigt Benutzer'"
-                            :disabled="!Boolean(form[item.adminVisibleField])"
-                            @update:modelValue="setUserVisible(item, $event)" />
-                    </div>
-
-                    <div class="module-status-card__toggle module-status-card__toggle--test">
-                        <v-switch
-                            :model-value="form[item.userTestModeField]"
-                            color="info"
-                            inset
-                            hide-details
-                            density="compact"
-                            :label="'Benutzer Testmodus'"
-                            :disabled="Boolean(form[item.userVisibleField])"
-                            @update:modelValue="setUserTestMode(item, $event)" />
-                    </div>
-
-                    <div class="module-status-card__toggle module-status-card__toggle--soon">
-                        <v-switch
-                            :model-value="form[item.userComingSoonField]"
-                            color="warning"
-                            inset
-                            hide-details
-                            density="compact"
-                            :label="'Benutzer Kommt bald'"
-                            :disabled="Boolean(form[item.userVisibleField]) || Boolean(form[item.userTestModeField])"
-                            @update:modelValue="setUserComingSoon(item, $event)" />
-                    </div>
+                    <button
+                        type="button"
+                        class="module-status-card__button"
+                        :class="`module-status-card__button--${item.hasUserView ? userState(item) : 'unavailable'}`"
+                        :disabled="!item.hasUserView || isSaving || !schoolToolStore?.data?.id"
+                        :aria-label="item.hasUserView
+                            ? `${item.label}: Benutzer ${userStateLabel(userState(item))}. Nächster Klick: ${userStateLabel(nextUserState(item))}`
+                            : `${item.label}: Benutzer nicht verfügbar. Keine eigene Benutzeransicht vorhanden.`"
+                        @click="cycleUserState(item)">
+                        <span class="module-status-card__audience">Benutzer</span>
+                        <strong class="module-status-card__state">{{ item.hasUserView ? userStateLabel(userState(item)) : 'Nicht verfügbar' }}</strong>
+                        <span v-if="!item.hasUserView" class="module-status-card__next">Keine eigene Benutzeransicht</span>
+                    </button>
                 </div>
             </div>
         </div>
 
-        <v-divider class="my-5" />
-
-        <div class="module-status-card__version">
-            <div class="module-status-card__copy">
-                <div class="module-status-card__module">SEPP</div>
-                <div class="module-status-card__meta">
-                    Aktive Admin-Version. Version 2 bleibt unabhängig erreichbar und kann jederzeit wieder aktiviert werden.
-                </div>
-            </div>
-
-            <v-select
-                :model-value="form.students_timetables_admin_version"
-                :items="studentsTimetablesVersionItems"
-                item-title="title"
-                item-value="value"
-                label="Aktive Version"
-                variant="outlined"
-                density="compact"
-                hide-details
-                class="module-status-card__version-select"
-                @update:modelValue="setStudentsTimetablesAdminVersion" />
+        <div class="module-status-card__feedback" role="status" aria-live="polite">
+            {{ isSaving ? 'Änderung wird gespeichert …' : saveError }}
         </div>
-
     </v-sheet>
 </template>
 
@@ -113,6 +72,7 @@ const normalizeModuleRows = (rows) =>
                   userVisibleField: item.userVisibleField,
                   userTestModeField: item.userTestModeField,
                   userComingSoonField: item.userComingSoonField,
+                  hasUserView: item.hasUserView !== false,
               }))
               .filter(
                   (item) =>
@@ -146,8 +106,6 @@ const defaultForm = (data = null, rows = []) => {
         return values
     }, {})
 
-    form.students_timetables_admin_version = data?.students_timetables_admin_version === 'v2' ? 'v2' : 'v3'
-
     return form
 }
 
@@ -170,16 +128,18 @@ export default {
             schoolToolStore: null,
             form: defaultForm(),
             moduleRows: [],
-            studentsTimetablesVersionItems: [
-                { title: 'Version 2 – stabil', value: 'v2' },
-                { title: 'Version 3 – Entwicklung', value: 'v3' },
-            ],
+            isSaving: false,
+            saveError: '',
         }
     },
 
     watch: {
         'schoolToolStore.data': {
             handler(value) {
+                if (this.isSaving) {
+                    return
+                }
+
                 this.syncModuleRowsFromStore(value)
                 this.syncFormFromStore(value)
             },
@@ -211,78 +171,77 @@ export default {
             this.form = form
         },
 
-        setAdminVisible(item, value) {
-            const isEnabled = Boolean(value)
-
-            this.form[item.adminVisibleField] = isEnabled
-
-            if (! isEnabled) {
-                this.form[item.userVisibleField] = false
+        userState(item) {
+            if (this.form[item.adminVisibleField] && this.form[item.userVisibleField]) {
+                return 'visible'
             }
 
-            void this.save()
+            if (this.form[item.userTestModeField]) {
+                return 'test'
+            }
+
+            return this.form[item.userComingSoonField] ? 'soon' : 'off'
         },
 
-        setUserVisible(item, value) {
-            if (! this.form[item.adminVisibleField]) {
-                this.form[item.userVisibleField] = false
-                void this.save()
+        userStateLabel(state) {
+            return { visible: 'Anzeige', test: 'Testmodus', soon: 'Kommt bald', off: 'Aus' }[state]
+        },
+
+        nextUserState(item) {
+            const states = this.form[item.adminVisibleField]
+                ? ['visible', 'test', 'soon', 'off']
+                : ['test', 'soon', 'off']
+
+            return states[(states.indexOf(this.userState(item)) + 1) % states.length]
+        },
+
+        toggleAdmin(item) {
+            if (this.isSaving || !this.schoolToolStore?.data?.id) {
                 return
             }
 
-            const isEnabled = Boolean(value)
+            this.form[item.adminVisibleField] = !this.form[item.adminVisibleField]
 
-            this.form[item.userVisibleField] = isEnabled
-
-            if (isEnabled) {
-                this.form[item.userTestModeField] = false
-                this.form[item.userComingSoonField] = false
-            }
-
-            void this.save()
-        },
-
-        setUserTestMode(item, value) {
-            const isEnabled = Boolean(value)
-
-            this.form[item.userTestModeField] = isEnabled
-
-            if (isEnabled) {
+            if (!this.form[item.adminVisibleField]) {
                 this.form[item.userVisibleField] = false
-                this.form[item.userComingSoonField] = false
             }
 
             void this.save()
         },
 
-        setUserComingSoon(item, value) {
-            const isEnabled = Boolean(value)
-
-            this.form[item.userComingSoonField] = isEnabled
-
-            if (isEnabled) {
-                this.form[item.userVisibleField] = false
-                this.form[item.userTestModeField] = false
+        cycleUserState(item) {
+            if (!item.hasUserView || this.isSaving || !this.schoolToolStore?.data?.id) {
+                return
             }
 
-            void this.save()
-        },
-
-        setStudentsTimetablesAdminVersion(value) {
-            this.form.students_timetables_admin_version = value === 'v2' ? 'v2' : 'v3'
+            const state = this.nextUserState(item)
+            this.form[item.userVisibleField] = state === 'visible'
+            this.form[item.userTestModeField] = state === 'test'
+            this.form[item.userComingSoonField] = state === 'soon'
             void this.save()
         },
 
         async save() {
             const id = this.schoolToolStore?.data?.id
-            if (! id) {
+            if (!id || this.isSaving) {
                 return
             }
 
-            await this.schoolToolStore.saveModuleStatuses({
-                id,
-                ...this.form,
-            })
+            this.isSaving = true
+            this.saveError = ''
+
+            try {
+                const saved = await this.schoolToolStore.saveModuleStatuses({ id, ...this.form })
+                if (!saved) {
+                    this.saveError = 'Änderung konnte nicht gespeichert werden. Bitte erneut versuchen.'
+                }
+            } catch {
+                this.saveError = 'Änderung konnte nicht gespeichert werden. Bitte erneut versuchen.'
+            } finally {
+                this.syncModuleRowsFromStore(this.schoolToolStore.data)
+                this.syncFormFromStore(this.schoolToolStore.data)
+                this.isSaving = false
+            }
         },
     },
 }
@@ -343,75 +302,176 @@ export default {
     margin-top: 3px;
 }
 
-.module-status-card__switches {
+.module-status-card__controls {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 8px 10px;
+    width: 100%;
+    max-width: 560px;
+    gap: 10px;
+    padding: 9px 9px 13px;
+    border: 1px solid #4b5563;
+    border-radius: 14px;
+    background: linear-gradient(160deg, #303946, #17202b);
+    box-shadow: inset 0 2px 5px #0b111b, 0 1px 0 #ffffff;
 }
 
-.module-status-card__version {
+.module-status-card__button {
+    --key-light: #e2e8f0;
+    --key-edge: #748091;
+    --key-glow: transparent;
+    --key-wash: rgba(148, 163, 184, 0.06);
+    position: relative;
+    isolation: isolate;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(220px, 320px);
-    gap: 20px;
-    align-items: center;
-    padding: 14px;
-    border: 1px solid rgba(79, 70, 229, 0.18);
-    border-radius: 16px;
-    background: rgba(238, 242, 255, 0.72);
-}
-
-.module-status-card__version-select {
+    gap: 2px;
     min-width: 0;
-}
-
-.module-status-card__toggle {
-    min-height: 46px;
+    min-height: 88px;
+    padding: 10px 16px;
+    border: 3px solid #0b111b;
     border-radius: 12px;
-    padding: 0 10px;
-    border: 1px solid transparent;
+    color: #f1f5f9;
+    background:
+        radial-gradient(ellipse at 50% 0%, var(--key-wash), transparent 85%),
+        linear-gradient(160deg, #303b49, #19222e);
+    text-align: left;
+    cursor: pointer;
+    box-shadow:
+        inset 0 2px 2px rgba(255, 255, 255, 0.18),
+        inset 0 -4px 5px rgba(0, 0, 0, 0.45),
+        0 5px 0 #080d14,
+        0 7px 7px rgba(0, 0, 0, 0.4),
+        0 0 14px var(--key-glow);
+    transition: transform 100ms ease, box-shadow 100ms ease;
 }
 
-.module-status-card__toggle--admin {
-    background: rgba(99, 102, 241, 0.14);
-    border-color: rgba(129, 140, 248, 0.22);
+.module-status-card__button::after {
+    content: '';
+    position: absolute;
+    inset: 6px;
+    z-index: -1;
+    pointer-events: none;
+    border: 1px solid var(--key-edge);
+    border-radius: 5px;
+    box-shadow: 0 0 5px var(--key-glow), inset 0 0 5px var(--key-glow);
 }
 
-.module-status-card__toggle--user {
-    background: rgba(16, 185, 129, 0.12);
-    border-color: rgba(52, 211, 153, 0.2);
+.module-status-card__button::before {
+    content: '';
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+    background: radial-gradient(circle at 35% 30%, #ffffff, var(--key-light) 35%, var(--key-edge) 75%);
+    box-shadow:
+        inset 0 0 2px rgba(255, 255, 255, 0.9),
+        0 0 4px 2px var(--key-edge),
+        0 0 10px 4px var(--key-glow),
+        0 0 18px 6px var(--key-glow);
 }
 
-.module-status-card__toggle--test {
-    background: rgba(14, 165, 233, 0.12);
-    border-color: rgba(56, 189, 248, 0.2);
+.module-status-card__button--off::before,
+.module-status-card__button--unavailable::before {
+    background: #748091;
+    box-shadow: inset 0 1px 2px #3b4655;
 }
 
-.module-status-card__toggle--soon {
-    background: rgba(245, 158, 11, 0.12);
-    border-color: rgba(251, 191, 36, 0.2);
+.module-status-card__button:hover:not(:disabled) {
+    filter: brightness(1.1);
 }
 
-.module-status-card__toggle :deep(.v-selection-control) {
-    min-height: 44px;
+.module-status-card__button:focus-visible {
+    outline: 3px solid #ffffff;
+    outline-offset: 2px;
 }
 
-.module-status-card__toggle :deep(.v-selection-control__wrapper) {
-    margin-inline-end: 8px;
+.module-status-card__button:active:not(:disabled) {
+    transform: translateY(3px);
+    box-shadow:
+        inset 0 1px 5px rgba(0, 0, 0, 0.6),
+        0 2px 0 #080d14,
+        0 0 16px var(--key-glow);
 }
 
-.module-status-card__toggle :deep(.v-label) {
-    color: #10263a;
-    font-size: 0.84rem;
+.module-status-card__button:disabled {
+    opacity: 1;
+    cursor: wait;
+}
+
+.module-status-card__button--unavailable:disabled {
+    --key-light: #d1d9e4;
+    --key-edge: #56616d;
+    --key-glow: transparent;
+    opacity: 0.68;
+    border-color: #171e28;
+    background: linear-gradient(160deg, #252e39, #1b222c);
+    box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.04), 0 3px 0 #111820;
+    cursor: default;
+}
+
+.module-status-card__button--unavailable::after {
+    opacity: 0.4;
+    box-shadow: none;
+}
+
+.module-status-card__button--admin {
+    --key-light: #c6d6ff;
+    --key-edge: #a5bfff;
+    --key-glow: rgba(119, 159, 255, 0.5);
+    --key-wash: rgba(99, 130, 255, 0.22);
+}
+
+.module-status-card__button--visible {
+    --key-light: #b5fbd2;
+    --key-edge: #79e7ab;
+    --key-glow: rgba(76, 222, 143, 0.45);
+    --key-wash: rgba(52, 180, 115, 0.2);
+}
+
+.module-status-card__button--test {
+    --key-light: #bdeaff;
+    --key-edge: #85d6ff;
+    --key-glow: rgba(87, 198, 255, 0.45);
+    --key-wash: rgba(42, 155, 219, 0.2);
+}
+
+.module-status-card__button--soon {
+    --key-light: #ffe6b0;
+    --key-edge: #ffd17b;
+    --key-glow: rgba(255, 191, 82, 0.45);
+    --key-wash: rgba(195, 133, 28, 0.2);
+}
+
+.module-status-card__audience {
+    padding-right: 12px;
+    font-size: 0.8rem;
     font-weight: 600;
-    letter-spacing: 0.01em;
 }
 
-.module-status-card__toggle :deep(.v-selection-control--disabled) {
-    opacity: 0.52;
+.module-status-card__state {
+    color: var(--key-light);
+    font-size: 1.05rem;
+    line-height: 1.4;
+    text-shadow: 0 0 8px var(--key-glow);
 }
 
-.module-status-card__toggle :deep(.v-selection-control--disabled .v-label) {
-    color: rgba(226, 232, 240, 0.58);
+.module-status-card__next {
+    color: #d1d9e4;
+    font-size: 0.78rem;
+}
+
+.module-status-card__feedback {
+    min-height: 24px;
+    margin-top: 12px;
+    color: #10263a;
+    font-size: 0.85rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .module-status-card__button {
+        transition: none;
+    }
 }
 
 @media (max-width: 900px) {
@@ -421,12 +481,8 @@ export default {
     }
 }
 
-@media (max-width: 760px) {
-    .module-status-card__switches {
-        grid-template-columns: 1fr;
-    }
-
-    .module-status-card__version {
+@media (max-width: 600px) {
+    .module-status-card__controls {
         grid-template-columns: 1fr;
     }
 }

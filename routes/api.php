@@ -9,6 +9,7 @@ use App\Http\Controllers\Admin\ABA\AbaSettingsController;
 use App\Http\Controllers\Admin\AdminController;
 use App\Http\Controllers\Admin\AdminShellColorPreferenceController;
 use App\Http\Controllers\Admin\CloudwaysSchoolSynchronizationController;
+use App\Http\Controllers\Admin\ConnectionStatusController;
 use App\Http\Controllers\Admin\FeaturePreviewController;
 use App\Http\Controllers\Admin\GroupController;
 use App\Http\Controllers\Admin\HealthController;
@@ -29,7 +30,10 @@ use App\Http\Controllers\Admin\Materials\MaterialWorkspaceController;
 use App\Http\Controllers\Admin\MaterialsV2\MaterialV2CategoryController;
 use App\Http\Controllers\Admin\MaterialsV2\MaterialV2ItemController;
 use App\Http\Controllers\Admin\MaterialsV2\MaterialV2LinkPreviewController;
+use App\Http\Controllers\Admin\MultipleChoiceController;
 use App\Http\Controllers\Admin\NavigationController;
+use App\Http\Controllers\Admin\NumberSystemGameController;
+use App\Http\Controllers\Admin\NumberSystemLocalProbeController;
 use App\Http\Controllers\Admin\RegisterDateBookingController;
 use App\Http\Controllers\Admin\RegisterDateController;
 use App\Http\Controllers\Admin\RegisterPrintController;
@@ -87,6 +91,7 @@ use App\Http\Controllers\Admin\Teaching\HolidayController;
 use App\Http\Controllers\Admin\Teaching\Import116Controller;
 use App\Http\Controllers\Admin\Teaching\ImportedCurriculumController;
 use App\Http\Controllers\Admin\Teaching\MyHolidayController;
+use App\Http\Controllers\Admin\Teaching\PersonalAppointmentController;
 use App\Http\Controllers\Admin\Teaching\PersonalTeachingBackupController;
 use App\Http\Controllers\Admin\Teaching\PersonalTeachingBackupRecoveryController;
 use App\Http\Controllers\Admin\Teaching\SchoolHourController;
@@ -105,6 +110,10 @@ use App\Http\Controllers\Admin\Teaching\TeachingEntryGradingPartController;
 use App\Http\Controllers\Admin\Teaching\TeachingEntryGradingPartEntryController;
 use App\Http\Controllers\Admin\Teaching\TeachingReminderController;
 use App\Http\Controllers\Admin\Teaching\TeachingSynchronisationController;
+use App\Http\Controllers\Admin\Teaching\WorkDropboxController;
+use App\Http\Controllers\Admin\Teaching\WorkResultNotificationController;
+use App\Http\Controllers\Admin\TeachingExplanationController;
+use App\Http\Controllers\Admin\TeachingSimulationController;
 use App\Http\Controllers\Admin\TwoFactorAuthenticationController;
 use App\Http\Controllers\Admin\TwoFactorChallengeController;
 use App\Http\Controllers\Admin\UserController;
@@ -120,8 +129,10 @@ use App\Http\Controllers\Homepage\StudentTimetableV3StateController as HomepageS
 use App\Http\Controllers\Homepage\StudentTimetableV3TimetableController as HomepageStudentTimetableV3TimetableController;
 use App\Http\Controllers\Student\CourseController;
 use App\Http\Controllers\Student\CourseStudentEntryController;
+use App\Http\Controllers\Student\CourseWorkTaskController;
 use App\Http\Controllers\Student\StudentController;
 use App\Http\Middleware\AuthenticateFeaturePreviewControl;
+use App\Http\Middleware\EnsureTeachingCurriculaEnabled;
 use Illuminate\Foundation\Http\Middleware\HandlePrecognitiveRequests;
 use Illuminate\Http\Request;
 use Illuminate\Session\Middleware\StartSession;
@@ -186,6 +197,8 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::get('/homepage/student/courses', [CourseController::class, 'index'])->middleware('tool-licensed:Lehrertool');
         Route::get('/homepage/student/courses/{courseId}', [CourseController::class, 'show'])->middleware('tool-licensed:Lehrertool');
         Route::get('/homepage/student/courses/{courseId}/entries', [CourseStudentEntryController::class, 'index'])->middleware('tool-licensed:Lehrertool');
+        Route::get('/homepage/student/courses/{courseId}/tasks', [CourseWorkTaskController::class, 'index'])->middleware('tool-licensed:Lehrertool')->name('student.course-work.tasks');
+        Route::get('/homepage/student/courses/{courseId}/works/{course_work}/tasks/{fileId}', [CourseWorkTaskController::class, 'download'])->middleware('tool-licensed:Lehrertool')->name('student.course-work.task-file');
         Route::get('/homepage/student/courses/{courseId}/works/{course_work}/evaluations/{sha256}', [CourseStudentEntryController::class, 'evaluationPdf'])->middleware('tool-licensed:Lehrertool')->name('student.course-work.evaluation-pdf');
         Route::get('/homepage/student/course-date-materials/attachments/{attachment}/preview', [CourseController::class, 'previewAdoptedAttachment'])->middleware('tool-licensed:Lehrertool');
         Route::get('/homepage/student/course-date-materials/attachments/{attachment}/download', [CourseController::class, 'downloadAdoptedAttachment'])->middleware('tool-licensed:Lehrertool');
@@ -219,6 +232,105 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
 
     /***** ADMIN ROUTES *****/
     Route::get('/admin/config', [AdminController::class, 'config']);
+
+    Route::prefix('/admin/teaching-simulator')->middleware([
+        'auth:sanctum', 'api-allowed:scope:teaching_access',
+        'tool-licensed:Lehrertool,auto,scope:teaching_access',
+    ])->name('admin.teaching-simulator.')->group(function (): void {
+        Route::post('/mailpit/start', [TeachingSimulationController::class, 'startMailpit'])->name('start-mailpit');
+        Route::get('/', [TeachingSimulationController::class, 'index'])->name('index');
+        Route::post('/works/{course_work}/runs', [TeachingSimulationController::class, 'store'])->name('store');
+        Route::get('/runs/{run}', [TeachingSimulationController::class, 'show'])->name('show');
+        Route::post('/runs/{run}/send', [TeachingSimulationController::class, 'send'])->name('send');
+        Route::post('/runs/{run}/collect', [TeachingSimulationController::class, 'collect'])->name('collect');
+        Route::post('/runs/{run}/revise', [TeachingSimulationController::class, 'revise'])->name('revise');
+        Route::get('/runs/{run}/file', [TeachingSimulationController::class, 'file'])->name('file');
+        Route::get('/runs/{run}/download', [TeachingSimulationController::class, 'download'])->name('download');
+    });
+
+    Route::prefix('/admin/teaching-explanations')->middleware([
+        'auth:sanctum', 'api-allowed:scope:teaching_access',
+        'tool-licensed:Lehrertool,auth,scope:teaching_access',
+    ])->name('admin.teaching-explanations.')->group(function (): void {
+        Route::get('/{explanation}', [TeachingExplanationController::class, 'show'])->name('show');
+        Route::post('/{explanation}/publication', [TeachingExplanationController::class, 'publish'])->name('publish');
+        Route::delete('/{explanation}/publication', [TeachingExplanationController::class, 'revoke'])->name('revoke');
+        Route::post('/{explanation}/email-preview', [TeachingExplanationController::class, 'emailPreview'])->name('emailPreview');
+    });
+
+    Route::prefix('/admin/number-systems')->middleware([
+        'auth:sanctum', 'api-allowed:scope:teaching_access',
+        'tool-licensed:Lehrertool,auth,scope:teaching_access',
+    ])->name('admin.number-systems.')->group(function (): void {
+        Route::prefix('/local-probes')->name('local-probes.')->group(function (): void {
+            Route::post('/', [NumberSystemLocalProbeController::class, 'create'])->middleware('throttle:10,1')->name('create');
+            Route::get('/{probe}', [NumberSystemLocalProbeController::class, 'show'])->whereUuid('probe')->name('show');
+            Route::post('/{probe}/control', [NumberSystemLocalProbeController::class, 'control'])->whereUuid('probe')->name('control');
+            Route::delete('/{probe}', [NumberSystemLocalProbeController::class, 'remove'])->whereUuid('probe')->name('remove');
+            Route::get('/{probe}/players/{participant}', [NumberSystemLocalProbeController::class, 'player'])->whereUuid('probe')->whereIn('participant', ['1', '2'])->name('player');
+            Route::post('/{probe}/players/{participant}/join', [NumberSystemLocalProbeController::class, 'join'])->whereUuid('probe')->whereIn('participant', ['1', '2'])->name('join');
+            Route::post('/{probe}/players/{participant}/run', [NumberSystemLocalProbeController::class, 'update'])->whereUuid('probe')->whereIn('participant', ['1', '2'])->name('update');
+            Route::post('/{probe}/players/{participant}/presence', [NumberSystemLocalProbeController::class, 'presence'])->whereUuid('probe')->whereIn('participant', ['1', '2'])->middleware('throttle:30,1')->name('presence');
+        });
+        Route::get('/', [NumberSystemGameController::class, 'index'])->name('index');
+        Route::post('/sessions', [NumberSystemGameController::class, 'create'])->middleware('throttle:10,1')->name('create');
+        Route::get('/sessions/{session}', [NumberSystemGameController::class, 'show'])->name('show');
+        Route::patch('/sessions/{session}', [NumberSystemGameController::class, 'update'])->name('update');
+        Route::get('/sessions/{session}/results/pdf', [NumberSystemGameController::class, 'resultsPdf'])->name('resultsPdf');
+        Route::post('/sessions/{session}/control', [NumberSystemGameController::class, 'control'])->name('control');
+        Route::delete('/sessions/{session}', [NumberSystemGameController::class, 'remove'])->name('remove');
+    });
+
+    Route::prefix('/admin/multiple-choice')->middleware([
+        'auth:sanctum', 'api-allowed:scope:teaching_access',
+        'tool-licensed:Lehrertool,auth,scope:teaching_access',
+    ])->name('admin.multiple-choice.')->group(function (): void {
+        Route::get('/', [MultipleChoiceController::class, 'index'])->name('index');
+        Route::post('/catalogs', [MultipleChoiceController::class, 'createCatalog'])->name('catalogs.create');
+        Route::patch('/catalogs/{catalog}', [MultipleChoiceController::class, 'updateCatalog'])->name('catalogs.update');
+        Route::delete('/catalogs/{catalog}', [MultipleChoiceController::class, 'deleteCatalog'])->name('catalogs.delete');
+        Route::post('/catalogs/{catalog}/sync-preview', [MultipleChoiceController::class, 'templateSyncPreview'])->middleware('throttle:10,1')->name('catalogs.sync-preview');
+        Route::post('/catalogs/{catalog}/sync-apply', [MultipleChoiceController::class, 'templateSyncApply'])->name('catalogs.sync-apply');
+        Route::delete('/catalogs/{catalog}/template-connection', [MultipleChoiceController::class, 'disconnectTemplate'])->name('catalogs.template-disconnect');
+        Route::post('/catalogs/{catalog}/question-summary-preview', [MultipleChoiceController::class, 'questionSummaryPreview'])->middleware('throttle:10,1')->name('catalogs.question-summary-preview');
+        Route::post('/catalogs/{catalog}/question-summary-apply', [MultipleChoiceController::class, 'questionSummaryApply'])->name('catalogs.question-summary-apply');
+        Route::post('/import-preview', [MultipleChoiceController::class, 'previewImport'])->middleware('throttle:10,1')->name('import-preview');
+        Route::post('/roster-preview', [MultipleChoiceController::class, 'rosterPreview'])->name('roster-preview');
+        Route::get('/test-folder/folders', [MultipleChoiceController::class, 'testFolderFolders'])->middleware('throttle:60,1')->name('test-folder.folders');
+        Route::post('/test-folder/preview', [MultipleChoiceController::class, 'testFolderPreview'])->middleware('throttle:10,1')->name('test-folder.preview');
+        Route::post('/test-folder/resolve', [MultipleChoiceController::class, 'testFolderResolve'])->middleware('throttle:10,1')->name('test-folder.resolve');
+        Route::post('/tests', [MultipleChoiceController::class, 'createTest'])->name('tests.create');
+        Route::post('/tests/{test}/publish', [MultipleChoiceController::class, 'publishTest'])->name('tests.publish');
+        Route::post('/tests/{test}/withdraw', [MultipleChoiceController::class, 'withdrawTest'])->name('tests.withdraw');
+        Route::get('/tests/{test}', [MultipleChoiceController::class, 'showTest'])->name('tests.show');
+        Route::get('/tests/{test}/exercise-export', [MultipleChoiceController::class, 'exportExercise'])->name('tests.exercise-export');
+        Route::get('/tests/{test}/folder', [MultipleChoiceController::class, 'folderStatus'])->name('tests.folder.status');
+        Route::put('/tests/{test}/folder', [MultipleChoiceController::class, 'folderStore'])->name('tests.folder.store');
+        Route::post('/tests/{test}/folder/connect', [MultipleChoiceController::class, 'folderConnect'])->middleware(StartSession::class)->name('tests.folder.connect');
+        Route::get('/tests/{test}/folder/folders', [MultipleChoiceController::class, 'folderList'])->name('tests.folder.folders');
+        Route::post('/tests/{test}/folder/export', [MultipleChoiceController::class, 'folderExport'])->name('tests.folder.save');
+        Route::post('/tests/{test}/folder/import', [MultipleChoiceController::class, 'folderImport'])->name('tests.folder.read');
+        Route::post('/tests/{test}/folder/remember', [MultipleChoiceController::class, 'folderAcknowledge'])->name('tests.folder.remember');
+        Route::post('/tests/{test}/folder/check-write', [MultipleChoiceController::class, 'folderCheckWrite'])->middleware('throttle:5,1')->name('tests.folder.check-write');
+        Route::patch('/tests/{test}', [MultipleChoiceController::class, 'renameTest'])->name('tests.rename');
+        Route::delete('/tests/{test}', [MultipleChoiceController::class, 'deleteTest'])->name('tests.delete');
+        Route::patch('/tests/{test}/attempts/{attempt}/closing-deadline', [MultipleChoiceController::class, 'changeClosingDeadline'])->name('attempts.closing-deadline');
+        Route::post('/tests/{test}/attempts/reopen', [MultipleChoiceController::class, 'reopenAttempts'])->name('attempts.reopen-selected');
+        Route::post('/tests/{test}/attempts/control', [MultipleChoiceController::class, 'controlAttempts'])->name('attempts.control');
+        Route::post('/tests/{test}/attempts/{attempt}/reopen', [MultipleChoiceController::class, 'reopenAttempt'])->name('attempts.reopen');
+        Route::patch('/tests/{test}/access-links', [MultipleChoiceController::class, 'setAccessLinks'])->name('tests.access-links');
+        Route::patch('/tests/{test}/settings', [MultipleChoiceController::class, 'updateTestSettings'])->name('tests.settings');
+        Route::patch('/tests/{test}/exam-mode', [MultipleChoiceController::class, 'setExamMode'])->name('tests.exam-mode');
+        Route::post('/tests/{test}/pause', [MultipleChoiceController::class, 'pauseTest'])->name('tests.pause');
+        Route::post('/tests/{test}/resume', [MultipleChoiceController::class, 'resumeTest'])->name('tests.resume');
+        Route::post('/tests/{test}/close', [MultipleChoiceController::class, 'closeTest'])->name('tests.close');
+        Route::patch('/tests/{test}/remaining-time', [MultipleChoiceController::class, 'changeRemainingTime'])->name('tests.remaining-time');
+        Route::post('/tests/{test}/countdown', [MultipleChoiceController::class, 'countdown'])->name('tests.countdown');
+        Route::get('/tests/{test}/invitations', [MultipleChoiceController::class, 'invitations'])->name('tests.invitations');
+        Route::post('/tests/{test}/invitations', [MultipleChoiceController::class, 'sendInvitations'])->middleware('throttle:5,1')->name('tests.invite');
+        Route::post('/tests/{test}/release-results', [MultipleChoiceController::class, 'releaseResults'])->name('tests.release');
+        Route::delete('/tests/{test}/release-results', [MultipleChoiceController::class, 'revokeRelease'])->name('tests.revoke-release');
+    });
 
     Route::middleware(['auth:sanctum', 'api-allowed:scope:students_timetables_access', 'tool-licensed:StudentsTimetables,auth,scope:students_timetables_access'])->group(function () {
         Route::get('/admin/students-timetables', [StudentsTimetablesController::class, 'index']);
@@ -392,6 +504,12 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
 
         Route::get('/admin/health/status', [HealthController::class, 'status'])
             ->middleware('api-allowed:scope:admin_shell_access');
+        Route::get('/admin/connections', [ConnectionStatusController::class, '__invoke'])
+            ->middleware('api-allowed:scope:super_admin_access')->name('admin.connections.status');
+        Route::post('/admin/connections/check', [ConnectionStatusController::class, '__invoke'])
+            ->middleware(['api-allowed:scope:super_admin_access', 'throttle:10,1'])->name('admin.connections.check');
+        Route::post('/admin/connections/dropbox/connect', [ConnectionStatusController::class, 'connect'])
+            ->middleware(['api-allowed:scope:super_admin_access', StartSession::class])->name('admin.connections.connect');
         Route::post('/admin/health/test-queue', [HealthController::class, 'testQueue'])
             ->middleware(['api-allowed:scope:admin_or_super_admin_access', 'throttle:health-queue-tests']);
         Route::get('/admin/health/test-queue/check', [HealthController::class, 'checkQueueTest'])
@@ -612,48 +730,55 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::get('/admin/teaching/courses/{course}/grades_pdf', [TeachingCourseController::class, 'courseGradesPdf']);
         Route::get('/admin/teaching/courses/{course}/overview_pdf', [TeachingCourseController::class, 'courseOverviewPdf']);
         Route::get('/admin/teaching/courses/{course}/students/{course_student}/performances_pdf', [TeachingCourseController::class, 'studentPerformancesPdf']);
-        Route::delete('/admin/teaching/courses/{course}/curriculum', [TeachingCourseCurriculumController::class, 'destroy']);
+        Route::delete('/admin/teaching/courses/{course}/curriculum', [TeachingCourseCurriculumController::class, 'destroy'])
+            ->middleware(EnsureTeachingCurriculaEnabled::class);
         Route::apiResource('/admin/teaching/courses', TeachingCourseController::class);
-        Route::apiResource('/admin/teaching/curricula', CurriculumController::class)->parameters(['curricula' => 'curriculum']);
-        Route::post('/admin/teaching/curricula/{curriculum}/copy-content', [CurriculumController::class, 'copyContent']);
-        Route::get('/admin/teaching/imported-curricula', [ImportedCurriculumController::class, 'index']);
-        Route::post('/admin/teaching/imported-curricula/import', [ImportedCurriculumController::class, 'import']);
-        Route::post('/admin/teaching/imported-curricula/{imported_curriculum}/adopt', [ImportedCurriculumController::class, 'adopt']);
-        Route::delete('/admin/teaching/imported-curricula/{imported_curriculum}', [ImportedCurriculumController::class, 'destroy']);
-        Route::get('/admin/teaching/curricula/{curriculum}/materials/config', [CurriculumController::class, 'materialsConfig']);
-        Route::get('/admin/teaching/curricula/{curriculum}/materials/cards', [CurriculumController::class, 'materialsIndex']);
-        Route::get('/admin/teaching/curricula/{curriculum}/materials/cards/{material_card}', [CurriculumController::class, 'showMaterialCard']);
-        Route::get('/admin/teaching/curricula/{curriculum}/materials/attachments/{material_card_attachment}/preview', [CurriculumController::class, 'previewMaterialAttachment']);
-        Route::get('/admin/teaching/curricula/{curriculum}/materials/attachments/{material_card_attachment}/download', [CurriculumController::class, 'downloadMaterialAttachment']);
-        Route::get('/admin/teaching/curricula/{curriculum}/documents', [CurriculumDocumentController::class, 'index']);
-        Route::post('/admin/teaching/curricula/{curriculum}/documents/upload', [CurriculumDocumentController::class, 'upload'])
-            ->middleware('throttle:uploads');
-        Route::patch('/admin/teaching/curricula/{curriculum}/documents/upload', [CurriculumDocumentController::class, 'uploadNext'])
-            ->middleware('throttle:uploads');
-        Route::post('/admin/teaching/curricula/{curriculum}/documents/attach-material', [CurriculumDocumentController::class, 'attachMaterial']);
-        Route::get('/admin/teaching/curricula/{curriculum}/documents/{document}/preview', [CurriculumDocumentController::class, 'preview']);
-        Route::get('/admin/teaching/curricula/{curriculum}/documents/{document}/material-attachments', [CurriculumDocumentController::class, 'materialAttachments']);
-        Route::patch('/admin/teaching/curricula/{curriculum}/documents/{document}/material-attachment', [CurriculumDocumentController::class, 'updateMaterialAttachment']);
-        Route::get('/admin/teaching/curricula/{curriculum}/documents/{document}/download', [CurriculumDocumentController::class, 'download']);
-        Route::delete('/admin/teaching/curricula/{curriculum}/documents/{document}', [CurriculumDocumentController::class, 'destroy']);
-        Route::get('/admin/teaching/curricula/{curriculum}/topics/{topicId}/units/{unitId}/files', [CurriculumUnitFileController::class, 'index']);
-        Route::post('/admin/teaching/curricula/{curriculum}/topics/{topicId}/units/{unitId}/files', [CurriculumUnitFileController::class, 'store']);
-        Route::get('/admin/teaching/curricula/{curriculum}/topics/{topicId}/units/{unitId}/files/{file}/preview', [CurriculumUnitFileController::class, 'preview']);
-        Route::get('/admin/teaching/curricula/{curriculum}/topics/{topicId}/units/{unitId}/files/{file}/download', [CurriculumUnitFileController::class, 'download']);
-        Route::patch('/admin/teaching/curricula/{curriculum}/topics/{topicId}/units/{unitId}/files/{file}', [CurriculumUnitFileController::class, 'update']);
-        Route::delete('/admin/teaching/curricula/{curriculum}/topics/{topicId}/units/{unitId}/files/{file}', [CurriculumUnitFileController::class, 'destroy']);
-        Route::get('/admin/teaching/curricula/{curriculum}/export/json', [CurriculumExportController::class, 'json']);
-        Route::get('/admin/teaching/curricula/{curriculum}/export/word', [CurriculumExportController::class, 'word']);
-        Route::get('/admin/teaching/curricula/{curriculum}/export/pdf', [CurriculumExportController::class, 'pdf']);
+        Route::middleware(EnsureTeachingCurriculaEnabled::class)->group(function (): void {
+            Route::apiResource('/admin/teaching/curricula', CurriculumController::class)->parameters(['curricula' => 'curriculum']);
+            Route::post('/admin/teaching/curricula/{curriculum}/copy-content', [CurriculumController::class, 'copyContent']);
+            Route::get('/admin/teaching/imported-curricula', [ImportedCurriculumController::class, 'index']);
+            Route::post('/admin/teaching/imported-curricula/import', [ImportedCurriculumController::class, 'import']);
+            Route::post('/admin/teaching/imported-curricula/{imported_curriculum}/adopt', [ImportedCurriculumController::class, 'adopt']);
+            Route::delete('/admin/teaching/imported-curricula/{imported_curriculum}', [ImportedCurriculumController::class, 'destroy']);
+            Route::get('/admin/teaching/curricula/{curriculum}/materials/config', [CurriculumController::class, 'materialsConfig']);
+            Route::get('/admin/teaching/curricula/{curriculum}/materials/cards', [CurriculumController::class, 'materialsIndex']);
+            Route::get('/admin/teaching/curricula/{curriculum}/materials/cards/{material_card}', [CurriculumController::class, 'showMaterialCard']);
+            Route::get('/admin/teaching/curricula/{curriculum}/materials/attachments/{material_card_attachment}/preview', [CurriculumController::class, 'previewMaterialAttachment']);
+            Route::get('/admin/teaching/curricula/{curriculum}/materials/attachments/{material_card_attachment}/download', [CurriculumController::class, 'downloadMaterialAttachment']);
+            Route::get('/admin/teaching/curricula/{curriculum}/documents', [CurriculumDocumentController::class, 'index']);
+            Route::post('/admin/teaching/curricula/{curriculum}/documents/upload', [CurriculumDocumentController::class, 'upload'])
+                ->middleware('throttle:uploads');
+            Route::patch('/admin/teaching/curricula/{curriculum}/documents/upload', [CurriculumDocumentController::class, 'uploadNext'])
+                ->middleware('throttle:uploads');
+            Route::post('/admin/teaching/curricula/{curriculum}/documents/attach-material', [CurriculumDocumentController::class, 'attachMaterial']);
+            Route::get('/admin/teaching/curricula/{curriculum}/documents/{document}/preview', [CurriculumDocumentController::class, 'preview']);
+            Route::get('/admin/teaching/curricula/{curriculum}/documents/{document}/material-attachments', [CurriculumDocumentController::class, 'materialAttachments']);
+            Route::patch('/admin/teaching/curricula/{curriculum}/documents/{document}/material-attachment', [CurriculumDocumentController::class, 'updateMaterialAttachment']);
+            Route::get('/admin/teaching/curricula/{curriculum}/documents/{document}/download', [CurriculumDocumentController::class, 'download']);
+            Route::delete('/admin/teaching/curricula/{curriculum}/documents/{document}', [CurriculumDocumentController::class, 'destroy']);
+            Route::get('/admin/teaching/curricula/{curriculum}/topics/{topicId}/units/{unitId}/files', [CurriculumUnitFileController::class, 'index']);
+            Route::post('/admin/teaching/curricula/{curriculum}/topics/{topicId}/units/{unitId}/files', [CurriculumUnitFileController::class, 'store']);
+            Route::post('/admin/teaching/curricula/{curriculum}/topics/{topicId}/units/{unitId}/explanations', [CurriculumUnitFileController::class, 'storeExplanation']);
+            Route::get('/admin/teaching/curricula/{curriculum}/topics/{topicId}/units/{unitId}/files/{file}/preview', [CurriculumUnitFileController::class, 'preview']);
+            Route::get('/admin/teaching/curricula/{curriculum}/topics/{topicId}/units/{unitId}/files/{file}/download', [CurriculumUnitFileController::class, 'download']);
+            Route::patch('/admin/teaching/curricula/{curriculum}/topics/{topicId}/units/{unitId}/files/{file}', [CurriculumUnitFileController::class, 'update']);
+            Route::delete('/admin/teaching/curricula/{curriculum}/topics/{topicId}/units/{unitId}/files/{file}', [CurriculumUnitFileController::class, 'destroy']);
+            Route::get('/admin/teaching/curricula/{curriculum}/export/json', [CurriculumExportController::class, 'json']);
+            Route::get('/admin/teaching/curricula/{curriculum}/export/word', [CurriculumExportController::class, 'word']);
+            Route::get('/admin/teaching/curricula/{curriculum}/export/pdf', [CurriculumExportController::class, 'pdf']);
+        });
         Route::delete('/admin/teaching/course_dates', [CourseDateController::class, 'destroyAll']);
         Route::apiResource('/admin/teaching/course_dates', CourseDateController::class);
         Route::patch('/admin/teaching/course_dates/{course_date}/status', [CourseDateController::class, 'updateStatus']);
-        Route::post('/admin/teaching/course_dates/{course_date}/adopt-curriculum-content', [CourseDateController::class, 'adoptCurriculumContent']);
-        Route::put('/admin/teaching/course_dates/{course_date}/curriculum-files/{file}/visibility', [CourseDateController::class, 'setCurriculumFileVisibility']);
-        Route::post('/admin/teaching/course_date_materials/attachments/{attachment}/toggle-visibility', [CourseDateController::class, 'toggleAttachmentVisibility']);
-        Route::delete('/admin/teaching/course_date_materials/{material}', [CourseDateController::class, 'destroyAdoptedMaterial']);
-        Route::get('/admin/teaching/course_date_materials/attachments/{attachment}/preview', [CourseDateController::class, 'previewAdoptedAttachment']);
-        Route::get('/admin/teaching/course_date_materials/attachments/{attachment}/download', [CourseDateController::class, 'downloadAdoptedAttachment']);
+        Route::post('/admin/teaching/course_dates/{course_date}/games', [CourseDateController::class, 'addGame']);
+        Route::middleware(EnsureTeachingCurriculaEnabled::class)->group(function (): void {
+            Route::post('/admin/teaching/course_dates/{course_date}/adopt-curriculum-content', [CourseDateController::class, 'adoptCurriculumContent']);
+            Route::put('/admin/teaching/course_dates/{course_date}/curriculum-files/{file}/visibility', [CourseDateController::class, 'setCurriculumFileVisibility']);
+            Route::post('/admin/teaching/course_date_materials/attachments/{attachment}/toggle-visibility', [CourseDateController::class, 'toggleAttachmentVisibility']);
+            Route::delete('/admin/teaching/course_date_materials/{material}', [CourseDateController::class, 'destroyAdoptedMaterial']);
+            Route::get('/admin/teaching/course_date_materials/attachments/{attachment}/preview', [CourseDateController::class, 'previewAdoptedAttachment']);
+            Route::get('/admin/teaching/course_date_materials/attachments/{attachment}/download', [CourseDateController::class, 'downloadAdoptedAttachment']);
+        });
         Route::get('/admin/teaching/holidays/export', [HolidayController::class, 'exportFile'])->name('teaching.holidays.export');
         Route::post('/admin/teaching/holidays/import', [HolidayController::class, 'importFile'])->name('teaching.holidays.import');
         Route::apiResource('/admin/teaching/holidays', HolidayController::class)->only(['index', 'store', 'destroy']);
@@ -676,15 +801,42 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::apiResource('/admin/teaching/my_holidays', MyHolidayController::class)
             ->only(['index', 'store', 'destroy'])
             ->parameters(['my_holidays' => 'my_holiday']);
+        Route::apiResource('/admin/teaching/personal_appointments', PersonalAppointmentController::class)
+            ->only(['index', 'store', 'update', 'destroy'])
+            ->parameters(['personal_appointments' => 'personalAppointment']);
+        Route::put('/admin/teaching/personal_appointments/{personalAppointment}/occurrence', [PersonalAppointmentController::class, 'updateOccurrence']);
         Route::get('/admin/teaching/load_class_students', [App\Http\Controllers\Admin\Teaching\StudentController::class, 'loadClassStudents']);
         Route::get('/admin/teaching/import116/load_class_students', [Import116Controller::class, 'loadClassStudents']);
         Route::get('/admin/teaching/import116/runs', [Import116Controller::class, 'runs']);
         Route::get('/admin/teaching/import116/runs/{import116_run}', [Import116Controller::class, 'runDetails']);
         Route::post('/admin/teaching/import116/runs/reset', [Import116Controller::class, 'resetRuns']);
         Route::delete('/admin/teaching/import116/runs/{import116_run}', [Import116Controller::class, 'destroyRun']);
+        Route::get('/admin/teaching/course_works/{course_work}/ai-export', [CourseWorkController::class, 'aiExport'])->name('teaching.course-works.ai-export');
+        Route::get('/admin/teaching/course_works/{course_work}/email-preparation-preview', [CourseWorkController::class, 'emailPreparationPreview'])->name('teaching.course-works.email-preparation-preview');
+        Route::get('/admin/teaching/course_works/{course_work}/exercise-options', [CourseWorkController::class, 'exerciseOptions'])->name('teaching.course-works.exercise-options');
+        Route::post('/admin/teaching/course_works/{course_work}/prepare-exercise', [CourseWorkController::class, 'prepareExercise'])->middleware('throttle:10,1')->name('teaching.course-works.prepare-exercise');
+        Route::post('/admin/teaching/course_works/{course_work}/store-exercise', [CourseWorkController::class, 'storeExercise'])->name('teaching.course-works.store-exercise');
         Route::post('/admin/teaching/course_works/{course_work}/import-evaluations', [CourseWorkController::class, 'importEvaluations'])->name('teaching.course-works.import-evaluations');
         Route::post('/admin/teaching/course_works/{course_work}/import-folder', [CourseWorkController::class, 'importFolder'])->name('teaching.course-works.import-folder');
         Route::post('/admin/teaching/course_works/{course_work}/import-json', [CourseWorkController::class, 'importJson'])->name('teaching.course-works.import-json');
+        Route::post('/admin/teaching/course_works/{course_work}/student-deadline', [CourseWorkController::class, 'studentDeadline'])->name('teaching.work-student-deadline');
+        Route::get('/admin/teaching/course_works/{course_work}/student-distribution-preview', [CourseWorkController::class, 'studentDistributionPreview'])->name('teaching.work-student-distribution-preview');
+        Route::post('/admin/teaching/course_works/{course_work}/student-distribution', [CourseWorkController::class, 'studentDistribution'])->name('teaching.work-student-distribution');
+        Route::prefix('/admin/teaching/course_works/{course_work}/result-notifications')->name('teaching.work-results.')->group(function (): void {
+            Route::post('/preview', [WorkResultNotificationController::class, 'preview'])->name('preview');
+            Route::post('/send', [WorkResultNotificationController::class, 'send'])->middleware('throttle:5,1')->name('send');
+            Route::post('/office-order', [WorkResultNotificationController::class, 'officeOrder'])->name('office-order');
+        });
+        Route::prefix('/admin/teaching/course_works/{course_work}/dropbox')->name('teaching.work-dropbox.')->group(function (): void {
+            Route::get('/', [WorkDropboxController::class, 'show'])->name('show');
+            Route::post('/refresh', [WorkDropboxController::class, 'refresh'])->name('refresh');
+            Route::get('/refresh-progress/{progress_id}', [WorkDropboxController::class, 'refreshProgress'])->name('refresh-progress');
+            Route::post('/connect', [WorkDropboxController::class, 'connect'])->middleware(StartSession::class)->name('connect');
+            Route::get('/folders', [WorkDropboxController::class, 'folders'])->name('folders');
+            Route::post('/folder', [WorkDropboxController::class, 'storeFolder'])->name('store-folder');
+            Route::delete('/connection', [WorkDropboxController::class, 'disconnect'])->name('disconnect');
+            Route::post('/import', [WorkDropboxController::class, 'import'])->name('import');
+        });
         Route::post('/admin/teaching/course_works/{course_work}/import-dispatch', [CourseWorkController::class, 'importDispatch'])->name('teaching.course-works.import-dispatch');
         Route::get('/admin/teaching/course_works/{course_work}/dispatch/{sha256}', [CourseWorkController::class, 'downloadDispatch'])->name('teaching.course-works.download-dispatch');
         Route::get('/admin/teaching/course_works/{course_work}/evaluations/{sha256}', [CourseWorkController::class, 'downloadEvaluation'])->name('teaching.course-works.download-evaluation');

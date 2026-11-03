@@ -14,6 +14,7 @@ describe('deployment notices', () => {
 
     beforeEach(() => {
         vi.useFakeTimers()
+        vi.spyOn(document, 'hidden', 'get').mockReturnValue(false)
         window.sessionStorage.clear()
         document.body.innerHTML = '<main><input value="Unsaved lesson plan"></main>'
         fetchStatus = vi.fn().mockResolvedValue(jsonResponse({ state: 'idle', id: null }))
@@ -167,6 +168,60 @@ describe('deployment notices', () => {
         expect(fetchStatus).not.toHaveBeenCalledWith('/up', expect.anything())
     })
 
+    it('lets users minimize and reopen the active notice without losing their inputs or hiding warnings', async () => {
+        const input = document.querySelector('input')
+        await start()
+        await setStatus('maintenance')
+
+        const toggle = () => notice()?.querySelector<HTMLButtonElement>('.schooltool-deployment-notice__toggle')
+        expect(toggle()?.textContent).toBe('Ansicht verkleinern')
+        expect(toggle()?.getAttribute('aria-expanded')).toBe('true')
+        toggle()?.click()
+        expect(notice()).toBeVisible()
+        expect(notice()?.textContent).toContain('Speichern ist vorübergehend nicht möglich')
+        expect(toggle()?.textContent).toBe('Hinweis vergrößern')
+        expect(toggle()?.getAttribute('aria-expanded')).toBe('false')
+        expect(input?.value).toBe('Unsaved lesson plan')
+        expect(reload).not.toHaveBeenCalled()
+
+        await setStatus('maintenance')
+        expect(toggle()?.textContent).toBe('Hinweis vergrößern')
+        await setStatus('failed')
+        expect(notice()?.textContent).toContain('Aktualisierung verzögert')
+        expect(toggle()?.textContent).toBe('Hinweis vergrößern')
+        fetchStatus.mockRejectedValueOnce(new Error('Network offline'))
+        await monitor.checkNow()
+        expect(notice()?.textContent).toContain('Verbindung unterbrochen')
+        expect(toggle()?.textContent).toBe('Hinweis vergrößern')
+        toggle()?.click()
+        expect(toggle()?.getAttribute('aria-expanded')).toBe('true')
+        expect(input?.value).toBe('Unsaved lesson plan')
+        expect(reload).not.toHaveBeenCalled()
+    })
+
+    it('offers saving open input after recovery and starts the next update in the large view', async () => {
+        const input = document.querySelector('input')
+        await start()
+        await setStatus('maintenance')
+        notice()?.querySelector<HTMLButtonElement>('.schooltool-deployment-notice__toggle')?.click()
+
+        fetchStatus.mockResolvedValueOnce(jsonResponse({ state: 'completed', id: 'release-1' }))
+            .mockResolvedValueOnce(jsonResponse({ status: 'up' }))
+        await monitor.checkNow()
+        expect(notice()?.textContent).toContain('Bitte prüfen und speichern Sie offene Eingaben')
+        expect(notice()?.querySelector('.schooltool-deployment-notice__toggle')).toBeNull()
+        expect(input?.value).toBe('Unsaved lesson plan')
+        expect(reload).not.toHaveBeenCalled()
+
+        await setStatus('scheduled', 'release-2')
+        await setStatus('maintenance', 'release-2')
+        const toggle = notice()?.querySelector<HTMLButtonElement>('.schooltool-deployment-notice__toggle')
+        expect(toggle?.textContent).toBe('Ansicht verkleinern')
+        expect(toggle?.getAttribute('aria-expanded')).toBe('true')
+        expect(input?.value).toBe('Unsaved lesson plan')
+        expect(reload).not.toHaveBeenCalled()
+    })
+
     it.each([500, 502, 503, 504])('checks %s failures immediately without retrying writes or changing Axios results', async (status) => {
         const axiosClient = { interceptors: { response: { use: vi.fn().mockReturnValue(7), eject: vi.fn() } } }
         await start({ axiosClient })
@@ -197,6 +252,63 @@ describe('deployment notices', () => {
         await vi.advanceTimersByTimeAsync(30000)
         expect(fetchStatus).toHaveBeenCalledTimes(2)
         expect(notice()).toBeNull()
+    })
+
+    it('pauses polling in a hidden tab and checks immediately when it becomes visible', async () => {
+        await start()
+        vi.spyOn(document, 'hidden', 'get').mockReturnValue(true)
+        document.dispatchEvent(new Event('visibilitychange'))
+
+        await vi.advanceTimersByTimeAsync(60000)
+        expect(fetchStatus).toHaveBeenCalledTimes(1)
+
+        fetchStatus.mockResolvedValue(jsonResponse({ state: 'scheduled', id: 'release-1' }))
+        vi.spyOn(document, 'hidden', 'get').mockReturnValue(false)
+        document.dispatchEvent(new Event('visibilitychange'))
+        await monitor.checkNow()
+        expect(fetchStatus).toHaveBeenCalledTimes(2)
+        expect(notice()?.textContent).toContain('Bitte speichern Sie jetzt')
+
+        await vi.advanceTimersByTimeAsync(10000)
+        expect(fetchStatus).toHaveBeenCalledTimes(3)
+
+        monitor.stop()
+        document.dispatchEvent(new Event('visibilitychange'))
+        await vi.advanceTimersByTimeAsync(10000)
+        expect(fetchStatus).toHaveBeenCalledTimes(3)
+    })
+
+    it('does not request status when started in a hidden tab', async () => {
+        vi.spyOn(document, 'hidden', 'get').mockReturnValue(true)
+        await start()
+        await vi.advanceTimersByTimeAsync(30000)
+        expect(fetchStatus).not.toHaveBeenCalled()
+
+        vi.spyOn(document, 'hidden', 'get').mockReturnValue(false)
+        document.dispatchEvent(new Event('visibilitychange'))
+        await monitor.checkNow()
+        expect(fetchStatus).toHaveBeenCalledOnce()
+    })
+
+    it('lets an in-flight check finish without continuing to poll a hidden tab', async () => {
+        let finish
+        fetchStatus.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve }))
+        monitor = startDeploymentNotice({ fetchStatus, reload })
+
+        vi.spyOn(document, 'hidden', 'get').mockReturnValue(true)
+        document.dispatchEvent(new Event('visibilitychange'))
+        finish(jsonResponse({ state: 'scheduled', id: 'release-1' }))
+        await monitor.checkNow()
+        expect(notice()?.textContent).toContain('Bitte speichern Sie jetzt')
+
+        await vi.advanceTimersByTimeAsync(30000)
+        expect(fetchStatus).toHaveBeenCalledOnce()
+
+        fetchStatus.mockResolvedValue(jsonResponse({ state: 'scheduled', id: 'release-1' }))
+        vi.spyOn(document, 'hidden', 'get').mockReturnValue(false)
+        document.dispatchEvent(new Event('visibilitychange'))
+        await monitor.checkNow()
+        expect(fetchStatus).toHaveBeenCalledTimes(2)
     })
 
     it('aborts stalled requests and resumes polling', async () => {

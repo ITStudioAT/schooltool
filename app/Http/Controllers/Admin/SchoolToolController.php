@@ -8,6 +8,7 @@ use App\Http\Resources\Admin\SchoolToolResource;
 use App\Models\SchoolTool;
 use App\Services\SchoolToolModuleStatusService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
 class SchoolToolController extends Controller
@@ -51,14 +52,17 @@ class SchoolToolController extends Controller
 
         $updatable = $this->normalizeModuleVisibilityFlags($updatable);
 
-        if (array_key_exists('students_timetables_admin_version', $validated)) {
-            $updatable['students_timetables_admin_version'] = $validated['students_timetables_admin_version'];
-        }
+        DB::transaction(function () use ($moduleStatusService, $schoolTool, $updatable, $validated): void {
+            if ($updatable !== []) {
+                ($moduleStatusService->globalSchoolTool() ?? $schoolTool)->update($updatable);
+            }
 
-        if ($updatable !== []) {
-            $schoolTool->update($updatable);
-            $schoolTool->refresh();
-        }
+            if (array_key_exists('students_timetables_admin_version', $validated)) {
+                $schoolTool->update(['students_timetables_admin_version' => $validated['students_timetables_admin_version']]);
+            }
+        });
+
+        $schoolTool->refresh();
 
         return response()->json(new SchoolToolResource($schoolTool), 200);
     }
@@ -139,7 +143,7 @@ class SchoolToolController extends Controller
             $adminVisibleField = sprintf('%s_visible_admin', $moduleKey);
             $userVisibleField = sprintf('%s_visible_user', $moduleKey);
 
-            if (($values[$adminVisibleField] ?? false) !== true) {
+            if (array_key_exists($adminVisibleField, $values) && $values[$adminVisibleField] !== true) {
                 $values[$userVisibleField] = false;
             }
         }

@@ -33,6 +33,7 @@ use App\Services\FeaturePreviewService;
 use App\Services\SchoolService;
 use App\Services\SchoolyearService;
 use App\Services\TeacherListService;
+use App\Services\TeachingWorkEmailDelivery;
 use App\Support\HomeVersionLabel;
 use App\Traits\HasRoleTrait;
 use Composer\InstalledVersions;
@@ -125,6 +126,7 @@ class AdminController extends Controller
             'licence_renewal_days' => (int) config('schooltool.licence_renewal_days', 30),
             'is_auth' => Auth::check(),
             'preview' => app(FeaturePreviewService::class)->context($user),
+            'teaching_email_delivery' => $user ? app(TeachingWorkEmailDelivery::class)->context() : null,
             'user' => $user ? new UserWithRoleResource($user) : null,
             'selected_school' => $user && $user->selectedSchool ? new SchoolResource($user->selectedSchool) : null,
             'selected_schoolyear' => $user && $user->selectedSchoolyear ? new SchoolyearResource($user->selectedSchoolyear) : null,
@@ -331,7 +333,7 @@ class AdminController extends Controller
             return null;
         }
 
-        return $parts['host'].(isset($parts['port']) ? ":{$parts['port']}" : '');
+        return $parts['host'] . (isset($parts['port']) ? ":{$parts['port']}" : '');
     }
 
     private function viewsAreCached(): bool
@@ -341,7 +343,7 @@ class AdminController extends Controller
             return false;
         }
 
-        return count(glob($compiledViewPath.'/*.php') ?: []) > 0;
+        return count(glob($compiledViewPath . '/*.php') ?: []) > 0;
     }
 
     private function canLoadSchoolInfos(User $user): bool

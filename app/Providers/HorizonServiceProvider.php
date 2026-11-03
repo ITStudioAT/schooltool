@@ -4,6 +4,7 @@ namespace App\Providers;
 
 use App\Models\User;
 use Illuminate\Support\Facades\Gate;
+use Laravel\Horizon\Horizon;
 use Laravel\Horizon\HorizonApplicationServiceProvider;
 
 class HorizonServiceProvider extends HorizonApplicationServiceProvider
@@ -14,6 +15,11 @@ class HorizonServiceProvider extends HorizonApplicationServiceProvider
     public function boot(): void
     {
         parent::boot();
+
+        if (app()->environment('local')
+            && config('queue.connections.'.config('queue.default').'.driver') !== 'redis') {
+            Horizon::auth(fn (): bool => false);
+        }
     }
 
     /**

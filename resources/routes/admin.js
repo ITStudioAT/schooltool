@@ -17,6 +17,8 @@ const Helpers = () => import('@/pages/admin/helpers/Helpers.vue')
 
 
 const Teaching = () => import('@/pages/admin/teaching/Teaching.vue')
+const TeachingTools = () => import('@/pages/admin/teachingTools/TeachingTools.vue')
+const NumberSystemLocalProbe = () => import('@/pages/admin/teachingTools/NumberSystemLocalProbe.vue')
 const Materials = () => import('@/pages/admin/materials/Materials.vue')
 const MaterialsSubjectsOverview = () => import('@/pages/admin/materials/MaterialsSubjectsOverview.vue')
 const MaterialsV2 = () => import('@/pages/admin/materialsV2/MaterialsV2.vue')
@@ -47,6 +49,31 @@ export const routes = [
     { path: '/admin/helpers', component: Helpers, meta: { capability: 'home' } },
     { path: '/admin/super_admin/:section?', redirect: '/admin' },
     { path: '/admin/teaching/:section?', component: Teaching, meta: { capability: 'teaching' } },
+    { path: '/admin/teaching-tools', redirect: '/admin/teaching-tools/multiple-choice', meta: { capability: 'teaching' } },
+    { path: '/admin/teaching-tools/multiple-choice', component: TeachingTools, meta: { capability: 'teaching' } },
+    { path: '/admin/teaching-tools/simulator', component: TeachingTools, props: { section: 'simulator' }, meta: { capability: 'teaching' } },
+    { path: '/admin/teaching-tools/games', component: TeachingTools, props: { section: 'games' }, meta: { capability: 'teaching' } },
+    { path: '/admin/teaching-tools/explanations', component: TeachingTools, props: { section: 'explanations' }, meta: { capability: 'teaching' } },
+    { path: '/admin/teaching-tools/explanations/number-systems', component: TeachingTools, props: { section: 'explanations', category: 'number-systems' }, meta: { capability: 'teaching' } },
+    { path: '/admin/teaching-tools/explanations/networks', component: TeachingTools, props: { section: 'explanations', category: 'networks' }, meta: { capability: 'teaching' } },
+    { path: '/admin/teaching-tools/explanations/artificial-intelligence', component: TeachingTools, props: { section: 'explanations', category: 'artificial-intelligence' }, meta: { capability: 'teaching' } },
+    { path: '/admin/teaching-tools/explanations/neural-network-learning', component: TeachingTools, props: { section: 'explanations', explanation: 'neural-network-learning' }, meta: { capability: 'teaching' } },
+    { path: '/admin/teaching-tools/explanations/network-fundamentals', component: TeachingTools, props: { section: 'explanations', explanation: 'network-fundamentals' }, meta: { capability: 'teaching' } },
+    { path: '/admin/teaching-tools/explanations/network-media', component: TeachingTools, props: { section: 'explanations', explanation: 'network-media' }, meta: { capability: 'teaching' } },
+    { path: '/admin/teaching-tools/explanations/network-communication', component: TeachingTools, props: { section: 'explanations', explanation: 'network-communication' }, meta: { capability: 'teaching' } },
+    { path: '/admin/teaching-tools/explanations/network-addressing', component: TeachingTools, props: { section: 'explanations', explanation: 'network-addressing' }, meta: { capability: 'teaching' } },
+    { path: '/admin/teaching-tools/explanations/network-protocols', component: TeachingTools, props: { section: 'explanations', explanation: 'network-protocols' }, meta: { capability: 'teaching' } },
+    { path: '/admin/teaching-tools/explanations/network-security', component: TeachingTools, props: { section: 'explanations', explanation: 'network-security' }, meta: { capability: 'teaching' } },
+    { path: '/admin/teaching-tools/explanations/network-operations', component: TeachingTools, props: { section: 'explanations', explanation: 'network-operations' }, meta: { capability: 'teaching' } },
+    { path: '/admin/teaching-tools/explanations/decimal-to-hexadecimal', component: TeachingTools, props: { section: 'explanations', explanation: 'decimal-to-hexadecimal' }, meta: { capability: 'teaching' } },
+    { path: '/admin/teaching-tools/explanations/binary-to-hexadecimal', component: TeachingTools, props: { section: 'explanations', explanation: 'binary-to-hexadecimal' }, meta: { capability: 'teaching' } },
+    { path: '/admin/teaching-tools/explanations/hexadecimal-to-binary', component: TeachingTools, props: { section: 'explanations', explanation: 'hexadecimal-to-binary' }, meta: { capability: 'teaching' } },
+    { path: '/admin/teaching-tools/explanations/decimal-to-binary', component: TeachingTools, props: { section: 'explanations', explanation: 'decimal-to-binary' }, meta: { capability: 'teaching' } },
+    { path: '/admin/teaching-tools/explanations/binary-to-decimal', component: TeachingTools, props: { section: 'explanations', explanation: 'binary-to-decimal' }, meta: { capability: 'teaching' } },
+    { path: '/admin/teaching-tools/explanations/hexadecimal-to-decimal', component: TeachingTools, props: { section: 'explanations', explanation: 'hexadecimal-to-decimal' }, meta: { capability: 'teaching' } },
+    { path: '/admin/teaching-tools/games/number-systems', component: TeachingTools, props: { section: 'games', game: 'number-systems' }, meta: { capability: 'teaching' } },
+    { path: '/admin/teaching-tools/games/networks', component: TeachingTools, props: { section: 'games', game: 'networks' }, meta: { capability: 'teaching' } },
+    { path: '/admin/teaching-tools/games/number-systems/local/:probe', component: NumberSystemLocalProbe, meta: { capability: 'teaching' } },
     { path: '/admin/materials', component: Materials, meta: { capability: 'materials' } },
     { path: '/admin/materials/subjects-overview', component: MaterialsSubjectsOverview, meta: { capability: 'materials' } },
     { path: '/admin/materials-v2', component: MaterialsV2, meta: { capability: 'materials_v2' } },

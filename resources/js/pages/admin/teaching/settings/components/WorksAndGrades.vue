@@ -122,7 +122,7 @@
                     </div>
 
                     <!-- Berechnung der Semesternote -->
-                    <div class="form-group-box mt-4">
+                    <div v-if="settings?.teaching_calculations_enabled !== false" class="form-group-box mt-4">
                         <div class="d-flex align-center ga-1">
                             <v-checkbox v-model="data.calculation_enabled" hide-details density="compact" class="flex-grow-0" />
                             <div class="text-caption text-text">Berechnung der Semesternote (optional)</div>
@@ -179,7 +179,7 @@
                     </div>
 
                     <!-- Punkte-Note -->
-                    <div class="form-group-box mt-4 points-note-box">
+                    <div v-if="settings?.teaching_calculations_enabled !== false" class="form-group-box mt-4 points-note-box">
                         <div class="d-flex align-center ga-1">
                             <v-checkbox v-model="data.points_note_enabled" hide-details density="compact" class="flex-grow-0" />
                             <div class="text-caption text-text">Punkte-Note-Tabelle pro Arbeit (optional)</div>

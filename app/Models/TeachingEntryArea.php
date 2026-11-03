@@ -13,7 +13,7 @@ class TeachingEntryArea extends Model
     /** @use HasFactory<TeachingEntryAreaFactory> */
     use HasFactory;
 
-    protected $fillable = ['school_id', 'schoolyear_id', 'user_id', 'name', 'semester_count', 'semester_1_weight', 'semester_2_weight'];
+    protected $fillable = ['school_id', 'schoolyear_id', 'user_id', 'name', 'semester_count', 'semester_1_weight', 'semester_2_weight', 'grading_part_groups', 'grading_level_weights'];
 
     protected $attributes = [
         'semester_count' => 1,
@@ -24,6 +24,8 @@ class TeachingEntryArea extends Model
     protected function casts(): array
     {
         return [
+            'grading_part_groups' => 'array',
+            'grading_level_weights' => 'array',
             'semester_count' => 'integer',
             'semester_1_weight' => 'integer',
             'semester_2_weight' => 'integer',

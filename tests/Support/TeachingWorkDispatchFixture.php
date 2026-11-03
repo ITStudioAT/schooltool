@@ -2,10 +2,25 @@
 
 namespace Tests\Support;
 
+use App\Support\SchooltoolAssessmentJson;
 use Illuminate\Http\UploadedFile;
 
 class TeachingWorkDispatchFixture
 {
+    /** @return array<string, mixed> */
+    public static function documentPreparation(int $workId = 65, int $courseId = 2, int $studentId = 12): array
+    {
+        $package = ['schema_version' => 2, 'kind' => 'schooltool.preparation', 'stage' => 'assignment_created',
+            'work_id' => $workId, 'course_id' => $courseId, 'prepared_at' => '2026-10-14T08:00:00Z', 'timezone' => 'Europe/Vienna',
+            'exercise' => ['title' => 'E-Mails', 'course_title' => 'INF 1', 'scheduled_date' => '2026-10-15'],
+            'participants' => [['participant_id' => 'user:'.$studentId, 'schooltool_person_id' => (string) $studentId,
+                'first_name' => 'Ada', 'last_name' => 'Van Alpha', 'class_name' => '1A']],
+            'assignment' => ['filename' => 'Aufgabenstellung_E-Mails.pdf', 'sha256' => str_repeat('a', 64)]];
+        $package['preparation_checksum'] = SchooltoolAssessmentJson::digest($package);
+
+        return $package;
+    }
+
     /** @return list<array<string, mixed>> */
     public static function recipients(): array
     {
@@ -209,6 +224,47 @@ class TeachingWorkDispatchFixture
 
         return "Aufgabenversand – produktiver Live-Versand ({$provider})".($stopped ? ' – GESTOPPT' : '')
             ."\nVersandzweck: Aufgabenversand\n".json_encode($metadata, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR)."\n";
+    }
+
+    public static function preparedTasksText(bool $scheduled = false): string
+    {
+        $text = self::combinedTasksText();
+        $metadata = json_decode(substr($text, strpos($text, '{')), true, flags: JSON_THROW_ON_ERROR);
+        $metadata['Termin'] = '2026-10-13T08:40:00+02:00';
+        $row = $metadata['Empfaenger'][0];
+        foreach (['Office_Zustand', 'Providerzeit', 'Providerkennung', 'InternetMessageID', 'SentEntryID', 'StoreID', 'TatsaechlicheAnhaenge'] as $key) {
+            unset($row[$key]);
+        }
+        $row['From'] = $row['Account'];
+        $row['Status'] = $scheduled ? 'serverseitig geplant' : 'vorbereitet';
+        if ($scheduled) {
+            $row['Native_Terminierung'] = ['Scheduled' => true, 'Sent' => false, 'Status' => 'serverseitig geplant',
+                'ScheduledAt' => $metadata['Termin'], 'To' => $row['To'], 'DraftEntryID' => 'DRAFT', 'DraftStoreID' => 'STORE',
+                'Webnachweis' => 'Belege/Servertermin.txt', 'Webnachweis_SHA256' => str_repeat('a', 64)];
+        }
+        $metadata['Empfaenger'] = [$row];
+        if (! $scheduled) {
+            $metadata['kind'] = 'schooltool.preparation';
+            $metadata['schema_version'] = 1;
+
+            return json_encode($metadata, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR);
+        }
+
+        return substr($text, 0, strpos($text, '{')).json_encode($metadata, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR);
+    }
+
+    public static function readyTasksText(): string
+    {
+        $package = json_decode(self::preparedTasksText(), true, flags: JSON_THROW_ON_ERROR);
+        unset($package['Termin']);
+        $package['Versandbereit'] = true;
+        $package['Textquelle_SHA256'] = str_repeat('a', 64);
+        $package['Empfaenger'][0]['Rolle'] = 'Schülerempfänger';
+        $package['Empfaenger'][0]['Nachricht_SHA256'] = str_repeat('b', 64);
+        $package['Empfaenger'][0]['AnhaengeGeprueft'] = true;
+        $package['Empfaenger'][0]['VorbereiteteAnhaenge'] = [['Dateiname' => 'Aufgaben.pdf', 'SHA256' => str_repeat('c', 64)]];
+
+        return json_encode($package, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR);
     }
 
     public static function mailpitTasksText(): string

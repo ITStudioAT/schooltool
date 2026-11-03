@@ -1,5 +1,251 @@
 # UPDATES
 
+## 3.54.4
+
+### Spiele
+
+- Spiele: Wiederholung von Fragen verhindert
+
+## 3.54.3
+
+### Spiele
+
+- Bessere Übersicht und Umbenennen
+- Spiel hinzufügen im Kurs
+
+## 3.54.2
+
+### System
+
+- Sicherheitsupdates
+
+## 3.54.1
+
+### Arbeiten
+
+- Pausiert freigeben
+- Änderung einer Arbeit auf Bereitstellung statt E-Mail
+
+### Unterricht
+
+- Curricula ein/aus
+- Anwesenheiten ein/aus
+- Berechnungen ein/aus
+
+### System
+
+- Einstellungen/Modul-Sichtbarkeiten: Neues UI-Design
+
+## 3.54.0
+
+### Unterricht
+
+- Berechnung der Punkte
+
+### Schüleransicht
+
+- Leistungsbalken berücksichtigt Mitarbeit
+
+### Arbeiten
+
+- Direkte Freigabe ohne E-Mail-Versand
+- Überarbeitung und UI-Verbesserung
+
+## 3.53.4
+
+### Unterricht
+
+- Arbeit: Überarbeitung: Icon-Buttons
+
+### Erklärungen
+
+- IP-Adressen, Netze und Routing
+- Netzwerkprotokolle und Dienste
+- Netzwerksicherheit und Datenschutz
+- Netzwerke planen, betreiben und Störungen erkennen
+- Wie ein neuronales Netz lernt
+
+## 3.53.3
+
+### Unterricht
+
+- Stundenplan: grün bei freien Tagen
+- Arbeiten: MC-Fragen einbinden
+- Arbeit: Ablauf prüfen: beschleunigt
+- Arbeit: Kein Download-Button ohne E-Mail-Versand
+
+### Erklärungen
+
+- Weitere Umrechnungsarten eingefügt: Dual -> Dezimal, ## -> Dezimal
+- Netzwerke: Netzwerkgrundlagen und Geräte, Übertragungsmedien, LAN und WLAN, Datenkommunikation und Internet
+
+## 3.53.2
+
+### Unterricht
+
+- Arbeiten weiterentwickelt
+
+### Erklärungen
+
+- Umrechnen von Dezimal auf Dual
+
+## 3.53.1
+
+### Zahlensystem-Spiel
+
+- Für Externe zulassen
+- Auswertung als pdf
+- Erfolgsanimationen nach jedem Bereich
+
+### Unterricht
+
+- Arbeiten-Anlage weiterentwickelt
+
+## 3.53.0
+
+### System
+
+- Important Security Updates
+
+### Unterricht-Tools: MC-Fragen
+
+- Katalog mit lokaler Version synchronisieren
+
+## 3.52.1
+
+### Multiple-Choice-Tests
+
+- Export für Testgitmain
+- UI-Adpationen
+- Dropbox-Verbindung
+- Synchronisations-Verbesserungen
+
+### Unterricht
+
+- Synchronisation: Button geänder
+- Test: KI-Export neu aufgestellt
+
+### System
+
+- Verbidnungs-Übersicht
+
+### Anmeldesystem
+
+- Löschen von gebuchten Anmeldesystemen
+
+## 3.52.0
+
+### Spiel
+
+- Zahlensysteme
+
+### Multiple Choice Test
+
+- Verbesserungen, Klärungen
+- Absicherung der Tests
+
+### Schülerinnen-Übersicht
+
+- Kursleistungen pro Kurs freigeben
+
+### Restaurant
+
+- Menüpläne mit Bestellungen löschbar
+- Ausdruck Menüpläne: Vergrößerung der Schrift
+
+## 3.51.7
+
+### Unterricht
+
+- Arbeiten: Import
+- Import-Informationen: Zusammenfassung der Kernergebnisse
+- Arbeiten-Überschrift: Neue Symbole
+
+## Schüler
+
+- Fortschrittsbalken wird angezeigt
+- Sterne sind ausblendbar
+
+## 3.51.6
+
+### Unterricht
+
+- Kurse exportieren für lokalen KI-Import
+- Ordner-Auswahl absichern
+- Arbeit: Korrektur Export
+
+### Multiple Choice
+
+- Multiple-Choice-Seite eingerichtet
+- Erste Tests anlegen
+
+## 3.51.5
+
+### Accounts
+
+- Schüler-Account-Übernahme
+
+### Unterricht
+
+- Automatische Arbeiten: Import bei geänderten Kandidaten implementiert
+- Aufgaben können auch ohne Versand importiert werden
+
+### Unterricht-Synchronisation
+
+- Speicherproblem behoben
+
+## 3.51.4
+
+### Arbeiten
+
+- Dropbox: Alphabetisch
+- Übernahme geplanter Arbeiten
+
+## 3.51.3
+
+### Unterricht
+
+- Übersicht: Neue Symbole
+- Schüler:innen: Berechnung der Beurteilung werden durch nicht durchgeführte Arbeiten nicht blockiert
+
+## 3.51.2
+
+### Unterricht
+
+- Notenberechnung optional-verpflichtend gefixt
+
+### Materialien 2
+
+- Linkadresse nicht erreichbar gefixt
+- Breite der Kateorienanzeige veränderbar
+
+## 3.51.1
+
+### Unterricht
+
+- Stundenplan: verfügbare Breite nutzen und Spaltenaufteilung für Firefox korrigieren
+- Aktuellen bzw. nächsten Unterrichtstag mit einem dunkelgrauen Rahmen hervorheben
+- Laufende bzw. nächste Unterrichtsstunde links bei der Stundenanzeige markieren
+- Einzelne Stunden als entfallen markieren und in der Datenbank speichern; vorhandene Anwesenheitsdaten erhalten
+- Quick-Import aus einem pro Benutzer und Arbeit zugeordneten Dropbox-Ordner: aktuellen Cloudstand lesen, Vorschau und Übernahme getrennt bestätigen
+- Dropbox-Quick-Import beschleunigt: PDFs und Versandprotokolle mit höchstens vier gleichzeitigen Downloads lesen; vollständige Prüfungen und frischer Cloudstand vor der Übernahme bleiben erhalten
+- Dropbox-Anbindung lokal mit simulierten API-Antworten und echtem Lesezugriff geprüft; Datei-Prüfsummen und Vorschau mit dem lokalen Import verglichen, noch nicht online veröffentlicht
+- Stundenplan Übersicht: Angepasstes UI-Design
+- XSUP, XSPR, BMP, TABE im Stundenplan eintragbar machen
+
+### Notenbewertungen
+
+- Weiterentwicklung der Bewertung von Leistungen
+
+### Unterricht - Detail
+
+- Schüler:innen: Ergebnisse werden detailliert angezeigt
+
+### System
+
+- Main und Feature-Kopien beim Git-Workflow in eigenen VS-Code-Fenstern öffnen; laufende Terminals erhalten und Ordnerverwechslungen vermeiden
+- Main-Workspace-Datei korrigiert und Projektordner als „Schooltool MAIN“ bezeichnet
+
 ## 3.50.4
 
 ### Unterricht

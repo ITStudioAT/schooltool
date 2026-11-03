@@ -358,7 +358,12 @@ describe('MenuPlans entry availability status', () => {
 
         await (wrapper.vm as any).confirmDeletePlan()
 
-        expect(menuPlanStoreMock.destroy).toHaveBeenCalledWith(7)
+        expect(menuPlanStoreMock.destroy).not.toHaveBeenCalled()
+
+        ;(wrapper.vm as any).deletePlanConfirmation = 'MENÜPLAN LÖSCHEN'
+        await (wrapper.vm as any).confirmDeletePlan()
+
+        expect(menuPlanStoreMock.destroy).toHaveBeenCalledWith(7, 'MENÜPLAN LÖSCHEN')
         expect((wrapper.vm as any).$router.push).toHaveBeenCalledWith({
             path: '/admin/restaurant/menu-plans',
             query: {

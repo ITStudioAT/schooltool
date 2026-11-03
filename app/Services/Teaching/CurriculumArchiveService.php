@@ -92,6 +92,8 @@ class CurriculumArchiveService
                         'mime_type' => $document->mime_type,
                         'path' => $this->addFile($archive, $stream, $temporaryFiles, $totalBytes),
                     ];
+                } elseif ($document->source_type === 'explanation' && TeachingExplanationCatalog::find($document->explanation_key)) {
+                    $entry['explanation_key'] = $document->explanation_key;
                 } else {
                     $this->invalid('Ein Materialtyp kann nicht exportiert werden.');
                 }
@@ -217,6 +219,8 @@ class CurriculumArchiveService
                         }
                     }
                     $restoredMaterials[$key] ??= ['card' => $card, 'attachments' => $restoredAttachments];
+                } elseif ($entry['source_type'] === 'explanation') {
+                    $attributes['explanation_key'] = $entry['explanation_key'];
                 } else {
                     $storedPath = $this->storeFile($archive, $entry['file']['path'], $entry['name'], $createdPaths);
                     $attributes['file_path'] = $storedPath;
@@ -325,8 +329,8 @@ class CurriculumArchiveService
         $validated = Validator::validate($payload, [
             'schema_version' => ['required', 'integer', 'in:1'],
             'materials' => ['present', 'array', 'max:500'],
-            'materials.*' => ['array:source_type,name,topic_id,unit_id,file,material'],
-            'materials.*.source_type' => ['required', 'in:upload,unit_file,material,unit_material'],
+            'materials.*' => ['array:source_type,name,topic_id,unit_id,file,material,explanation_key'],
+            'materials.*.source_type' => ['required', 'in:upload,unit_file,material,unit_material,explanation'],
             'materials.*.name' => ['required', 'string', 'max:255'],
             'materials.*.topic_id' => ['nullable', 'string', 'max:100'],
             'materials.*.unit_id' => ['nullable', 'string', 'max:100'],
@@ -334,13 +338,23 @@ class CurriculumArchiveService
         $references = ['curriculum.json' => true];
         $materialFingerprints = [];
         foreach ($validated['materials'] as $entry) {
-            if (in_array($entry['source_type'], ['unit_file', 'unit_material'], true)) {
+            if (in_array($entry['source_type'], ['unit_file', 'unit_material', 'explanation'], true)) {
                 $unitExists = collect($payload['curriculum']['topics'] ?? [])->contains(fn (array $topic): bool => ($topic['id'] ?? null) === ($entry['topic_id'] ?? null)
                     && collect($topic['units'] ?? [])->contains(fn (array $unit): bool => ($unit['id'] ?? null) === ($entry['unit_id'] ?? null)));
                 if (! $unitExists || empty($entry['topic_id']) || empty($entry['unit_id'])) {
                     $this->invalid();
                 }
             } elseif (($entry['topic_id'] ?? null) !== null || ($entry['unit_id'] ?? null) !== null) {
+                $this->invalid();
+            }
+            if ($entry['source_type'] === 'explanation') {
+                if (! is_string($entry['explanation_key'] ?? null) || ! TeachingExplanationCatalog::find($entry['explanation_key']) || isset($entry['file']) || isset($entry['material'])) {
+                    $this->invalid();
+                }
+
+                continue;
+            }
+            if (isset($entry['explanation_key'])) {
                 $this->invalid();
             }
             if (in_array($entry['source_type'], ['material', 'unit_material'], true)) {

@@ -24,6 +24,28 @@ vi.mock('@/stores/admin/teaching/SchoolHourStore', () => ({
 }))
 
 describe('Teaching page navigation', () => {
+    it('removes the curricula menu and redirects direct navigation when disabled', () => {
+        const methods = (Teaching as any).methods
+        const computed = (Teaching as any).computed
+        const context = {
+            config: { roles: ['teacher'], user: { teaching_curricula_enabled: false } },
+            curriculaEnabled: false,
+            hasAnyRole: methods.hasAnyRole,
+            normalizedSection: methods.normalizedSection,
+            main_action: 'curricula',
+            $router: { replace: vi.fn() },
+        }
+
+        expect(computed.curriculaEnabled.call(context)).toBe(false)
+        expect(computed.visibleNavigationItems.call(context).some((item: { key: string }) => item.key === 'curricula')).toBe(false)
+        methods.syncSection.call(context, 'curricula')
+        expect(context.main_action).toBe('overview')
+        expect(context.$router.replace).toHaveBeenCalledWith({ path: '/admin/teaching', query: { panel: 'table' } })
+
+        context.curriculaEnabled = true
+        expect(computed.visibleNavigationItems.call(context).some((item: { key: string }) => item.key === 'curricula')).toBe(true)
+    })
+
     beforeEach(() => {
         vi.mocked(useAdminStore).mockReset()
         vi.mocked(useSchoolStore).mockReset()
@@ -713,7 +735,7 @@ describe('Teaching page navigation', () => {
 
         expect(source).toContain("panels.push({ id: 'students', label: 'Schüler:innen', icon: 'mdi-account-group' })")
         expect(source).toContain("panels.push({ id: 'infos', label: 'Infos', icon: 'mdi-information-outline' })")
-        expect(source).toContain("panels.push({ id: 'works', label: 'Arbeiten', icon: 'mdi-file-document-edit-outline' })")
+        expect(source).toContain("panels.push({ id: 'works', label: 'Arbeiten', icon: 'mdi-brain' })")
         expect(source).toContain("panels.push({ id: 'dates', label: 'Termine', icon: 'mdi-calendar-clock-outline' })")
         expect(source).toContain("panels.push({ id: 'table', label: 'Tabelle', icon: 'mdi-table-large' })")
         expect(source).not.toContain("panels.push({ id: 'curriculum', label: 'Curriculum', icon: 'mdi-book-open-variant' })")
@@ -730,8 +752,8 @@ describe('Teaching page navigation', () => {
         expect(source.indexOf("panels.push({ id: 'students', label: 'Schüler:innen', icon: 'mdi-account-group' })"))
             .toBeLessThan(source.indexOf("panels.push({ id: 'infos', label: 'Infos', icon: 'mdi-information-outline' })"))
         expect(source.indexOf("panels.push({ id: 'infos', label: 'Infos', icon: 'mdi-information-outline' })"))
-            .toBeLessThan(source.indexOf("panels.push({ id: 'works', label: 'Arbeiten', icon: 'mdi-file-document-edit-outline' })"))
-        expect(source.indexOf("panels.push({ id: 'works', label: 'Arbeiten', icon: 'mdi-file-document-edit-outline' })"))
+            .toBeLessThan(source.indexOf("panels.push({ id: 'works', label: 'Arbeiten', icon: 'mdi-brain' })"))
+        expect(source.indexOf("panels.push({ id: 'works', label: 'Arbeiten', icon: 'mdi-brain' })"))
             .toBeLessThan(source.indexOf("panels.push({ id: 'print', label: 'Druck', icon: 'mdi-printer-outline' })"))
         expect(source).toContain("<CoursePrint />")
         const validPanels = source.match(/const validPanels = \[([\s\S]*?)\]/)?.[1] || ''

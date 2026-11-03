@@ -21,9 +21,6 @@ describe('CourseInfos assigned grade visibility', () => {
             teachingStore: { saveSettings: vi.fn().mockResolvedValue(saved) },
             isSavingInfo: false,
             runInfoMutation: async (_action: string, callback: () => Promise<boolean>) => callback(),
-            currentStudentGradeColumns: () => ({ show_sem1: true, show_sem2: false, show_year: true }),
-            gradeColumnsMatch: methods.gradeColumnsMatch,
-            restoreStudentGradeColumns: vi.fn(),
         }
     }
 
@@ -32,6 +29,27 @@ describe('CourseInfos assigned grade visibility', () => {
 
         expect((CourseInfos as any).computed.studentSemesterGradeVisible.call(ctx)).toBe(true)
         expect((CourseInfos as any).computed.studentBehaviourGradeVisible.call(ctx)).toBe(true)
+        expect((CourseInfos as any).computed.studentPointsProgressVisible.call(ctx)).toBe(false)
+        expect((CourseInfos as any).computed.studentStarsVisible.call(ctx)).toBe(true)
+    })
+
+    it.each([true, false])('persists binary points progress %s only on its selected course', async (enabled) => {
+        const ctx = createContext()
+        await methods.saveAssignedGradeVisibility.call(ctx, 'show_points_progress', enabled)
+        expect(ctx.teachingStore.saveSettings).toHaveBeenCalledWith({ teaching_course_id: 18,
+            teaching_student_grade_columns: { show_points_progress: enabled },
+        }, { notifySuccess: false })
+        expect((CourseInfos as any).computed.studentPointsProgressVisible.call(ctx)).toBe(enabled)
+    })
+
+    it.each([true, false])('persists stars visibility %s independently on the selected course', async (enabled) => {
+        const ctx = createContext()
+        await methods.saveAssignedGradeVisibility.call(ctx, 'show_stars', enabled)
+        expect(ctx.teachingStore.saveSettings).toHaveBeenCalledWith({ teaching_course_id: 18,
+            teaching_student_grade_columns: { show_stars: enabled },
+        }, { notifySuccess: false })
+        expect((CourseInfos as any).computed.studentStarsVisible.call(ctx)).toBe(enabled)
+        expect(ctx.selected_course.teaching_student_grade_columns.show_behaviour_grade).toBe(false)
     })
 
     it('saves an assigned grade switch only for the selected course and preserves the other choices', async () => {
@@ -42,7 +60,7 @@ describe('CourseInfos assigned grade visibility', () => {
         const expectedColumns = { ...ctx.persistedStudentGradeColumns, show_semester_grade: false }
         expect(ctx.teachingStore.saveSettings).toHaveBeenCalledWith({
             teaching_course_id: 18,
-            teaching_student_grade_columns: expectedColumns,
+            teaching_student_grade_columns: { show_semester_grade: false },
         }, { notifySuccess: false })
         expect(ctx.selected_course.teaching_student_grade_columns).toEqual(expectedColumns)
     })
@@ -68,32 +86,13 @@ describe('CourseInfos assigned grade visibility', () => {
         expect(ctx.selected_course.teaching_student_grade_columns.show_semester_grade).toBe(true)
     })
 
-    it('keeps assigned grade choices when calculated columns change', async () => {
-        const ctx = createContext()
 
-        await methods.persistStudentGradeColumns.call(ctx)
 
-        expect(ctx.selected_course.teaching_student_grade_columns).toEqual({
-            ...ctx.persistedStudentGradeColumns,
-            ...ctx.currentStudentGradeColumns(),
-        })
-    })
-
-    it('restores calculated columns when saving fails', async () => {
-        const ctx = createContext(false)
-
-        await methods.persistStudentGradeColumns.call(ctx)
-
-        expect(ctx.restoreStudentGradeColumns).toHaveBeenCalledWith(ctx.persistedStudentGradeColumns)
-        expect(ctx.selected_course.teaching_student_grade_columns).toEqual(ctx.persistedStudentGradeColumns)
-    })
-
-    it('prevents simultaneous saves of assigned and calculated grade visibility', async () => {
+    it('prevents simultaneous saves of course visibility', async () => {
         const ctx = createContext()
         ctx.isSavingInfo = true
 
         await methods.saveAssignedGradeVisibility.call(ctx, 'show_semester_grade', false)
-        await methods.persistStudentGradeColumns.call(ctx)
 
         expect(ctx.teachingStore.saveSettings).not.toHaveBeenCalled()
     })
@@ -259,7 +258,6 @@ describe('CourseInfos representative countdowns', () => {
         expect(source).toContain('class="course-info-block course-info-block--countdown"')
         expect(source).toContain('class="course-info-block course-info-block--schema"')
         expect(source).toContain('class="course-info-block course-info-block--description"')
-        expect(source).toContain('class="mt-3 course-infos-grades-card"')
         expect(source).toContain('.course-infos-grid {')
         expect(source).toContain('grid-template-columns: repeat(2, minmax(0, 1fr));')
         expect(source).toContain('.course-info-block--countdown {')
@@ -320,16 +318,6 @@ describe('CourseInfos representative countdowns', () => {
         expect(source).toContain('overflow-wrap: anywhere;')
     })
 
-    it('uses zebra striping for calculated grade student rows', () => {
-        const componentPath = resolve(
-            process.cwd(),
-            'resources/js/pages/admin/teaching/overview/components/CourseInfos.vue',
-        )
-        const source = readFileSync(componentPath, 'utf8')
-
-        expect(source).toContain('.grades-table tbody tr:nth-child(even) td {')
-        expect(source).toContain('background-color: rgba(37, 99, 235, 0.045);')
-    })
 })
 
 describe('CourseInfos course-specific definitions', () => {
@@ -357,7 +345,6 @@ describe('CourseInfos course-specific definitions', () => {
 
         expect((ctx.selectedCourseSchema as any)).toMatchObject({ id: 'schema-teacher', name: 'Lehrkraft-Schema' })
         expect(computed.schemaName.call(ctx)).toBe('Lehrkraft-Schema')
-        expect(computed.gradingSchema.call(ctx)).toBe(ctx.selectedCourseSchema)
 
         const notificationTypes = computed.notificationTypesByShort.call(ctx)
         expect(notificationTypes.get('INF')).toBe('Info Lehrkraft')
@@ -378,7 +365,6 @@ describe('CourseInfos course-specific definitions', () => {
         ctx.selectedCourseEntryArea = computed.selectedCourseEntryArea.call(ctx)
 
         expect(computed.schemaName.call(ctx)).toBe('DGB')
-        expect(computed.gradingSchema.call(ctx)).toBeNull()
     })
 
     it('hides empty Fachinfos instead of rendering a placeholder', () => {
@@ -392,160 +378,12 @@ describe('CourseInfos course-specific definitions', () => {
         expect(source).not.toContain('Keine Fachinfos vorhanden.')
     })
 
-    it('restores visible grade columns from the route query', () => {
-        const methods = (CourseInfos as any).methods
-        const ctx: Record<string, unknown> = {
-            infos_show_grade_sem1: false,
-            infos_show_grade_sem2: false,
-            infos_show_grade_year: false,
-            restoringGradeColumns: false,
-            normalizeGradeQueryValue: methods.normalizeGradeQueryValue,
-            parseGradeColumns: methods.parseGradeColumns,
-            restoreGradeColumns: methods.restoreGradeColumns,
-        }
 
-        methods.restoreGradeColumnsFromRoute.call(ctx, 'sem1,year')
 
-        expect(ctx.infos_show_grade_sem1).toBe(true)
-        expect(ctx.infos_show_grade_sem2).toBe(false)
-        expect(ctx.infos_show_grade_year).toBe(true)
-    })
 
-    it('persists visible grade columns into the route query', async () => {
-        const methods = (CourseInfos as any).methods
-        const replace = vi.fn().mockResolvedValue(undefined)
-        const ctx: Record<string, unknown> = {
-            infos_show_grade_sem1: true,
-            infos_show_grade_sem2: false,
-            infos_show_grade_year: true,
-            $route: {
-                path: '/admin/teaching',
-                query: {
-                    course: '6',
-                    panel: 'infos',
-                },
-            },
-            $router: { replace },
-            hasTwoSemesters: true,
-            normalizeGradeQueryValue: methods.normalizeGradeQueryValue,
-            currentGradeColumns: methods.currentGradeColumns,
-            gradeColumnsQueryValue: methods.gradeColumnsQueryValue,
-        }
 
-        methods.syncGradeColumnsToRoute.call(ctx)
 
-        expect(replace).toHaveBeenCalledWith({
-            path: '/admin/teaching',
-            query: {
-                course: '6',
-                panel: 'infos',
-                grades: 'sem1,year',
-            },
-        })
-    })
 
-    it('restores student-visible grade columns from the saved settings', () => {
-        const methods = (CourseInfos as any).methods
-        const ctx: Record<string, unknown> = {
-            student_grade_visibility_show_sem1: false,
-            student_grade_visibility_show_sem2: false,
-            student_grade_visibility_show_year: false,
-            restoringStudentGradeColumns: false,
-        }
-
-        methods.restoreStudentGradeColumns.call(ctx, {
-            show_sem1: false,
-            show_sem2: true,
-            show_year: true,
-        })
-
-        expect(ctx.student_grade_visibility_show_sem1).toBe(false)
-        expect(ctx.student_grade_visibility_show_sem2).toBe(true)
-        expect(ctx.student_grade_visibility_show_year).toBe(true)
-    })
-
-    it('persists student-visible grade columns separately from the teacher infos view', async () => {
-        const methods = (CourseInfos as any).methods
-        const saveSettings = vi.fn().mockResolvedValue(true)
-        const ctx: Record<string, unknown> = {
-            teachingStore: { saveSettings },
-            selected_course: { id: 6 },
-            student_grade_visibility_show_sem1: true,
-            student_grade_visibility_show_sem2: false,
-            student_grade_visibility_show_year: true,
-            currentStudentGradeColumns: methods.currentStudentGradeColumns,
-            runInfoMutation: async (_action: string, callback: () => Promise<void>) => callback(),
-            gradeColumnsMatch: methods.gradeColumnsMatch,
-            persistedStudentGradeColumns: {
-                show_sem1: false,
-                show_sem2: false,
-                show_year: false,
-            },
-        }
-
-        await methods.persistStudentGradeColumns.call(ctx)
-
-        expect(saveSettings).toHaveBeenCalledWith({
-            teaching_course_id: 6,
-            teaching_student_grade_columns: {
-                show_sem1: true,
-                show_sem2: false,
-                show_year: true,
-            },
-        }, {
-            notifySuccess: false,
-        })
-        expect((ctx.selected_course as any).teaching_student_grade_columns).toEqual({
-            show_sem1: true,
-            show_sem2: false,
-            show_year: true,
-        })
-    })
-
-    it('treats semester two and year columns as hidden for one-semester schemas', () => {
-        const computed = (CourseInfos as any).computed
-        const ctx = {
-            infos_show_grade_sem1: false,
-            infos_show_grade_sem2: true,
-            infos_show_grade_year: true,
-            hasTwoSemesters: false,
-        }
-
-        expect(computed.anyGradeColumnVisible.call(ctx)).toBe(false)
-    })
-
-    it('initializes grade data on mount when the course and visible columns already exist', async () => {
-        const methods = (CourseInfos as any).methods
-        const ensureCourseStudentCollections = vi.fn()
-        const loadGradeData = vi.fn().mockResolvedValue(undefined)
-        const ctx: Record<string, unknown> = {
-            selected_course: { id: 6 },
-            anyGradeColumnVisible: true,
-            gradesDataLoaded: false,
-            courseStore: { ensureCourseStudentCollections },
-            loadGradeData,
-        }
-
-        await methods.initializeGradeState.call(ctx)
-
-        expect(ensureCourseStudentCollections).toHaveBeenCalledWith(ctx.selected_course)
-        expect(loadGradeData).toHaveBeenCalledTimes(1)
-    })
-
-    it('renders a dedicated student visibility section for calculated grades', () => {
-        const componentPath = resolve(
-            process.cwd(),
-            'resources/js/pages/admin/teaching/overview/components/CourseInfos.vue',
-        )
-        const source = readFileSync(componentPath, 'utf8')
-
-        expect(source).toContain('Für Schüler:innen sichtbar')
-        expect(source).toContain('Diese Auswahl steuert ausschließlich die Berechnungen im Schüler:innen-Bereich.')
-        expect(source).toContain('student_grade_visibility_show_sem1')
-        expect(source).toContain('student_grade_visibility_show_sem2')
-        expect(source).toContain('student_grade_visibility_show_year')
-        expect(source).toContain('teaching_student_grade_columns')
-    })
 
     it('renders per-course student display settings', () => {
         const componentPath = resolve(

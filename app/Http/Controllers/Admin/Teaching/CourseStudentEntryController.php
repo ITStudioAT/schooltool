@@ -6,7 +6,6 @@ use App\Http\Controllers\Controller;
 use App\Models\TeachingCourse;
 use App\Models\TeachingCourseBehaviourEntry;
 use App\Models\TeachingCourseStudentEntry;
-use App\Models\TeachingCourseWork;
 use App\Models\User;
 use App\Services\TeachingCourseEntryTransferService;
 use App\Services\TeachingCourseStudentEntryService;
@@ -72,12 +71,11 @@ class CourseStudentEntryController extends Controller
             ->orderBy('date', 'desc')
             ->orderBy('id', 'desc')
             ->get();
-        $response['course_works'] = $course->teachingCourseWorks()
+        $works = $course->teachingCourseWorks()
             ->with('teachingCourseWorkGroupStudents')
             ->orderBy('date_for_all_groups', 'desc')
-            ->get()
-            ->map(fn (TeachingCourseWork $work): array => $entrySyncService->serializeWork($work))
-            ->values();
+            ->get();
+        $response['course_works'] = $entrySyncService->serializeWorks($works, $course);
 
         return response()->json($response);
     }

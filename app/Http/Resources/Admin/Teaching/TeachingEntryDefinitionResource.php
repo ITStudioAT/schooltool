@@ -33,6 +33,7 @@ class TeachingEntryDefinitionResource extends JsonResource
             'maximum_points' => $this->maximum_points,
             'points_grade_thresholds' => $this->points_grade_thresholds === null ? null : (object) $this->points_grade_thresholds,
             'fixed_properties' => $this->fixed_properties ?? [],
+            'standard_grade_occurrences' => $this->standard_grade_occurrences,
             'calculation_mode' => $this->calculation_mode ?? 'individual',
             'allows_maximum_plus' => (bool) $this->allows_maximum_plus,
             'sum_plus_evaluations' => (bool) $this->sum_plus_evaluations,

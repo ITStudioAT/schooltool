@@ -1,5 +1,10 @@
 import { parseLocalDate } from '@/helpers/date'
 
+export function teachingSemesterCount(course, schema = null) {
+    const count = Number(course?.semester_count ?? course?.teaching_entry_area?.semester_count ?? schema?.grading?.semester_count ?? 2)
+    return count === 1 ? 1 : 2
+}
+
 export function isInTeachingSemester(value, semester, semesterTwoStart) {
     const selectedSemester = Number(semester)
     const boundary = String(semesterTwoStart || '').slice(0, 10)

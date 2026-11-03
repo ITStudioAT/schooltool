@@ -29,6 +29,8 @@ Schedule::job(new HealthJob)
 
 Schedule::command('horizon:snapshot')
     ->everyFiveMinutes()
+    ->when(fn (): bool => ! app()->environment('local')
+        || config('queue.connections.'.config('queue.default').'.driver') === 'redis')
     ->onOneServer()
     ->withoutOverlapping();
 
@@ -55,6 +57,11 @@ Schedule::command('teaching:backup-maintenance')
     ->withoutOverlapping(10);
 
 Schedule::command('teaching:send-reminders')
+    ->everyMinute()
+    ->onOneServer()
+    ->withoutOverlapping();
+
+Schedule::command('multiple-choice:finalize-expired')
     ->everyMinute()
     ->onOneServer()
     ->withoutOverlapping();

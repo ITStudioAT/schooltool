@@ -1,6 +1,58 @@
 <?php
 
 use App\Services\TeachingSynchronisationGraph;
+use Illuminate\Encryption\Encrypter;
+
+test('teaching tools keep their relationships and histories when all local IDs differ', function (): void {
+    $source = teachingGraphFixture();
+    $local = teachingGraphFixture();
+    $local['users'][0]['id'] = 40;
+    $local['schoolyears'][0]['id'] = 11;
+    $source['tables']['teaching_courses'] = [['id' => 1, 'school_id' => 1, 'schoolyear_id' => 10, 'user_id' => 20]];
+    $source['tables']['mc_catalogs'] = [['id' => 2, 'school_id' => 1, 'owner_id' => 20, 'questions' => '[{"id":"q1"}]']];
+    $source['tables']['mc_tests'] = [['id' => 3, 'school_id' => 1, 'schoolyear_id' => 10, 'owner_id' => 20, 'catalog_id' => 2,
+        'pause_history' => '[{"teacher_id":20,"seconds":30}]']];
+    $source['tables']['mc_attempts'] = [['id' => 4, 'test_id' => 3, 'student_id' => 20,
+        'questions' => '[{"id":"q1"}]', 'answers' => '{"q1":["a1"]}', 'reopen_history' => '[{"teacher_id":20,"previous":{"score":2}}]']];
+    $source['tables']['number_system_game_sessions'] = [['id' => 5, 'school_id' => 1, 'teacher_id' => 20, 'teaching_course_id' => 1]];
+    $source['tables']['number_system_game_runs'] = [['id' => 6, 'session_id' => 5, 'user_id' => 20, 'history' => '[{"solved":true}]']];
+    $source['tables']['number_system_game_members'] = [['id' => 7, 'session_id' => 5, 'run_id' => 6, 'user_id' => 20]];
+    foreach (['teaching_courses' => 1, 'mc_catalogs' => 2, 'mc_tests' => 3, 'mc_attempts' => 4,
+        'number_system_game_sessions' => 5, 'number_system_game_runs' => 6, 'number_system_game_members' => 7] as $table => $id) {
+        $local['occupied_ids'][$table] = [$id];
+        $local['max_ids'][$table] = 100;
+    }
+
+    $plan = (new TeachingSynchronisationGraph)->plan($source, $local, 1);
+
+    expect($plan['conflicts'])->toBe([]);
+    expect($plan['tables']['mc_catalogs'][0])->toMatchArray(['id' => 101, 'owner_id' => 40, 'questions' => '[{"id":"q1"}]']);
+    expect($plan['tables']['mc_tests'][0])->toMatchArray(['id' => 101, 'catalog_id' => 101, 'owner_id' => 40, 'schoolyear_id' => 11]);
+    expect(json_decode($plan['tables']['mc_tests'][0]['pause_history'], true))->toBe([['teacher_id' => 40, 'seconds' => 30]]);
+    expect($plan['tables']['mc_attempts'][0])->toMatchArray(['id' => 101, 'test_id' => 101, 'student_id' => 40, 'answers' => '{"q1":["a1"]}']);
+    expect(json_decode($plan['tables']['mc_attempts'][0]['reopen_history'], true)[0]['teacher_id'])->toBe(40);
+    expect($plan['tables']['number_system_game_sessions'][0])->toMatchArray(['id' => 101, 'teacher_id' => 40, 'teaching_course_id' => 101]);
+    expect($plan['tables']['number_system_game_runs'][0])->toMatchArray(['id' => 101, 'session_id' => 101, 'user_id' => 40, 'history' => '[{"solved":true}]']);
+    expect($plan['tables']['number_system_game_members'][0])->toBe(['id' => 101, 'session_id' => 101, 'run_id' => 101, 'user_id' => 40]);
+});
+
+test('participant links transfer with their verified token without exporting encryption keys', function (): void {
+    $encrypter = new Encrypter(str_repeat('a', 32), 'AES-256-CBC');
+    $state = ['tables' => ['mc_attempts' => [['id' => 4, 'access_token' => $encrypter->encryptString('fixture-participant-token'),
+        'access_token_hash' => hash('sha256', 'fixture-participant-token')]]]];
+
+    expect((new TeachingSynchronisationGraph)->accessTokens($state, $encrypter))->toBe([4 => 'fixture-participant-token']);
+});
+
+test('unreadable or mismatched participant links fail closed', function (bool $wrongKey): void {
+    $encrypter = new Encrypter(str_repeat('a', 32), 'AES-256-CBC');
+    $state = ['tables' => ['mc_attempts' => [['id' => 4, 'access_token' => $encrypter->encryptString('fixture-participant-token'),
+        'access_token_hash' => hash('sha256', $wrongKey ? 'fixture-participant-token' : 'different-token')]]]];
+    $reader = $wrongKey ? new Encrypter(str_repeat('b', 32), 'AES-256-CBC') : $encrypter;
+
+    expect(fn (): array => (new TeachingSynchronisationGraph)->accessTokens($state, $reader))
+        ->toThrow(RuntimeException::class, 'Ein Multiple-Choice-Zugangslink konnte nicht sicher übertragen werden.');
+})->with([false, true]);
 
 function teachingGraphFixture(): array
 {
@@ -9,6 +61,20 @@ function teachingGraphFixture(): array
         'users' => [['id' => 20, 'email' => 'teacher@example.test', 'import116_id' => null, 'teaching_behaviour_by_schoolyear' => '{"10":["good"]}']],
         'import116' => [], 'school_tools' => [], 'max_ids' => ['import116' => 100, 'users' => 100, 'schoolyears' => 100]];
 }
+
+test('remaps group weight members independently of relative grading part weights', function () {
+    $source = teachingGraphFixture();
+    $local = teachingGraphFixture();
+    $source['tables']['teaching_entry_areas'] = [['id' => 30, 'school_id' => 1, 'schoolyear_id' => 10, 'user_id' => 20,
+        'grading_part_groups' => json_encode([['id' => 'group', 'name' => 'Basisnote', 'weights' => [['teaching_entry_grading_part_id' => 40, 'weight' => 1.5]]]])]];
+    $source['tables']['teaching_entry_grading_parts'] = [['id' => 40, 'school_id' => 1, 'schoolyear_id' => 10, 'user_id' => 20, 'teaching_entry_area_id' => 30, 'grading_group_id' => 'group', 'weight' => 3]];
+    $local['max_ids']['teaching_entry_grading_parts'] = 100;
+    $plan = (new TeachingSynchronisationGraph)->plan($source, $local, 1);
+    expect($plan['conflicts'])->toBe([]);
+    $groups = json_decode($plan['tables']['teaching_entry_areas'][0]['grading_part_groups'], true);
+    expect($groups[0]['weights'][0])->toBe(['teaching_entry_grading_part_id' => $plan['maps']['teaching_entry_grading_parts'][40], 'weight' => 1.5]);
+    expect($plan['tables']['teaching_entry_grading_parts'][0]['weight'])->toBe(3);
+});
 
 function teachingLinkedStudentFixture(): array
 {

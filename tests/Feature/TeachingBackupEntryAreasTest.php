@@ -166,6 +166,13 @@ test('teaching backup exports the complete entry graph in the active schoolyear'
 });
 
 test('full teaching restore remaps entry graph owners and ids and preserves definition settings', function () {
+    $groupId = '18b12f8d-a9a2-4c09-bca4-664e89c6c941';
+    $outerId = '18b12f8d-a9a2-4c09-bca4-664e89c6c942';
+    $this->part->update(['grading_group_id' => $groupId]);
+    $this->area->update(['grading_part_groups' => [
+        ['id' => $groupId, 'name' => 'Basisnote', 'parent_group_id' => $outerId, 'weights' => [['teaching_entry_grading_part_id' => $this->part->id, 'weight' => 1.5]]],
+        ['id' => $outerId, 'name' => 'Gesamtnote', 'weights' => [['grading_group_id' => $groupId, 'weight' => 2]]],
+    ], 'grading_level_weights' => [['grading_group_id' => $outerId, 'weight' => 3]]]);
     $backup = $this->service->createForUser($this->teacher);
     $payload = app(TeachingBackupArchiveReader::class)->readStorage($backup->disk, $backup->path);
     $payload['meta']['format_version'] = 1;
@@ -201,6 +208,11 @@ test('full teaching restore remaps entry graph owners and ids and preserves defi
         ->and((int) $part->user_id)->toBe($this->teacher->id)
         ->and((int) $definition->user_id)->toBe($this->teacher->id)
         ->and((int) $part->teaching_entry_area_id)->toBe($area->id)
+        ->and($area->grading_part_groups[0]['weights'][0])->toBe(['teaching_entry_grading_part_id' => $part->id, 'weight' => 1.5])
+        ->and($part->grading_group_id)->toBe($groupId)
+        ->and($area->grading_part_groups[0]['parent_group_id'])->toBe($outerId)
+        ->and($area->grading_part_groups[1]['weights'][0])->toBe(['grading_group_id' => $groupId, 'weight' => 2])
+        ->and($area->grading_level_weights[0])->toBe(['grading_group_id' => $outerId, 'weight' => 3])
         ->and($definition->only(['short_name', 'name', 'description', 'category', 'has_properties', 'properties_mode', 'fixed_properties', 'has_notifications', 'notification_recipients', 'has_table_marking', 'table_marking_color']))
         ->toBe($this->definition->only(['short_name', 'name', 'description', 'category', 'has_properties', 'properties_mode', 'fixed_properties', 'has_notifications', 'notification_recipients', 'has_table_marking', 'table_marking_color']));
 });

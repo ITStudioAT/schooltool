@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { createHash, webcrypto } from 'node:crypto'
 import { assessmentWrongQuestions } from '@/helpers/assessmentDeductions'
-import { workDeadlineExpired } from '@/helpers/date'
+import { scheduledWorkIconColor, workDeadlineExpired } from '@/helpers/date'
 import { assessmentTimeText, assessmentCompletionText, currentAssessmentRecord } from '@/helpers/workAssessmentTimes'
 import WorkDispatchStatus from '@/pages/admin/teaching/overview/components/WorkDispatchStatus.vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -10,18 +10,804 @@ import { createTestingPinia } from '@pinia/testing'
 import { DOMWrapper, flushPromises, mount } from '@vue/test-utils'
 import { createVuetify } from 'vuetify'
 import { VBtn } from 'vuetify/components/VBtn'
+import { VBtnToggle } from 'vuetify/components/VBtnToggle'
 import { VIcon } from 'vuetify/components/VIcon'
 import { VDialog } from 'vuetify/components/VDialog'
+import { VAutocomplete } from 'vuetify/components/VAutocomplete'
+import { VChip } from 'vuetify/components/VChip'
+import { VTextField } from 'vuetify/components/VTextField'
 import { VList, VListItem } from 'vuetify/components/VList'
 import axios from 'axios'
 import CourseTable from '@/pages/admin/teaching/overview/components/CourseTable.vue'
+import WorkExerciseExport from '@/pages/admin/teaching/overview/components/WorkExerciseExport.vue'
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
 import { useCourseDateStore } from '@/stores/admin/teaching/CourseDateStore'
 import { useCurriculumStore } from '@/stores/admin/teaching/CurriculumStore'
 import { useCourseWorkStore } from '@/stores/admin/teaching/CourseWorkStore'
 import { useCourseStudentEntryStore } from '@/stores/admin/teaching/CourseStudentEntryStore'
+import { useSchoolHourStore } from '@/stores/admin/teaching/SchoolHourStore'
+import { useAdminStore } from '@/stores/admin/AdminStore'
+import { clearWorkDropboxStates, loadWorkExercise, workDropboxStates } from '@/helpers/workDropbox'
+
+const { openModuleLink } = vi.hoisted(() => ({ openModuleLink: vi.fn() }))
+vi.mock('@/pages/admin/teaching/overview/components/WorkDropboxLink.vue', () => ({ default: {
+    name: 'WorkDropboxLink', props: ['courseId'], template: '<div />', methods: { openLink: openModuleLink },
+} }))
+vi.mock('@/pages/admin/teaching/overview/components/WorkStudentDistribution.vue', () => ({ default: {
+    name: 'WorkStudentDistribution', props: ['work', 'available', 'disabled'], template: '<div />',
+} }))
+
+describe('CourseTable manual work completion', () => {
+    it('hides curriculum assignments and content when curricula are disabled', () => {
+        const computed = (CourseTable as any).computed
+        const context = {
+            config: { user: { teaching_curricula_enabled: true } },
+            selected_course: { curricula_enabled: false, teaching_curriculum_id: 12 },
+            curriculaEnabled: false,
+        }
+
+        expect(computed.curriculaEnabled.call(context)).toBe(false)
+        expect(computed.assignedCurriculumId.call(context)).toBe(null)
+        expect((CourseTable as any).methods.curriculumContentForCourseDate.call(context, {
+            adopted_materials: [{ title: 'Thema: Einheit' }],
+        })).toEqual([])
+    })
+
+    it('updates only the saved deadline in the open work draft', () => {
+        const methods = (CourseTable as any).methods
+        const context: any = { workDialogForm: { id: 65, title: 'Ungespeicherter Titel', finish_until_date: '2026-10-20', finish_until_time: null },
+            applySavedCourseWork: vi.fn().mockReturnValue(true) }
+        const response = { data: { id: 65, finish_until_date: '2026-10-25', finish_until_time: '13:30' } }
+        methods.applyExerciseDeadline.call(context, response)
+        expect(context.applySavedCourseWork).toHaveBeenCalledWith(response)
+        expect(context.workDialogForm).toEqual({ id: 65, title: 'Ungespeicherter Titel', finish_until_date: '2026-10-25', finish_until_time: '13:30' })
+    })
+
+    it('checks the overview before offering creation and reuses the confirmed result', async () => {
+        clearWorkDropboxStates()
+        let finish: (value: unknown) => void = () => {}
+        const status = vi.fn().mockImplementation(() => new Promise(resolve => { finish = resolve }))
+        vi.stubGlobal('axios', { get: status, post: status })
+        const { wrapper, works, first } = mountCompletionTable()
+        try {
+            useAdminStore().config = { user: { id: 7 } } as never
+            works.courseWorks = [{ ...first, status: {} }] as never
+            await flushPromises()
+            const card = wrapper.get('.course-table-work-summary')
+            expect(card.get('[aria-label="Nächste Aktion: Wird geprüft …"]').text()).toBe('Wird geprüft …')
+            workDropboxStates.set('7:18:66', { module_link: { folder: { id: 'id:other' } } })
+            await flushPromises()
+            expect(card.text()).not.toContain('LF erstellen')
+            const checked = { connected: true, folder: null, module_link: { folder: { id: 'id:module' } },
+                exercise: { status: 'found', folder: { id: 'id:exercise', name: 'LF' } } }
+            finish({ data: checked })
+            await flushPromises()
+            expect(card.get('[aria-label="Nächste Aktion: E-Mails vorbereiten"]').text()).toContain('E-Mails vorbereiten')
+            expect(card.text()).toContain('Stand:')
+            status.mockResolvedValueOnce({ data: { ...checked, exercise: { ...checked.exercise, email_preparation: { status: 'ready' } } } })
+            await loadWorkExercise('7:18:65', first, first.date_for_all_groups, true)
+            await flushPromises()
+            expect(card.get('[aria-label="Nächste Aktion: Versandbereit"]').text()).toContain('Versandbereit')
+            status.mockResolvedValueOnce({ data: { ...checked, exercise: { ...checked.exercise, email_preparation: { status: 'unknown' } } } })
+            await loadWorkExercise('7:18:65', first, first.date_for_all_groups, true)
+            await flushPromises()
+            expect(card.get('[aria-label="Nächste Aktion: Vorbereitung prüfen"]').text()).toContain('Vorbereitung prüfen')
+            status.mockResolvedValueOnce({ data: { ...checked, exercise: { status: 'missing' } } })
+            await loadWorkExercise('7:18:65', first, first.date_for_all_groups, true)
+            await flushPromises()
+            expect(card.get('[aria-label="Nächste Aktion: LF erstellen"]').text()).toContain('LF erstellen')
+        } finally { wrapper.unmount(); clearWorkDropboxStates(); vi.unstubAllGlobals() }
+    })
+
+    it('keeps existing work progress without adding preparation actions or exercise checks', async () => {
+        clearWorkDropboxStates()
+        const get = vi.fn().mockResolvedValue({ data: { connected: true, folder: null, module_link: null } })
+        vi.stubGlobal('axios', { get })
+        const { wrapper, works, first } = mountCompletionTable()
+        const savedStatus = JSON.stringify(first.status)
+        try {
+            useAdminStore().config = { user: { id: 7 } } as never
+            works.courseWorks = [first] as never
+            await flushPromises()
+            const card = wrapper.get('.course-table-work-summary')
+            expect(card.text()).toContain('Erste Arbeit')
+            expect(card.find('.course-table-work-summary-next-action').exists()).toBe(false)
+            expect(card.find('[aria-label="Kein Ordner mit dieser Arbeit verknüpft"]').exists()).toBe(false)
+            expect(get.mock.calls.some(([, options]) => options?.params?.include_exercise === 1)).toBe(false)
+            expect(JSON.stringify(works.courseWorks[0].status)).toBe(savedStatus)
+        } finally { wrapper.unmount(); clearWorkDropboxStates(); vi.unstubAllGlobals() }
+    })
+
+    it('places the games row between works and curriculum in the course table', async () => {
+        const { wrapper, courses, date } = mountCompletionTable()
+        try {
+            await flushPromises()
+            const rows = wrapper.findAll('tbody > tr')
+            const games = rows.findIndex(row => row.classes().includes('course-games-row'))
+            const curriculum = rows.findIndex(row => row.classes().includes('course-table-curriculum-row'))
+            expect(games).toBeGreaterThan(0)
+            expect(curriculum).toBe(games + 1)
+            expect(rows[games - 1].text()).toContain('Arbeiten')
+            wrapper.getComponent({ name: 'CourseGamesRow' }).vm.$emit('games-updated', { id: date.id, games: ['networks'] })
+            await flushPromises()
+            expect(courses.selected_course.course_dates[0]).toEqual({ ...date, games: ['networks'] })
+        } finally { wrapper.unmount() }
+    })
+
+    it.each(['entries', 'attendance'])('labels every column of the highlighted date and refreshes at midnight in the %s view', async (view) => {
+        vi.useFakeTimers()
+        vi.setSystemTime(new Date('2026-10-07T21:59:59Z'))
+        const { wrapper, courses } = mountCompletionTable()
+        try {
+            await wrapper.setProps({ view })
+            courses.selected_course.course_dates = [
+                { id: 3, date: '2026-10-14', hours: [3] },
+                { id: 2, date: '2026-10-07', hours: [5, 6] },
+                { id: 1, date: '2026-10-07', hours: [1, 2] },
+            ] as never
+            await flushPromises()
+            const currentHeaders = () => wrapper.findAll('thead th[aria-current="date"]')
+            expect(currentHeaders()).toHaveLength(2)
+            expect(currentHeaders().every(header => header.text().includes('Heute'))).toBe(true)
+
+            vi.setSystemTime(new Date('2026-10-07T22:00:00Z'))
+            ;(wrapper.vm as any).refreshDeadlineClock()
+            await flushPromises()
+            expect(currentHeaders()).toHaveLength(1)
+            expect(currentHeaders()[0].text()).toContain('Nächster Unterrichtstag')
+            expect(currentHeaders()[0].text()).toContain('14.10.')
+
+            courses.selected_course.course_dates = [{ id: 1, date: '2026-10-07' }, { id: 2, date: null }] as never
+            await flushPromises()
+            expect(currentHeaders()).toHaveLength(0)
+            expect(wrapper.find('.course-table-date-current-label').exists()).toBe(false)
+        } finally { wrapper.unmount(); vi.useRealTimers() }
+    })
+
+    function mountCompletionTable() {
+        const pinia = createTestingPinia({ createSpy: vi.fn })
+        const date = { id: 1, date: '2026-10-12' }
+        const courses = useCourseStore(pinia)
+        courses.selected_course = { id: 18, students_info: [], course_dates: [date],
+            teaching_entry_area: { id: 1, entry_definitions: [{ category: 'Benotung', short_name: 'A5', name: 'Auftrag', properties_mode: 'points', maximum_points: 5 }] } } as never
+        const works = useCourseWorkStore(pinia)
+        const first = { id: 65, teaching_course_id: 18, title: 'Erste Arbeit', type: 'A5',
+            date_for_all_groups: date.date, groups: [], status: { dispatch_logs: [{ sha256: 'a'.repeat(64) }], custom: 'bewahren' } }
+        const second = { ...first, id: 66, title: 'Zweite Arbeit', status: { custom: 'zweite' } }
+        works.courseWorks = [first, second] as never
+        const wrapper = mount(CourseTable, { props: { view: 'entries' }, global: {
+            plugins: [pinia, createVuetify({ components: { VBtn, VBtnToggle } })],
+            components: { 'v-btn': VBtn, 'v-btn-toggle': VBtnToggle }, stubs: {
+                ItsGridBox: { template: '<div><slot /></div>' }, WorkEvaluationImport: true,
+                WorkImportActions: true, WorkAiExport: true, WorkEvaluationPdf: true, WorkDropboxSource: true,
+                CourseStudentNotes: true, CourseStudentIndicators: true, CurriculumPdfPreview: true, ItsRichTextEditor: true,
+                'v-btn': false, VBtn: false, 'v-btn-toggle': false, VBtnToggle: false, 'v-tab': true, 'v-tabs': true, 'v-textarea': true,
+                'v-date-input': true, 'v-list-subheader': true, 'v-divider': true, 'v-checkbox': true, 'v-switch': true,
+                'v-dialog': { props: ['modelValue'], template: '<div v-if="modelValue"><slot /></div>' },
+            },
+        } })
+        return { wrapper, works, courses, date, first, second }
+    }
+
+    it.each([
+        { state: 'prepared', distribution: { prepared_at: '2026-10-31T10:00:00Z', published_at: null }, paused: true, automatic: true },
+        { state: 'prepared manual work', distribution: { prepared_at: '2026-10-31T10:00:00Z' }, paused: true, automatic: false },
+        { state: 'published', distribution: { prepared_at: '2026-10-31T10:00:00Z', published_at: '2026-10-31T11:00:00Z' }, paused: false, automatic: true },
+        { state: 'withdrawn', distribution: { prepared_at: '2026-10-31T10:00:00Z', published_at: '2026-10-31T11:00:00Z', withdrawn_at: '2026-10-31T12:00:00Z' }, paused: false, automatic: true },
+        { state: 'not prepared', distribution: undefined, paused: false, automatic: true },
+        { state: 'empty preparation date', distribution: { prepared_at: null, published_at: null }, paused: false, automatic: true },
+    ])('shows the student-area pause marker only for a saved paused preparation: $state', async ({ distribution, paused, automatic }) => {
+        const { wrapper, works, first } = mountCompletionTable()
+        try {
+            works.courseWorks = [{ ...first, status: { automation_enabled: automatic, student_distribution: distribution,
+                multiple_choice_tests: { all: { test_id: 4, paused_at: '2026-10-31T10:00:00Z' } } } }] as never
+            await flushPromises()
+            const card = wrapper.get('.course-table-work-summary')
+            const marker = card.find('[aria-label="Schülerbereich: pausiert"]')
+            expect(marker.exists()).toBe(paused)
+            expect(card.text()).toContain(first.title)
+            if (paused) {
+                expect(marker.text()).toContain('Schülerbereich')
+                expect(marker.text()).toContain('pausiert')
+                expect(marker.attributes('title')).toContain('noch nicht zugänglich')
+                await marker.trigger('click')
+                expect((wrapper.vm as any).workDialogForm.id).toBe(first.id)
+            }
+        } finally { wrapper.unmount() }
+    })
+
+    it('updates the student-area pause marker when a saved work is released and prepared again', async () => {
+        const { wrapper, works, first } = mountCompletionTable()
+        try {
+            works.courseWorks = [{ ...first, status: { student_distribution: { prepared_at: '2026-10-31T10:00:00Z', published_at: null } } }] as never
+            await flushPromises()
+            const marker = () => wrapper.find('.course-table-work-summary [aria-label="Schülerbereich: pausiert"]')
+            expect(marker().exists()).toBe(true)
+            ;(works.courseWorks[0] as any).status.student_distribution.published_at = '2026-10-31T11:00:00Z'
+            await flushPromises()
+            expect(marker().exists()).toBe(false)
+            ;(works.courseWorks[0] as any).status.student_distribution.published_at = null
+            await flushPromises()
+            expect(marker().exists()).toBe(true)
+        } finally { wrapper.unmount() }
+    })
+
+    it('disables the subsequent status actions until the work has a linked folder', async () => {
+        clearWorkDropboxStates()
+        const { wrapper, works, first } = mountCompletionTable()
+        try {
+            useAdminStore().config = { user: { id: 7 } } as never
+            workDropboxStates.set('7:18:65', { connected: true, module_link: null, folder: null })
+            works.courseWorks = [{ ...first, status: { automation_enabled: true } }] as never
+            await flushPromises()
+            await wrapper.get('.course-table-work-summary-title').trigger('click')
+
+            const statuses = wrapper.get('.work-dialog-status-icons')
+            expect(statuses.getComponent({ name: 'WorkExerciseStatus' }).props('disabled')).toBe(true)
+            expect(statuses.getComponent({ name: 'WorkDeliveryStatus' }).props('disabled')).toBe(true)
+
+            workDropboxStates.set('7:18:65', { connected: true, module_link: { folder: { id: 'id:module' } } })
+            await flushPromises()
+            expect(statuses.getComponent({ name: 'WorkExerciseStatus' }).props('disabled')).toBe(false)
+            expect(statuses.getComponent({ name: 'WorkDeliveryStatus' }).props('disabled')).toBe(true)
+
+            ;(wrapper.vm as any).workDialogExerciseStatus = { status: 'found', userId: 7, workId: 65, courseId: 18,
+                date: '2026-10-12', assignmentStatus: 'missing', folder: { id: 'id:exercise', name: 'Leistungsfeststellung' } }
+            await flushPromises()
+            expect(statuses.getComponent({ name: 'WorkDeliveryStatus' }).props('disabled')).toBe(true)
+            expect(statuses.getComponent({ name: 'WorkDeliveryStatus' }).props('exerciseReady')).toBe(false)
+            ;(wrapper.vm as any).workDialogExerciseStatus.assignmentStatus = 'ready'
+            await flushPromises()
+            expect(statuses.getComponent({ name: 'WorkDeliveryStatus' }).props('disabled')).toBe(false)
+            expect(statuses.getComponent({ name: 'WorkDeliveryStatus' }).props('exerciseReady')).toBe(true)
+        } finally { wrapper.unmount(); clearWorkDropboxStates() }
+    })
+
+    it('opens LF creation from its red status icon without an extra action button', async () => {
+        clearWorkDropboxStates()
+        const status = vi.fn().mockResolvedValue({ data: { connected: true, module_link: { folder: { id: 'id:module' } }, exercise: { status: 'missing' } } })
+        vi.stubGlobal('axios', { get: status, post: status })
+        const { wrapper, works, first } = mountCompletionTable()
+        try {
+            useAdminStore().config = { user: { id: 7 } } as never
+            works.courseWorks = [{ ...first, status: {} }] as never
+            await flushPromises()
+            await wrapper.get('.course-table-work-summary-title').trigger('click')
+            await flushPromises()
+            const form = wrapper.get('.course-table-date-work-form')
+            expect(form.findAll('button').some(button => button.text() === 'Leistungsfeststellung erstellen')).toBe(false)
+            const icon = form.getComponent({ name: 'WorkExerciseStatus' })
+            expect(icon.get('v-icon').attributes('color')).toBe('error')
+            await icon.get('[role="button"]').trigger('click')
+            expect(form.getComponent({ name: 'WorkExerciseExport' }).text()).toContain('Direkt über die OpenAI-API')
+        } finally { wrapper.unmount(); clearWorkDropboxStates(); vi.unstubAllGlobals() }
+    })
+
+    it('offers deletion for the saved work and preserves the draft when confirmation is canceled', async () => {
+        const { wrapper, works, first } = mountCompletionTable()
+        const vm = wrapper.vm as any
+        try {
+            await wrapper.get('.course-table-work-summary-title').trigger('click')
+            vm.workDialogForm.title = 'Noch nicht gespeicherter Titel'
+            await wrapper.get('[data-testid="work-dialog-delete"]').trigger('click')
+
+            const confirmation = wrapper.get('[data-testid="work-delete-confirmation"]')
+            expect(confirmation.text()).toContain(first.title)
+            expect(confirmation.text()).toContain('Die Dateien in Dropbox bleiben erhalten.')
+            expect(confirmation.text()).not.toContain('Noch nicht gespeicherter Titel')
+            expect(works.destroy).not.toHaveBeenCalled()
+
+            await confirmation.get('[data-testid="work-delete-cancel"]').trigger('click')
+
+            expect(wrapper.find('[data-testid="work-delete-confirmation"]').exists()).toBe(false)
+            expect(vm.workDialog.open).toBe(true)
+            expect(vm.workDialogForm.title).toBe('Noch nicht gespeicherter Titel')
+            expect(works.destroy).not.toHaveBeenCalled()
+
+            vm.closeWorkDialog()
+            await wrapper.get('.course-table-work-empty-icon').trigger('click')
+            expect(wrapper.find('[data-testid="work-dialog-delete"]').exists()).toBe(false)
+        } finally { wrapper.unmount() }
+    })
+
+    it.each([true, false])('deletes once and closes the directly opened work only after success: %s', async deleted => {
+        const { wrapper, works, first, second } = mountCompletionTable()
+        const vm = wrapper.vm as any
+        let finishDeletion: (value: boolean) => void = () => {}
+        vi.mocked(works.destroy).mockReturnValue(new Promise(resolve => { finishDeletion = resolve }))
+        const reload = vi.spyOn(vm, 'loadCourseTableData').mockResolvedValue(true)
+        try {
+            await wrapper.get('.course-table-work-summary-title').trigger('click')
+            await wrapper.get('[data-testid="work-dialog-delete"]').trigger('click')
+            await wrapper.get('[data-testid="work-delete-confirm"]').trigger('click')
+            await wrapper.get('[data-testid="work-delete-confirm"]').trigger('click')
+
+            expect(works.destroy).toHaveBeenCalledExactlyOnceWith(first.id)
+            expect(wrapper.get('[data-testid="work-delete-cancel"]').attributes('disabled')).toBeDefined()
+
+            finishDeletion(deleted)
+            await flushPromises()
+
+            expect(vm.workDialog.open).toBe(!deleted)
+            expect(wrapper.find('[data-testid="work-delete-confirmation"]').exists()).toBe(!deleted)
+            expect(vm.workDeleting).toBe(false)
+            if (deleted) {
+                expect(vm.workDialogForm.id).toBeNull()
+                expect(reload).toHaveBeenCalledExactlyOnceWith(18, true)
+            } else {
+                expect(vm.workDialogForm.id).toBe(first.id)
+                expect(reload).not.toHaveBeenCalled()
+            }
+            expect(works.courseWorks.find(work => work.id === second.id)?.title).toBe(second.title)
+        } finally { wrapper.unmount() }
+    })
+
+    it('opens the clicked work directly and keeps the plus action separate for mouse and keyboard', async () => {
+        const { wrapper, date, first, second } = mountCompletionTable()
+        const vm = wrapper.vm as any
+        const creating = vi.spyOn(vm, 'startCreatingDateWork')
+        const opening = vi.spyOn(vm, 'openWorkDialog')
+        try {
+            await flushPromises()
+            const cards = wrapper.findAll('.course-table-work-summary')
+            await cards[1].get('.course-table-work-summary-title').trigger('click')
+            expect(vm.workDialogForm.id).toBe(second.id)
+            expect(vm.workDialog.courseDate.id).toBe(date.id)
+            expect(vm.workDialogFormOpen).toBe(true)
+            expect(vm.savedWorkDialogWork?.id).toBe(second.id)
+            expect(wrapper.findComponent({ name: 'WorkContextCopy' }).exists()).toBe(true)
+            expect(wrapper.get('.work-dialog-status-icons').findComponent({ name: 'WorkFolderStatus' }).exists()).toBe(true)
+            expect(wrapper.get('.work-dialog-status-icons').findComponent({ name: 'WorkExerciseStatus' }).exists()).toBe(true)
+            expect(wrapper.get('.work-dialog-status-icons').findComponent({ name: 'WorkEmailPreparation' }).exists()).toBe(false)
+            expect(wrapper.get('.work-dialog-status-icons').findComponent({ name: 'WorkDeliveryStatus' }).exists()).toBe(true)
+            expect(opening).toHaveBeenCalledTimes(1)
+            expect(creating).not.toHaveBeenCalled()
+
+            vm.cancelDateWorkForm(true)
+            expect(vm.workDialog.open).toBe(false)
+            await cards[0].trigger('keydown', { key: 'Enter' })
+            expect(vm.workDialogForm.id).toBe(first.id)
+            expect(opening).toHaveBeenCalledTimes(2)
+            expect(creating).not.toHaveBeenCalled()
+
+            vm.closeWorkDialog()
+            await wrapper.get('.course-table-work-empty-icon').trigger('click')
+            expect(vm.workDialogForm.id).toBeNull()
+            expect(vm.workDialogForm.title).toBe('')
+            expect(vm.workDialogForm.date_for_all_groups).toBe(date.date)
+            expect(vm.workDialogForm.teaching_course_id).toBe(18)
+            expect(creating).toHaveBeenCalledTimes(1)
+            expect(opening).toHaveBeenCalledTimes(2)
+
+            const modes = wrapper.get('.work-assessment-mode').findAll('button')
+            await modes[0].trigger('click')
+            expect(vm.workDialogForm.automation_enabled).toBe(false)
+            await modes[0].trigger('click')
+            expect(vm.workDialogForm.automation_enabled).toBe(false)
+            await modes[1].trigger('click')
+            expect(vm.workDialogForm.automation_enabled).toBe(true)
+
+            vm.closeWorkDialog()
+            await wrapper.get('.course-table-work-empty-icon').trigger('keydown', { key: ' ' })
+            expect(creating).toHaveBeenCalledTimes(2)
+            expect(opening).toHaveBeenCalledTimes(2)
+            expect(first.title).toBe('Erste Arbeit')
+            expect(second.title).toBe('Zweite Arbeit')
+        } finally { wrapper.unmount() }
+    })
+
+    it.each([true, false])('returns to the calling table only after a successful save: %s', async saved => {
+        const methods = (CourseTable as any).methods
+        const update = vi.fn().mockResolvedValue(saved ? { data: { id: 65 } } : null)
+        const context: any = {
+            ...methods,
+            selected_course: { id: 18 },
+            canSaveDateWork: true,
+            workDialog: { courseDate: { id: 1, date: '2026-10-12' }, open: true },
+            workDialogForm: { id: 65, type: 'A5', title: 'Arbeit', groups: [], finish_until_date: '2026-10-14', finish_until_time: '16:45' },
+            workDialogDirect: true, workDialogFormOpen: true,
+            courseWorkStore: { update }, courseWorkGradeInputModeForType: () => 'grade',
+            courseWorkGroupsForGradeInputMode: groups => groups,
+            closeRandomGroupsDialog: vi.fn(), applySavedCourseWork: vi.fn(), loadCourseTableData: vi.fn(),
+        }
+
+        await methods.saveDateWork.call(context)
+
+        expect(context.workDialog.open).toBe(!saved)
+        expect(context.workDialogFormOpen).toBe(!saved)
+        expect(update.mock.calls[0][0].finish_until_date).toBe('2026-10-14')
+        expect(update.mock.calls[0][0].finish_until_time).toBe('16:45')
+        if (!saved) expect(context.workDialogForm.id).toBe(65)
+    })
+
+    it.each([
+        { enabled: true, icon: 'mdi-brain', label: 'Automatische Beurteilung', nextIcon: 'mdi-account-check-outline', nextLabel: 'Manuelle Beurteilung' },
+        { enabled: false, icon: 'mdi-account-check-outline', label: 'Manuelle Beurteilung', nextIcon: 'mdi-brain', nextLabel: 'Automatische Beurteilung' },
+    ])('shows one mode icon, follows saved mode changes and keeps direct opening: $label', async ({ enabled, icon, label, nextIcon, nextLabel }) => {
+        const { wrapper, works, first } = mountCompletionTable()
+        try {
+            useAdminStore().config = { user: { id: 7 } } as never
+            workDropboxStates.set('7:18:65', { folder: null, suggested_folder: { id: 'id:suggestion' } })
+            works.courseWorks = [{ ...first, status: { automation_enabled: enabled }, groups: [{ student_ids: [12], grade: '', grades: [], points: [], comments: [] }] }] as never
+            await flushPromises()
+            const card = wrapper.get('.course-table-work-summary')
+            expect(card.text()).toContain('Erste Arbeit')
+            expect(card.text()).not.toContain('Noch kein Ordner verbunden.').not.toContain(label)
+            expect(card.get('.course-table-work-summary-meta').findAll('v-icon')).toHaveLength(2)
+            expect(card.findComponent({ name: 'WorkFolderStatus' }).exists()).toBe(false)
+            expect(card.get('v-icon').attributes('icon')).toBe(icon)
+            expect(card.get('v-icon').attributes('aria-label')).toBe(label)
+            expect(card.findAll('[data-work-status], [data-submission-state]')).toHaveLength(0)
+
+            ;(works.courseWorks[0] as any).status.automation_enabled = !enabled
+            await flushPromises()
+            expect(card.get('v-icon').attributes('icon')).toBe(nextIcon)
+            expect(card.get('v-icon').attributes('title')).toBe(nextLabel)
+            expect(card.text()).not.toContain(nextLabel)
+            expect(card.get('.course-table-work-summary-meta').findAll('v-icon')).toHaveLength(2)
+            expect(card.findComponent({ name: 'WorkFolderStatus' }).exists()).toBe(false)
+
+            await card.get('v-icon').trigger('click')
+            expect((wrapper.vm as any).workDialogForm.id).toBe(first.id)
+            ;(wrapper.vm as any).closeWorkDialog()
+
+            workDropboxStates.set('7:18:65', { folder: { id: 'id:saved', name: 'Ordner' } })
+            await flushPromises()
+            expect(card.text()).not.toContain('Noch kein Ordner verbunden.')
+            expect(card.findAll('[data-work-status]')).toHaveLength(0)
+            expect(card.findComponent({ name: 'WorkFolderStatus' }).exists()).toBe(false)
+        } finally { wrapper.unmount(); clearWorkDropboxStates() }
+    })
+
+    it.each([true, false])('shows the saved manual completion override even when grades suggest otherwise: %s', async completed => {
+        const { wrapper, works, courses, first } = mountCompletionTable()
+        try {
+            courses.selected_course.students_info = [{ id: 901, user_id: 12 }] as never
+            works.courseWorks = [{ ...first, automation_enabled: false,
+                status: { completion_override: completed, student_distribution: { prepared_at: '2026-10-31T10:00:00Z' } },
+                groups: [{ student_ids: [12], use_individual_grades: true, points: [{ student_id: 12, points: completed ? '' : 3 }] }] }] as never
+            await flushPromises()
+            const card = wrapper.get('.course-table-work-summary')
+            const status = card.get(`[aria-label="Manuelle Beurteilung: ${completed ? 'abgeschlossen' : 'offen'}"]`)
+            expect(status.text()).toBe(completed ? 'ABGESCHLOSSEN' : 'OFFEN')
+            expect(status.attributes('title')).toBe(completed ? 'Manuell als abgeschlossen markiert.' : 'Manuell als offen markiert.')
+            expect(card.get('[aria-label="Schülerbereich: pausiert"]').text()).toContain('pausiert')
+        } finally { wrapper.unmount() }
+    })
+
+    it('keeps the manual icon and shows the open or completed state while saved points update completion', async () => {
+        const { wrapper, works, courses, first, date } = mountCompletionTable()
+        try {
+            courses.selected_course.students_info = [{ id: 901, user_id: 12 }, { id: 902, user_id: 13 }] as never
+            works.courseWorks = [{ ...first, automation_enabled: false, status: {}, is_group_work: false,
+                groups: [{ student_ids: [12, 13], use_individual_grades: true, points: [{ student_id: 12, points: 3 }, { student_id: 13, points: '' }] }] }] as never
+            await flushPromises()
+            const completionIcon = () => wrapper.get('.course-table-work-summary-meta v-icon')
+            expect(completionIcon().attributes('icon')).toBe('mdi-account-check-outline')
+            expect(completionIcon().attributes('color')).not.toBe('success')
+            expect(completionIcon().attributes('title')).toBe('Manuelle Beurteilung noch nicht vollständig.')
+            expect(wrapper.get('[aria-label="Manuelle Beurteilung: offen"]').text()).toBe('OFFEN')
+            ;(works.courseWorks[0] as any).groups[0].points[1].points = 0
+            await flushPromises()
+            expect(completionIcon().attributes('icon')).toBe('mdi-account-check-outline')
+            expect(completionIcon().attributes('color')).toBe('success')
+            expect(completionIcon().attributes('title')).toContain('alle manuellen Beurteilungen eingetragen')
+            expect(wrapper.get('[aria-label="Manuelle Beurteilung: abgeschlossen"]').text()).toBe('ABGESCHLOSSEN')
+            ;(works.courseWorks[0] as any).groups[0].points[1].points = ''
+            await flushPromises()
+            expect(completionIcon().attributes('color')).not.toBe('success')
+            expect(wrapper.get('[aria-label="Manuelle Beurteilung: offen"]').text()).toBe('OFFEN')
+            const vm = wrapper.vm as any
+            const completionToggle = () => wrapper.findAllComponents(VBtn).find(button => button.attributes('data-testid') === 'work-completion-toggle-65')!
+            vm.openWorkDialog(date)
+            await flushPromises()
+            expect(completionToggle().props('icon')).toBe('mdi-account-check-outline')
+            vm.startEditingDateWork(works.courseWorks[0])
+            await flushPromises()
+            expect(completionToggle().props('icon')).toBe('mdi-account-check-outline')
+            ;(works.courseWorks[0] as any).automation_enabled = true
+            await flushPromises()
+            expect(completionIcon().attributes('icon')).toBe('mdi-brain')
+            expect(completionToggle().props('icon')).toBe('mdi-brain')
+            expect(wrapper.find('.course-table-work-summary [aria-label^="Manuelle Beurteilung:"]').exists()).toBe(false)
+        } finally { wrapper.unmount() }
+    })
+
+    it('toggles only the chosen work from its dialog brain, preserves returned evidence and updates the overview', async () => {
+        const { wrapper, works, date, first, second } = mountCompletionTable()
+        const put = vi.spyOn(axios, 'put').mockResolvedValueOnce({ data: { data: { ...second,
+            status: { ...second.status, completion_override: true } } } })
+            .mockResolvedValueOnce({ data: { data: { ...second, status: { ...second.status, completion_override: false } } } })
+        try {
+            await flushPromises()
+            const vm = wrapper.vm as any
+            vm.openWorkDialog(date)
+            await flushPromises()
+            await wrapper.get('[data-testid="work-completion-toggle-66"]').trigger('click')
+            await flushPromises()
+            expect(put).toHaveBeenNthCalledWith(1, '/api/admin/teaching/course_works/66', { completion_override: true })
+            expect(vm.workDialogFormOpen).toBe(false)
+            expect((works.courseWorks as any[]).find(work => work.id === 65)).toEqual(first)
+            const saved = (works.courseWorks as any[]).find(work => work.id === 66)
+            expect(saved.status).toEqual({ custom: 'zweite', completion_override: true })
+            expect(wrapper.get('[data-testid="work-completion-toggle-66"]').attributes('aria-pressed')).toBe('true')
+            expect(wrapper.findAll('.course-table-work-summary').find(card => card.text().includes('Zweite Arbeit'))!.get('.course-table-work-summary-meta').get('v-icon').attributes('title')).toBe('Manuell als abgeschlossen markiert.')
+            vm.startEditingDateWork(saved)
+            await flushPromises()
+            const brain = wrapper.get('[data-testid="work-completion-toggle-66"]')
+            expect(brain.attributes('aria-label')).toContain('Zweite Arbeit: manuell als offen markieren')
+            await brain.trigger('click')
+            await flushPromises()
+            expect(put).toHaveBeenNthCalledWith(2, '/api/admin/teaching/course_works/66', { completion_override: false })
+            expect((works.courseWorks as any[]).find(work => work.id === 66).status.completion_override).toBe(false)
+            expect(wrapper.get('[data-testid="work-completion-toggle-66"]').attributes('aria-pressed')).toBe('false')
+            expect(wrapper.findAll('.course-table-work-summary').find(card => card.text().includes('Zweite Arbeit'))!.get('.course-table-work-summary-meta').get('v-icon').attributes('title')).toBe('Manuell als offen markiert.')
+        } finally { put.mockRestore(); wrapper.unmount() }
+    })
+
+    it('disables completion while saving, ignores duplicate clicks and keeps the prior state on a failed save', async () => {
+        const { wrapper, works, date, first } = mountCompletionTable()
+        let rejectSave: (error: unknown) => void = () => {}
+        const put = vi.spyOn(axios, 'put').mockImplementationOnce(() => new Promise((_, reject) => { rejectSave = reject }))
+        try {
+            await flushPromises()
+            const vm = wrapper.vm as any
+            vm.openWorkDialog(date)
+            await flushPromises()
+            await wrapper.get('[data-testid="work-completion-toggle-65"]').trigger('click')
+            expect(wrapper.get('[data-testid="work-completion-toggle-65"]').attributes('disabled')).toBeDefined()
+            await vm.toggleWorkCompletion(first)
+            expect(put).toHaveBeenCalledTimes(1)
+            rejectSave({ response: { data: { message: 'Markierung konnte nicht gespeichert werden.' } } })
+            await flushPromises()
+            expect(wrapper.get('[role="alert"]').text()).toBe('Markierung konnte nicht gespeichert werden.')
+            expect((works.courseWorks as any[]).find(work => work.id === 65).status).toEqual(first.status)
+            expect(wrapper.get('[data-testid="work-completion-toggle-65"]').attributes('aria-pressed')).toBe('false')
+            expect(wrapper.get('[data-testid="work-completion-toggle-65"]').attributes('disabled')).toBeUndefined()
+        } finally { put.mockRestore(); wrapper.unmount() }
+    })
+
+    it('does not apply an old completion response after switching courses', async () => {
+        const { wrapper, works, courses, date, first } = mountCompletionTable()
+        let resolveSave: (value: unknown) => void = () => {}
+        const put = vi.spyOn(axios, 'put').mockImplementationOnce(() => new Promise(resolve => { resolveSave = resolve }))
+        try {
+            await flushPromises()
+            const vm = wrapper.vm as any
+            vm.openWorkDialog(date)
+            const pending = vm.toggleWorkCompletion(first)
+            courses.selected_course = { id: 19, course_dates: [], students_info: [] } as never
+            works.courseWorks = []
+            resolveSave({ data: { data: { ...first, status: { ...first.status, completion_override: true } } } })
+            await pending
+            expect(works.courseWorks).toEqual([])
+            expect(vm.workCompletionSavingId).toBeNull()
+        } finally { put.mockRestore(); wrapper.unmount() }
+    })
+})
+
+describe('CourseTable personal work feedback', () => {
+    it.each(['imported', 'manual', 'missing PDF'])('keeps the personal PDF and editable grading while treating %s feedback appropriately', async feedback => {
+        const pinia = createTestingPinia({ createSpy: vi.fn })
+        const date = { id: 1, date: '2026-10-02' }
+        const student = { id: 999, user_id: 12, first_name: 'Ada', last_name: 'Alpha' }
+        const importedComment = 'Ausführliche importierte Rückmeldung mit Kriterien und Einzelbegründungen.'
+        const comment = feedback === 'manual' ? 'Manuell ergänzte persönliche Rückmeldung.' : importedComment
+        const pdf = { student_id: 12, origin: 'evaluation_import', name: 'Auswertung_Alpha.pdf', sha256: 'b'.repeat(64) }
+        const work = { id: 65, teaching_course_id: 18, title: 'E-Mails', type: 'A5', date_for_all_groups: date.date,
+            is_group_work: false, groups: [{ student_ids: [12], points: [{ student_id: 12, points: 4.5 }],
+                grades: [{ student_id: 12, grade: '4.5' }], comments: [{ student_id: 12, comment }] }],
+            status: { assessment_json_imports: [{ student_id: 12, record: { comment: importedComment } }],
+                evaluation_pdfs: feedback === 'missing PDF' ? [] : [pdf] } }
+        useCourseStore(pinia).selected_course = { id: 18, students_info: [student], course_dates: [date] } as never
+        const works = useCourseWorkStore(pinia)
+        const wrapper = mount(CourseTable, { props: { view: 'entries' }, global: {
+            plugins: [pinia], stubs: {
+                ItsGridBox: { template: '<div><slot /></div>' }, WorkEvaluationImport: true, WorkAiExport: true,
+                CourseStudentNotes: true, CourseStudentIndicators: true, CurriculumPdfPreview: true, ItsRichTextEditor: true,
+                'v-tab': true, 'v-tabs': true, 'v-textarea': true, 'v-date-input': true,
+                'v-list-subheader': true, 'v-divider': true, 'v-checkbox': true,
+                'v-dialog': { props: ['modelValue'], template: '<div v-if="modelValue"><slot /></div>' },
+            },
+        } })
+        try {
+            await flushPromises()
+            works.courseWorks = [work] as never
+            useCourseStudentEntryStore(pinia).courseEntries = [{ id: 77, user_id: 12, date: date.date,
+                type: 'A5', source: 'course_work', teaching_course_work_id: 65, grade: '4.5' }] as never
+            await flushPromises()
+            await wrapper.get('.course-table-entry-cell').trigger('click')
+            await flushPromises()
+            const card = wrapper.get('[data-testid="course-table-cell-entry-card-assessment-77"]')
+            expect(card.get('.course-table-cell-entry-main-grade').text()).toBe('4.5')
+            if (feedback === 'imported') {
+                expect(card.find('.course-table-cell-entry-list-comment').exists()).toBe(false)
+                expect(card.text()).not.toContain(importedComment)
+            } else {
+                expect(card.get('.course-table-cell-entry-list-comment').text()).toContain(comment)
+            }
+            if (feedback !== 'missing PDF') {
+                expect(card.get('[href]').attributes('href')).toBe(`/api/admin/teaching/course_works/65/evaluations/${pdf.sha256}?inline=1`)
+                expect(card.get('[href]').text()).toBe('Auswertung (PDF)')
+            }
+            await card.trigger('click')
+            const editor = card.get('[data-testid="course-table-cell-work-comment-assessment-77"]')
+            expect(editor.attributes('model-value')).toBe(comment)
+            expect(card.find('[data-testid="course-table-cell-work-save-assessment-77"]').exists()).toBe(true)
+            expect(works.courseWorks[0].groups[0].comments[0].comment).toBe(comment)
+        } finally { wrapper.unmount() }
+    })
+})
+
+describe('CourseTable hourly cancellation dialog', () => {
+    it.each([
+        ['2026-10-11', '2026-10-12T10:00:00Z', 'error'],
+        ['2026-10-12', '2026-10-12T10:00:00Z', 'error'],
+        ['2026-10-13', '2026-10-12T10:00:00Z', 'orange'],
+        ['2026-10-13T00:00:00.000Z', '2026-10-12T10:00:00Z', 'orange'],
+        ['2026-10-13', '2026-10-12T22:30:00Z', 'error'],
+        ['2026-10-14', '2026-10-12T22:30:00Z', 'orange'],
+        ['2026-02-30', '2026-02-01T10:00:00Z', 'error'],
+        [null, '2026-10-12T10:00:00Z', 'error'],
+    ])('colors the scheduled work day %s at %s in Vienna', (date, now, color) => {
+        expect(scheduledWorkIconColor(date, new Date(now as string))).toBe(color)
+    })
+
+    function mountCancellationTable(cancelledHours: number[] = []) {
+        const pinia = createTestingPinia({ createSpy: vi.fn })
+        const date = { id: 1, date: '2026-10-12', hours: [5, 6], status: [], cancelled_hours: cancelledHours }
+        const courses = useCourseStore(pinia)
+        courses.selected_course = { id: 18, students_info: [], course_dates: [date] } as never
+        courses.courses = [{ id: 18, course_dates: [{ ...date }] }] as never
+        useSchoolHourStore(pinia).school_hours = [
+            { hour: 5, from: '11:35:00', until: '12:25:00' },
+            { hour: 6, from: '12:30:00', until: '13:20:00' },
+        ] as never
+        const dates = useCourseDateStore(pinia)
+        const wrapper = mount(CourseTable, { props: { view: 'attendance' }, global: {
+            plugins: [pinia], stubs: {
+                ItsGridBox: { template: '<div><slot /></div>' }, CourseStudentNotes: true, CourseStudentIndicators: true,
+                WorkEvaluationImport: true, CurriculumPdfPreview: true, ItsRichTextEditor: true,
+                'v-tab': true, 'v-tabs': true, 'v-textarea': true, 'v-date-input': true, 'v-list-subheader': true,
+                'v-divider': true, 'v-card-subtitle': true,
+                'v-dialog': { props: ['modelValue', 'persistent'], template: '<div v-if="modelValue"><slot /></div>' },
+                'v-checkbox': { props: ['modelValue', 'value', 'label', 'disabled'], emits: ['update:modelValue'],
+                    template: `<label><input type="checkbox" :disabled="disabled" :checked="modelValue.includes(value)"
+                        @change="$emit('update:modelValue', $event.target.checked ? [...modelValue, value] : modelValue.filter(hour => hour !== value))">{{ label }}</label>` },
+            },
+        } })
+        return { wrapper, dates, courses, date }
+    }
+
+    it('shows configured lesson start and end times in the date header and refreshes when times load', async () => {
+        const { wrapper, courses } = mountCancellationTable([5])
+        const date = (courses.selected_course as any).course_dates[0]
+        try {
+            await flushPromises()
+            const header = wrapper.get('[data-testid="course-date-cancellation-1"]')
+            expect(header.get('.course-table-date-time').text()).toBe('11:35–13:20')
+
+            date.hours = [6, 5, 6]
+            await flushPromises()
+            expect(header.get('.course-table-date-time').text()).toBe('11:35–13:20')
+
+            useSchoolHourStore().school_hours = [{ hour: 5, from: '11:35:00', until: '12:25:00' }] as never
+            await flushPromises()
+            expect(header.find('.course-table-date-time').exists()).toBe(false)
+
+            useSchoolHourStore().school_hours = [
+                { hour: 5, from: '11:40:00', until: '12:30:00' },
+                { hour: 6, from: '12:35:00', until: '13:25:00' },
+            ] as never
+            await flushPromises()
+            expect(header.get('.course-table-date-time').text()).toBe('11:40–13:25')
+
+            date.hours = [5]
+            await flushPromises()
+            expect(header.get('.course-table-date-time').text()).toBe('11:40–12:30')
+
+            date.hours = []
+            await flushPromises()
+            expect(header.find('.course-table-date-time').exists()).toBe(false)
+        } finally { wrapper.unmount() }
+    })
+
+    it.each([[[5]], [[6]], [[5, 6]]])('saves only the selected cancelled hours %j and updates the overview', async (hours) => {
+        const { wrapper, dates, courses, date } = mountCancellationTable()
+        try {
+            await flushPromises()
+            await wrapper.get('[data-testid="course-date-cancellation-1"]').trigger('click')
+            expect(wrapper.get('[data-testid="course-date-cancellation-dialog"]').text()).toContain('11:35–12:25').toContain('12:30–13:20')
+            for (const hour of hours) await wrapper.get(`[data-testid="cancelled-hour-${hour}"] input`).setValue(true)
+            expect(date.cancelled_hours).toEqual([])
+            vi.mocked(dates.updateStatus).mockResolvedValue({ ...date, cancelled_hours: hours, status: hours.length === 2 ? ['entfaellt'] : [] } as never)
+            await wrapper.get('[data-testid="course-date-cancellation-save"]').trigger('click')
+            await flushPromises()
+            expect(dates.updateStatus).toHaveBeenCalledWith(1, { cancelled_hours: hours })
+            expect((courses.selected_course as any).course_dates[0].cancelled_hours).toEqual(hours)
+            expect((courses.courses[0] as any).course_dates[0].cancelled_hours).toEqual(hours)
+            expect(wrapper.find('[data-testid="course-date-cancellation-dialog"]').exists()).toBe(false)
+        } finally { wrapper.unmount() }
+    })
+
+    it('shows the saved selection and discards changes on cancel without writing', async () => {
+        const { wrapper, dates, date } = mountCancellationTable([5])
+        try {
+            await flushPromises()
+            await wrapper.get('[data-testid="course-date-cancellation-1"]').trigger('click')
+            expect((wrapper.get('[data-testid="cancelled-hour-5"] input').element as HTMLInputElement).checked).toBe(true)
+            await wrapper.get('[data-testid="cancelled-hour-6"] input').setValue(true)
+            const cancel = wrapper.findAll('v-btn').find((button) => button.text() === 'Abbrechen')!
+            await cancel.trigger('click')
+            expect(dates.updateStatus).not.toHaveBeenCalled()
+            expect(date.cancelled_hours).toEqual([5])
+            await wrapper.get('[data-testid="course-date-cancellation-1"]').trigger('click')
+            expect((wrapper.get('[data-testid="cancelled-hour-6"] input').element as HTMLInputElement).checked).toBe(false)
+        } finally { wrapper.unmount() }
+    })
+
+    it('keeps the selection open when saving fails', async () => {
+        const { wrapper, dates } = mountCancellationTable()
+        try {
+            await flushPromises()
+            await wrapper.get('[data-testid="course-date-cancellation-1"]').trigger('click')
+            await wrapper.get('[data-testid="cancelled-hour-5"] input').setValue(true)
+            vi.mocked(dates.updateStatus).mockResolvedValue(false)
+            await wrapper.get('[data-testid="course-date-cancellation-save"]').trigger('click')
+            await flushPromises()
+            expect(wrapper.get('[role="alert"]').text()).toContain('nicht gespeichert')
+            expect((wrapper.get('[data-testid="cancelled-hour-5"] input').element as HTMLInputElement).checked).toBe(true)
+        } finally { wrapper.unmount() }
+    })
+})
 
 describe('CourseTable evaluation PDF links', () => {
+    it('shows only pending personal evaluations and suppresses shared submission and dispatch icons', async () => {
+        const pinia = createTestingPinia({ createSpy: vi.fn })
+        const date = { id: 1, date: '2026-10-06' }
+        useCourseStore(pinia).selected_course = { id: 18,
+            students_info: [{ id: 999, user_id: 12 }, { id: 998, user_id: 13 }], course_dates: [date] } as never
+        const log = { origin: 'dispatch_import', purpose: 'tasks', sha256: 'b'.repeat(64) }
+        const work = { id: 65, teaching_course_id: 18, type: 'A5', title: 'Abgabe', date_for_all_groups: date.date,
+            is_group_work: true, groups: [{ student_ids: [12, 13], date: date.date, grade: '0' }], status: {
+                dispatch_logs: [log], dispatch_notifications: [{ student_id: 12, origin: 'dispatch_import',
+                    purpose: 'tasks', log_sha256: log.sha256, sent_at: '2026-10-01T10:00:00Z' }],
+                assessment_json_imports: [{ student_id: 12, exercise_id: 'exercise-65', participant_id: 'person-12',
+                    record_checksum: 'a'.repeat(64), record: { participant_id: 'person-12', record_checksum: 'a'.repeat(64),
+                        submission_state: 'received', evaluation_state: 'open', total_minor: null } }],
+            } }
+        const wrapper = mount(CourseTable, { props: { view: 'entries' }, global: { plugins: [pinia], stubs: {
+            WorkEvaluationImport: true, ItsGridBox: { template: '<div><slot /></div>' },
+            CourseStudentNotes: true, CourseStudentIndicators: true, CurriculumPdfPreview: true, ItsRichTextEditor: true,
+            'v-tab': true, 'v-tabs': true, 'v-textarea': true, 'v-date-input': true,
+            'v-list-subheader': true, 'v-divider': true, 'v-checkbox': true,
+        } } })
+        try {
+            await flushPromises()
+            useCourseWorkStore(pinia).courseWorks = [work] as never
+            useCourseStudentEntryStore(pinia).courseEntries = [12, 13].map(userId => ({
+                id: userId, user_id: userId, date: date.date, type: 'A5', source: 'course_work',
+                teaching_course_work_id: 65, grade: 'NA',
+            })) as never
+            await flushPromises()
+            const cells = wrapper.findAll('.course-table-entry-cell')
+            expect(cells).toHaveLength(2)
+            const received = cells.find(cell => cell.find('[data-work-status="evaluation"]').exists())!
+            expect(received.get('[data-work-status="evaluation"]').attributes('color')).toBe('orange-darken-2')
+            expect(received.text()).toContain('Bewertung noch offen')
+            expect(received.findAll('[icon="mdi-file-send-outline"]')).toHaveLength(0)
+            expect(received.findAll('[data-work-status], [data-submission-state]').map(icon =>
+                icon.attributes('data-work-status') || 'download')).toEqual(['evaluation'])
+            expect(cells.flatMap(cell => cell.findAll('[data-submission-state]'))).toHaveLength(0)
+            expect(wrapper.find('.course-table-work-summary [data-workflow-stage="collection"]').exists()).toBe(false)
+            expect(received.findAll('v-tooltip')).toHaveLength(1)
+            expect(received.findAll('[aria-label][title]')).toHaveLength(0)
+            useCourseWorkStore(pinia).courseWorks = [{ ...work, status: { ...work.status, assessment_json_imports: [] } }] as never
+            await flushPromises()
+            expect(wrapper.findAll('[data-submission-state="received"]')).toHaveLength(0)
+            expect(received.findAll('[icon="mdi-file-send-outline"]')).toHaveLength(0)
+        } finally { wrapper.unmount() }
+    })
     it.each([
         ['2026-07-01', '12:00', '2026-07-01T10:00:00Z', false],
         ['2026-07-01', '12:00', '2026-07-01T10:00:01Z', true],
@@ -59,12 +845,13 @@ describe('CourseTable evaluation PDF links', () => {
             vi.advanceTimersByTime(15000)
             await wrapper.vm.$nextTick()
             const card = wrapper.get('.course-table-work-summary')
-            expect(card.text()).toContain('abgelaufen').toContain('Beurteilung abgeschlossen')
+            expect(card.text()).not.toContain('abgelaufen').not.toContain('Beurteilung abgeschlossen')
+            expect(card.get('[data-work-deadline="second"]').classes()).toContain('text-error')
             expect(card.text()).not.toContain('Arbeit abgeschlossen')
             expect(card.text()).not.toContain('Abgabeprüfung nicht bestätigt').not.toContain('Abgabeprüfung abgeschlossen')
             useCourseWorkStore(pinia).courseWorks = [{ ...work, submission_check_status: { complete: true, checked_at: '2026-10-07T10:00:01Z', student_ids: [12], deadline_date: '2026-10-07', deadline_time: '12:00' } }] as never
             await flushPromises()
-            expect(wrapper.get('.course-table-work-summary').text()).toContain('Abgabeprüfung abgeschlossen').toContain('Arbeit abgeschlossen')
+            expect(wrapper.get('.course-table-work-summary').text()).toContain('Abgabeprüfung abgeschlossen').not.toContain('Arbeit abgeschlossen')
             useCourseWorkStore(pinia).courseWorks = [{ ...work, submission_check_status: { complete: true, student_ids: [12], deadline_date: '2026-10-07', deadline_time: '12:01' } }] as never
             await flushPromises()
             expect(wrapper.get('.course-table-work-summary').text()).not.toContain('Abgabeprüfung abgeschlossen')
@@ -78,20 +865,55 @@ describe('CourseTable evaluation PDF links', () => {
         } finally { wrapper.unmount(); vi.useRealTimers() }
     })
 
-    it('outlines todays Vienna date or the most recent past date across the full column', () => {
+    it('outlines todays Vienna date or the next future date across the full column', () => {
         const methods = (CourseTable as any).methods
         const dates = [{ id: 1, date: '2026-10-06' }, { id: 2, date: '2026-10-07' }, { id: 3, date: '2026-10-14' }]
-        const context: any = { sortedCourseDates: dates, normalizeDateKey: methods.normalizeDateKey, dateKey: methods.dateKey }
+        const context: any = { sortedCourseDates: dates, normalizeDateKey: methods.normalizeDateKey,
+            dateKey: methods.dateKey, isFreeCourseDate: methods.isFreeCourseDate }
         expect(methods.targetOutlinedCourseDate.call(context, new Date('2026-10-06T22:30:00Z'))).toEqual(dates[1])
-        expect(methods.targetOutlinedCourseDate.call(context, new Date('2026-10-08T10:00:00Z'))).toEqual(dates[1])
-        expect(methods.targetOutlinedCourseDate.call({ ...context, sortedCourseDates: [dates[0], dates[2]] }, new Date('2026-10-07T10:00:00Z'))).toEqual(dates[0])
+        expect(methods.targetOutlinedCourseDate.call(context, new Date('2026-10-08T10:00:00Z'))).toEqual(dates[2])
+        expect(methods.targetOutlinedCourseDate.call({ ...context, sortedCourseDates: [dates[0], dates[2]] }, new Date('2026-10-07T10:00:00Z'))).toEqual(dates[2])
         expect(methods.targetOutlinedCourseDate.call(context, new Date('2026-10-01T10:00:00Z'))).toEqual(dates[0])
+        expect(methods.targetOutlinedCourseDate.call(context, new Date('2026-10-15T10:00:00Z'))).toBeNull()
         expect(methods.targetOutlinedCourseDate.call({ ...context, sortedCourseDates: [] }, new Date('2026-10-08T10:00:00Z'))).toBeNull()
         context.outlinedCourseDateKey = dates[1].date
         context.courseDateColumnMarkingColor = () => 'red'
         expect(methods.courseDateColumnMarkingClass.call(context, dates[1])).toBe('course-table-column--marked-red course-table-column--current')
         expect(methods.courseDateColumnMarkingClass.call(context, dates[0])).toBe('course-table-column--marked-red')
     })
+
+    it.each([
+        { now: '2026-10-06T21:59:59Z', expectedId: 6 },
+        { now: '2026-10-06T22:00:00Z', expectedId: 7 },
+        { now: '2026-12-06T22:59:59Z', expectedId: 16 },
+        { now: '2026-12-06T23:00:00Z', expectedId: 17 },
+    ])('selects the nearest teaching date in either date order at Vienna midnight: $now', ({ now, expectedId }) => {
+        const methods = (CourseTable as any).methods
+        const dates = [
+            { id: 6, date: '2026-10-06T12:00:00' }, { id: 7, date: '2026-10-07' },
+            { id: 16, date: '2026-12-06' }, { id: 17, date: '2026-12-07' },
+        ]
+        const context = { sortedCourseDates: dates, normalizeDateKey: methods.normalizeDateKey,
+            dateKey: methods.dateKey, isFreeCourseDate: methods.isFreeCourseDate }
+
+        expect(methods.targetOutlinedCourseDate.call(context, new Date(now))?.id).toBe(expectedId)
+        expect(methods.targetOutlinedCourseDate.call({ ...context, sortedCourseDates: [...dates].reverse() }, new Date(now))?.id).toBe(expectedId)
+        expect(context.sortedCourseDates).toEqual(dates)
+    })
+
+    it('skips free, fully cancelled and invalid dates when choosing the next teaching day', () => {
+        const methods = (CourseTable as any).methods
+        const nextDate = { id: 4, date: '2026-10-14', hours: [1, 2] }
+        const context = { sortedCourseDates: [
+            { id: 1, date: '2026-10-07', status: ['free'] },
+            { id: 2, date: '2026-10-08', status: ['entfaellt'] },
+            { id: 3, date: 'invalid' }, nextDate,
+        ], normalizeDateKey: methods.normalizeDateKey, dateKey: methods.dateKey, isFreeCourseDate: methods.isFreeCourseDate }
+
+        expect(methods.targetOutlinedCourseDate.call(context, new Date('2026-10-07T10:00:00Z'))).toEqual(nextDate)
+        expect(methods.targetOutlinedCourseDate.call({ ...context, sortedCourseDates: context.sortedCourseDates.slice(0, 3) }, new Date('2026-10-07T10:00:00Z'))).toBeNull()
+    })
+
     it('shows collected and completed times beside independent dispatch rows in Vienna summer and winter time', async () => {
         expect(assessmentTimeText('2026-07-01T22:30:00Z')).toBe('02.07.2026, 00:30 Uhr')
         expect(assessmentTimeText('2026-12-01T22:30:00.123456Z')).toBe('01.12.2026, 23:30 Uhr')
@@ -172,11 +994,11 @@ describe('CourseTable evaluation PDF links', () => {
             expect(cards[0].get('.course-table-work-summary-import').attributes('title')).toBe('Zuletzt importiert: 06.10.2026 um 08:30 Uhr')
             expect(cards[1].text()).toContain('Datum unbekannt')
             expect(cards[2].find('.course-table-work-summary-import').exists()).toBe(false)
-            expect(cards[0].get('.course-table-work-summary-progress').text()).toContain('0 erledigt · 1 offen')
+            expect(cards[0].get('.course-table-work-summary-count span').text()).toBe('0/1')
             useCourseWorkStore(pinia).courseWorks = [{ ...works[0], groups: [{ student_ids: [12], points: [{ student_id: 12, points: 0 }] }] }] as never
             await flushPromises()
-            expect(wrapper.get('.course-table-work-summary-progress').text()).toContain('1 erledigt')
-            expect(wrapper.get('.course-table-work-summary-progress').text()).not.toContain('0 offen')
+            expect(wrapper.get('.course-table-work-summary-count span').text()).toBe('1')
+            expect(wrapper.find('.course-table-work-summary-progress').exists()).toBe(false)
         } finally { wrapper.unmount() }
     })
 
@@ -192,7 +1014,7 @@ describe('CourseTable evaluation PDF links', () => {
         expect(ctx.workCompletionCounts({ is_group_work: true, groups: [{ student_ids: [12, 13], grade: '2', use_individual_grades: true, grades: { 12: '1', 13: '' } }] })).toEqual({ completed: 1, open: 1 })
     })
 
-    it('shows independent task and result symbols on each work including gray task tests and refreshes after import', async () => {
+    it('shows shared states with the count and folder link in work card headers and omits matching student symbols after import', async () => {
         const pinia = createTestingPinia({ createSpy: vi.fn })
         const date = { id: 1, date: '2026-10-02' }
         useCourseStore(pinia).selected_course = { id: 18, students_info: [{ id: 999, user_id: 12, first_name: 'Ada', last_name: 'Alpha' }], course_dates: [date] } as never
@@ -205,31 +1027,48 @@ describe('CourseTable evaluation PDF links', () => {
         }))
         works[4].status.dispatch_attempts = [{ ...notice('tasks'), mode: 'test' }]
         works[5].status.dispatch_notifications = [notice('results', null)]
+        useAdminStore(pinia).config = { user: { id: 7 } } as never
+        works.forEach(work => workDropboxStates.set(`7:18:${work.id}`, { folder: { id: `id:folder-${work.id}`, name: work.title } }))
         const wrapper = mount(CourseTable, { props: { view: 'entries' }, global: { plugins: [pinia], stubs: { WorkEvaluationImport: true, ItsGridBox: { template: '<div><slot /></div>' }, CourseStudentNotes: true, CourseStudentIndicators: true, CurriculumPdfPreview: true, ItsRichTextEditor: true, 'v-tab': true, 'v-tabs': true, 'v-textarea': true, 'v-date-input': true, 'v-list-subheader': true, 'v-divider': true, 'v-checkbox': true } } })
         try {
             await flushPromises()
             useCourseWorkStore(pinia).courseWorks = works as never
+            useCourseStudentEntryStore(pinia).courseEntries = works.map(work => ({
+                id: work.id, user_id: 12, date: date.date, type: work.type, source: 'course_work',
+                teaching_course_work_id: work.id, grade: 'NA',
+            })) as never
             await flushPromises()
-            for (const [index, purposes] of [[], ['Aufgabenversand'], ['Ergebnisbenachrichtigung'], ['Aufgabenversand', 'Ergebnisbenachrichtigung'], ['Aufgabenversand'], []].entries()) {
-                const card = wrapper.get(`[data-testid="work-dispatch-${65 + index}"]`)
-                const icons = card.findAll('[aria-label]')
-                expect(icons.map(icon => icon.attributes('aria-label').startsWith('Aufgabenversand') ? 'Aufgabenversand' : 'Ergebnisbenachrichtigung')).toEqual(purposes)
-                expect(icons.every(icon => icon.attributes('aria-label').includes('04.10.2026 um 02:15'))).toBe(true)
-                expect(icons.every(icon => icon.attributes('color') === (index === 4 ? 'grey-darken-1' : 'success'))).toBe(true)
-                if (index === 4) expect(icons[0].attributes('aria-label')).toContain('Aufgabenversand · Test')
-                expect(card.text()).toBe('')
+            for (const card of wrapper.findAll('.course-table-work-summary')) {
+                const header = card.get('.course-table-work-summary-meta')
+                expect(header.get('.course-table-work-summary-count').attributes('aria-label')).toMatch(/^(1 Schüler:innen|0 von 1 Leistungen erledigt; 1 offen\.)$/)
+                expect(header.findComponent({ name: 'WorkFolderStatus' }).exists()).toBe(false)
+                expect(header.findComponent(WorkDispatchStatus).exists()).toBe(false)
+                expect(card.findAll('[data-workflow-stage], [data-work-status], [data-submission-state]')).toHaveLength(0)
             }
             expect(wrapper.findAll('.course-table-work-summary')).toHaveLength(6)
+            const studentStatuses = wrapper.findAll('.course-table-entry-cell-performance [data-work-status="tasks"]')
+            expect(studentStatuses).toHaveLength(0)
             await (wrapper.vm as any).evaluationImported({ ...works[0], status: { ...works[0].status, dispatch_notifications: [notice('tasks'), notice('results')] } })
             await flushPromises()
-            expect(wrapper.get('[data-testid="work-dispatch-65"]').findAll('[aria-label]')).toHaveLength(2)
-            expect(wrapper.get('[data-testid="work-dispatch-66"]').findAll('[aria-label]')).toHaveLength(1)
-            expect(wrapper.get('[data-testid="work-dispatch-70"]').findAll('[aria-label]')).toHaveLength(0)
+            expect(wrapper.findAll('.course-table-work-summary-meta').every(header => !header.findComponent(WorkDispatchStatus).exists())).toBe(true)
+            expect(wrapper.findAll('.course-table-entry-cell-performance [data-work-status="tasks"]')).toHaveLength(0)
+            useCourseWorkStore(pinia).courseWorks = works.map(work => ({ ...work, automation_enabled: false })) as never
+            await flushPromises()
+            expect(wrapper.findAll('.course-table-work-summary').every(card => !card.text().includes('offen'))).toBe(true)
+            expect(wrapper.findAll('.course-table-work-summary-meta').every(header => !header.findComponent({ name: 'WorkFolderStatus' }).exists())).toBe(true)
+            expect(wrapper.findAll('.course-table-entry-cell-performance [data-work-status]')).toHaveLength(0)
+            expect(wrapper.findAll('.course-table-entry-cell-performance')).toHaveLength(6)
+            useCourseWorkStore(pinia).courseWorks = works as never
+            await flushPromises()
+            expect(wrapper.findAll('.course-table-entry-cell-performance [data-work-status="tasks"]')).toHaveLength(0)
         } finally { wrapper.unmount() }
     })
 
     it('shows the overall report in the work dialog and only the selected student report in the entry dialog', async () => {
         const pinia = createTestingPinia({ createSpy: vi.fn })
+        clearWorkDropboxStates()
+        useAdminStore(pinia).config = { user: { id: 7 } } as never
+        workDropboxStates.set('7:18:65', { module_link: { folder: { id: 'id:module' } }, folder: null, can_quick_import: false })
         const courseDate = { id: 1, date: '2026-10-02' }
         const student = { id: 999, user_id: 12, first_name: 'Ada', last_name: 'Alpha' }
         useCourseStore(pinia).selected_course = {
@@ -284,13 +1123,15 @@ describe('CourseTable evaluation PDF links', () => {
             await flushPromises()
             expect(wrapper.get('[href]').attributes('href')).toContain(overall.sha256)
             const card = wrapper.get('.course-table-date-work-item')
+            expect(card.findAll('v-btn').filter(button => button.text() === 'Leistungsfeststellung erstellen')).toHaveLength(0)
             expect(card.get('[data-testid="work-detail-progress"]').text()).toContain('0 erledigt · 1 offen')
             expect(card.get('[aria-label="Mindestens eine Ergebnis-E-Mail versandt"]').exists()).toBe(true)
             expect(card.get('[aria-label="Aufgabenversand: lokaler Mailpit-Test am 02.10.2026 um 17:02 Uhr."]').exists()).toBe(true)
-            const imports = card.findAll('v-btn').filter(button => button.text() === 'Importieren')
-            expect(imports).toHaveLength(1)
-            await imports[0].trigger('click')
-            expect(openImport).toHaveBeenLastCalledWith(work)
+            workDropboxStates.set('7:18:65', { folder: null, can_quick_import: false })
+            await flushPromises()
+            const imports = card.findAll('v-btn').filter(button => button.text() === 'Verknüpfen')
+            expect(imports).toHaveLength(0)
+            expect(openImport).not.toHaveBeenCalled()
             expect(vm.workDialogFormOpen).toBe(false)
             expect(card.findAll('[href]').some(link => link.attributes('href').includes('/dispatch/'))).toBe(false)
             expect(card.text()).not.toContain('Download Aufgabenversand')
@@ -300,12 +1141,37 @@ describe('CourseTable evaluation PDF links', () => {
             vm.startEditingDateWork(work)
             await flushPromises()
             const form = wrapper.get('.course-table-date-work-form')
-            expect(form.get('[data-testid="work-detail-progress"]').text()).toContain('0 erledigt · 1 offen')
-            expect(form.findAll('v-btn').filter(button => button.text() === 'Importieren')).toHaveLength(1)
-            const overallLink = form.findAll('[href]').find(link => link.text() === 'Gesamtauswertung (PDF)')!
-            expect(form.findAll('[href]').map(link => link.text())).toContain('Download Aufgabenversand')
-            expect(form.findAll('[href]').map(link => link.text())).toContain('Download Ergebnisbenachrichtigung')
-            expect(overallLink.attributes('href')).toBe(`/api/admin/teaching/course_works/65/evaluations/${overall.sha256}?inline=1`)
+            expect(form.get('[data-testid="work-detail-progress"]').text()).toContain('0 von 1 beurteilt')
+            expect(form.get('[data-testid="work-dialog-last-collection"]').text()).toBe('Zuletzt abgesammelt: Kein belegter Zeitpunkt')
+            expect(form.get('[data-testid="work-dialog-last-evaluation"]').text()).toBe('Zuletzt bewertet: Kein belegter Zeitpunkt')
+            workStore.courseWorks = [{ ...work, collection_run: { origin: 'dropbox_collection_run', work_id: 65, course_id: 18,
+                sha256: 'e'.repeat(64), completed_at: '2026-10-24T13:46:16Z', stored_at: '2026-10-24T13:48:22Z' }, status: { ...work.status,
+                assessment_json_imports: [{ student_id: 12, exercise_id: 'exercise', participant_id: 'user:12', record_checksum: 'a'.repeat(64),
+                    record: { participant_id: 'user:12', record_checksum: 'a'.repeat(64), evaluation_state: 'complete', evaluation_completed_at: '2026-10-25T12:30:00Z' } }] } }] as never
+            await flushPromises()
+            expect(form.get('[data-testid="work-dialog-last-collection"]').text()).toBe('Zuletzt abgesammelt: 24.10.2026 um 15:46 Uhr')
+            expect(form.get('[data-testid="work-dialog-last-evaluation"]').text()).toBe('Zuletzt bewertet: 25.10.2026 um 13:30 Uhr')
+            const exportComponent = form.getComponent(WorkExerciseExport)
+            exportComponent.vm.$emit('progress-checked', { checkKey: '7:18:65', checkedAt: '2027-01-02T13:15:00Z', completed: true })
+            await flushPromises()
+            expect(form.get('[data-testid="work-dialog-last-check"]').text()).toBe('Zuletzt geprüft: 02.01.2027 um 14:15 Uhr')
+            exportComponent.vm.$emit('progress-checked', { checkKey: '7:18:65', checkedAt: '2027-01-02T14:15:00Z', completed: false })
+            await flushPromises()
+            expect(form.get('[data-testid="work-dialog-last-check"]').text()).toContain('Prüfung nicht abgeschlossen')
+            exportComponent.vm.$emit('progress-checked', { checkKey: '7:18:999', checkedAt: '2028-01-02T14:15:00Z', completed: true })
+            await flushPromises()
+            expect(form.get('[data-testid="work-dialog-last-check"]').text()).not.toContain('2028')
+            expect(form.findAll('v-btn').filter(button => button.text() === 'Verknüpfen')).toHaveLength(0)
+            const actions = form.get('[aria-label="Weitere Aktionen"]')
+            expect(actions.findAll('v-btn').map(button => button.text())).toEqual(['Ordner verknüpfen', 'Kontext kopieren', 'Erneut prüfen'])
+            vm.workSaving = true
+            await flushPromises()
+            expect(form.get('.work-dialog-status-icons').attributes('inert')).toBeDefined()
+            expect(form.get('.work-dialog-status-icons').attributes('aria-disabled')).toBe('true')
+            vm.workSaving = false
+            await flushPromises()
+            expect(form.get('.work-dialog-status-icons').attributes('inert')).toBeUndefined()
+            expect(actions.findAll('[href]')).toHaveLength(0)
             expect(form.findAll('[href]').some(link => link.attributes('href').includes(foreign.sha256))).toBe(false)
 
             vm.closeWorkDialog()
@@ -335,6 +1201,7 @@ describe('CourseTable evaluation PDF links', () => {
             expect(wrapper.get('.course-table-date-work-item').find('[aria-label="Mindestens eine Ergebnis-E-Mail versandt"]').exists()).toBe(false)
         } finally {
             wrapper.unmount()
+            clearWorkDropboxStates()
         }
     })
 })
@@ -370,6 +1237,7 @@ describe('CourseTable evaluation import', () => {
             courseWorks: [savedWork], selected_course: { id: 2 },
             $refs: { evaluationImport: { openImport } },
             workDialogForm: { id: 12 }, applySavedCourseWork: vi.fn(),
+            courseStore: { loadCourseDetails: vi.fn().mockResolvedValue({ id: 2 }) },
             loadCourseTableData: vi.fn(), resetCourseWorkEntryDrafts: vi.fn(), startEditingDateWork: vi.fn(),
         }
         const methods = (CourseTable as any).methods
@@ -380,9 +1248,44 @@ describe('CourseTable evaluation import', () => {
         const importedWork = { ...savedWork, groups: [{ points: 4.5 }] }
         await methods.evaluationImported.call(ctx, importedWork)
         expect(ctx.applySavedCourseWork).toHaveBeenCalledWith({ data: importedWork })
+        expect(ctx.courseStore.loadCourseDetails).toHaveBeenCalledWith(2, { force: true })
         expect(ctx.loadCourseTableData).toHaveBeenCalledWith(2, true)
         expect(ctx.resetCourseWorkEntryDrafts).toHaveBeenCalled()
         expect(ctx.startEditingDateWork).toHaveBeenCalledWith(importedWork)
+    })
+
+    it.each([false, true])('shows thirteen open participants immediately after import for group mode %s', async isGroupWork => {
+        const pinia = createTestingPinia({ createSpy: vi.fn })
+        const courseStore = useCourseStore(pinia)
+        const workStore = useCourseWorkStore(pinia)
+        const date = { id: 1, date: '2026-10-13' }
+        const students = Array.from({ length: 13 }, (_, index) => ({ id: 100 + index, user_id: 100 + index, first_name: 'Student', last_name: String(index + 1) }))
+        courseStore.selected_course = { id: 28, students_info: students.slice(0, 12), course_dates: [date] } as never
+        const work = { id: 72, teaching_course_id: 28, type: 'A5', title: 'Aufgaben', date_for_all_groups: date.date,
+            is_group_work: isGroupWork, groups: students.slice(0, 12).map(student => ({ student_ids: [student.user_id] })), status: {} }
+        const wrapper = mount(CourseTable, { props: { view: 'entries' }, global: { plugins: [pinia], stubs: {
+            WorkEvaluationImport: true, ItsGridBox: { template: '<div><slot /></div>' }, CourseStudentNotes: true,
+            CourseStudentIndicators: true, CurriculumPdfPreview: true, ItsRichTextEditor: true, 'v-tab': true, 'v-tabs': true,
+            'v-textarea': true, 'v-date-input': true, 'v-list-subheader': true, 'v-divider': true, 'v-checkbox': true,
+        } } })
+        try {
+            await flushPromises()
+            workStore.courseWorks = [work] as never
+            await flushPromises()
+            expect(wrapper.get('.course-table-work-summary-count').text()).toBe('12')
+            vi.mocked(courseStore.loadCourseDetails).mockImplementation(async () => {
+                courseStore.selected_course = { ...courseStore.selected_course, students_info: students } as never
+                return courseStore.selected_course
+            })
+            ;(wrapper.vm as any).loadCourseTableData = vi.fn().mockResolvedValue(true)
+            await (wrapper.vm as any).evaluationImported({ ...work,
+                status: { folder_imported_at: '2026-10-13T08:00:00Z' },
+                groups: students.map(student => ({ student_ids: [student.user_id] })) })
+            await flushPromises()
+            expect(wrapper.get('.course-table-work-summary-count span').text()).toBe('0/13')
+            expect(courseStore.selected_course?.students_info).toHaveLength(13)
+            expect(courseStore.loadCourseDetails).toHaveBeenCalledWith(28, { force: true })
+        } finally { wrapper.unmount() }
     })
 })
 
@@ -495,6 +1398,9 @@ describe('CourseTable sign properties', () => {
         ['plus', '---', false],
         ['plus_minus', '---', true],
         ['plus_minus', '+++', true],
+        ['plus_minus', '0', true],
+        ['plus_minus', '~', true],
+        ['plus_minus', '~~', false],
         ['plus_minus', '+-', false],
         ['plus_minus', '2', false],
         ['plus', '+'.repeat(50), true],
@@ -962,6 +1868,19 @@ describe('CourseTable', () => {
         }
     })
 
+    it('opens an explanation through the current dated curriculum assignment', async () => {
+        const open = vi.spyOn(window, 'open').mockImplementation(() => null)
+        const file = { id: 6, explanation_key: 'decimal-to-hexadecimal', preview_url: '/learning-materials/curriculum/6' }
+        const context = { curriculumFilePending: null, curriculumDialog: { courseDate: { adopted_materials: [{ attachments: [{ source_teaching_curriculum_document_id: 6, preview_url: '/learning-materials/teaching/81' }] }] } } }
+        try {
+            await (CourseTable as any).methods.openCurriculumFile.call(context, file, true)
+            expect(open).toHaveBeenCalledWith('/learning-materials/teaching/81', '_blank', 'noopener')
+            expect(axios.get).not.toHaveBeenCalled()
+        } finally {
+            open.mockRestore()
+        }
+    })
+
     it.each([[false, 'application/pdf'], [true, 'application/pdf'], [true, 'text/html']])('fetches curriculum file bytes with session credentials before opening a local blob (preview=%s, type=%s)', async (preview, contentType) => {
         const originalCreateObjectURL = URL.createObjectURL
         const originalRevokeObjectURL = URL.revokeObjectURL
@@ -1326,7 +2245,7 @@ describe('CourseTable', () => {
         )
 
         expect(source).toContain('--course-table-free-cell-background: #e8f5e9;')
-        expect(source.match(/background: var\(--course-table-free-cell-background\);/gu)).toHaveLength(4)
+        expect(source.match(/background: var\(--course-table-free-cell-background\);/gu)).toHaveLength(5)
         expect(source).not.toContain('background: linear-gradient(180deg, #ecfdf3 0%, #dcfce7 100%);')
     })
 
@@ -1550,7 +2469,6 @@ describe('CourseTable', () => {
         expect(source).toContain('position: absolute;')
         expect(source).toContain('left: 50%;')
         expect(source).toContain('translate: -50% 0;')
-        expect(source).toContain('--course-table-work-card-height: 66px;')
         expect(source).toMatch(/\.course-table-work-timelines \{[\s\S]*display: grid;[\s\S]*grid-auto-rows: var\(--course-table-work-card-height\);[\s\S]*row-gap: 3px;/u)
         expect(source).toMatch(/\.course-table-work-timeline \{[\s\S]*height: var\(--course-table-work-card-height\);/u)
         expect(source).toMatch(/\.course-table-work-summary \{[\s\S]*height: var\(--course-table-work-card-height\);/u)
@@ -2223,7 +3141,7 @@ describe('CourseTable', () => {
         expect(source).toContain(".course-table-entry-type-row[data-category='Verhalten']")
         expect(source).toContain(".course-table-entry-type-row[data-category='Weitere']")
         expect(source).toContain('background: rgba(var(--v-theme-error), 0.065);')
-        expect(source).toContain('border-color: rgba(var(--v-theme-error), 0.3);\n    color: rgb(var(--v-theme-error));')
+        expect(source.replace(/\r\n/g, '\n')).toContain('border-color: rgba(var(--v-theme-error), 0.3);\n    color: rgb(var(--v-theme-error));')
         expect(source).toContain('color: rgb(var(--v-theme-error));')
         expect(source).toContain('border-left-width: 4px;')
         expect(source).toContain('border-radius: 10px;')
@@ -2475,6 +3393,50 @@ describe('CourseTable', () => {
         expect(ctx.workDialogForm.finish_until_time).toBe('16:45')
     })
 
+    it.each(['manual', 'random'])('saves selected %s groups for a points-based work before grading', async (creation) => {
+        const methods = (CourseTable as any).methods
+        const update = vi.fn().mockResolvedValue({ data: { id: 65 } })
+        const ctx = {
+            ...methods,
+            canSaveDateWork: true,
+            selected_course: { id: 18 },
+            sortedSelectedStudents: [{ id: 12, user_id: 12 }, { id: 13, user_id: 13 }],
+            courseWorkGradeInputModeForType: () => 'points',
+            courseWorkStore: { update },
+            applySavedCourseWork: vi.fn(),
+            loadCourseTableData: vi.fn().mockResolvedValue(true),
+            cancelDateWorkForm: vi.fn(),
+            workDialog: { courseDate: { date: '2026-10-16' }, open: true },
+            workDialogForm: {
+                id: 65, type: 'A5', title: 'Erster Podcast', is_group_work: true,
+                date_for_all_groups: '2026-10-16', groups: [],
+            },
+            workSaving: false,
+        }
+
+        if (creation === 'manual') {
+            ctx.addWorkDialogGroup()
+            ;(ctx.workDialogForm.groups as any[])[0].student_ids = [12, 13]
+        } else {
+            ctx.generateRandomWorkDialogGroups(2)
+        }
+        const draft = structuredClone(ctx.workDialogForm)
+
+        await ctx.saveDateWork()
+
+        expect(update).toHaveBeenCalledWith(expect.objectContaining({
+            id: 65,
+            groups: [expect.objectContaining({
+                student_ids: expect.arrayContaining([12, 13]),
+                date: '2026-10-16', grades: [], comments: [], points: [],
+            })],
+        }))
+        expect(ctx.loadCourseTableData).toHaveBeenCalledWith(18, true)
+        expect(ctx.cancelDateWorkForm).toHaveBeenCalledOnce()
+        expect(ctx.workDialogForm).toEqual(draft)
+        expect(ctx.workSaving).toBe(false)
+    })
+
     it('updates a work while preserving its group assignments', async () => {
         const methods = (CourseTable as any).methods
         const update = vi.fn().mockResolvedValue({ data: { id: 12 } })
@@ -2659,6 +3621,45 @@ describe('CourseTable', () => {
             'Beispiel, Ben',
             'Schüler:in #9999',
         ])
+    })
+
+    it('shows each member assessment beside the name without filling missing individual grades from a group grade', async () => {
+        const pinia = createTestingPinia({ createSpy: vi.fn })
+        useCourseStore(pinia).selected_course = { id: 18, course_dates: [], students_info: [
+            { id: 999, user_id: 12, first_name: 'Ada', last_name: 'Alpha' },
+            { id: 998, user_id: 13, first_name: 'Ben', last_name: 'Beta' },
+            { id: 997, user_id: 14, first_name: 'Cora', last_name: 'Gamma' },
+            { id: 996, user_id: 15, first_name: 'Dora', last_name: 'Delta' },
+        ] } as never
+        const wrapper = mount(CourseTable, { props: { view: 'entries' }, global: {
+            plugins: [pinia], stubs: { WorkEvaluationImport: true, WorkContextCopy: true,
+                ItsGridBox: { template: '<div><slot /></div>' }, CourseStudentNotes: true, CourseStudentIndicators: true,
+                CurriculumPdfPreview: true, ItsRichTextEditor: true, 'v-tab': true, 'v-tabs': true, 'v-textarea': true,
+                'v-date-input': true, 'v-list-subheader': true, 'v-divider': true, 'v-checkbox': true,
+            },
+        } })
+        try {
+            await flushPromises()
+            const vm = wrapper.vm as any
+            vm.startEditingDateWork({ id: 65, teaching_course_id: 18, type: 'A5', is_group_work: true, groups: [
+                { name: 'Einzelbeurteilungen', student_ids: [12, 13, 14], grade: '5', use_individual_grades: true,
+                    grades: [{ student_id: '12', grade: 0 }, { student_id: 13, grade: 'NA' }] },
+                { name: 'Gemeinsame Beurteilung', student_ids: [15], grade: '2', grades: [] },
+            ] })
+            vm.workDialogTab = 'groups'
+            await flushPromises()
+
+            const members = wrapper.get('[data-testid="course-table-work-group-card-0"]').findAll('.course-table-work-group-student-chip')
+            expect(members.map(member => member.text().replace(/\s+/g, ' ').trim())).toEqual(['Alpha, Ada · 0', 'Beta, Ben · NA', 'Gamma, Cora'])
+            expect(wrapper.get('[data-testid="course-table-work-group-card-1"]').get('.course-table-work-group-student-chip').text()).toContain('Delta, Dora')
+            expect(wrapper.get('[data-testid="course-table-work-group-card-1"]').get('[aria-label="Leistung: 2"]').exists()).toBe(true)
+
+            vm.workDialogForm.groups[0].grades = { 12: { grade: '1.5' }, 13: '' }
+            await flushPromises()
+            expect(members[0].get('[aria-label="Leistung: 1.5"]').exists()).toBe(true)
+            expect(members[1].find('[aria-label^="Leistung:"]').exists()).toBe(false)
+            expect(vm.workGroupOverviewStudentGrade(vm.workDialogForm.groups[0], 15)).toBe('')
+        } finally { wrapper.unmount() }
     })
 
     it('recognizes empty per-student bookkeeping records as generated individual-work groups', () => {
@@ -3003,9 +4004,9 @@ describe('CourseTable', () => {
             date: '2026-05-16',
             comment: '',
             grade: '',
-            grades: {},
-            comments: {},
-            points: {},
+            grades: [],
+            comments: [],
+            points: [],
             use_individual_grades: false,
         }])
     })
@@ -3226,6 +4227,38 @@ describe('CourseTable', () => {
             workDialogTypeEditing: false,
             workSaving: false,
         })).toBe(false)
+    })
+
+    it('renders and removes a selected student chip in a new group with the installed autocomplete slot contract', async () => {
+        const pinia = createTestingPinia({ createSpy: vi.fn })
+        useCourseStore(pinia).selected_course = { id: 18, title: 'Test', students_info: [
+            { id: 12, user_id: 12, first_name: 'Ada', last_name: 'Alpha' },
+        ], course_dates: [] } as never
+        const wrapper = mount(CourseTable, { props: { view: 'entries' }, global: {
+            plugins: [pinia, createVuetify({ components: { VAutocomplete, VChip, VTextField } })],
+            components: { 'v-autocomplete': VAutocomplete, 'v-chip': VChip, 'v-text-field': VTextField }, stubs: {
+                'v-autocomplete': false, VAutocomplete: false, 'v-chip': false, VChip: false,
+                'v-text-field': false, VTextField: false,
+                'v-dialog': { props: ['modelValue'], template: '<div v-if="modelValue"><slot /></div>' },
+                WorkEvaluationImport: true, ItsGridBox: { template: '<div><slot /></div>' },
+                CourseStudentNotes: true, CourseStudentIndicators: true, CurriculumPdfPreview: true,
+                ItsRichTextEditor: true, 'v-tab': true, 'v-tabs': true, 'v-textarea': true, 'v-date-input': true,
+                'v-list-subheader': true, 'v-divider': true, 'v-checkbox': true,
+            },
+        } })
+        try {
+            await flushPromises()
+            const vm = wrapper.vm as any
+            vm.workDialog.open = true
+            vm.workDialogFormOpen = true
+            vm.workDialogTab = 'groups'
+            vm.workDialogForm = { ...vm.emptyDateWorkForm(), is_group_work: true, type: 'A', groups: [{ _is_new: true, student_ids: [12] }] }
+            await flushPromises()
+            const chip = wrapper.get('.course-table-work-group-student-chip')
+            expect(chip.text()).toContain('Alpha, Ada')
+            await chip.get('.v-chip__close').trigger('click')
+            expect(vm.workDialogForm.groups[0].student_ids).toEqual([])
+        } finally { wrapper.unmount() }
     })
 
     it('removes a work from the date dialog after confirmation', async () => {
@@ -3468,7 +4501,7 @@ describe('CourseTable', () => {
             teaching_course_work_id: 16,
         })).toEqual({
             durationLabel: '',
-            finishDateTitle: '2026-10-05 · ohne Uhrzeit',
+            finishDateTitle: '2026-10-05',
             isSameDate: true,
             startDateTitle: '2026-10-05',
         })
@@ -3603,6 +4636,7 @@ describe('CourseTable', () => {
                 comment: 'Super gemacht',
                 isWork: true,
                 notification: '',
+                statuses: [],
                 description: '',
                 grade: '+',
                 kind: 'Bewertung',
@@ -3614,6 +4648,7 @@ describe('CourseTable', () => {
                 comment: 'Ruhig mitgearbeitet',
                 isWork: false,
                 notification: '',
+                statuses: [],
                 description: '',
                 grade: '',
                 kind: 'Verhalten',
@@ -3782,7 +4817,7 @@ describe('CourseTable', () => {
             courseWorkForCellEntry: () => ({ status: { assessment_json_imports: [{ student_id: 12, record }] } }) }, { source: 'course_work' })).toBe(comment)
     })
 
-    it('saves a new entry for the selected student and date', async () => {
+    it.each(['+', '0', '~'])('saves and reopens a new sign entry %s for the selected student and date', async (grade) => {
         const methods = (CourseTable as any).methods
         const store = vi.fn().mockResolvedValue({ data: { id: 12 } })
         const ctx = {
@@ -3795,7 +4830,7 @@ describe('CourseTable', () => {
             entryDialog: { courseDate: { date: '2026-03-09' } },
             entryForm: {
                 description: 'Gute Mitarbeit',
-                grade: '+',
+                grade,
                 type: 'M',
             },
             entryFormOpen: true,
@@ -3812,12 +4847,15 @@ describe('CourseTable', () => {
             teaching_course_id: 20,
             user_id: 10,
             type: 'M',
-            grade: '+',
+            grade,
             date: '2026-03-09',
             description: 'Gute Mitarbeit',
         })
         expect(ctx.entryFormOpen).toBe(false)
         expect(ctx.entrySaving).toBe(false)
+        const reloaded: any = { canModifyCellEntry: methods.canModifyCellEntry }
+        methods.startEditingCellEntry.call(reloaded, { id: 12, kind: 'assessment', type: 'M', grade, uid: 'entry-12' })
+        expect(reloaded.entryForm.grade).toBe(grade)
     })
 
     it('creates an entry and immediately emails the selected recipients', async () => {
@@ -4002,9 +5040,9 @@ describe('CourseTable', () => {
     })
 
     it('makes the complete entry card interactive without propagating editor clicks', async () => {
-        const source = await import('node:fs/promises').then((fs) =>
+        const source = (await import('node:fs/promises').then((fs) =>
             fs.readFile('resources/js/pages/admin/teaching/overview/components/CourseTable.vue', 'utf8')
-        )
+        )).replace(/\r\n/g, '\n')
 
         expect(source).toContain(':data-testid="`course-table-cell-entry-card-${entry.uid}`"\n                                :aria-expanded="isCellEntryExpanded(entry)"')
         expect(source).toContain('v-for="entry in visibleCellEntries"')
@@ -4605,6 +5643,19 @@ describe('CourseTable', () => {
             expect(entryCells[1].find('.course-table-entry-cell-attendance-marker.mdi-close').exists()).toBe(true)
             expect(entryCells[2].find('.course-table-entry-cell-attendance-marker.mdi-check').exists()).toBe(true)
             expect(entryCells[2].get('.course-table-entry-cell-attendance-marker').classes()).toContain('text-success')
+            const savedDates = JSON.stringify(store.selected_course.course_dates)
+            const updateCount = updateStatus.mock.calls.length
+            const adminStore = useAdminStore(pinia)
+            adminStore.config = { ...adminStore.config, user: { ...adminStore.config?.user, teaching_show_attendance: false } } as any
+            await flushPromises()
+            expect(wrapper.findAll('.course-table-entry-cell-attendance-marker')).toHaveLength(0)
+            await wrapper.setProps({ view: 'attendance' })
+            expect((wrapper.vm as any).tableView).toBe('entries')
+            expect(updateStatus).toHaveBeenCalledTimes(updateCount)
+            expect(JSON.stringify(store.selected_course.course_dates)).toBe(savedDates)
+            ;(adminStore.config as any).user.teaching_show_attendance = true
+            await flushPromises()
+            expect(wrapper.findAll('.course-table-entry-cell-attendance-marker')).toHaveLength(2)
         } finally {
             wrapper.unmount()
             vi.unstubAllGlobals()
@@ -4619,6 +5670,79 @@ describe('CourseTable', () => {
         }
 
         expect(methods.studentPresencePercentage.call(ctx, { id: 10 })).toBeNull()
+    })
+
+    it.each([false, true])('inverts an existing %s marker before clearing it and keeps cells independent across reloads', async (initial) => {
+        const pinia = createTestingPinia({ createSpy: vi.fn })
+        const store = useCourseStore(pinia)
+        store.selected_course = {
+            id: 18, title: 'Testkurs',
+            students_info: [{ id: 10, first_name: 'Anna', last_name: 'Test' }, { id: 11, first_name: 'Ben', last_name: 'Test' }],
+            course_dates: [{ id: 1, date: '2026-09-14', attendance: { 10: initial, 11: initial }, attendance_checked: false },
+                { id: 2, date: '2026-09-21', attendance: { 10: initial }, attendance_checked: false }],
+        } as never
+        const wrapper = mount(CourseTable, { props: { view: 'attendance' }, global: {
+            plugins: [pinia, createVuetify({ components: { VBtn, VIcon, VDialog } })],
+            components: { 'v-btn': VBtn, 'v-icon': VIcon, 'v-dialog': VDialog }, stubs: {
+            'v-btn': false, VBtn: false, 'v-icon': false, VIcon: false, 'v-dialog': false, VDialog: false,
+            'v-divider': true, 'v-list-subheader': true, 'v-autocomplete': true, 'v-checkbox': true,
+            'v-date-input': true, 'v-tab': true, 'v-tabs': true, 'v-textarea': true,
+            WorkEvaluationImport: true, CourseStudentNotes: true, CourseStudentIndicators: true,
+            ItsGridBox: { template: '<div><slot /></div>' },
+        } } })
+        const updateStatus = vi.mocked(useCourseDateStore(pinia).updateStatus)
+        updateStatus.mockImplementation(async (dateId) => JSON.parse(JSON.stringify(
+            store.selected_course.course_dates.find((date) => date.id === dateId),
+        )))
+        const click = async (studentId, dateId) => {
+            const vm = wrapper.vm as any
+            await vm.toggleStudentAttendance({ id: studentId }, store.selected_course.course_dates.find((date) => date.id === dateId))
+            await flushPromises()
+        }
+        const state = (studentId, dateId) => (store.selected_course.course_dates.find((date) => date.id === dateId) as any).attendance[studentId]
+        try {
+            await flushPromises()
+            await wrapper.findAll('.course-table-row .course-table-entry-cell')[0].trigger('click')
+            await flushPromises()
+            expect(state(10, 1)).toBe(!initial)
+            expect(updateStatus).toHaveBeenLastCalledWith(1, expect.objectContaining({ attendance_state: !initial }))
+            await click(11, 1)
+            await click(10, 2)
+            expect(state(11, 1)).toBe(!initial)
+            expect(state(10, 2)).toBe(!initial)
+            updateStatus.mockResolvedValueOnce(false)
+            await click(10, 1)
+            expect(state(10, 1)).toBe(!initial)
+            await click(10, 1)
+            expect(state(10, 1)).toBeNull()
+            expect(state(11, 1)).toBe(!initial)
+            await click(11, 1)
+            expect(state(11, 1)).toBeNull()
+            store.selected_course = JSON.parse(JSON.stringify(store.selected_course))
+            await flushPromises()
+            await click(10, 2)
+            expect(state(10, 2)).toBe(initial)
+            await click(10, 2)
+            expect(state(10, 2)).toBeNull()
+            await (wrapper.vm as any).toggleStudentAttendance({ id: 10 }, store.selected_course.course_dates[1], true)
+            await click(10, 2)
+            expect(state(10, 2)).toBe(false)
+            store.selected_course.course_dates = JSON.parse(JSON.stringify(store.selected_course.course_dates))
+            await flushPromises()
+            await click(10, 2)
+            expect(state(10, 2)).toBe(true)
+            updateStatus.mockRejectedValueOnce(new Error('Test network error'))
+            await expect((wrapper.vm as any).toggleStudentAttendance({ id: 10 }, store.selected_course.course_dates[1])).rejects.toThrow('Test network error')
+            expect(state(10, 2)).toBe(true)
+            await click(10, 2)
+            expect(state(10, 2)).toBeNull()
+            await click(10, 1)
+            expect(state(10, 1)).toBe(false)
+            await click(10, 1)
+            expect(state(10, 1)).toBe(true)
+            await click(10, 1)
+            expect(state(10, 1)).toBeNull()
+        } finally { wrapper.unmount() }
     })
 
     it('toggles and persists attendance for an eligible table cell', async () => {
@@ -4733,7 +5857,7 @@ describe('CourseTable', () => {
 
         expect(source).toContain('data-testid="course-table-overview-pdf-button"')
         expect(source).toContain('title="Kursübersicht als PDF öffnen"')
-        expect(source).toContain('class="ml-auto"\n                    color="error"')
+        expect(source.replace(/\r\n/g, '\n')).toContain('class="ml-auto"\n                    color="error"')
         expect(source.indexOf('data-testid="course-table-overview-pdf-button"'))
             .toBeGreaterThan(source.indexOf('<v-btn-toggle v-model="selectedSemester"'))
         expect(source).toContain("import { courseOverviewPdf }")
@@ -4776,7 +5900,7 @@ describe('CourseTable', () => {
         expect(source).toContain('@click="openCurriculumDialog(courseDate)"')
         expect(source).toContain('@keydown.enter.prevent="openCurriculumDialog(courseDate)"')
         expect(source).toContain('@keydown.space.prevent="openCurriculumDialog(courseDate)"')
-        expect(source).toContain('<v-dialog v-model="curriculumDialog.open" persistent scrollable max-width="720">')
+        expect(source).toContain('<v-dialog v-if="curriculaEnabled" v-model="curriculumDialog.open" persistent scrollable max-width="720">')
         expect(source).toContain('data-testid="course-table-curriculum-dialog"')
         expect(source).toContain('v-for="topic in curriculumDialogTopics"')
         expect(source).toContain('v-for="unit in topic.units"')
@@ -4836,7 +5960,7 @@ describe('CourseTable', () => {
         expect(source).toContain('<span class="course-table-work-summary-title">')
         expect(source).toContain('{{ work.work.title || work.label }}')
         expect(source).toMatch(/\.course-table-work-summary-title \{[\s\S]*font-weight: 400;/u)
-        expect(source).toContain('<v-icon size="13">mdi-clipboard-text</v-icon>')
+        expect(source).toContain(':title="workCompletionLabel(work.work)"')
         expect(source).toContain('@click="openWorkDialog(courseDate)"')
         expect(source).toContain('@keydown.enter.prevent="openWorkDialog(courseDate)"')
         expect(source).toContain('<v-dialog v-model="workDialog.open" persistent max-width="720">')
@@ -5025,7 +6149,7 @@ describe('CourseTable', () => {
         expect(source).toContain('font-size: 1.24rem;')
         expect(source).toContain('letter-spacing: 0.08em;')
         expect(source).toContain('opacity: 0.42;')
-        expect(source).toContain('.course-table-entry-cell--free-reason {\n    overflow: hidden;')
+        expect(source.replace(/\r\n/g, '\n')).toContain('.course-table-entry-cell--free-reason {\n    overflow: hidden;')
         expect(source).toContain('width: 88px;')
         expect(source).toContain('position: absolute;')
         expect(source).toContain('max-height: calc(100% - 16px);')
@@ -5035,7 +6159,7 @@ describe('CourseTable', () => {
         expect(source).toContain("'course-table-entry-cell--interactive': true")
         expect(source).toContain("'course-table-entry-cell--absent': tableView === 'entries' && studentAttendanceState(student, courseDate) === false")
         expect(source).toContain('.course-table-entry-cell--absent {')
-        expect(source).toContain("v-if=\"tableView === 'entries' && studentAttendanceState(student, courseDate) !== null\"")
+        expect(source).toContain("v-if=\"attendanceVisible && tableView === 'entries' && studentAttendanceState(student, courseDate) !== null\"")
         expect(source).toContain('class="course-table-entry-cell-attendance-marker"')
         expect(source).toContain(":aria-label=\"studentAttendanceState(student, courseDate) ? 'Anwesend' : 'Abwesend'\"")
         expect(source).toContain('.course-table-entry-cell-attendance-marker {')
@@ -5072,7 +6196,6 @@ describe('CourseTable', () => {
         expect(source).toContain('content-class="course-table-work-tooltip"')
         expect(source).toContain('v-for="assignment in courseWorksForDate(courseDate)"')
         expect(source).toContain('class="course-table-work-summary-count"')
-        expect(source).toContain('{{ work.affectedStudentCount }}')
         expect(source).toContain('class="course-table-work-tooltip-type"')
         expect(source).toContain('color="grey-lighten-2"')
         expect(source).toContain('{{ assignment.scope }}')
@@ -5144,7 +6267,6 @@ describe('CourseTable', () => {
         expect(source).toContain('data-testid="course-table-cell-entry-edit-type"')
         expect(source).toContain('<v-chip size="small" :color="cellEntryColor(entry)" variant="tonal">')
         expect(source.match(/@click="selectCellEntryType\(item.value\)"/gu)).toHaveLength(1)
-        expect(source).toContain('v-if="cellEntryListComment(entry)"')
         expect(source).toContain('mdi-comment-text-outline')
         expect(source).toContain('.course-table-cell-entry-list-comment {')
         expect(source).toContain("'course-table-cell-entry--selected': selectedCellEntryUid === entry.uid")

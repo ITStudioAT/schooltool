@@ -424,7 +424,7 @@ export default {
             return this.moduleStatuses.restaurant || 'inactive'
         },
         hasRestaurantHomepageAccess() {
-            return this.config?.auth_check === true || this.moduleAllowsAccess(this.restaurantModuleStatus)
+            return this.moduleAllowsAccess(this.restaurantModuleStatus)
         },
         schoolLicenceNames() {
             return (this.config?.schoolLicences || []).map((l) => l.name)

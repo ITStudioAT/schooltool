@@ -15,10 +15,16 @@ use RuntimeException;
 
 class TeachingSynchronisationService
 {
+    private const array DROPBOX_BINDINGS = [
+        'teaching_work_dropbox_folders' => 'dropbox_folders',
+        'teaching_work_module_links' => 'dropbox_module_links',
+    ];
+
     public function __construct(
         private TeachingLiveSource $source,
         private TeachingSynchronisationGraph $graph,
         private TeachingSynchronisationFiles $files,
+        private TeachingSynchronisationBackup $backups,
     ) {}
 
     public static function available(): bool
@@ -57,7 +63,7 @@ class TeachingSynchronisationService
             $token = Str::random(64);
             Cache::store('file')->put('teaching-sync:'.$token, Crypt::encryptString(json_encode([
                 'actor' => $actor->id, 'school' => $actor->school_id, 'local_hash' => $this->fingerprint($local),
-                'source' => $source,
+                'source_hash' => $this->fingerprint($this->sourceContent($source)),
             ], JSON_THROW_ON_ERROR)), now()->addMinutes(15));
         }
 
@@ -80,6 +86,8 @@ class TeachingSynchronisationService
             }, $plan['updated_teachers']),
             'updated_schoolyears' => $plan['updated_years'],
             'changed_contacts' => $plan['changed_contacts'], 'conflicts' => $plan['conflicts'],
+            'dropbox_notices' => $plan['dropbox_notices'],
+            'dropbox_warnings' => $plan['dropbox_warnings'],
             'shared' => ['users' => count($source['users']), 'import116' => count($source['import116']),
                 'settings' => count($source['school_tools'][0] ?? []),
                 'teachers' => count($source['teachers']),
@@ -100,15 +108,18 @@ class TeachingSynchronisationService
                 throw new RuntimeException('Vorschau gehört nicht zu diesem Benutzer und Schulkontext.');
             }
             $currentSource = $this->source->snapshot(School::query()->findOrFail($actor->school_id));
-            $content = fn (array $snapshot): array => array_diff_key($snapshot, array_flip(['captured_at', 'max_ids']));
-            if (! hash_equals($this->fingerprint($content($preview['source'])), $this->fingerprint($content($currentSource)))) {
+            $sourceHash = $preview['source_hash'] ?? $this->fingerprint($this->sourceContent($preview['source']));
+            if (! hash_equals($sourceHash, $this->fingerprint($this->sourceContent($currentSource)))) {
                 Cache::store('file')->forget('teaching-sync:'.$token);
                 throw new RuntimeException('Der Cloud-Unterrichtsstand oder seine Dateien wurden seit der Vorschau geändert. Bitte den aktuellen Umfang erneut prüfen.');
             }
+            $preview['source'] = $currentSource;
+            unset($currentSource);
             $created = [];
             $backup = null;
+            $dropboxWarnings = [];
             try {
-                DB::transaction(function () use ($actor, $preview, &$created, &$backup): void {
+                DB::transaction(function () use ($actor, $preview, &$created, &$backup, &$dropboxWarnings): void {
                     $local = $this->localState((int) $actor->school_id, true);
                     if (! hash_equals($preview['local_hash'], $this->fingerprint($local))) {
                         throw new RuntimeException('Lokale Daten oder Dateien wurden seit der Vorschau geändert. Bitte erneut prüfen.');
@@ -117,17 +128,16 @@ class TeachingSynchronisationService
                     if ($plan['conflicts'] !== []) {
                         throw ValidationException::withMessages(['synchronisation' => $plan['conflicts']]);
                     }
+                    $dropboxWarnings = $plan['dropbox_warnings'];
                     // The complete encrypted, private recovery copy must be persisted and verified before any replacement.
                     $backup = Str::random(64);
                     $backupPath = $this->backupPath($actor, $backup);
                     $this->assertTargetParents(Storage::disk('local')->path($backupPath));
-                    $backupBytes = Crypt::encryptString(json_encode(['format' => 'schooltool-teaching-sync-safety-v1',
+                    $this->backups->write(['format' => 'schooltool-teaching-sync-safety-v2',
                         'school' => $actor->school_id, 'actor' => $actor->id, 'created_at' => now()->toISOString(), 'state' => $local,
-                    ], JSON_THROW_ON_ERROR));
-                    if (! Storage::disk('local')->put($backupPath, $backupBytes)
-                        || ! hash_equals(hash('sha256', $backupBytes), hash('sha256', Storage::disk('local')->get($backupPath)))) {
-                        throw new RuntimeException('Sicherheitsbackup konnte nicht vollständig gespeichert werden.');
-                    }
+                        'dropbox_recovery' => $plan['dropbox_recovery'],
+                        'dropbox_module_recovery' => $plan['dropbox_module_recovery'],
+                    ], $backupPath);
                     $this->files->assertCanonicalFile(Storage::disk('local')->path($backupPath), config('filesystems.disks.local.root'));
                     foreach ($plan['files'] as $file) {
                         $this->writeFile($file, $created);
@@ -169,6 +179,11 @@ class TeachingSynchronisationService
                             DB::table($table)->insert($chunk);
                         }
                     }
+                    foreach (self::DROPBOX_BINDINGS as $table => $key) {
+                        foreach ($plan[$key] as $binding) {
+                            DB::table($table)->insert($binding);
+                        }
+                    }
                     DB::table('school_tools')->where('school_id', $actor->school_id)->update($preview['source']['school_tools'][0]);
                 });
             } catch (\Throwable $exception) {
@@ -182,7 +197,8 @@ class TeachingSynchronisationService
             }
             Cache::store('file')->forget('teaching-sync:'.$token);
 
-            return ['backup' => $backup, 'message' => 'Der geprüfte Cloud-Unterrichtsstand wurde lokal übernommen. Sicherheitsbackup gespeichert. Bitte Unterricht neu laden.'];
+            return ['backup' => $backup, 'dropbox_warnings' => $dropboxWarnings,
+                'message' => 'Der geprüfte Cloud-Unterrichtsstand einschließlich Unterricht Tools wurde lokal übernommen. Sicherheitsbackup gespeichert. Bitte Unterricht neu laden.'];
         });
     }
 
@@ -199,14 +215,34 @@ class TeachingSynchronisationService
     private function localState(int $schoolId, bool $lock = false): array
     {
         $state = $this->graph->capture(DB::connection(), $schoolId, $lock, true);
+        foreach (self::DROPBOX_BINDINGS as $table => $key) {
+            $bindings = DB::table($table)
+                ->whereIn('teaching_course_work_id', array_column($state['tables']['teaching_course_works'], 'id'))
+                ->orderBy('id');
+            if ($lock) {
+                $bindings->lockForUpdate();
+            }
+            $state[$key] = $bindings->get()->map(fn (object $row): array => (array) $row)->all();
+        }
+        $localBindings = [...$state['dropbox_folders'], ...$state['dropbox_module_links']];
         $state['files'] = $this->files->capture($state['tables'], config('filesystems'), false, true);
         $state['conflicts'] = [];
+        $ownedConnections = DB::table('dropbox_connections')
+            ->join('users', 'users.id', '=', 'dropbox_connections.user_id')
+            ->where('users.school_id', $schoolId)
+            ->whereIn('dropbox_connections.id', array_column($localBindings, 'dropbox_connection_id'))
+            ->pluck('dropbox_connections.id')->all();
+        foreach ($localBindings as $folder) {
+            if (! in_array($folder['dropbox_connection_id'], $ownedConnections, true)) {
+                $state['conflicts'][] = 'Lokale Dropbox-Ordnerzuordnung gehört zu einem Konto außerhalb der Schule.';
+            }
+        }
         foreach ($state['tables'] as $table => $rows) {
             foreach ($rows as $row) {
                 if (isset($row['school_id']) && (int) $row['school_id'] !== $schoolId) {
                     $state['conflicts'][] = "Lokale Daten aus einer anderen Schule sind in {$table} mit dem Unterricht verknüpft.";
                 }
-                foreach (TeachingSynchronisationGraph::REFERENCES as $column => $parent) {
+                foreach (TeachingSynchronisationGraph::references($table) as $column => $parent) {
                     if (! isset($row[$column])) {
                         continue;
                     }
@@ -222,7 +258,7 @@ class TeachingSynchronisationService
                 $state['conflicts'][] = 'Lokale Datei '.$file['path'].': '.$file['error'];
             }
         }
-        $tables = [...array_keys(TeachingSynchronisationGraph::TABLES), 'users', 'schoolyears', 'import116', 'school_tools', 'teachers'];
+        $tables = [...array_keys(TeachingSynchronisationGraph::TABLES), ...array_keys(self::DROPBOX_BINDINGS), 'users', 'schoolyears', 'import116', 'school_tools', 'teachers'];
         $engines = DB::table('information_schema.TABLES')->where('TABLE_SCHEMA', DB::connection()->getDatabaseName())->whereIn('TABLE_NAME', $tables)->pluck('ENGINE');
         if ($engines->count() !== count($tables) || $engines->contains(fn ($engine): bool => strcasecmp((string) $engine, 'InnoDB') !== 0)) {
             $state['conflicts'][] = 'Alle betroffenen Tabellen müssen transaktionale InnoDB-Tabellen sein.';
@@ -231,9 +267,13 @@ class TeachingSynchronisationService
             $state['conflicts'][] = 'Datenbank-Trigger könnten fremde Module verändern; Synchronisation gesperrt.';
         }
         // Catch foreign-school, orphan and non-scoped references, including cascades in other modules.
+        $replacementTables = $state['tables'];
+        foreach (self::DROPBOX_BINDINGS as $table => $key) {
+            $replacementTables[$table] = $state[$key];
+        }
         $references = DB::table('information_schema.KEY_COLUMN_USAGE')
             ->where('TABLE_SCHEMA', DB::connection()->getDatabaseName())
-            ->whereIn('REFERENCED_TABLE_NAME', array_keys(TeachingSynchronisationGraph::TABLES))
+            ->whereIn('REFERENCED_TABLE_NAME', array_keys($replacementTables))
             ->get(['TABLE_NAME', 'COLUMN_NAME', 'REFERENCED_TABLE_NAME', 'REFERENCED_COLUMN_NAME']);
         foreach ($references as $reference) {
             if ($reference->REFERENCED_COLUMN_NAME !== 'id') {
@@ -242,9 +282,9 @@ class TeachingSynchronisationService
                 continue;
             }
             $query = DB::table($reference->TABLE_NAME)->whereIn($reference->COLUMN_NAME,
-                array_column($state['tables'][$reference->REFERENCED_TABLE_NAME], 'id'));
-            if (isset($state['tables'][$reference->TABLE_NAME])) {
-                $query->whereNotIn('id', array_column($state['tables'][$reference->TABLE_NAME], 'id'));
+                array_column($replacementTables[$reference->REFERENCED_TABLE_NAME], 'id'));
+            if (isset($replacementTables[$reference->TABLE_NAME])) {
+                $query->whereNotIn('id', array_column($replacementTables[$reference->TABLE_NAME], 'id'));
             }
             if ($query->exists()) {
                 $state['conflicts'][] = "Fremde Daten in {$reference->TABLE_NAME} referenzieren zu ersetzende Unterrichtsdaten.";
@@ -258,6 +298,8 @@ class TeachingSynchronisationService
     {
         $plan = $this->graph->plan($source, $local, $schoolId);
         $plan['conflicts'] = [...$plan['conflicts'], ...($local['conflicts'] ?? [])];
+        $plan = $this->planLocalDropboxFolders($plan, $local);
+        $plan = $this->planLocalDropboxFolders($plan, $local, 'dropbox_module_links', 'dropbox_module_recovery');
         foreach ($source['files'] as $file) {
             if (isset($file['error'])) {
                 $plan['conflicts'][] = 'Cloud-Datei '.$file['path'].': '.$file['error'];
@@ -271,6 +313,28 @@ class TeachingSynchronisationService
             $mappedIds = array_column($plan['tables'][$table], 'id');
             if (DB::table($table)->whereIn('id', $mappedIds)->whereNotIn('id', $owned)->exists()) {
                 $plan['conflicts'][] = "ID-Kollision mit fremden Daten in {$table}.";
+            }
+            $sourceIndexes = $source['unique_indexes'][$table] ?? [];
+            $localIndexes = $local['unique_indexes'][$table] ?? [];
+            sort($sourceIndexes);
+            sort($localIndexes);
+            if ($sourceIndexes !== $localIndexes) {
+                $plan['conflicts'][] = "Eindeutigkeitsschema unterscheidet sich: {$table}.";
+            }
+            foreach ($localIndexes as $columns) {
+                $rows = array_values(array_filter($plan['tables'][$table],
+                    fn (array $row): bool => ! in_array(null, array_map(fn (string $column): mixed => $row[$column] ?? null, $columns), true)));
+                foreach (array_chunk($rows, 100) as $chunk) {
+                    $collision = DB::table($table)->whereNotIn('id', $owned)->where(function ($query) use ($chunk, $columns): void {
+                        foreach ($chunk as $row) {
+                            $query->orWhere(fn ($query) => $query->where(array_intersect_key($row, array_flip($columns))));
+                        }
+                    })->exists();
+                    if ($collision) {
+                        $plan['conflicts'][] = "Eindeutiger Wert kollidiert mit fremden Daten in {$table}: ".implode(', ', $columns).'.';
+                        break;
+                    }
+                }
             }
             $normalize = function (array $keys): array {
                 $keys = array_map(function (array $key): array {
@@ -318,6 +382,29 @@ class TeachingSynchronisationService
                 }
             }
         }
+        $attemptSourceIds = array_flip($plan['maps']['mc_attempts'] ?? []);
+        foreach ($plan['tables']['mc_attempts'] as &$attempt) {
+            $sourceId = $attemptSourceIds[$attempt['id']];
+            $token = $source['mc_access_tokens'][$sourceId] ?? null;
+            if (! is_string($token) || $token === '' || ! hash_equals($attempt['access_token_hash'], hash('sha256', $token))) {
+                $plan['conflicts'][] = 'Ein Multiple-Choice-Zugangslink fehlt oder stimmt nicht mit dem geprüften Versuch überein.';
+
+                continue;
+            }
+            $attempt['access_token'] = Crypt::encryptString($token);
+        }
+        unset($attempt);
+        $runs = array_column($source['tables']['number_system_game_runs'], null, 'id');
+        foreach ($source['tables']['number_system_game_members'] as $member) {
+            if (($runs[$member['run_id']]['session_id'] ?? null) !== $member['session_id']) {
+                $plan['conflicts'][] = 'Eine Zahlensystem-Teamteilnahme verweist auf eine andere Spielrunde.';
+            }
+        }
+        foreach ($source['tables']['number_system_game_guests'] ?? [] as $guest) {
+            if ($guest['run_id'] !== null && ($runs[$guest['run_id']]['session_id'] ?? null) !== $guest['session_id']) {
+                $plan['conflicts'][] = 'Eine Zahlensystem-Gastteilnahme verweist auf eine andere Spielrunde.';
+            }
+        }
         foreach ($source['external'] ?? [] as $table => $rows) {
             if (! in_array($table, ['material_cards', 'material_card_attachments'], true)) {
                 $plan['conflicts'][] = 'Unbekannte Beziehung zu einem fremden Modul.';
@@ -348,9 +435,82 @@ class TeachingSynchronisationService
         return $plan;
     }
 
+    private function planLocalDropboxFolders(array $plan, array $local, string $key = 'dropbox_folders', string $recoveryKey = 'dropbox_recovery'): array
+    {
+        $plan[$key] = [];
+        $plan[$recoveryKey] = [];
+        $plan['dropbox_notices'] ??= [];
+        $plan['dropbox_warnings'] ??= [];
+        $moduleLinks = $key === 'dropbox_module_links';
+        $label = $moduleLinks ? 'Modulverknüpfung' : 'Ordnerzuordnung';
+        $localWorks = array_column($local['tables']['teaching_course_works'], null, 'id');
+        $localFolders = array_column($local[$key], null, 'id');
+        $localCourses = array_column($local['tables']['teaching_courses'], null, 'id');
+        $mappedCourses = array_column($plan['tables']['teaching_courses'], null, 'id');
+        $candidates = [];
+        foreach ($plan['tables']['teaching_course_works'] as $work) {
+            if (! isset($mappedCourses[$work['teaching_course_id']])) {
+                continue;
+            }
+            $identity = $this->dropboxWorkIdentity($work, $mappedCourses[$work['teaching_course_id']]);
+            $candidates[$identity][] = $work['id'];
+        }
+        $targets = [];
+        foreach ($local[$key] as $folder) {
+            $work = $localWorks[$folder['teaching_course_work_id']];
+            $identity = $this->dropboxWorkIdentity($work, $localCourses[$work['teaching_course_id']]);
+            $matches = $candidates[$identity] ?? [];
+            if (count($matches) !== 1) {
+                $plan[$recoveryKey][] = $folder;
+
+                continue;
+            }
+            $target = $moduleLinks ? (string) $matches[0] : $folder['dropbox_connection_id'].'/'.$matches[0];
+            $targets[$target][] = [...$folder, 'teaching_course_work_id' => $matches[0]];
+        }
+        foreach ($targets as $folders) {
+            if (count($folders) !== 1) {
+                foreach ($folders as $folder) {
+                    $plan[$recoveryKey][] = $localFolders[$folder['id']];
+                }
+
+                continue;
+            }
+            $folder = $folders[0];
+            $plan[$key][] = $folder;
+            $original = $localFolders[$folder['id']];
+            if ($original['teaching_course_work_id'] !== $folder['teaching_course_work_id']) {
+                $plan['dropbox_notices'][] = "Lokale Dropbox-{$label}: Arbeit #{$original['teaching_course_work_id']} → #{$folder['teaching_course_work_id']}. Arbeit, Kurs, Schuljahr und Besitzer stimmen eindeutig überein.";
+            }
+        }
+        foreach ($plan[$recoveryKey] as $folder) {
+            $followUp = $moduleLinks ? 'Die Modulverknüpfung muss danach erneut hergestellt werden.' : 'Quick-Import erfordert danach eine erneute Ordnerauswahl.';
+            $plan['dropbox_warnings'][] = "Lokale Dropbox-{$label} für Arbeit #{$folder['teaching_course_work_id']} hat kein eindeutiges Gegenstück. Sie wird im verschlüsselten Sicherheitsbackup aufbewahrt und keiner anderen Arbeit zugeordnet. {$followUp}";
+        }
+
+        return $plan;
+    }
+
+    private function dropboxWorkIdentity(array $work, array $course): string
+    {
+        $classes = is_array($course['classes']) ? $course['classes'] : json_decode($course['classes'] ?? '[]', true, flags: JSON_THROW_ON_ERROR);
+        sort($classes);
+
+        return json_encode([
+            'owner' => $course['user_id'], 'year' => $course['schoolyear_id'],
+            'course' => $course['title'], 'classes' => $classes,
+            'type' => $work['type'], 'title' => $work['title'], 'date' => $work['date_for_all_groups'],
+        ], JSON_THROW_ON_ERROR);
+    }
+
+    private function sourceContent(array $source): array
+    {
+        return array_diff_key($source, array_flip(['captured_at', 'max_ids']));
+    }
+
     private function fingerprint(array $state): string
     {
-        return hash('sha256', json_encode($state, JSON_THROW_ON_ERROR));
+        return $this->backups->fingerprint($state);
     }
 
     private function writeFile(array $file, array &$created): void

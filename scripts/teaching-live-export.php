@@ -7,6 +7,7 @@ use App\Services\TeachingSynchronisationGraph;
 use Illuminate\Config\Repository;
 use Illuminate\Database\Connection;
 use Illuminate\Database\Connectors\ConnectionFactory;
+use Illuminate\Encryption\EncryptionServiceProvider;
 use Illuminate\Support\Facades\Facade;
 
 ini_set('display_errors', '0');
@@ -32,7 +33,7 @@ try {
         throw new RuntimeException('MAIN production required.');
     }
     $stage = 'read_only_connection';
-    $snapshot = $app->make(FeaturePreviewDatabaseGuard::class)->withMainReadOnlyConnection(function (Connection $connection) use ($request, $configuration, &$stage): array {
+    $snapshot = $app->make(FeaturePreviewDatabaseGuard::class)->withMainReadOnlyConnection(function (Connection $connection) use ($request, $configuration, $app, &$stage): array {
         $stage = 'school_identity';
         $schoolId = (int) $request['school']['id'];
         $school = $connection->table('schools')->where('id', $schoolId)->first(['id', 'short_name', 'long_name']);
@@ -47,11 +48,14 @@ try {
         }
         $stage = 'teaching_rows';
         $data = (new TeachingSynchronisationGraph)->capture($connection, $schoolId);
+        // Register encryption only; do not boot production providers or copy the installation key.
+        (new EncryptionServiceProvider($app))->register();
+        $data['mc_access_tokens'] = (new TeachingSynchronisationGraph)->accessTokens($data, $app->make('encrypter'));
         $data['school'] = (array) $school;
         $data['captured_at'] = gmdate(DATE_ATOM);
         $userIds = array_merge(array_column($data['import116'], 'user_id'), array_column($data['import116'], 'import_user_id'));
-        foreach ($data['tables'] as $rows) {
-            foreach (TeachingSynchronisationGraph::REFERENCES as $column => $parent) {
+        foreach ($data['tables'] as $table => $rows) {
+            foreach (TeachingSynchronisationGraph::references($table) as $column => $parent) {
                 if ($parent === 'users') {
                     $userIds = array_merge($userIds, array_column($rows, $column));
                 }

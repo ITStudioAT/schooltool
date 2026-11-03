@@ -12,6 +12,7 @@ export const useCourseStore = defineStore('StudentCourseStore', {
             categoryEvaluationValues: [],
             categoryEvaluationDefaultValue: null,
             typeLabels: {},
+            pointsProgress: null,
         }
     },
 
@@ -61,6 +62,7 @@ export const useCourseStore = defineStore('StudentCourseStore', {
                 this.categoryEvaluationValues = response.data?.category_evaluation_values ?? []
                 this.categoryEvaluationDefaultValue = response.data?.category_evaluation_default_value ?? null
                 this.typeLabels = response.data?.type_labels ?? {}
+                this.pointsProgress = response.data?.points_progress ?? null
                 return true
             } catch (error) {
                 const notification = useNotificationStore()
@@ -76,6 +78,7 @@ export const useCourseStore = defineStore('StudentCourseStore', {
                 this.categoryEvaluationValues = []
                 this.categoryEvaluationDefaultValue = null
                 this.typeLabels = {}
+                this.pointsProgress = null
                 return false
             }
         },

@@ -78,7 +78,7 @@
                                     </v-btn>
                                 </div>
                                 <div
-                                    v-if="planId && hasPlanBookings"
+                                    v-if="planId && hasBilledPlanEntries"
                                     class="mpe-header__hint"
                                     data-testid="delete-menu-plan-hint">
                                     {{ deletePlanHint }}
@@ -944,7 +944,7 @@
             </v-card>
         </v-dialog>
 
-        <v-dialog v-model="deletePlanDialog" max-width="520" persistent data-testid="delete-menu-plan-dialog">
+        <v-dialog v-model="deletePlanDialog" max-width="620" persistent data-testid="delete-menu-plan-dialog">
             <v-card rounded="xl">
                 <v-card-title>{{ deletePlanDialogTitle }}</v-card-title>
 
@@ -955,16 +955,20 @@
                     <div class="text-body-2 text-medium-emphasis mt-3">
                         {{ deletePlanDialogDescription }}
                     </div>
+                    <p class="text-body-2 mt-3">Zeitraum: <strong>{{ rangeLabel }}</strong></p>
+                    <label class="mpe-delete-confirmation mt-4">Zur Bestätigung genau <strong>MENÜPLAN LÖSCHEN</strong> eingeben:
+                        <input v-model="deletePlanConfirmation" aria-label="Menüplan-Löschung bestätigen" type="text" autocomplete="off" spellcheck="false" :disabled="isDeletingPlan" />
+                    </label>
                 </v-card-text>
 
                 <v-card-actions class="px-6 pb-5">
                     <v-spacer />
                     <v-btn variant="text" :disabled="isDeletingPlan" @click="cancelDeletePlan">Abbrechen</v-btn>
                     <v-btn
-                        color="warning"
+                        color="error"
                         variant="flat"
                         :loading="isDeletingPlan"
-                        :disabled="isDeletingPlan"
+                        :disabled="isDeletingPlan || !canDeletePlan || deletePlanConfirmation !== 'MENÜPLAN LÖSCHEN'"
                         @click="confirmDeletePlan">
                         {{ deletePlanConfirmLabel }}
                     </v-btn>
@@ -1166,21 +1170,52 @@
                         </div>
                     </div>
 
-                    <div class="create-booking-dialog__section">
-                        <div class="create-booking-dialog__label">Anzahl</div>
+                    <div v-if="createBookingSelectedUser" class="create-booking-dialog__section">
+                        <div class="create-booking-dialog__label">Für wen wird gebucht?</div>
                         <div class="create-booking-dialog__choices">
                             <button
-                                v-for="quantity in [1, 2, 3]"
-                                :key="quantity"
                                 type="button"
                                 class="create-booking-choice"
-                                :class="{ 'is-active': createBookingForm.quantity === quantity }"
-                                :disabled="quantity > createBookingMaxQuantity"
-                                :data-testid="`create-booking-quantity-${quantity}`"
-                                @click="selectCreateBookingQuantity(quantity)">
-                                {{ quantity }}
+                                :class="{ 'is-active': createBookingForm.recipientType === 'self' }"
+                                :aria-pressed="createBookingForm.recipientType === 'self'"
+                                data-testid="create-booking-for-self"
+                                @click="selectCreateBookingRecipientType('self')">
+                                Für sich selbst
+                            </button>
+                            <button
+                                type="button"
+                                class="create-booking-choice"
+                                :class="{ 'is-active': createBookingForm.recipientType === 'child' }"
+                                :aria-pressed="createBookingForm.recipientType === 'child'"
+                                :disabled="!createBookingChildOptions.length"
+                                data-testid="create-booking-for-child"
+                                @click="selectCreateBookingRecipientType('child')">
+                                Für ein Kind
                             </button>
                         </div>
+                        <p v-if="!createBookingChildOptions.length" class="create-booking-dialog__status">
+                            Keine zugeordneten Kinder im aktuellen Schuljahr vorhanden.
+                        </p>
+                        <template v-if="createBookingForm.recipientType === 'child'">
+                            <div class="create-booking-dialog__label mt-3">Kinder auswählen (höchstens drei)</div>
+                            <div class="create-booking-dialog__choices">
+                                <button
+                                    v-for="child in createBookingChildOptions"
+                                    :key="child.id"
+                                    type="button"
+                                    class="create-booking-choice"
+                                    :class="{ 'is-active': createBookingForm.childIds.includes(child.id) }"
+                                    :aria-pressed="createBookingForm.childIds.includes(child.id)"
+                                    :disabled="createBookingForm.childIds.length >= 3 && !createBookingForm.childIds.includes(child.id)"
+                                    :data-testid="`create-booking-child-${child.id}`"
+                                    @click="toggleCreateBookingChild(child.id)">
+                                    {{ child.name }}<template v-if="child.schoolclass">, {{ child.schoolclass }}</template>
+                                </button>
+                            </div>
+                        </template>
+                        <p v-if="createBookingForm.recipientType" class="mt-3" data-testid="create-booking-quantity">
+                            Anzahl: {{ createBookingForm.quantity }}
+                        </p>
                     </div>
                 </v-card-text>
                 <v-card-actions class="px-6 pb-5">
@@ -1208,6 +1243,7 @@ import { useMenuStore } from '@/stores/admin/restaurant/MenuStore'
 import { useRestaurantStore } from '@/stores/admin/restaurant/RestaurantStore'
 import { useEatingTimeStore } from '@/stores/admin/restaurant/EatingTimeStore'
 import { useNotificationStore } from '@/stores/spa/NotificationStore'
+import { searchEntryBookingUsers, storeEntryBooking } from '@/actions/App/Http/Controllers/Admin/Restaurant/RestaurantMenuPlanController'
 
 function isValidIsoDate(value) {
     return /^\d{4}-\d{2}-\d{2}$/.test(String(value || ''))
@@ -1277,6 +1313,8 @@ function emptyCreateBookingForm() {
         userId: null,
         restaurantEatingTimeId: null,
         quantity: 1,
+        recipientType: null,
+        childIds: [],
     }
 }
 
@@ -1517,6 +1555,8 @@ export default {
             isDeletingBooking: false,
             isDeletingPlan: false,
             hasPlanBookings: false,
+            hasBilledPlanEntries: false,
+            deletePlanConfirmation: '',
             entryPreviewTarget: {
                 iso: '',
                 key: '',
@@ -1852,13 +1892,13 @@ export default {
             return `/api/admin/restaurant/menu-plans/${this.planId}/print`
         },
         canDeletePlan() {
-            return this.planId !== null && this.hasPlanBookings !== true && ! this.isDeletingPlan && ! this.isSaving
+            return this.planId !== null && this.hasBilledPlanEntries !== true && ! this.isDeletingPlan && ! this.isSaving
         },
         deletePlanButtonLabel() {
-            return this.hasPlanBookings ? 'L\u00f6schen gesperrt' : 'L\u00f6schen'
+            return this.hasBilledPlanEntries ? 'Löschen gesperrt' : 'Menüplan löschen'
         },
         deletePlanHint() {
-            return 'Mit bestehenden Buchungen kann der Men\u00fcplan nicht gel\u00f6scht werden.'
+            return 'Dieser Menüplan wurde bereits ganz oder teilweise verrechnet und kann nicht mehr gelöscht werden.'
         },
         deletePlanDialogTitle() {
             return 'Men\u00fcplan l\u00f6schen'
@@ -1869,18 +1909,16 @@ export default {
             return `Soll ${label} wirklich vollst\u00e4ndig gel\u00f6scht werden?`
         },
         deletePlanDialogDescription() {
-            return 'Der gesamte Zeitraum und alle enthaltenen Men\u00fceintr\u00e4ge werden entfernt.'
+            return 'Der gesamte Menüplan und sämtliche zugehörigen Bestellungen werden dauerhaft gelöscht. Diese Aktion kann nicht rückgängig gemacht werden.'
         },
         deletePlanConfirmLabel() {
-            return 'L\u00f6schen'
+            return 'Menüplan und Bestellungen löschen'
         },
         bookingsDialogTotalQuantity() {
             return this.bookingsDialogData.reduce((sum, b) => sum + Number(b.quantity || 0), 0)
         },
-        createBookingMaxQuantity() {
-            const availableRecipientCount = Number(this.createBookingSelectedUser?.available_recipient_count || 1)
-
-            return Math.max(1, Math.min(3, availableRecipientCount))
+        createBookingChildOptions() {
+            return this.createBookingSelectedUser?.child_options || []
         },
         canSubmitCreateBooking() {
             if (! this.createBookingSelectedUser || ! this.createBookingForm.userId || this.createBookingSaving) {
@@ -1891,7 +1929,15 @@ export default {
                 return false
             }
 
-            return this.createBookingForm.quantity >= 1 && this.createBookingForm.quantity <= this.createBookingMaxQuantity
+            if (this.createBookingForm.recipientType === 'self') {
+                return this.createBookingForm.quantity === 1
+            }
+
+            return this.createBookingForm.recipientType === 'child'
+                && this.createBookingForm.childIds.length >= 1
+                && this.createBookingForm.childIds.length <= 3
+                && this.createBookingForm.quantity === this.createBookingForm.childIds.length
+                && this.createBookingForm.childIds.every((id) => this.createBookingChildOptions.some((child) => child.id === id))
         },
         deleteBoundaryDayLabel() {
             return isValidIsoDate(this.deleteBoundaryDayTargetIso) ? this.formatDate(this.deleteBoundaryDayTargetIso) : ''
@@ -1948,6 +1994,7 @@ export default {
                 this.individualScheduleForm = this.individualScheduleFormFromResolvedSchedule()
                 this.isPlanAvailable = false
                 this.hasPlanBookings = false
+                this.hasBilledPlanEntries = false
             }
         },
 
@@ -1961,6 +2008,7 @@ export default {
             this.planTitle = plan.title || ''
             this.isPlanAvailable = plan.is_available === true
             this.hasPlanBookings = plan.has_bookings === true
+            this.hasBilledPlanEntries = plan.has_billed_entries === true || plan.can_delete === false
             this.activeRangeBounds = normalizedRangeBounds(plan.start_date, plan.end_date)
             this.planScheduleForm = this.planScheduleFormFromPlan(plan)
             this.useIndividualScheduleValues = plan.use_individual_schedule_values === true
@@ -2343,6 +2391,7 @@ export default {
                 return
             }
 
+            this.deletePlanConfirmation = ''
             this.deletePlanDialog = true
         },
 
@@ -2460,7 +2509,7 @@ export default {
 
             try {
                 const response = await axios.get(
-                    `/api/admin/restaurant/menu-plans/${this.planId}/entries/${this.createBookingDialogEntryId}/booking-users`,
+                    searchEntryBookingUsers.url({ planId: this.planId, entryId: this.createBookingDialogEntryId }),
                     { params: { search_string: query } },
                 )
 
@@ -2487,21 +2536,31 @@ export default {
             this.createBookingUserSearch = `${user.name} <${user.email}>`
             this.createBookingSearchResults = []
 
-            if (this.createBookingForm.quantity > this.createBookingMaxQuantity) {
-                this.createBookingForm.quantity = this.createBookingMaxQuantity
-            }
+            this.createBookingForm.recipientType = null
+            this.createBookingForm.childIds = []
+            this.createBookingForm.quantity = 1
         },
 
         selectCreateBookingTime(timeId) {
             this.createBookingForm.restaurantEatingTimeId = timeId
         },
 
-        selectCreateBookingQuantity(quantity) {
-            if (quantity > this.createBookingMaxQuantity) {
-                return
-            }
+        selectCreateBookingRecipientType(recipientType) {
+            this.createBookingForm.recipientType = recipientType
+            this.createBookingForm.childIds = []
+            this.createBookingForm.quantity = recipientType === 'self' ? 1 : 0
+        },
 
-            this.createBookingForm.quantity = quantity
+        toggleCreateBookingChild(childId) {
+            if (this.createBookingForm.recipientType !== 'child') return
+
+            const selected = this.createBookingForm.childIds.includes(childId)
+            if (!selected && this.createBookingForm.childIds.length >= 3) return
+
+            this.createBookingForm.childIds = selected
+                ? this.createBookingForm.childIds.filter((id) => id !== childId)
+                : [...this.createBookingForm.childIds, childId]
+            this.createBookingForm.quantity = this.createBookingForm.childIds.length
         },
 
         async confirmCreateBooking() {
@@ -2513,7 +2572,7 @@ export default {
 
             try {
                 await axios.post(
-                    `/api/admin/restaurant/menu-plans/${this.planId}/entries/${this.createBookingDialogEntryId}/bookings`,
+                    storeEntryBooking.url({ planId: this.planId, entryId: this.createBookingDialogEntryId }),
                     {
                         data: {
                             user_id: this.createBookingForm.userId,
@@ -2521,6 +2580,8 @@ export default {
                                 ? this.createBookingForm.restaurantEatingTimeId
                                 : null,
                             quantity: this.createBookingForm.quantity,
+                            recipient_type: this.createBookingForm.recipientType,
+                            child_ids: this.createBookingForm.recipientType === 'child' ? this.createBookingForm.childIds : [],
                         },
                     },
                 )
@@ -2658,14 +2719,14 @@ export default {
         },
 
         async confirmDeletePlan() {
-            if (! this.canDeletePlan || ! this.planId) {
+            if (! this.canDeletePlan || ! this.planId || this.deletePlanConfirmation !== 'MENÜPLAN LÖSCHEN') {
                 return
             }
 
             this.isDeletingPlan = true
 
             try {
-                const deleted = await useMenuPlanStore().destroy(this.planId)
+                const deleted = await useMenuPlanStore().destroy(this.planId, this.deletePlanConfirmation)
 
                 if (! deleted) {
                     await this.loadExistingPlan(this.planId)
@@ -3282,6 +3343,7 @@ export default {
                 if (result && result.id && result.start_date && result.end_date) {
                     this.isPlanAvailable = typeof result.is_available === 'boolean' ? result.is_available : payload.is_available === true
                     this.hasPlanBookings = result.has_bookings === true
+                    this.hasBilledPlanEntries = result.has_billed_entries === true || result.can_delete === false
                     this.activeRangeBounds = normalizedRangeBounds(result.start_date, result.end_date)
 
                     this.$router.replace({
@@ -3467,6 +3529,10 @@ export default {
 </script>
 
 <style scoped>
+.mpe-delete-confirmation { display: grid; gap: 8px; line-height: 1.5; }
+.mpe-delete-confirmation input { min-height: 46px; padding: 10px 12px; border: 1px solid #a9b6c5; border-radius: 6px; background: white; color: #1f2937; }
+.mpe-delete-confirmation input:focus-visible { outline: 2px solid #b45309; outline-offset: 2px; }
+
 /* ---- Page ---- */
 
 .mpe-page {

@@ -1,14 +1,20 @@
 <template>
     <ItsGridBox variant="overview" color="primary" title="Stundenplan" icon="mdi-calendar-clock" class="w-100" :disabled="action != ''">
         <template #header-actions>
+            <div class="d-flex flex-wrap align-center ga-2">
+            <v-btn size="small" variant="tonal" color="primary" prepend-icon="mdi-calendar-plus" @click="$refs.personalAppointments.open()">Termin hinzufügen</v-btn>
             <v-btn-toggle v-if="tableViewAllowed" v-model="timetable_view_mode" mandatory color="primary" density="compact" class="timetable-view-toggle">
                 <v-btn value="list" size="small" title="Listenansicht"><v-icon size="18">mdi-format-list-bulleted</v-icon></v-btn>
                 <v-btn value="table" size="small" title="Tabellenansicht"><v-icon size="18">mdi-table</v-icon></v-btn>
             </v-btn-toggle>
+            </div>
         </template>
+        <PersonalAppointments ref="personalAppointments" :schoolyear="config?.selected_schoolyear" :school-hours="school_hours || []"
+            :context-key="`${config?.user?.id}:${config?.selected_school?.id}:${config?.selected_schoolyear?.id}`"
+            @loaded="appointmentDefinitions = $event" @load-error="appointmentLoadError = $event" />
         <v-card tile flat color="transparent" class="w-100">
             <v-card-text class="text-body-1 d-flex flex-column ga-2">
-                <v-btn-toggle v-model="range" mandatory color="primary" class="w-100 timetable-range-toggle" @update:model-value="resetOffset">
+                <v-btn-toggle v-model="rangeSelection" mandatory color="primary" class="w-100 timetable-range-toggle">
                     <v-btn :value="RANGE_TODAY">Heute</v-btn>
                     <v-btn :value="RANGE_WEEK">Diese Woche</v-btn>
                     <v-btn :value="RANGE_NEXT_WEEK">Nächster Unterricht</v-btn>
@@ -38,6 +44,7 @@
                 </div>
 
                 <!-- List View -->
+                <div v-if="appointmentLoadError" class="text-caption text-warning" role="status">{{ appointmentLoadError }}</div>
                 <v-card v-if="activeViewMode === 'list'" variant="outlined" class="mt-2">
                     <v-card-title class="text-subtitle-2 d-flex align-center ga-2">
                         <v-icon size="18">mdi-format-list-bulleted</v-icon>
@@ -47,45 +54,42 @@
                     <v-divider />
                     <v-card-text class="pa-0">
                         <v-list density="compact">
+                            <v-list-item v-for="appointment in personalAppointmentOccurrences" :key="`appointment-${appointment.id}-${appointment.occurrenceDate}-${appointment.occurrenceHour || 'all'}`" class="pa-2">
+                                <PersonalAppointmentCard :appointment="appointment" show-date @edit="$refs.personalAppointments.open($event)" />
+                            </v-list-item>
                             <v-list-item v-for="item in filteredItems" :key="item.key" class="cursor-pointer pa-0" @click="openCourse(item)">
-                                <div :class="['d-flex flex-column ga-2 w-100 pa-3', ...getStatusClass(item), { 'timetable-item--today': isToday(item) }]" :style="getDateBackgroundStyle(item)">
+                                <div :class="['timetable-lesson-card d-flex flex-column ga-2 w-100 pa-3', ...getStatusClass(item), { 'timetable-item--upcoming': isUpcomingLesson(item) }]" :style="getDateBackgroundStyle(item)">
+                                    <div class="timetable-card-header">
+                                        <div class="timetable-card-heading d-flex flex-wrap align-center ga-2">
+                                            <span v-if="hasFreeStatus(item)" class="timetable-cancelled-label">Entfallen</span>
+                                            <v-chip v-if="isToday(item)" size="x-small" color="warning" variant="flat">Heute</v-chip>
+                                            <v-chip v-if="!isToday(item)" size="x-small" variant="tonal" color="primary">{{ formatWeekdayDate(item.date) }}</v-chip>
+                                        </div>
+                                        <div v-if="!hasFreeStatus(item)" class="timetable-status-icons">
+                                        <v-icon class="timetable-attendance-status" size="16"
+                                            :icon="isAttendanceChecked(item) ? 'mdi-check' : 'mdi-alert-circle-outline'"
+                                            :color="isAttendanceChecked(item) ? 'success' : 'warning'" role="img" :aria-hidden="false"
+                                            :aria-label="isAttendanceChecked(item) ? 'Anwesenheit geprüft' : 'Anwesenheit noch nicht geprüft'"
+                                            :title="isAttendanceChecked(item) ? 'Anwesenheit geprüft' : 'Anwesenheit noch nicht geprüft'" />
+                                        <v-icon class="timetable-content-status" size="16" icon="mdi-text-box-outline"
+                                            :color="item.contentEntered ? 'success' : 'warning'" role="img" :aria-hidden="false"
+                                            :aria-label="item.contentEntered ? 'Unterrichtsstoff eingetragen' : 'Unterrichtsstoff noch nicht eingetragen'"
+                                            :title="item.contentEntered ? 'Unterrichtsstoff eingetragen' : 'Unterrichtsstoff noch nicht eingetragen'" />
+                                        <v-icon v-if="config?.user?.teaching_curricula_enabled !== false && item.curriculumAssigned" class="timetable-curriculum-status" size="16"
+                                            icon="mdi-book-education-outline" color="deep-purple" role="img" :aria-hidden="false"
+                                            aria-label="Curriculum-Eintrag zugeordnet" title="Curriculum-Eintrag zugeordnet" />
+                                        <v-icon v-if="item.workScheduled" class="timetable-work-status" size="16"
+                                            icon="mdi-brain" :color="scheduledWorkIconColor(item.date)" role="img" :aria-hidden="false"
+                                            aria-label="Arbeit vorgesehen" title="Arbeit vorgesehen" />
+                                        </div>
+                                    </div>
                                     <div class="d-flex flex-wrap align-center ga-2 w-100">
-                                        <v-chip v-if="isToday(item)" size="x-small" color="warning" variant="flat">Heute</v-chip>
-                                        <v-icon
-                                            v-if="isAttendanceChecked(item)"
-                                            size="16"
-                                            color="success"
-                                            title="Anwesenheit geprüft">
-                                            mdi-check-circle
-                                        </v-icon>
-                                        <v-chip v-if="!isToday(item)" size="x-small" variant="tonal" color="primary">{{ formatWeekdayDate(item.date) }}</v-chip>
-                                        <v-chip size="x-small" variant="outlined" color="primary">{{ item.hoursLabel }}</v-chip>
+                                        <v-chip v-for="hour in item.hours" :key="hour" size="x-small" variant="outlined"
+                                            :color="hasFreeStatus(item, hour) ? 'success' : 'primary'"
+                                            :class="{ 'timetable-item--free': hasFreeStatus(item, hour) }">{{ hour }}. Std</v-chip>
                                         <v-chip size="x-small" variant="outlined" color="primary">{{ item.timeRangeLabel }}</v-chip>
                                         <v-chip size="x-small" variant="outlined">{{ item.classLabel }}</v-chip>
                                         <v-chip size="x-small" variant="tonal" color="primary" class="chip-truncate">{{ item.courseTitle }}</v-chip>
-                                        <v-icon
-                                            v-if="item.hasCurriculumAssignment"
-                                            size="10"
-                                            color="green-darken-2"
-                                            role="img"
-                                            :aria-hidden="false"
-                                            aria-label="Curriculum-Eintrag zugeordnet"
-                                            title="Curriculum-Eintrag zugeordnet">mdi-circle</v-icon>
-                                        <span
-                                            v-if="item.curriculumAttachmentVisibility"
-                                            class="d-inline-flex align-center ga-2"
-                                            :title="item.curriculumAttachmentVisibility.label">
-                                            <span
-                                                v-for="indicator in item.curriculumAttachmentVisibility.indicators"
-                                                :key="indicator.key"
-                                                class="d-inline-flex align-center ga-1 text-caption"
-                                                :class="`text-${indicator.color}`"
-                                                role="img"
-                                                :aria-label="indicator.label">
-                                                <v-icon :icon="indicator.icon" :color="indicator.color" size="14" aria-hidden="true" />
-                                                <span v-if="item.curriculumAttachmentVisibility.indicators.length > 1" aria-hidden="true">{{ indicator.count }}</span>
-                                            </span>
-                                        </span>
                                         <v-chip
                                             v-if="hasFreeStatus(item) && item.freeReason"
                                             size="x-small"
@@ -96,9 +100,15 @@
                                         </v-chip>
                                     </div>
                                     <div v-if="item.content" class="text-caption timetable-content" v-html="contentHtml(item.content)"></div>
+                                    <div v-if="!hasFreeStatus(item) && item.attendanceCounts" class="timetable-attendance-counts"
+                                        :aria-label="`${item.attendanceCounts.present} anwesend / ${item.attendanceCounts.absent} abwesend`">
+                                        <span class="text-success">{{ item.attendanceCounts.present }}</span>
+                                        <span>/</span>
+                                        <span class="text-error">{{ item.attendanceCounts.absent }}</span>
+                                    </div>
                                 </div>
                             </v-list-item>
-                            <v-list-item v-if="!filteredItems.length">
+                            <v-list-item v-if="!filteredItems.length && !personalAppointmentOccurrences.length">
                                 <v-list-item-title class="text-caption text-medium-emphasis">Keine Termine im gewaehlten Zeitraum.</v-list-item-title>
                             </v-list-item>
                         </v-list>
@@ -106,7 +116,7 @@
                 </v-card>
 
                 <!-- Table View -->
-                <v-card v-else variant="outlined" class="mt-2">
+                <v-card v-else variant="outlined" class="mt-2 timetable-table-card">
                     <v-card-title class="text-subtitle-2 d-flex align-center ga-2">
                         <v-icon size="18">mdi-table</v-icon>
                         Stundenplan
@@ -115,70 +125,127 @@
                     <v-divider />
                     <v-card-text class="pa-1">
                         <div class="timetable-table-wrapper">
-                            <table class="timetable-grid-table">
+                            <div class="timetable-grid-width" :style="{ minWidth: `${44 + tableWeekDays.length * 130}px` }">
+                            <table v-scale-appointments class="timetable-grid-table">
+                                <colgroup>
+                                    <col style="width: 44px">
+                                    <col v-for="day in tableWeekDays" :key="normalizeDateToString(day)">
+                                </colgroup>
                                 <thead>
                                     <tr>
                                         <th class="timetable-hour-header-cell"></th>
                                         <th
                                             v-for="day in tableWeekDays"
                                             :key="normalizeDateToString(day)"
-                                            :class="['timetable-day-header-cell', { 'day-today': isDayToday(day) }]">
+                                            :class="['timetable-day-header-cell', { 'day-today': isDayToday(day), 'day-highlighted': isHighlightedTeachingDay(day), 'day-free': isFreeTeachingDay(day), 'day-holiday': isSchoolHoliday(day) }]"
+                                            :title="isSchoolHoliday(day) ? `Ferien/Feiertag: ${formatDayDate(day)}` : isFreeTeachingDay(day) ? `Freier Tag: ${formatDayDate(day)}` : undefined"
+                                            :aria-label="isHighlightedTeachingDay(day) ? `${isDayToday(day) ? 'Heutiger Unterrichtstag' : 'Nächster Unterrichtstag'}: ${formatDayDate(day)}` : undefined">
                                             <div>{{ formatDayOfWeek(day) }}</div>
                                             <div class="timetable-day-date">{{ formatDayDate(day) }}</div>
                                         </th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    <tr v-for="hour in tableHours" :key="hour">
+                                    <tr v-if="outsideAppointmentPlacements.length">
+                                        <td class="timetable-hour-cell"><span class="text-caption">Vor Unterricht</span></td>
+                                        <td v-for="day in tableWeekDays" :key="normalizeDateToString(day)" class="timetable-grid-cell timetable-gap-cell" :class="{ 'day-highlighted': isHighlightedTeachingDay(day), 'day-free': isFreeTeachingDay(day), 'day-holiday': isSchoolHoliday(day) }">
+                                            <div class="personal-appointment-cell">
+                                                <PersonalAppointmentCard v-for="placement in outsideAppointmentsOnDay(day)" :key="`${placement.appointment.id}-${placement.segments[0].starts_at}`"
+                                                    class="timetable-duration-card" :data-duration="personalAppointmentDuration(placement.segments)" :data-gap-minutes="placement.gapMinutes"
+                                                    :appointment="{ ...placement.appointment, time_segments: placement.segments }" @edit="$refs.personalAppointments.open(placement.appointment)" />
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    <template v-for="hour in tableHours" :key="hour">
+                                    <tr :data-hour="hour" :data-duration="personalAppointmentDuration([{ starts_at: schoolHoursByHour[hour]?.from, ends_at: schoolHoursByHour[hour]?.until }])">
                                         <td class="timetable-hour-cell">
                                             <div class="timetable-hour-num">{{ hour }}.</div>
                                             <div v-if="schoolHoursByHour[hour]" class="timetable-hour-time">
                                                 {{ formatTimeValue(schoolHoursByHour[hour]?.from) }}<br>{{ formatTimeValue(schoolHoursByHour[hour]?.until) }}
                                             </div>
                                         </td>
-                                        <td v-for="day in tableWeekDays" :key="normalizeDateToString(day)" class="timetable-grid-cell">
+                                        <template v-for="day in tableWeekDays" :key="normalizeDateToString(day)">
+                                        <td v-if="!isTableCellContinuation(day, hour)" v-fill-cell :rowspan="tableRowSpan(day, hour)"
+                                            :data-date="normalizeDateToString(day)" :data-hour="hour"
+                                            :class="['timetable-grid-cell', { 'day-highlighted': isHighlightedTeachingDay(day), 'day-free': isFreeTeachingDay(day), 'day-holiday': isSchoolHoliday(day) }]">
+                                            <div class="timetable-cell-content">
+                                            <div v-if="getTableCellItems(day, hour).length" class="timetable-cell-courses">
                                             <div
                                                 v-for="item in getTableCellItems(day, hour)"
                                                 :key="item.key"
-                                                :class="['timetable-grid-item', ...getStatusClass(item), { 'timetable-item--today': isToday(item) }]"
+                                                :class="['timetable-grid-item', ...getStatusClass(item, hour), { 'timetable-grid-item--block': tableCellSpan(day, hour) > 1, 'timetable-item--upcoming': tableBlockHours(day, hour).some((blockHour) => isUpcomingLesson(item, blockHour)) }]"
+                                                :style="tableCellSpan(day, hour) > 1 ? { minHeight: `${tableCellSpan(day, hour) * 52}px` } : undefined"
                                                 @click="openCourse(item)">
-                                                <div class="d-flex align-center ga-1">
-                                                    <v-icon
-                                                        v-if="item.hasCurriculumAssignment"
-                                                        size="10"
-                                                        color="green-darken-2"
-                                                        role="img"
-                                                        :aria-hidden="false"
-                                                        aria-label="Curriculum-Eintrag zugeordnet"
-                                                        title="Curriculum-Eintrag zugeordnet">mdi-circle</v-icon>
-                                                    <span
-                                                        v-if="item.curriculumAttachmentVisibility"
-                                                        class="d-inline-flex align-center ga-2"
-                                                        :title="item.curriculumAttachmentVisibility.label">
-                                                        <span
-                                                            v-for="indicator in item.curriculumAttachmentVisibility.indicators"
-                                                            :key="indicator.key"
-                                                            class="d-inline-flex align-center ga-1 text-caption"
-                                                            :class="`text-${indicator.color}`"
-                                                            role="img"
-                                                            :aria-label="indicator.label">
-                                                            <v-icon :icon="indicator.icon" :color="indicator.color" size="14" aria-hidden="true" />
-                                                            <span v-if="item.curriculumAttachmentVisibility.indicators.length > 1" aria-hidden="true">{{ indicator.count }}</span>
-                                                        </span>
-                                                    </span>
-                                                    <div class="timetable-grid-course">{{ item.courseTitle }}</div>
+                                                <div class="timetable-card-header">
+                                                    <div class="timetable-card-heading">
+                                                        <div v-if="hasFreeStatus(item, hour)" class="timetable-cancelled-label">Entfallen</div>
+                                                        <div class="timetable-grid-course">{{ item.courseTitle }}</div>
+                                                    </div>
+                                                    <div v-if="!hasFreeStatus(item, hour)" class="timetable-status-icons">
+                                                    <v-icon class="timetable-attendance-status" size="16"
+                                                        :icon="isAttendanceChecked(item) ? 'mdi-check' : 'mdi-alert-circle-outline'"
+                                                        :color="isAttendanceChecked(item) ? 'success' : 'warning'" role="img" :aria-hidden="false"
+                                                        :aria-label="isAttendanceChecked(item) ? 'Anwesenheit geprüft' : 'Anwesenheit noch nicht geprüft'"
+                                                        :title="isAttendanceChecked(item) ? 'Anwesenheit geprüft' : 'Anwesenheit noch nicht geprüft'" />
+                                                    <v-icon class="timetable-content-status" size="16" icon="mdi-text-box-outline"
+                                                        :color="item.contentEntered ? 'success' : 'warning'" role="img" :aria-hidden="false"
+                                                        :aria-label="item.contentEntered ? 'Unterrichtsstoff eingetragen' : 'Unterrichtsstoff noch nicht eingetragen'"
+                                                        :title="item.contentEntered ? 'Unterrichtsstoff eingetragen' : 'Unterrichtsstoff noch nicht eingetragen'" />
+                                                    <v-icon v-if="config?.user?.teaching_curricula_enabled !== false && item.curriculumAssigned" class="timetable-curriculum-status" size="16"
+                                                        icon="mdi-book-education-outline" color="deep-purple" role="img" :aria-hidden="false"
+                                                        aria-label="Curriculum-Eintrag zugeordnet" title="Curriculum-Eintrag zugeordnet" />
+                                                    <v-icon v-if="item.workScheduled" class="timetable-work-status" size="16"
+                                                        icon="mdi-brain" :color="scheduledWorkIconColor(item.date)" role="img" :aria-hidden="false"
+                                                        aria-label="Arbeit vorgesehen" title="Arbeit vorgesehen" />
+                                                    </div>
                                                 </div>
                                                 <div class="timetable-grid-class">{{ item.classLabel }}</div>
+                                                <div v-if="tableCellSpan(day, hour) > 1" class="timetable-grid-class">
+                                                    {{ hour }}.–{{ Number(hour) + tableCellSpan(day, hour) - 1 }}. Std
+                                                    <template v-if="formatHoursTimeRange(tableBlockHours(day, hour)) !== '-'"> · {{ formatHoursTimeRange(tableBlockHours(day, hour)) }}</template>
+                                                </div>
                                                 <div v-if="range === RANGE_TODAY && item.content" class="timetable-grid-content" v-html="contentHtml(item.content)"></div>
-                                                <v-icon v-if="isAttendanceChecked(item)" size="12" color="success">mdi-check-circle</v-icon>
+                                                <div v-if="!hasFreeStatus(item, hour) && item.attendanceCounts" class="timetable-attendance-counts"
+                                                    :aria-label="`${item.attendanceCounts.present} anwesend / ${item.attendanceCounts.absent} abwesend`">
+                                                    <span class="text-success">{{ item.attendanceCounts.present }}</span>
+                                                    <span>/</span>
+                                                    <span class="text-error">{{ item.attendanceCounts.absent }}</span>
+                                                </div>
+                                            </div>
+                                            </div>
+                                            <div v-for="column in tablePersonalAppointmentColumns(day, hour)" :key="column.appointment.id"
+                                                class="timetable-cell-appointments" :style="{ gridTemplateRows: tableBlockSlots(day, hour).map((slot) => slot.gap ? 'minmax(28px, auto)' : 'minmax(0, 1fr)').join(' ') }">
+                                                <PersonalAppointmentCard v-for="block in column.blocks" :key="block.start"
+                                                    :class="{ 'timetable-duration-card': tableBlockSlots(day, hour)[block.start - 1]?.gap }"
+                                                    :data-duration="tableBlockSlots(day, hour)[block.start - 1]?.gap ? personalAppointmentDuration(block.time_segments) : undefined"
+                                                    :data-gap-minutes="block.gapMinutes"
+                                                    :appointment="{ ...(block.appointment || column.appointment), time_segments: block.time_segments }"
+                                                    :style="{ gridRow: `${block.start} / span ${block.span}` }"
+                                                    @edit="$refs.personalAppointments.open({ ...(block.appointment || column.appointment), occurrenceHour: block.time_segments.length === 1 ? block.time_segments[0].hour : null })" />
+                                            </div>
                                             </div>
                                         </td>
+                                        </template>
                                     </tr>
+                                    <tr v-if="hasAppointmentGapAfter(hour)" class="timetable-gap-row" :data-gap-after="hour">
+                                        <td class="timetable-hour-cell"><span class="text-caption">{{ school_hours.some((entry) => Number(entry.hour) > Number(hour)) ? 'Pause' : '' }}</span></td>
+                                        <template v-for="day in tableWeekDays" :key="normalizeDateToString(day)">
+                                            <td v-if="!tableCellsConnect(day, hour, Number(hour) + 1)" class="timetable-grid-cell timetable-gap-cell" :class="{ 'day-highlighted': isHighlightedTeachingDay(day), 'day-free': isFreeTeachingDay(day), 'day-holiday': isSchoolHoliday(day) }" :data-date="normalizeDateToString(day)">
+                                                <div class="personal-appointment-cell">
+                                                    <PersonalAppointmentCard v-for="placement in gapAppointmentsOnDay(day, hour)" :key="`${placement.appointment.id}-${placement.segments[0].starts_at}`"
+                                                        class="timetable-duration-card" :data-duration="personalAppointmentDuration(placement.segments)" :data-gap-minutes="placement.gapMinutes"
+                                                        :appointment="{ ...placement.appointment, time_segments: placement.segments }" @edit="$refs.personalAppointments.open(placement.appointment)" />
+                                                </div>
+                                            </td>
+                                        </template>
+                                    </tr>
+                                    </template>
                                     <tr v-if="!tableHours.length">
-                                        <td colspan="99" class="text-caption text-medium-emphasis pa-3">Keine Termine im gewählten Zeitraum.</td>
+                                        <td :colspan="tableWeekDays.length + 1" class="text-caption text-medium-emphasis pa-3">Keine Termine im gewählten Zeitraum.</td>
                                     </tr>
                                 </tbody>
                             </table>
+                            </div>
                         </div>
                     </v-card-text>
                 </v-card>
@@ -188,13 +255,19 @@
 </template>
 
 <script>
-import { applicationDate, parseLocalDate } from '@/helpers/date'
-import { mapWritableState } from 'pinia'
+import { applicationDate, parseLocalDate, scheduledWorkIconColor } from '@/helpers/date'
+import { cancelledCourseDateHours, activeCourseDateHours, isCourseDateHourCancelled } from '@/helpers/courseDateHours'
+import { mapState, mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
+import { useCourseWorkStore } from '@/stores/admin/teaching/CourseWorkStore'
 import { useCourseDateStore } from '@/stores/admin/teaching/CourseDateStore'
 import { useSchoolHourStore } from '@/stores/admin/teaching/SchoolHourStore'
+import { useHolidayStore } from '@/stores/admin/teaching/HolidayStore'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
+import PersonalAppointments from './PersonalAppointments.vue'
+import PersonalAppointmentCard from './PersonalAppointmentCard.vue'
+import { nextPersonalAppointmentDate, personalAppointmentDuration, personalAppointmentHeight, personalAppointmentGridPlacement, personalAppointmentOccurrences, personalAppointmentTimeline } from '@/helpers/teachingPersonalAppointments'
 
 const RANGE_TODAY = 'today'
 const RANGE_WEEK = 'week'
@@ -202,55 +275,67 @@ const RANGE_NEXT_WEEK = 'next_week'
 const RANGE_MONTH = 'month'
 const RANGE_CURRENT_SEMESTER = 'current_semester'
 
-function curriculumAttachmentVisibility(courseDate, hasAssignment) {
-    if (!hasAssignment) return null
+const timetableCellObservers = new WeakMap()
+const timetableDurationObservers = new WeakMap()
 
-    let sharedCount = Number(courseDate?.shared_curriculum_attachments_count ?? 0)
-    let privateCount = Number(courseDate?.private_curriculum_attachments_count ?? 0)
-
-    if (Array.isArray(courseDate?.adopted_materials)) {
-        const attachments = courseDate.adopted_materials.flatMap((material) =>
-            Array.isArray(material?.attachments) ? material.attachments : [],
-        )
-        const visibilityByFile = new Map()
-        attachments.forEach((attachment, index) => {
-            const key = attachment.source_teaching_curriculum_document_id
-                ? `document-${attachment.source_teaching_curriculum_document_id}`
-                : `attachment-${attachment.id ?? index}`
-            visibilityByFile.set(key, visibilityByFile.get(key) === true || attachment.student_visible === true)
-        })
-        sharedCount = [...visibilityByFile.values()].filter(Boolean).length
-        privateCount = visibilityByFile.size - sharedCount + Number(courseDate?.unadopted_curriculum_attachments_count ?? 0)
-    }
-
-    const indicators = [
-        {
-            key: 'shared', icon: 'mdi-eye', color: 'success', count: sharedCount,
-            label: sharedCount === 1 ? '1 veröffentlichter Anhang' : `${sharedCount} veröffentlichte Anhänge`,
-            summary: `${sharedCount} veröffentlicht`,
-        },
-        {
-            key: 'private', icon: 'mdi-eye-off', color: 'grey-darken-1', count: privateCount,
-            label: privateCount === 1 ? '1 verborgener Anhang' : `${privateCount} verborgene Anhänge`,
-            summary: `${privateCount} verborgen`,
-        },
-    ].filter((indicator) => indicator.count > 0)
-
-    if (indicators.length === 0) {
-        return {
-            indicators: [{ key: 'private', icon: 'mdi-eye-off', color: 'grey-darken-1', count: 0, label: 'Keine Anhänge veröffentlicht' }],
-            label: 'Keine Anhänge veröffentlicht',
+const scaleAppointments = {
+    mounted(table) {
+        if (typeof ResizeObserver === 'undefined') return
+        const update = () => {
+            const measurements = [...table.querySelectorAll('tr[data-hour][data-duration]')].map((row) => ({
+                minutes: Number(row.dataset.duration), height: row.getBoundingClientRect().height - 2,
+            }))
+            for (const card of table.querySelectorAll('.timetable-duration-card')) {
+                const height = personalAppointmentHeight(Number(card.dataset.duration), measurements)
+                const value = height === null ? '' : `${height}px`
+                if (card.style.minHeight !== value) card.style.minHeight = value
+                const gap = personalAppointmentHeight(Number(card.dataset.gapMinutes), measurements)
+                const margin = `${gap || 0}px`
+                if (card.style.marginTop !== margin) card.style.marginTop = margin
+            }
         }
-    }
+        const observer = new ResizeObserver(update)
+        observer.observe(table)
+        timetableDurationObservers.set(table, { observer, update })
+        update()
+    },
+    updated(table) {
+        timetableDurationObservers.get(table)?.update()
+    },
+    unmounted(table) {
+        timetableDurationObservers.get(table)?.observer.disconnect()
+        timetableDurationObservers.delete(table)
+    },
+}
 
-    return { indicators, label: indicators.map((indicator) => indicator.summary).join(', ') }
+const fillCell = {
+    mounted(cell) {
+        if (typeof ResizeObserver === 'undefined') return
+        const content = cell.querySelector('.timetable-cell-content')
+        if (!content) return
+        const observer = new ResizeObserver(() => {
+            const height = cell.getBoundingClientRect().height - 2
+            const value = `${Math.max(0, height)}px`
+            if (content.style.getPropertyValue('--timetable-cell-height') !== value) content.style.setProperty('--timetable-cell-height', value)
+        })
+        timetableCellObservers.set(cell, observer)
+        observer.observe(cell)
+    },
+    unmounted(cell) {
+        timetableCellObservers.get(cell)?.disconnect()
+        timetableCellObservers.delete(cell)
+    },
 }
 
 export default {
-    components: { ItsGridBox },
+    directives: { fillCell, scaleAppointments },
+    components: { ItsGridBox, PersonalAppointments, PersonalAppointmentCard },
 
     beforeMount() {
         const courseStore = useCourseStore()
+        if (this.config?.user?.id && this.config?.selected_school?.id && this.config?.selected_schoolyear?.id) {
+            useHolidayStore().indexMine()
+        }
         const returnState = courseStore.getTimetableReturn(this.$route?.path)
             || courseStore.getTimetableView(this.$route?.path, this.$route?.query)
         this.pendingTimetableRestore = returnState
@@ -268,6 +353,9 @@ export default {
     },
 
     async mounted() {
+        this.nowTimer = setInterval(() => {
+            this.nowTs = Date.now()
+        }, 1000)
         const courseStore = useCourseStore()
         const returnState = this.pendingTimetableRestore
         const initialRange = this.range
@@ -296,6 +384,7 @@ export default {
     },
 
     beforeUnmount() {
+        clearInterval(this.nowTimer)
         this.timetableDisposed = true
         window.removeEventListener('scroll', this.persistTimetableView, true)
         window.removeEventListener('pagehide', this.persistTimetableView)
@@ -315,10 +404,35 @@ export default {
             pendingTimetableRestore: null,
             timetableReady: false,
             timetableDisposed: false,
+            nowTs: Date.now(),
+            nowTimer: null,
+            appointmentDefinitions: [],
+            appointmentLoadError: '',
         }
     },
 
     computed: {
+        personalAppointmentOccurrences() {
+            const [from, until] = this.currentRangeBounds()
+            if (!from || !until) return []
+            return personalAppointmentOccurrences(this.appointmentDefinitions, this.normalizeDateToString(from), this.normalizeDateToString(until))
+        },
+        appointmentBoundaryItems() {
+            return this.appointmentDefinitions.flatMap((appointment) => [
+                { dateObj: parseLocalDate(appointment.date) },
+                { dateObj: parseLocalDate(appointment.repeat_until || appointment.date) },
+            ])
+        },
+        rangeSelection: {
+            get() {
+                return this.range === RANGE_NEXT_WEEK && this.offset !== 0 ? null : this.range
+            },
+            set(value) {
+                if (!value) return
+                this.range = value
+                this.resetOffset()
+            },
+        },
         ...mapWritableState(useAdminStore, ['action', 'action_2', 'config']),
         ...mapWritableState(useCourseStore, [
             'courses',
@@ -339,6 +453,8 @@ export default {
             'timetable_view_mode',
         ]),
         ...mapWritableState(useCourseDateStore, ['selected_courseDate']),
+        ...mapState(useCourseWorkStore, { loadedWorkCourseId: 'loadedCourseId', loadedCourseWorks: 'courseWorks' }),
+        ...mapState(useHolidayStore, ['my_holidays']),
         ...mapWritableState(useSchoolHourStore, ['school_hours']),
         schoolHoursByHour() {
             const entries = Array.isArray(this.school_hours) ? this.school_hours : []
@@ -365,6 +481,7 @@ export default {
                     const classLabel = Array.isArray(course?.classes) ? course.classes.join(', ') : ''
                     const courseTitle = (course?.title || '').toString().trim()
                     const dates = Array.isArray(course?.course_dates) ? course.course_dates : []
+                    const scheduledWorkDates = this.scheduledWorkDatesForCourse(course)
 
                     return dates.map((courseDate) => {
                         const date = (courseDate?.date || '').toString().slice(0, 10)
@@ -378,9 +495,6 @@ export default {
                         const timeRangeLabel = this.formatHoursTimeRange(hours)
 
                         const status = Array.isArray(courseDate?.status) ? courseDate.status : []
-                        const hasCurriculumAssignment = Array.isArray(courseDate?.adopted_materials)
-                            ? courseDate.adopted_materials.length > 0
-                            : courseDate?.has_curriculum_assignment === true
 
                         return {
                             key: `${course?.id || 'x'}-${courseDate?.id || date}-${hoursLabel}`,
@@ -389,18 +503,21 @@ export default {
                             date,
                             dateObj,
                             hours,
+                            cancelled_hours: cancelledCourseDateHours(courseDate),
                             hoursLabel,
                             timeRangeLabel,
                             classLabel: classLabel || '-',
                             courseTitle: courseTitle || '-',
                             content: (courseDate?.content || '').toString().trim(),
-                            hasCurriculumAssignment,
-                            curriculumAttachmentVisibility: curriculumAttachmentVisibility(courseDate, hasCurriculumAssignment),
+                            contentEntered: this.hasLessonContent(courseDate?.content),
+                            curriculumAssigned: course.curricula_enabled !== false && (typeof courseDate?.has_curriculum_assignment === 'boolean'
+                                ? courseDate.has_curriculum_assignment
+                                : Array.isArray(courseDate?.adopted_materials) && courseDate.adopted_materials.length > 0),
+                            workScheduled: scheduledWorkDates.includes(date),
                             freeReason: (courseDate?.free_reason || '').toString().trim(),
                             status,
-                            attendanceChecked: typeof courseDate?.attendance_checked === 'boolean'
-                                ? courseDate.attendance_checked
-                                : status.includes('att_checked:1'),
+                            attendanceChecked: this.attendanceIsComplete(course, courseDate),
+                            attendanceCounts: this.attendanceCounts(course, courseDate),
                         }
                     })
                 })
@@ -413,6 +530,28 @@ export default {
                     if (hourA !== hourB) return hourA - hourB
                     return a.courseTitle.localeCompare(b.courseTitle, 'de', { sensitivity: 'base' })
                 })
+        },
+        viennaNow() {
+            const now = new Date(this.nowTs)
+            return {
+                date: applicationDate(now),
+                time: now.toLocaleTimeString('en-GB', { timeZone: 'Europe/Vienna', hourCycle: 'h23' }),
+            }
+        },
+        highlightedTeachingDate() {
+            const today = parseLocalDate(this.viennaNow.date)
+            return this.timetableItems.find((item) => !this.hasFreeStatus(item) && item.dateObj >= today)?.date || null
+        },
+        schoolHolidayDates() {
+            return new Set((this.my_holidays || []).filter((holiday) => holiday.scope === 'school')
+                .map((holiday) => String(holiday.date || '').slice(0, 10)))
+        },
+        occupiedTeachingDates() {
+            return new Set([
+                ...this.timetableItems.filter((item) => !this.hasFreeStatus(item)).map((item) => item.date),
+                ...this.personalAppointmentOccurrences.filter((appointment) => appointment.kind !== 'special_assignment')
+                    .map((appointment) => appointment.occurrenceDate),
+            ])
         },
         filteredItems() {
             const [from, until] = this.currentRangeBounds()
@@ -482,10 +621,11 @@ export default {
                 if (!this.semesterMeta.sem2Start) return false
                 return this.selectedSemesterNumber > 1
             }
-            if (!this.timetableItems.length) return false
+            const items = [...this.timetableItems, ...(this.appointmentBoundaryItems || [])].sort((left, right) => left.dateObj - right.dateObj)
+            if (!items.length) return false
             const [from] = this.currentRangeBounds()
             if (!from) return false
-            const earliestDate = this.timetableItems[0]?.dateObj
+            const earliestDate = items[0]?.dateObj
             if (!earliestDate) return false
             return earliestDate < from
         },
@@ -494,10 +634,11 @@ export default {
                 if (!this.semesterMeta.sem2Start) return false
                 return this.selectedSemesterNumber < 2
             }
-            if (!this.timetableItems.length) return false
+            const items = [...this.timetableItems, ...(this.appointmentBoundaryItems || [])].sort((left, right) => left.dateObj - right.dateObj)
+            if (!items.length) return false
             const [, until] = this.currentRangeBounds()
             if (!until) return false
-            const latestDate = this.timetableItems[this.timetableItems.length - 1]?.dateObj
+            const latestDate = items[items.length - 1]?.dateObj
             if (!latestDate) return false
             return latestDate > until
         },
@@ -514,7 +655,7 @@ export default {
             const cur = new Date(from)
             while (cur <= until) {
                 const dayOfWeek = cur.getDay()
-                if (dayOfWeek >= 1 && dayOfWeek <= 5) {
+                if ((dayOfWeek >= 1 && dayOfWeek <= 5) || (this.personalAppointmentOccurrences || []).some((appointment) => appointment.occurrenceDate === this.normalizeDateToString(cur))) {
                     days.push(new Date(cur))
                 }
                 cur.setDate(cur.getDate() + 1)
@@ -523,7 +664,9 @@ export default {
         },
         tableHours() {
             const schoolHourList = Array.isArray(this.school_hours) ? this.school_hours : []
-            const itemHours = this.filteredItems.flatMap((i) => i.hours)
+            const appointmentHours = (this.appointmentGridPlacements || []).flatMap((placement) => placement.blocks.flatMap((block) => block.hours))
+            const gapHours = (this.appointmentGridPlacements || []).flatMap((placement) => placement.gaps.map((gap) => gap.afterHour))
+            const itemHours = [...this.filteredItems.flatMap((i) => i.hours), ...appointmentHours, ...gapHours]
             if (!itemHours.length && !schoolHourList.length) return []
             if (!itemHours.length) {
                 return schoolHourList.map((sh) => Number(sh.hour)).sort((a, b) => a - b)
@@ -533,9 +676,9 @@ export default {
             const minHour = isWeekRange && firstTeachingHour >= 1 && firstTeachingHour <= 6 ? 1 : firstTeachingHour
             const maxHour = Math.max(...itemHours)
             if (schoolHourList.length > 0) {
-                return schoolHourList
+                return [...new Set([...schoolHourList
                     .map((sh) => Number(sh.hour))
-                    .filter((h) => h >= minHour && h <= maxHour)
+                    .filter((h) => h >= minHour && h <= maxHour), ...appointmentHours])]
                     .sort((a, b) => a - b)
             }
             const hours = []
@@ -543,6 +686,12 @@ export default {
                 hours.push(h)
             }
             return hours
+        },
+        appointmentGridPlacements() {
+            return this.personalAppointmentOccurrences.map((appointment) => personalAppointmentGridPlacement(appointment, this.school_hours || []))
+        },
+        outsideAppointmentPlacements() {
+            return this.appointmentGridPlacements.filter((placement) => placement.outside.length)
         },
         tableCellItems() {
             const map = {}
@@ -565,6 +714,68 @@ export default {
     },
 
     methods: {
+        scheduledWorkIconColor(date) {
+            return scheduledWorkIconColor(date, new Date(this.nowTs))
+        },
+        personalAppointmentDuration,
+        personalAppointmentsOnDay(day) {
+            return this.personalAppointmentOccurrences.filter((appointment) => appointment.occurrenceDate === this.normalizeDateToString(day))
+        },
+        outsideAppointmentsOnDay(day) {
+            const startsAt = this.outsideAppointmentPlacements.flatMap((placement) => placement.outside.map((segment) => segment.starts_at)).sort()[0]
+            const placements = this.outsideAppointmentPlacements.filter((placement) => placement.appointment.occurrenceDate === this.normalizeDateToString(day))
+                .map((placement) => ({ appointment: placement.appointment, segments: placement.outside }))
+            return personalAppointmentTimeline(placements, startsAt)
+        },
+        tablePersonalAppointmentBlocks(day, hour) {
+            const date = this.normalizeDateToString(day)
+            return (this.appointmentGridPlacements || []).filter((placement) => placement.appointment.occurrenceDate === date)
+                .flatMap((placement) => placement.blocks.map((block, index) => ({ ...block, appointment: placement.appointment, key: `${placement.appointment.id}-${index}` })))
+                .filter((block) => block.hours.includes(Number(hour)))
+        },
+        tablePersonalAppointmentColumns(day, hour) {
+            const hours = this.tableBlockHours(day, hour)
+            const slots = this.tableBlockSlots(day, hour)
+            const columns = new Map()
+            for (const cellHour of hours) {
+                for (const block of this.tablePersonalAppointmentBlocks(day, cellHour)) {
+                    const clipped = block.hours.filter((value) => hours.includes(value))
+                    if (cellHour !== clipped[0]) continue
+                    if (!columns.has(block.appointment.id)) columns.set(block.appointment.id, { appointment: block.appointment, blocks: [] })
+                    const start = slots.findIndex((slot) => !slot.gap && slot.hour === clipped[0])
+                    const end = slots.findIndex((slot) => !slot.gap && slot.hour === clipped.at(-1))
+                    columns.get(block.appointment.id).blocks.push({ appointment: block.appointment, start: start + 1, span: end - start + 1,
+                        time_segments: block.time_segments.filter((segment) => !segment.hour || clipped.includes(Number(segment.hour))) })
+                }
+            }
+            for (const [index, slot] of slots.entries()) {
+                if (!slot.gap) continue
+                for (const placement of this.gapAppointmentsOnDay(day, slot.hour)) {
+                    if (!columns.has(placement.appointment.id)) columns.set(placement.appointment.id, { appointment: placement.appointment, blocks: [] })
+                    columns.get(placement.appointment.id).blocks.push({ start: index + 1, span: 1, time_segments: placement.segments, gapMinutes: placement.gapMinutes })
+                }
+            }
+            return [...columns.values()]
+        },
+        hasAppointmentGapAfter(hour) {
+            return this.appointmentGridPlacements.some((placement) => placement.gaps.some((gap) => gap.afterHour === Number(hour)))
+        },
+        gapAppointmentsOnDay(day, hour) {
+            const placements = this.appointmentGridPlacements.filter((placement) => placement.appointment.occurrenceDate === this.normalizeDateToString(day))
+                .map((placement) => ({ appointment: placement.appointment, segments: placement.gaps.filter((gap) => gap.afterHour === Number(hour)).map((gap) => gap.segment) }))
+                .filter((placement) => placement.segments.length)
+            return personalAppointmentTimeline(placements, this.schoolHoursByHour[hour]?.until?.slice(0, 5))
+        },
+        tableBlockSlots(day, hour) {
+            const hours = this.tableBlockHours(day, hour)
+            return hours.flatMap((value, index) => [
+                { hour: value, gap: false },
+                ...(index < hours.length - 1 && this.hasAppointmentGapAfter(value) ? [{ hour: value, gap: true }] : []),
+            ])
+        },
+        tableRowSpan(day, hour) {
+            return this.tableBlockSlots(day, hour).length
+        },
         defaultRange() {
             const today = parseLocalDate(applicationDate())
             const weekEnd = this.endOfWeek(today)
@@ -644,6 +855,12 @@ export default {
                 .filter((item) => !this.hasFreeStatus(item))
                 .map((item) => item?.dateObj)
                 .find((date) => date instanceof Date && !isNaN(date.getTime()) && date > currentWeekEnd)
+
+            const appointmentDate = this.appointmentDefinitions?.length
+                ? nextPersonalAppointmentDate(this.appointmentDefinitions, this.normalizeDateToString(today)) : null
+            if (appointmentDate && (!nextCourseDate || parseLocalDate(appointmentDate) < nextCourseDate)) {
+                return this.startOfWeek(parseLocalDate(appointmentDate))
+            }
 
             if (nextCourseDate) {
                 return this.startOfWeek(nextCourseDate)
@@ -766,7 +983,16 @@ export default {
             return `${y}-${m}-${d}`
         },
         isDayToday(day) {
-            return this.normalizeDay(day).getTime() === parseLocalDate(applicationDate()).getTime()
+            return this.normalizeDateToString(day) === this.viennaNow.date
+        },
+        isHighlightedTeachingDay(day) {
+            return this.normalizeDateToString(day) === this.highlightedTeachingDate
+        },
+        isFreeTeachingDay(day) {
+            return this.isSchoolHoliday(day) || !this.occupiedTeachingDates.has(this.normalizeDateToString(day))
+        },
+        isSchoolHoliday(day) {
+            return this.schoolHolidayDates.has(this.normalizeDateToString(day))
         },
         formatDayOfWeek(day) {
             return day.toLocaleDateString('de-DE', { weekday: 'short' })
@@ -777,6 +1003,34 @@ export default {
         getTableCellItems(day, hour) {
             const key = `${this.normalizeDateToString(day)}-${hour}`
             return this.tableCellItems[key] || []
+        },
+        tableCellsConnect(day, hour, adjacentHour) {
+            const current = this.getTableCellItems(day, hour)
+            const adjacent = this.getTableCellItems(day, adjacentHour)
+            if (!current.length && !adjacent.length) {
+                const currentBlocks = this.tablePersonalAppointmentBlocks(day, hour).map((block) => block.key).sort()
+                const adjacentBlocks = this.tablePersonalAppointmentBlocks(day, adjacentHour).map((block) => block.key).sort()
+                return currentBlocks.length > 0 && currentBlocks.join('|') === adjacentBlocks.join('|')
+            }
+            if (current.length !== 1 || adjacent.length !== 1) return false
+            const item = current[0]
+            const next = adjacent[0]
+            return item.courseId != null && String(next.courseId) === String(item.courseId)
+                && item.key === next.key
+                && this.getStatusClass(item, hour).join(' ') === this.getStatusClass(next, adjacentHour).join(' ')
+        },
+        isTableCellContinuation(day, hour) {
+            return this.tableHours.includes(Number(hour) - 1) && this.tableCellsConnect(day, hour, Number(hour) - 1)
+        },
+        tableCellSpan(day, hour) {
+            let span = 1
+            while (this.tableHours.includes(Number(hour) + span) && this.tableCellsConnect(day, Number(hour) + span - 1, Number(hour) + span)) {
+                span++
+            }
+            return span
+        },
+        tableBlockHours(day, hour) {
+            return Array.from({ length: this.tableCellSpan(day, hour) }, (_, index) => Number(hour) + index)
         },
         navigatePrevious() {
             if (this.range === RANGE_CURRENT_SEMESTER && !this.canNavigatePrevious) return
@@ -789,12 +1043,12 @@ export default {
         resetOffset() {
             this.offset = 0
         },
-        getStatusClass(item) {
+        getStatusClass(item, hour) {
             const classes = []
             if (this.hasExamStatus(item)) {
                 classes.push('timetable-item--exam')
             }
-            if (this.hasFreeStatus(item)) {
+            if (this.hasFreeStatus(item, hour)) {
                 classes.push('timetable-item--free')
             }
             return classes
@@ -812,7 +1066,9 @@ export default {
             const statusStr = status.join(' ').toLowerCase()
             return statusStr.includes('pruefung') || statusStr.includes('prüfung')
         },
-        hasFreeStatus(item) {
+        hasFreeStatus(item, hour) {
+            if (hour !== undefined && isCourseDateHourCancelled(item, hour)) return true
+            if (item?.hours?.length && activeCourseDateHours(item).length === 0) return true
             const status = Array.isArray(item?.status) ? item.status : []
             const statusStr = status.join(' ').toLowerCase()
             return statusStr.includes('frei')
@@ -822,20 +1078,123 @@ export default {
                 || statusStr.includes('entfallen')
         },
         isToday(item) {
-            const today = parseLocalDate(applicationDate())
-            return item.dateObj.getTime() === today.getTime()
+            return item.date === this.viennaNow.date
+        },
+        isUpcomingLesson(item, hour) {
+            if (this.hasFreeStatus(item) || item.date !== this.highlightedTeachingDate) return false
+            const hours = hour === undefined ? item.hours : [hour]
+            return hours.some((lessonHour) => {
+                if (isCourseDateHourCancelled(item, lessonHour)) return false
+                const schoolHour = this.schoolHoursByHour[lessonHour]
+                const from = this.lessonTime(schoolHour?.from)
+                const until = this.lessonTime(schoolHour?.until)
+                if (!from || !until || from >= until) return false
+                return item.date > this.viennaNow.date
+                    || (item.date === this.viennaNow.date && this.viennaNow.time < until)
+            })
+        },
+        lessonTime(value) {
+            const time = (value || '').toString().trim()
+            if (!/^(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/.test(time)) return null
+            return time.length === 5 ? `${time}:00` : time
         },
         isAttendanceChecked(item) {
-            if (!item) return false
-            if (typeof item.attendanceChecked === 'boolean') return item.attendanceChecked
-            const status = Array.isArray(item?.status) ? item.status : []
-            return status.includes('att_checked:1')
+            return item?.attendanceChecked === true
+        },
+        hasLessonContent(content) {
+            const text = String(content || '').trim()
+            if (!text) return false
+            const document = new DOMParser().parseFromString(text, 'text/html')
+            return Boolean((document.body.textContent || '').replace(/[\u200B-\u200D\uFEFF]/g, '').trim())
+        },
+        scheduledWorkDatesForCourse(course) {
+            if (Number(course?.id) !== this.loadedWorkCourseId) return course?.scheduled_work_dates || []
+
+            const dateKey = (value) => {
+                if (!value) return null
+                const date = parseLocalDate(value)
+                return isNaN(date.getTime()) ? null : applicationDate(date)
+            }
+            const dates = new Set()
+            for (const work of this.loadedCourseWorks || []) {
+                if (work.teaching_course_id && Number(work.teaching_course_id) !== Number(course.id)) continue
+                const fallbackDate = dateKey(work.date_for_all_groups)
+                const groups = Array.isArray(work.groups) ? work.groups : []
+                const hasExplicitGroupDates = groups.some((group) => dateKey(group?.date))
+                for (const group of groups) {
+                    const date = dateKey(group?.date) || fallbackDate
+                    if (date) dates.add(date)
+                }
+                if (fallbackDate && (!work.is_group_work || !hasExplicitGroupDates)) dates.add(fallbackDate)
+            }
+            return [...dates]
+        },
+        attendanceIsComplete(course, courseDate) {
+            if (!courseDate?.attendance || typeof courseDate.attendance !== 'object') {
+                return courseDate?.attendance_complete === true
+            }
+            return this.attendanceCounts(course, courseDate) !== null
+        },
+        attendanceCounts(course, courseDate) {
+            if (!courseDate?.attendance || typeof courseDate.attendance !== 'object') {
+                const counts = courseDate?.attendance_counts
+                return courseDate?.attendance_complete === true
+                    && Number.isInteger(counts?.present) && counts.present >= 0
+                    && Number.isInteger(counts?.absent) && counts.absent >= 0
+                    && counts.present + counts.absent > 0 ? counts : null
+            }
+            const students = Array.isArray(course?.students_info) ? course.students_info : course?.students || []
+            const studentIds = [...new Set(students
+                .filter((student) => !student?.canceled_at && !student?.deleted_at)
+                .map((student) => String(student?.id ?? student)))]
+            if (!studentIds.length) return null
+
+            let present = 0
+            for (const studentId of studentIds) {
+                const attendance = courseDate.attendance
+                const key = Object.prototype.hasOwnProperty.call(attendance, `s_${studentId}`) ? `s_${studentId}` : studentId
+                if (!Object.prototype.hasOwnProperty.call(attendance, key)
+                    || ![true, false, 1, 0, '1', '0', 'true', 'false'].includes(attendance[key])) return null
+                if ([true, 1, '1', 'true'].includes(attendance[key])) present += 1
+            }
+            return { present, absent: studentIds.length - present }
         },
     },
 }
 </script>
 
 <style scoped>
+.timetable-card-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 6px;
+    min-width: 0;
+}
+
+.timetable-card-heading {
+    flex: 1;
+    min-width: 0;
+}
+
+.timetable-status-icons {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 4px;
+}
+
+.timetable-attendance-counts {
+    display: flex;
+    justify-content: flex-end;
+    gap: 3px;
+    margin-top: auto;
+    padding-top: 4px;
+    font-size: 0.65rem;
+    font-weight: 400;
+    line-height: 1.2;
+}
+
 .timetable-range-toggle {
     flex-wrap: wrap;
     row-gap: 4px;
@@ -867,32 +1226,31 @@ export default {
 }
 
 .timetable-item--free {
-    background-color: #c8e6c9 !important;
-    border-left: 4px solid #4caf50;
-    position: relative;
-    overflow: hidden;
+    background-color: #eff6f0 !important;
+    color: #4d6956;
+    border-left: 4px solid #8eb89a;
 }
 
-.timetable-item--free::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(
-        to top right,
-        transparent calc(50% - 0.6px),
-        rgba(0, 0, 0, 0.22) calc(50% - 0.6px),
-        rgba(0, 0, 0, 0.22) calc(50% + 0.6px),
-        transparent calc(50% + 0.6px)
-    );
-    pointer-events: none;
+.timetable-cancelled-label {
+    display: inline-block;
+    width: fit-content;
+    padding: 1px 5px;
+    margin-bottom: 3px;
+    border-radius: 4px;
+    background-color: #2e7d46;
+    color: #fff;
+    font-size: 0.65rem;
+    font-weight: 700;
+    line-height: 1.4;
+    letter-spacing: 0.04em;
 }
 
 .timetable-item--exam.timetable-item--free {
-    background-color: #ffebee !important;
-    border-left-color: #ff5722;
+    background-color: #eff6f0 !important;
+    border-left-color: #8eb89a;
 }
 
-.timetable-item--today {
+.timetable-item--upcoming {
     border-left: 4px solid #ff9800 !important;
 }
 
@@ -904,11 +1262,37 @@ export default {
     overflow-x: auto;
 }
 
+.personal-appointment-cell {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 4px;
+}
+
+.timetable-cell-content { display: flex; gap: 2px; align-items: stretch; height: var(--timetable-cell-height, auto); min-height: min-content; }
+.timetable-cell-courses, .timetable-cell-appointments { flex: 1; min-width: 84px; }
+.timetable-cell-courses { display: flex; flex-direction: column; gap: 2px; }
+.timetable-cell-courses > .timetable-grid-item { flex: 1 0 52px; min-height: max-content; margin-bottom: 0; }
+.timetable-cell-appointments { display: grid; gap: 0; }
+.timetable-cell-appointments :deep(.personal-appointment-card) { padding: 4px 5px; gap: 0; }
+.timetable-gap-cell { height: auto !important; }
+.timetable-gap-cell .personal-appointment-cell { padding: 0; gap: 2px; }
+.personal-appointment-cell :deep(.timetable-duration-card) { flex: none; }
+
+.timetable-table-card {
+    width: 100%;
+    max-width: 100%;
+}
+
 .timetable-grid-table {
-    /* Size each day from its widest entry without distributing unused container space. */
-    width: max-content;
+    width: 100%;
+    table-layout: fixed;
     border-collapse: collapse;
     font-size: 0.8rem;
+}
+
+.timetable-grid-width {
+    width: 100%;
 }
 
 .timetable-grid-table th,
@@ -937,6 +1321,41 @@ export default {
     color: #e65100;
 }
 
+.timetable-grid-table .day-free {
+    background-color: #e8f5e9;
+}
+
+.timetable-grid-table th.day-free {
+    color: #1b5e20;
+}
+
+.timetable-grid-table .day-holiday {
+    background-color: #c8e6c9;
+}
+
+.timetable-grid-table .day-highlighted {
+    --frame-top: 0px;
+    --frame-bottom: 0px;
+    position: relative;
+}
+
+.timetable-grid-table .day-highlighted::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border: solid #4b5563;
+    border-width: var(--frame-top) 2px var(--frame-bottom);
+    pointer-events: none;
+}
+
+.timetable-grid-table th.day-highlighted {
+    --frame-top: 2px;
+}
+
+.timetable-grid-table tbody tr:last-child .day-highlighted {
+    --frame-bottom: 2px;
+}
+
 .timetable-day-date {
     font-size: 0.75rem;
     font-weight: 400;
@@ -961,17 +1380,20 @@ export default {
     opacity: 0.65;
 }
 
-.timetable-grid-cell {
+.timetable-grid-table td.timetable-grid-cell {
+    position: relative;
     min-width: 130px;
     height: 52px;
-    padding: 2px;
+    padding: 0.5px 1px;
 }
 
 .timetable-grid-item {
+    display: flex;
+    flex-direction: column;
     padding: 4px 5px;
     border-radius: 3px;
-    background-color: #e3f2fd;
-    border-left: 3px solid #1976d2;
+    background-color: #bbd9f4;
+    border-left: 0 !important;
     margin-bottom: 2px;
     cursor: pointer;
     transition: opacity 0.15s;
@@ -981,16 +1403,30 @@ export default {
     opacity: 0.8;
 }
 
+.timetable-grid-item.timetable-item--upcoming {
+    background-color: #ffcc80;
+}
+
+.timetable-grid-item--block {
+    margin-bottom: 0;
+}
+
 .timetable-grid-course {
     font-weight: 600;
     font-size: 0.75rem;
-    white-space: nowrap;
-    flex-shrink: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    flex-shrink: 1;
 }
 
 .timetable-grid-class {
     font-size: 0.7rem;
     opacity: 0.7;
+    overflow-wrap: anywhere;
+}
+
+.timetable-grid-item > .d-flex {
+    flex-wrap: wrap;
 }
 
 .timetable-grid-content {
@@ -1011,16 +1447,16 @@ export default {
 }
 
 .timetable-grid-item.timetable-item--free {
-    background-color: #c8e6c9;
-    border-left-color: #4caf50;
+    background-color: #eff6f0;
+    border-left-color: #8eb89a;
 }
 
 .timetable-grid-item.timetable-item--exam.timetable-item--free {
-    background-color: #ffebee;
-    border-left-color: #ff5722;
+    background-color: #eff6f0;
+    border-left-color: #8eb89a;
 }
 
-.timetable-grid-item.timetable-item--today {
+.timetable-grid-item.timetable-item--upcoming {
     border-left-color: #ff9800;
 }
 

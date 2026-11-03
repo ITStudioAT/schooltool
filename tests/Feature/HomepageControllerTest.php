@@ -378,7 +378,7 @@ describe('config', function () {
             ->assertJsonPath('tool_licence_statuses.StudentsTimetables', 'active');
     });
 
-    test('config resolves module statuses from the selected school instead of the first school tool record', function () {
+    test('config resolves app-wide module statuses despite conflicting selected-school values', function () {
         $otherSchool = School::factory()->create([
             'short_name' => 'OTHER',
             'is_selectable' => true,
@@ -401,10 +401,10 @@ describe('config', function () {
         $response = $this->getJson('/api/homepage/config?school='.$this->school->short_name);
 
         $response->assertOk()
-            ->assertJsonPath('register_active', true)
-            ->assertJsonPath('restaurant_active', true)
-            ->assertJsonPath('tool_module_statuses.register', 'active')
-            ->assertJsonPath('tool_module_statuses.restaurant', 'active');
+            ->assertJsonPath('register_active', false)
+            ->assertJsonPath('restaurant_active', false)
+            ->assertJsonPath('tool_module_statuses.register', 'inactive')
+            ->assertJsonPath('tool_module_statuses.restaurant', 'inactive');
     });
 
     test('config includes the restaurant user information intro html for the selected school', function () {

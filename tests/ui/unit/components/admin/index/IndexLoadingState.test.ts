@@ -17,6 +17,37 @@ vi.mock('@/stores/admin/SchoolStore', () => ({
 }))
 
 describe('Admin dashboard loading state', () => {
+    it('waits for all connection probes before reporting a system or connection failure', () => {
+        const dashboardStatus = (IndexPage as any).computed.dashboardStatus
+        const context = { config: { is_auth: true, user: { roles: ['super_admin'] } },
+            health_loaded: true, health_loading: false, healthStore: { is_healthy: false },
+            connections_status: { loading: true, hasError: true } }
+
+        expect(dashboardStatus.call(context)).toMatchObject({ state: 'loading', title: 'Status wird geprüft' })
+        context.connections_status.loading = false
+        expect(dashboardStatus.call(context)).toMatchObject({ state: 'error', detail: expect.stringContaining('Scheduler oder Worker') })
+        context.healthStore.is_healthy = true
+        expect(dashboardStatus.call(context)).toMatchObject({ state: 'error', detail: expect.stringContaining('Verbindungsprüfung') })
+        context.connections_status.hasError = false
+        expect(dashboardStatus.call(context)).toMatchObject({ state: 'healthy', title: 'Prüfung abgeschlossen' })
+    })
+
+    it('does not wait for hidden connection checks for other roles and keeps unknown health separate from success', () => {
+        const dashboardStatus = (IndexPage as any).computed.dashboardStatus
+        const context = { config: { is_auth: true, user: { roles: ['admin'] } },
+            health_loaded: true, health_loading: false, healthStore: { is_healthy: null },
+            connections_status: { loading: true, hasError: true } }
+
+        expect(dashboardStatus.call(context)).toMatchObject({ state: 'error', detail: 'Systemstatus konnte nicht geladen werden' })
+        context.healthStore.is_healthy = true
+        expect(dashboardStatus.call(context)).toMatchObject({ state: 'healthy' })
+        context.health_loading = true
+        expect(dashboardStatus.call(context)).toMatchObject({ state: 'loading' })
+        context.health_loading = false
+        context.health_loaded = false
+        expect(dashboardStatus.call(context)).toMatchObject({ state: 'loading' })
+    })
+
     it('releases the global loading state when initialization fails unexpectedly', async () => {
         globalThis.axios = {
             get: vi.fn().mockResolvedValue({}),

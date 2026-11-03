@@ -48,6 +48,55 @@ function reviewedPreview(conflicts: string[] = []) {
 }
 
 describe('Teaching synchronisation', () => {
+    it('includes teaching tools in the reviewed replacement scope with readable counts and conflicts', async () => {
+        const { post } = await mountSynchronisation()
+        const preview = reviewedPreview(['Eindeutiger Wert kollidiert in mc_tests.'])
+        preview.data.data.summary = [
+            { table: 'mc_catalogs', live: 2, replaced: 1, bytes: 100 },
+            { table: 'mc_tests', live: 3, replaced: 2, bytes: 100 },
+            { table: 'mc_attempts', live: 20, replaced: 10, bytes: 100 },
+            { table: 'number_system_game_sessions', live: 4, replaced: 2, bytes: 100 },
+            { table: 'number_system_game_runs', live: 8, replaced: 4, bytes: 100 },
+            { table: 'number_system_game_members', live: 16, replaced: 8, bytes: 100 },
+        ]
+        post.mockResolvedValueOnce(preview)
+
+        await wrapper.get('button').trigger('click')
+        await flushPromises()
+
+        expect(wrapper.text()).toContain('Unterricht Tools werden ebenfalls übernommen')
+        expect(wrapper.text()).toContain('Multiple-Choice-Fragenkataloge')
+        expect(wrapper.text()).toContain('Multiple-Choice-Teilnahmen, Antworten und Ergebnisse')
+        expect(wrapper.text()).toContain('Zahlensystem-Spielstände und Teams')
+        expect(wrapper.text()).toContain('Zahlensystem-Teilnahmen')
+        expect(wrapper.text()).not.toContain('mc_tests')
+        expect(wrapper.findAll('button')[1].attributes('disabled')).toBeDefined()
+    })
+
+    it('shows safe Dropbox remapping and recoverable unmatched folders without blocking a reviewed import', async () => {
+        const { post } = await mountSynchronisation()
+        const preview = reviewedPreview()
+        Object.assign(preview.data.data, {
+            dropbox_notices: ['Lokale Dropbox-Ordnerzuordnung: Arbeit #66 → #63.'],
+            dropbox_warnings: ['Arbeit #70 bleibt im Sicherheitsbackup; keiner anderen Arbeit zugeordnet.'],
+        })
+        post.mockResolvedValueOnce(preview)
+        await wrapper.get('button').trigger('click')
+        await flushPromises()
+        expect(wrapper.text()).toContain('#66 → #63')
+        expect(wrapper.text()).toContain('Arbeit #70 bleibt im Sicherheitsbackup')
+        expect(wrapper.text()).not.toContain('Übernahme gesperrt')
+        await wrapper.findAll('input')[0].setValue(true)
+        await wrapper.findAll('input')[1].setValue(true)
+        expect(wrapper.findAll('button')[1].attributes('disabled')).toBeUndefined()
+        post.mockResolvedValueOnce({ data: { message: 'Übernommen', backup: 'saved-backup',
+            dropbox_warnings: preview.data.data.dropbox_warnings } })
+        await wrapper.findAll('button')[1].trigger('click')
+        await flushPromises()
+        expect(wrapper.text()).toContain('Sicherheitsbackup herunterladen')
+        expect(wrapper.text()).toContain('Arbeit #70 bleibt im Sicherheitsbackup')
+    })
+
     it('checks availability without reading cloud data automatically', async () => {
         const { post } = await mountSynchronisation(false)
         expect(post).not.toHaveBeenCalled()

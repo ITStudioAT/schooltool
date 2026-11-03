@@ -4,7 +4,8 @@ import HopperSchools from '@/pages/admin/profile/components/HopperSchools.vue'
 describe('HopperSchools', () => {
     it('redirects to a full page reload after switching accounts', async () => {
         const switchHopperAccount = vi.fn().mockResolvedValue(true)
-        const loadConfig = vi.fn().mockResolvedValue(true)
+        const nextConfig = { capabilities: { teaching: true } }
+        const loadConfig = vi.fn().mockResolvedValue(nextConfig)
         const nextTick = vi.fn().mockResolvedValue(undefined)
         const redirectToPostHopTarget = vi.fn()
 
@@ -20,9 +21,9 @@ describe('HopperSchools', () => {
         )
 
         expect(switchHopperAccount).toHaveBeenCalledWith(17)
-        expect(loadConfig).toHaveBeenCalledOnce()
-        expect(nextTick).toHaveBeenCalledOnce()
-        expect(redirectToPostHopTarget).toHaveBeenCalledWith('/admin/teaching')
+        expect(loadConfig).toHaveBeenCalledWith({ navigationOnly: true })
+        expect(nextTick).not.toHaveBeenCalled()
+        expect(redirectToPostHopTarget).toHaveBeenCalledWith('/admin/teaching', nextConfig)
     })
 
     it('falls back to the dashboard when the preserved route is no longer allowed', () => {

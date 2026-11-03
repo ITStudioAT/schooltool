@@ -66,7 +66,7 @@
         </template>
         <v-card tile flat color="transparent" class="w-100">
             <v-card-text class="text-body-1 d-flex flex-column ga-2">
-                <v-card v-if="hasAuswertungContent && show_auswertung" variant="outlined">
+                <v-card v-if="calculationsEnabled && show_auswertung && hasAuswertungContent" variant="outlined">
                     <v-card-title class="d-flex align-center py-1 px-3">
                         <span class="text-subtitle-2">Auswertung</span>
                         <v-spacer />
@@ -306,7 +306,7 @@
                 </v-dialog>
 
 
-                <v-card v-if="!show_auswertung" variant="outlined" class="mt-4">
+                <v-card v-if="!show_auswertung || !calculationsEnabled" variant="outlined" class="mt-4">
                     <v-card-title class="text-subtitle-1 course-student-card-title">
                         <div class="course-student-card-title__heading">
                             <v-icon size="18">mdi-clipboard-text</v-icon>
@@ -317,6 +317,7 @@
                         </div>
                         <div class="course-student-card-title__actions">
                             <v-btn
+                                v-if="calculationsEnabled"
                                 size="small"
                                 :color="show_auswertung ? 'success' : 'primary'"
                                 :variant="show_auswertung ? 'flat' : 'tonal'"
@@ -712,7 +713,7 @@
                 <v-dialog v-model="show_work_entry_dialog" persistent max-width="500">
                     <v-card v-if="work_entry_dialog">
                         <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
-                            <v-icon size="18">mdi-clipboard-text</v-icon>
+                            <v-icon :color="workEntryIconColor(work_entry_dialog)" size="18">mdi-brain</v-icon>
                             Bewertung aus Arbeit
                             <v-chip v-if="work_entry_dialog.isGroupWork" size="x-small" variant="tonal" color="info">Gruppenarbeit</v-chip>
                             <v-spacer />
@@ -892,12 +893,14 @@
 </template>
 
 <script>
+import { comparePersonNames } from '@/helpers/personNames'
+import { teachingSemesterCount } from '@/helpers/teachingSemester'
 import CourseStudentNotes from './CourseStudentNotes.vue'
 import CourseStudentIndicators from './CourseStudentIndicators.vue'
 import WorkEvaluationPdf from './WorkEvaluationPdf.vue'
 import { defineAsyncComponent } from 'vue'
 import { mapWritableState } from 'pinia'
-import { parseLocalDate } from '@/helpers/date'
+import { parseLocalDate, scheduledWorkIconColor } from '@/helpers/date'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
 import { useCourseDateStore } from '@/stores/admin/teaching/CourseDateStore'
@@ -972,6 +975,9 @@ export default {
     },
 
     computed: {
+        calculationsEnabled() {
+            return this.teachingStore?.settings?.teaching_calculations_enabled !== false
+        },
         ...mapWritableState(useAdminStore, ['action', 'action_2', 'config']),
         ...mapWritableState(useCourseStore, ['selected_course', 'selected_course_id', 'selected_course_student', 'show_works', 'show_infos', 'show_dates', 'students_sort_mode']),
         ...mapWritableState(useCourseDateStore, ['selected_courseDate']),
@@ -1158,8 +1164,7 @@ export default {
             return this.teachingSchemas.find((schema) => schema.id === schemaId) || null
         },
         semesterCount() {
-            const grading = this.selectedSchema?.grading || {}
-            return Number(grading.semester_count) || 1
+            return teachingSemesterCount(this.selected_course, this.selectedSchema)
         },
         schoolSem2StartDate() {
             return this.config?.selected_schoolyear?.sem_2_start || null
@@ -1455,13 +1460,21 @@ export default {
     },
 
     watch: {
+        semesterCount: {
+            immediate: true,
+            handler(count) { if (count === 1) this.activeSemester = 1 },
+        },
         activeSemester(val) {
+            if (this.semesterCount === 1 && val !== 1) {
+                this.activeSemester = 1
+                return
+            }
             if (val !== this.config?.user?.teaching_active_semester) {
                 this.teachingStore.saveActiveSemester(val)
             }
         },
         'config.user.teaching_active_semester'(val) {
-            if (val) this.activeSemester = Number(val) || 1
+            if (val) this.activeSemester = this.semesterCount === 1 ? 1 : Number(val) || 1
         },
         'settings.teaching_show_behaviour'(newValue) {
             if (newValue !== false) {
@@ -1536,6 +1549,11 @@ export default {
     },
 
     methods: {
+        workEntryIconColor(dialog) {
+            const groupDate = this.normalizeDateString(dialog?.work?.groups?.[dialog.groupIndex]?.date)
+            const fallbackDate = this.normalizeDateString(dialog?.work?.date_for_all_groups)
+            return scheduledWorkIconColor(groupDate || fallbackDate)
+        },
         async copyEmail(email) {
             try {
                 await navigator.clipboard.writeText(email)
@@ -1622,30 +1640,7 @@ export default {
             return (student?.schoolclass || student?.class || '').toString()
         },
         compareStudentsBySelectedSort(a, b) {
-            const lastA = (a?.last_name || '').toString()
-            const lastB = (b?.last_name || '').toString()
-            const firstA = (a?.first_name || '').toString()
-            const firstB = (b?.first_name || '').toString()
-            const classA = this.studentClassValue(a)
-            const classB = this.studentClassValue(b)
-
-            if (this.students_sort_mode === 'last_name_first_name') {
-                const lastCmp = lastA.localeCompare(lastB, 'de', { sensitivity: 'base' })
-                if (lastCmp !== 0) return lastCmp
-
-                const firstCmp = firstA.localeCompare(firstB, 'de', { sensitivity: 'base' })
-                if (firstCmp !== 0) return firstCmp
-
-                return classA.localeCompare(classB, 'de', { numeric: true, sensitivity: 'base' })
-            }
-
-            const classCmp = classA.localeCompare(classB, 'de', { numeric: true, sensitivity: 'base' })
-            if (classCmp !== 0) return classCmp
-
-            const lastCmp = lastA.localeCompare(lastB, 'de', { sensitivity: 'base' })
-            if (lastCmp !== 0) return lastCmp
-
-            return firstA.localeCompare(firstB, 'de', { sensitivity: 'base' })
+            return comparePersonNames(a, b)
         },
         goToPreviousStudent() {
             if (!this.hasPreviousStudent) return

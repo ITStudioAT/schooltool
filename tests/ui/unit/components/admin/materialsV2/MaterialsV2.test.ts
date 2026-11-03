@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { config, flushPromises, shallowMount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
+import { reactive } from 'vue'
 import axios from 'axios'
 import MaterialsV2 from '@/pages/admin/materialsV2/MaterialsV2.vue'
 import CurriculumPdfPreview from '@/pages/admin/teaching/curricula/CurriculumPdfPreview.vue'
@@ -12,6 +13,15 @@ const { routeQuery, routerReplace, adminRoles } = vi.hoisted(() => ({
     routerReplace: vi.fn(() => Promise.resolve()),
     adminRoles: [] as string[],
 }))
+const adminConfig = reactive({
+    user: { id: 11 as number | null },
+    roles: adminRoles,
+    selected_schoolyear: { name: '2026/2027' },
+    selected_school: {
+        long_name: 'Christian-Doppler-Gymnasium Salzburg',
+        logo: 'logos/cdgym.svg',
+    },
+})
 
 config.global.stubs = {
     ...Object.fromEntries([
@@ -49,16 +59,7 @@ vi.mock('@/stores/spa/NotificationStore', () => ({
 }))
 
 vi.mock('@/stores/admin/AdminStore', () => ({
-    useAdminStore: () => ({
-        config: {
-            roles: adminRoles,
-            selected_schoolyear: { name: '2026/2027' },
-            selected_school: {
-                long_name: 'Christian-Doppler-Gymnasium Salzburg',
-                logo: 'logos/cdgym.svg',
-            },
-        },
-    }),
+    useAdminStore: () => ({ config: adminConfig }),
 }))
 
 function deferredResponse() {
@@ -76,6 +77,8 @@ function deferredResponse() {
 describe('MaterialsV2', () => {
     afterEach(() => {
         vi.useRealTimers()
+        vi.restoreAllMocks()
+        vi.unstubAllGlobals()
     })
 
     beforeEach(() => {
@@ -84,6 +87,7 @@ describe('MaterialsV2', () => {
         vi.clearAllMocks()
         Object.keys(routeQuery).forEach((key) => delete routeQuery[key])
         adminRoles.splice(0)
+        adminConfig.user.id = 11
         Object.defineProperty(URL, 'createObjectURL', {
             configurable: true,
             value: vi.fn(() => 'blob:screenshot-preview'),
@@ -161,6 +165,173 @@ describe('MaterialsV2', () => {
                 },
             }
         })
+    })
+
+    it('drags the category separator without jumping and restores the saved user width on reopening', async () => {
+        const wrapper = shallowMount(MaterialsV2, { global: { renderStubDefaultSlot: true } })
+        await flushPromises()
+        const workspace = wrapper.get('.materials-v2-workspace')
+        vi.spyOn(workspace.element, 'getBoundingClientRect').mockReturnValue({ width: 1000 } as DOMRect)
+        const separator = wrapper.get('[role="separator"]')
+
+        await separator.trigger('pointerdown', { button: 0, pointerId: 1, clientX: 300 })
+        expect(separator.attributes('aria-valuenow')).toBe('250')
+        await separator.trigger('pointermove', { pointerId: 2, clientX: 800 })
+        expect(separator.attributes('aria-valuenow')).toBe('250')
+        await separator.trigger('pointermove', { pointerId: 1, clientX: 400 })
+        expect(separator.attributes('aria-valuenow')).toBe('350')
+        expect(workspace.attributes('style')).toContain('--materials-category-width: 350px')
+        expect(window.localStorage.getItem('materials-v2-category-width.11')).toBeNull()
+        await separator.trigger('pointerup', { pointerId: 1 })
+        expect(window.localStorage.getItem('materials-v2-category-width.11')).toBe('350')
+        wrapper.unmount()
+
+        const reopened = shallowMount(MaterialsV2, { global: { renderStubDefaultSlot: true } })
+        await flushPromises()
+        expect(reopened.get('[role="separator"]').attributes('aria-valuenow')).toBe('350')
+        reopened.unmount()
+    })
+
+    it('supports keyboard resizing, width limits, and resetting the separator', async () => {
+        const wrapper = shallowMount(MaterialsV2, { global: { renderStubDefaultSlot: true } })
+        await flushPromises()
+        vi.spyOn(wrapper.get('.materials-v2-workspace').element, 'getBoundingClientRect')
+            .mockReturnValue({ width: 1200 } as DOMRect)
+        const separator = wrapper.get('[role="separator"]')
+
+        await separator.trigger('keydown', { key: 'ArrowRight' })
+        expect(separator.attributes('aria-valuenow')).toBe('260')
+        await separator.trigger('keydown', { key: 'ArrowLeft' })
+        expect(separator.attributes('aria-valuenow')).toBe('250')
+        await separator.trigger('keydown', { key: 'Home' })
+        await separator.trigger('keydown', { key: 'ArrowLeft' })
+        expect(separator.attributes('aria-valuenow')).toBe('220')
+        await separator.trigger('keydown', { key: 'End' })
+        await separator.trigger('keydown', { key: 'ArrowRight' })
+        expect(separator.attributes('aria-valuenow')).toBe('480')
+        expect(separator.attributes('aria-valuetext')).toBe('480 Pixel')
+        expect(window.localStorage.getItem('materials-v2-category-width.11')).toBe('480')
+        await separator.trigger('dblclick')
+        expect(separator.attributes('aria-valuenow')).toBe('250')
+        expect(window.localStorage.getItem('materials-v2-category-width.11')).toBe('250')
+        wrapper.unmount()
+    })
+
+    it('keeps the content usable in a narrower workspace without overwriting the preferred width', async () => {
+        window.localStorage.setItem('materials-v2-category-width.11', '480')
+        const wrapper = shallowMount(MaterialsV2, { global: { renderStubDefaultSlot: true } })
+        await flushPromises()
+        const bounds = vi.spyOn(wrapper.get('.materials-v2-workspace').element, 'getBoundingClientRect')
+            .mockReturnValue({ width: 760 } as DOMRect)
+
+        window.dispatchEvent(new Event('resize'))
+        await flushPromises()
+        expect(wrapper.get('[role="separator"]').attributes('aria-valuenow')).toBe('228')
+        expect(window.localStorage.getItem('materials-v2-category-width.11')).toBe('480')
+        bounds.mockReturnValue({ width: 1200 } as DOMRect)
+        window.dispatchEvent(new Event('resize'))
+        await flushPromises()
+        expect(wrapper.get('[role="separator"]').attributes('aria-valuenow')).toBe('480')
+        wrapper.unmount()
+    })
+
+    it('isolates preferences and cancels a drag when the signed-in user changes', async () => {
+        window.localStorage.setItem('materials-v2-category-width.11', '330')
+        window.localStorage.setItem('materials-v2-category-width.12', '290')
+        const wrapper = shallowMount(MaterialsV2, { global: { renderStubDefaultSlot: true } })
+        await flushPromises()
+        const separator = wrapper.get('[role="separator"]')
+        expect(separator.attributes('aria-valuenow')).toBe('330')
+
+        await separator.trigger('pointerdown', { button: 0, pointerId: 1, clientX: 300 })
+        await separator.trigger('pointermove', { pointerId: 1, clientX: 390 })
+        adminConfig.user.id = 12
+        await separator.trigger('pointerup', { pointerId: 1 })
+        expect(separator.attributes('aria-valuenow')).toBe('290')
+        expect(window.localStorage.getItem('materials-v2-category-width.11')).toBe('330')
+        expect(window.localStorage.getItem('materials-v2-category-width.12')).toBe('290')
+
+        adminConfig.user.id = null
+        await separator.trigger('keydown', { key: 'ArrowRight' })
+        expect(separator.attributes('aria-valuenow')).toBe('260')
+        expect(window.localStorage.length).toBe(2)
+        adminConfig.user.id = 13
+        await flushPromises()
+        expect(separator.attributes('aria-valuenow')).toBe('250')
+        adminConfig.user.id = 11
+        await flushPromises()
+        expect(separator.attributes('aria-valuenow')).toBe('330')
+        wrapper.unmount()
+    })
+
+    it.each(['NaN', 'Infinity', '0', '1000'])('ignores invalid stored category width %s', async (width) => {
+        window.localStorage.setItem('materials-v2-category-width.11', width)
+        const wrapper = shallowMount(MaterialsV2, { global: { renderStubDefaultSlot: true } })
+        await flushPromises()
+
+        expect(wrapper.get('[role="separator"]').attributes('aria-valuenow')).toBe('250')
+        wrapper.unmount()
+    })
+
+    it('keeps resizing usable when browser storage is unavailable', async () => {
+        const storagePrototype = Object.getPrototypeOf(window.localStorage)
+        vi.spyOn(storagePrototype, 'getItem').mockImplementation(() => { throw new Error('Storage blocked') })
+        vi.spyOn(storagePrototype, 'setItem').mockImplementation(() => { throw new Error('Storage blocked') })
+        const wrapper = shallowMount(MaterialsV2, { global: { renderStubDefaultSlot: true } })
+        await flushPromises()
+
+        await wrapper.get('[role="separator"]').trigger('keydown', { key: 'ArrowRight' })
+        expect(wrapper.get('[role="separator"]').attributes('aria-valuenow')).toBe('260')
+        wrapper.unmount()
+    })
+
+    it('releases pointer capture on cancellation and ignores subsequent pointer moves', async () => {
+        const wrapper = shallowMount(MaterialsV2, { global: { renderStubDefaultSlot: true } })
+        await flushPromises()
+        const separator = wrapper.get('[role="separator"]')
+        const setPointerCapture = vi.fn()
+        const releasePointerCapture = vi.fn()
+        Object.assign(separator.element, {
+            setPointerCapture,
+            hasPointerCapture: () => true,
+            releasePointerCapture,
+        })
+
+        await separator.trigger('pointerdown', { button: 2, pointerId: 1, clientX: 300 })
+        expect(setPointerCapture).not.toHaveBeenCalled()
+        await separator.trigger('pointerdown', { button: 0, pointerId: 1, clientX: 300 })
+        await separator.trigger('pointermove', { pointerId: 1, clientX: 350 })
+        await separator.trigger('pointercancel', { pointerId: 1 })
+        expect(setPointerCapture).toHaveBeenCalledWith(1)
+        expect(releasePointerCapture).toHaveBeenCalledWith(1)
+        await separator.trigger('pointermove', { pointerId: 1, clientX: 400 })
+        expect(separator.attributes('aria-valuenow')).toBe('300')
+        expect(window.localStorage.getItem('materials-v2-category-width.11')).toBe('300')
+        wrapper.unmount()
+    })
+
+    it('responds to workspace size changes and disconnects its observer on unmount', async () => {
+        let resizeWorkspace = () => {}
+        const observe = vi.fn()
+        const disconnect = vi.fn()
+        vi.stubGlobal('ResizeObserver', class {
+            constructor(callback: () => void) { resizeWorkspace = callback }
+            observe = observe
+            disconnect = disconnect
+        })
+        const wrapper = shallowMount(MaterialsV2, { global: { renderStubDefaultSlot: true } })
+        await flushPromises()
+        const workspace = wrapper.get('.materials-v2-workspace')
+        vi.spyOn(workspace.element, 'getBoundingClientRect').mockReturnValue({ width: 400 } as DOMRect)
+
+        resizeWorkspace()
+        await flushPromises()
+        expect(observe).toHaveBeenCalledWith(workspace.element)
+        expect(wrapper.get('[role="separator"]').attributes('aria-valuenow')).toBe('194')
+        await wrapper.get('[role="separator"]').trigger('keydown', { key: 'ArrowRight' })
+        expect(window.localStorage.getItem('materials-v2-category-width.11')).toBe('220')
+        wrapper.unmount()
+        expect(disconnect).toHaveBeenCalled()
     })
 
     it.each(['super_admin', 'admin', 'materials_admin', 'materials_moderator'])('offers the right-hand Admin menu for %s', async (role) => {

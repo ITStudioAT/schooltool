@@ -38,7 +38,20 @@ beforeEach(function (): void {
 });
 
 afterEach(function (): void {
-    (new Filesystem)->deleteDirectory($this->policyDirectory);
+    $directory = realpath($this->policyDirectory);
+    expect($directory)->toBeString();
+    expect(dirname($directory))->toBe(realpath(sys_get_temp_dir()));
+    expect(basename($directory))->toMatch('/\Aschooltool-release-policy-[0-9a-f]{24}\z/');
+
+    if (PHP_OS_FAMILY === 'Windows') {
+        foreach (new RecursiveIteratorIterator(new RecursiveDirectoryIterator($directory, FilesystemIterator::SKIP_DOTS)) as $file) {
+            if ($file->isFile() && ! $file->isLink()) {
+                chmod($file->getPathname(), 0666);
+            }
+        }
+    }
+
+    expect((new Filesystem)->deleteDirectory($directory))->toBeTrue();
 });
 
 it('classifies version notes and generated documentation together', function (): void {

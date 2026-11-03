@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { useNotificationStore } from '@/stores/spa/NotificationStore'
 import { useAdminStore } from '@/stores/admin/AdminStore'
+import { updateStatus as courseDateStatus } from '@/actions/App/Http/Controllers/Admin/Teaching/CourseDateController'
 
 export const useCourseDateStore = defineStore('AdminCourseDateStore', {
     state: () => {
@@ -137,7 +138,7 @@ export const useCourseDateStore = defineStore('AdminCourseDateStore', {
             adminStore.is_loading++
             try {
                 const payload = Array.isArray(statusOrPayload) ? { status: statusOrPayload } : statusOrPayload || {}
-                const response = await axios.patch(`/api/admin/teaching/course_dates/${dateId}/status`, payload)
+                const response = await axios.patch(courseDateStatus.url(dateId), payload)
                 return response?.data?.data || response?.data || null
             } catch (error) {
                 notification.notify({

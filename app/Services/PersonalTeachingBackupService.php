@@ -29,6 +29,8 @@ class PersonalTeachingBackupService
         'teaching_behaviour', 'teaching_behaviour_by_schoolyear',
         'teaching_notifications', 'teaching_notifications_by_schoolyear',
         'teaching_show_behaviour', 'teaching_grade_columns_by_schoolyear',
+        'teaching_curricula_enabled',
+        'teaching_show_attendance',
         'teaching_student_grade_columns_by_schoolyear',
     ];
 
@@ -109,7 +111,9 @@ class PersonalTeachingBackupService
             'version' => 1,
             'user_id' => (int) $user->id,
             'school_id' => (int) $user->school_id,
-            'settings' => (array) DB::table('users')->where('id', $user->id)->first(self::SETTINGS),
+            'settings' => (array) DB::table('users')->where('id', $user->id)->first(
+                array_values(array_intersect(self::SETTINGS, Schema::getColumnListing('users'))),
+            ),
             'tables' => $tables,
             'files' => $files,
             'identities' => $this->identities($user, $tables),
@@ -178,7 +182,9 @@ class PersonalTeachingBackupService
                         DB::table($table)->insert($row);
                     }
                 }
-                DB::table('users')->where('id', $lockedUser->id)->update($payload['settings']);
+                DB::table('users')->where('id', $lockedUser->id)->update(
+                    array_intersect_key($payload['settings'], array_flip(Schema::getColumnListing('users'))),
+                );
                 PersonalTeachingBackup::query()->whereKey($freshBackup->id)->update(['recovery_requested_at' => null]);
             });
         } catch (Throwable $exception) {
@@ -268,9 +274,10 @@ class PersonalTeachingBackupService
     private function validatePayload(User $user, array $payload, array $current): void
     {
         $this->sharedReferenceChecks = [];
+        $requiredSettings = array_diff(self::SETTINGS, ['teaching_curricula_enabled', 'teaching_show_attendance']);
         if (($payload['version'] ?? null) !== 1 || ($payload['user_id'] ?? null) !== (int) $user->id || ($payload['school_id'] ?? null) !== (int) $user->school_id
             || ! is_array($payload['tables'] ?? null) || array_keys($payload['tables']) !== array_keys($current)
-            || ! is_array($payload['settings'] ?? null) || array_diff(array_keys($payload['settings']), self::SETTINGS) !== [] || count($payload['settings']) !== count(self::SETTINGS)
+            || ! is_array($payload['settings'] ?? null) || array_diff(array_keys($payload['settings']), self::SETTINGS) !== [] || array_diff($requiredSettings, array_keys($payload['settings'])) !== []
             || ! is_array($payload['files'] ?? null)) {
             $this->invalid();
         }
@@ -391,7 +398,7 @@ class PersonalTeachingBackupService
         foreach ($tables['teaching_course_works'] ?? [] as $row) {
             $status = is_array($row['status'] ?? null) ? $row['status'] : json_decode($row['status'] ?? '[]', true, 512, JSON_THROW_ON_ERROR);
             $course = collect($tables['teaching_courses'])->firstWhere('id', $row['teaching_course_id']);
-            foreach (['evaluation_pdfs', 'dispatch_logs'] as $key) {
+            foreach (['evaluation_pdfs', 'dispatch_logs', 'student_task_files'] as $key) {
                 foreach ($status[$key] ?? [] as $index => $file) {
                     $this->assertSafeFilePath('teaching_course_works', $row + ['school_id' => $course['school_id']], $file['file_path'], $file['storage_disk']);
                     $files[] = ['table' => 'teaching_course_works', 'id' => (int) $row['id'], 'column' => "status.{$key}.{$index}.file_path", 'disk' => 'local', 'path' => $file['file_path']];
@@ -440,7 +447,7 @@ class PersonalTeachingBackupService
         }
         $relative = $disk === '' && str_starts_with($path, 'app/private/') ? substr($path, 12) : $path;
         $allowed = match ($table) {
-            'teaching_course_works' => ['teaching/work_evaluations/'.$row['school_id'].'/', 'teaching/work_dispatches/'.$row['school_id'].'/', 'teaching/synchronisation/'.$row['school_id'].'/', 'teaching/personal_restores/'],
+            'teaching_course_works' => ['teaching/work_evaluations/'.$row['school_id'].'/', 'teaching/work_dispatches/'.$row['school_id'].'/', 'teaching/work_tasks/'.$row['school_id'].'/', 'teaching/synchronisation/'.$row['school_id'].'/', 'teaching/personal_restores/'],
             'teaching_course_date_material_attachments' => ['teaching/course_date_materials/'.$row['teaching_course_date_material_id'].'/', 'teaching/personal_restores/'],
             'teaching_curriculum_documents' => [$row['school_id'].'/curricula/'.$row['teaching_curriculum_id'].'/', 'teaching/curriculum_unit_files/'.$row['teaching_curriculum_id'].'/', 'teaching/curriculum_imports/', 'teaching/personal_restores/'],
             default => ['teaching/imported_curricula/'],
@@ -508,7 +515,7 @@ class PersonalTeachingBackupService
                     $materials = json_decode($row['materials'], true, 512, JSON_THROW_ON_ERROR);
                     $materials['archive_path'] = $path;
                     $row['materials'] = json_encode($materials, JSON_THROW_ON_ERROR);
-                } elseif ($file['table'] === 'teaching_course_works' && preg_match('/\Astatus\.(evaluation_pdfs|dispatch_logs)\.(\d+)\.file_path\z/', $file['column'], $match)) {
+                } elseif ($file['table'] === 'teaching_course_works' && preg_match('/\Astatus\.(evaluation_pdfs|dispatch_logs|student_task_files)\.(\d+)\.file_path\z/', $file['column'], $match)) {
                     $status = is_array($row['status']) ? $row['status'] : json_decode($row['status'], true, 512, JSON_THROW_ON_ERROR);
                     $status[$match[1]][(int) $match[2]]['file_path'] = $path;
                     $status[$match[1]][(int) $match[2]]['storage_disk'] = 'local';

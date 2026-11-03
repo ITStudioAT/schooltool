@@ -1,0 +1,56 @@
+{
+  "pdf": "C:\\laravel\\schooltool\\tmp\\ki-agenten-skills\\Materialien\\01_Was_ist_KI\\Lernmodul_01_Was_ist_KI.pdf",
+  "page_count": 7,
+  "fonts": [
+    "AAAAAA+DejaVuSans",
+    "AAAAAA+DejaVuSans-Bold",
+    "Helvetica"
+  ],
+  "errors": [],
+  "warnings": [],
+  "pages": [
+    {
+      "page": 1,
+      "body_characters": 943,
+      "images": 1,
+      "links": 0
+    },
+    {
+      "page": 2,
+      "body_characters": 1309,
+      "images": 1,
+      "links": 0
+    },
+    {
+      "page": 3,
+      "body_characters": 1779,
+      "images": 0,
+      "links": 0
+    },
+    {
+      "page": 4,
+      "body_characters": 1836,
+      "images": 1,
+      "links": 0
+    },
+    {
+      "page": 5,
+      "body_characters": 1841,
+      "images": 0,
+      "links": 0
+    },
+    {
+      "page": 6,
+      "body_characters": 1380,
+      "images": 0,
+      "links": 4
+    },
+    {
+      "page": 7,
+      "body_characters": 433,
+      "images": 0,
+      "links": 6
+    }
+  ],
+  "visual_review_required": true
+}

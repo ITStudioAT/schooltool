@@ -26,6 +26,7 @@ class TeachingCourseDate extends Model
     protected $casts = [
         'date' => 'date',
         'hours' => 'array',
+        'games' => 'array',
         'status' => 'array',
         'attendance' => 'array',
         'attendance_checked' => 'boolean',
@@ -39,6 +40,18 @@ class TeachingCourseDate extends Model
     public function materials(): HasMany
     {
         return $this->hasMany(TeachingCourseDateMaterial::class);
+    }
+
+    /** @return list<int> */
+    public function cancelledHours(): array
+    {
+        $hours = array_values(array_unique(array_map('intval', $this->hours ?? [])));
+        $status = $this->status ?? [];
+        if (in_array('free', $status, true) || in_array('entfaellt', $status, true)) {
+            return $hours;
+        }
+
+        return array_values(array_filter($hours, fn (int $hour): bool => in_array('cancelled_hour:'.$hour, $status, true)));
     }
 
     protected function content(): Attribute

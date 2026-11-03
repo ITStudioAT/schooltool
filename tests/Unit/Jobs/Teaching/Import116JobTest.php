@@ -24,6 +24,7 @@ use App\Models\TeachingCourse;
 use App\Models\User;
 use App\Models\UserGroup;
 use App\Models\UserGroupMember;
+use App\Services\MultipleChoice\McImportService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Database\QueryException;
@@ -50,6 +51,7 @@ beforeEach(function () {
         'admin',
         'teaching_admin',
         'teacher',
+        'student',
         'user',
     ])->each(fn (string $role) => Role::firstOrCreate([
         'name' => $role,
@@ -604,6 +606,52 @@ describe('import record handling', function () {
                 ->and(password_verify('password', $placeholderUser->password))->toBeFalse();
         }
     });
+
+    test('activates an imported placeholder as a student when a real email arrives without reactivating suspended students', function (bool $emailAlreadyImported) {
+        $relativePath = "app/private/{$this->school->id}/excel/116.xlsx";
+        $writer = SimpleExcelWriter::create(storage_path($relativePath));
+        $writer->addRow([
+            'Klasse' => '5A', 'Schülerkennzahl' => 'EMAIL-UPGRADE',
+            'Familienname' => 'Upgrade', 'Vorname' => 'Email',
+            'Adressart' => 'Eigen', 'Mailadresse' => '',
+        ]);
+        $writer->close();
+        (new Import116Job($this->admin, $relativePath, $this->schoolyear->id))->handle();
+        $record = Import116::query()->where('school_id', $this->school->id)->where('student_code', 'EMAIL-UPGRADE')->sole();
+        $student = User::query()->findOrFail($record->user_id);
+        $originalPassword = $student->password;
+        expect((bool) $student->is_active)->toBeFalse();
+        if ($emailAlreadyImported) {
+            $student->email = 'upgrade@example.test';
+            $student->save();
+            $record->email = 'upgrade@example.test';
+            $record->save();
+        }
+
+        $writer = SimpleExcelWriter::create(storage_path($relativePath));
+        $writer->addRow([
+            'Klasse' => '5A', 'Schülerkennzahl' => 'EMAIL-UPGRADE',
+            'Familienname' => 'Upgrade', 'Vorname' => 'Email',
+            'Adressart' => 'Eigen', 'Mailadresse' => 'upgrade@example.test',
+        ]);
+        $writer->close();
+        (new Import116Job($this->admin, $relativePath, $this->schoolyear->id))->handle();
+        $student->refresh();
+        expect($record->fresh()->user_id)->toBe($student->id);
+        expect($student->email)->toBe('upgrade@example.test')
+            ->and((bool) $student->is_active)->toBeTrue()
+            ->and($student->hasRole('student', 'web'))->toBeTrue()
+            ->and($student->password)->toBe($originalPassword);
+        $roster = app(McImportService::class)->rosterPreview(
+            "Vorname;Nachname;E-Mail;Klasse\nEmail;Upgrade;upgrade@example.test;5A", $this->school->id,
+        );
+        expect($roster['valid'])->toBeTrue();
+
+        $student->is_active = false;
+        $student->save();
+        (new Import116Job($this->admin, $relativePath, $this->schoolyear->id))->handle();
+        expect((bool) $student->fresh()->is_active)->toBeFalse();
+    })->with(['new email' => false, 'previously imported email' => true]);
 
     test('factory creates records for correct school', function () {
         $record = Import116::factory()->forSchool($this->school)->create([

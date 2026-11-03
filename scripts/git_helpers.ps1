@@ -140,7 +140,8 @@ function Assert-SchooltoolOwnedTestEnvironment {
     }
     if ($snapshot.CreatedDatabase -cnotmatch '^pest_test_test_[0-9]{24}$' -or $env:DB_DATABASE -cne $snapshot.CreatedDatabase -or
         $env:APP_ENV -cne 'testing' -or $env:DB_CONNECTION -cne 'mysql' -or $env:DB_HOST -cne '127.0.0.1' -or $env:DB_PORT -cne '3306' -or
-        $env:DB_USERNAME -cne 'root' -or $env:DB_PASSWORD -cne '(empty)' -or $env:DB_URL -cne '(null)' -or $env:DB_DATABASE_TEST -cne 'pest_test') {
+        $env:DB_USERNAME -cne 'root' -or $env:DB_PASSWORD -cne '(empty)' -or $env:DB_URL -cne '(null)' -or $env:DB_DATABASE_TEST -cne $snapshot.CreatedDatabase -or
+        $env:SCHOOLTOOL_MC_TEST_RECEIPT -cne $snapshot.ReceiptPath.Replace('\', '/')) {
         throw 'PHP release tests require the self-created local database and isolated testing configuration.'
     }
     $expectedCache = 'bootstrap/cache/' + [System.IO.Path]::GetFileNameWithoutExtension($snapshot.ReceiptPath) + '.config.php'
@@ -248,6 +249,9 @@ function gitpull {
     if ($LASTEXITCODE -ne 0) {
         throw "git pull failed with exit code $LASTEXITCODE."
     }
+    if (Invoke-SchooltoolGit ls-files --unmerged) {
+        throw 'git pull left unresolved conflicts. Resolve them before continuing; local dependency preparation was not run.'
+    }
     Assert-SchooltoolRepository
     Invoke-SchooltoolCommand 'Synchronizing locked local dependencies...' {
         php scripts/update.php --target=local --prepare
@@ -296,7 +300,7 @@ function Invoke-SchooltoolPublish {
         }
         $mainBeforeChecks = Invoke-SchooltoolGit rev-parse refs/remotes/origin/main
         if (-not (Test-SchooltoolAncestor $mainBeforeChecks HEAD)) {
-            throw 'main contains remote changes missing locally. Run gitmain then gitpull --ff-only, or resolve divergent commits explicitly. Nothing was merged.'
+            throw 'main contains remote changes missing locally. Run gitpull --ff-only --autostash, resolve any conflicts, then retry gitsave. Divergent commits require explicit reconciliation. Nothing was merged.'
         }
         if ($version) { Assert-SchooltoolVersion -Version $version -AllowRetryCommit (Invoke-SchooltoolGit rev-parse HEAD) }
         Invoke-SchooltoolCommand 'Preparing local dependencies...' {

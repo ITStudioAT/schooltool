@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Admin\Teaching;
 
+use App\Models\TeachingEntryGradingPart;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -29,9 +30,9 @@ class StoreTeachingEntryGradingPartRequest extends FormRequest
 
         return [
             ...UpdateTeachingEntryGradingPartRequest::overallThresholdRules(0, $this->input('allowed_entry_types', 'all') === 'points', false),
-            'allowed_entry_types' => ['sometimes', 'required', Rule::in(['all', 'points'])],
+            'allowed_entry_types' => ['sometimes', 'required', Rule::in(TeachingEntryGradingPart::allowedEntryTypeOptions())],
             'individual_points_weighting_mode' => ['sometimes', 'required', Rule::in(['points', 'weighted']), Rule::prohibitedIf($this->input('allowed_entry_types', 'all') !== 'points' || $this->input('points_assessment_mode', 'individual') !== 'individual')],
-            'points_assessment_mode' => ['sometimes', 'required', Rule::in($this->input('allowed_entry_types', 'all') === 'points' ? ['overall', 'individual'] : ['individual'])],
+            'points_assessment_mode' => ['sometimes', 'required', Rule::in($this->input('allowed_entry_types', 'all') === 'points' ? ['overall', 'individual', 'sum_percent', 'plus_minus'] : ['individual', 'sum_percent', 'plus_minus'])],
             'weight' => ['sometimes', 'required', 'numeric', 'decimal:0,3', 'min:0.001', 'max:9999999.999'],
             'is_required' => ['sometimes', 'required', 'boolean'],
             'fixed_percentage' => ['sometimes', 'nullable', 'numeric', 'decimal:0,3', 'min:0.001', 'max:100'],

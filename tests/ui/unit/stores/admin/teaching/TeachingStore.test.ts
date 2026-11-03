@@ -13,11 +13,42 @@ vi.mock('@/stores/spa/NotificationStore', () => ({
 }))
 
 describe('TeachingStore', () => {
+    it('updates attendance display only after successful persistence', async () => {
+        const user = adminStoreMock.config.user as typeof adminStoreMock.config.user & { teaching_show_attendance?: boolean }
+        user.teaching_show_attendance = true
+        const store = useTeachingStore()
+        store.settings = { teaching_show_attendance: true } as never
+        axiosMock.post.mockResolvedValueOnce({ data: { settings: { teaching_show_attendance: false } } })
+
+        expect(await store.saveSettings({ teaching_show_attendance: false })).toBe(true)
+        expect(user.teaching_show_attendance).toBe(false)
+        axiosMock.post.mockRejectedValueOnce({ response: { status: 500 } })
+        expect(await store.saveSettings({ teaching_show_attendance: true })).toBe(false)
+        expect(user.teaching_show_attendance).toBe(false)
+        expect(store.settings).toEqual({ teaching_show_attendance: false })
+    })
+
+    it('applies the saved curricula preference to navigation and preserves it after a failed save', async () => {
+        const store = useTeachingStore()
+        const user = adminStoreMock.config.user as typeof adminStoreMock.config.user & { teaching_curricula_enabled?: boolean }
+        user.teaching_curricula_enabled = true
+        store.settings = { teaching_curricula_enabled: true } as never
+        axiosMock.post.mockResolvedValueOnce({ data: { settings: { teaching_curricula_enabled: false } } })
+
+        expect(await store.saveSettings({ teaching_curricula_enabled: false })).toBe(true)
+        expect(user.teaching_curricula_enabled).toBe(false)
+
+        axiosMock.post.mockRejectedValueOnce({ response: { status: 500 } })
+        expect(await store.saveSettings({ teaching_curricula_enabled: true })).toBe(false)
+        expect(user.teaching_curricula_enabled).toBe(false)
+        expect(store.settings).toEqual({ teaching_curricula_enabled: false })
+    })
+
     const notifyMock = vi.fn()
     const adminStoreMock = {
         is_loading: 0,
         config: {
-            user: { teaching_active_semester: 1, teaching_count_for_semester_2_date: null, teaching_grade_columns: null, teaching_student_grade_columns: null },
+            user: { teaching_active_semester: 1, teaching_count_for_semester_2_date: null },
             selected_schoolyear: { sem_2_start: '2026-02-10' },
         },
     }
@@ -34,8 +65,6 @@ describe('TeachingStore', () => {
         adminStoreMock.is_loading = 0
         adminStoreMock.config.user.teaching_active_semester = 1
         adminStoreMock.config.user.teaching_count_for_semester_2_date = null
-        adminStoreMock.config.user.teaching_grade_columns = null
-        adminStoreMock.config.user.teaching_student_grade_columns = null
         adminStoreMock.config.selected_schoolyear.sem_2_start = '2026-02-10'
         axiosMock.get.mockReset()
         axiosMock.post.mockReset()
@@ -295,16 +324,6 @@ describe('TeachingStore', () => {
             teaching_schemas: [{ id: 'new', name: 'Neu', works: [], grading: {} }],
             teaching_behaviour: [{ short_name: 'BZ', name: 'Benehmen' }],
             teaching_notifications: [],
-            teaching_grade_columns: {
-                show_sem1: true,
-                show_sem2: false,
-                show_year: true,
-            },
-            teaching_student_grade_columns: {
-                show_sem1: false,
-                show_sem2: true,
-                show_year: true,
-            },
         }
 
         axiosMock.post
@@ -322,16 +341,6 @@ describe('TeachingStore', () => {
         const success = await store.saveSettings({ teaching_schemas: savedSettings.teaching_schemas })
         expect(success).toBe(true)
         expect(store.settings).toEqual(savedSettings)
-        expect(adminStoreMock.config.user.teaching_grade_columns).toEqual({
-            show_sem1: true,
-            show_sem2: false,
-            show_year: true,
-        })
-        expect(adminStoreMock.config.user.teaching_student_grade_columns).toEqual({
-            show_sem1: false,
-            show_sem2: true,
-            show_year: true,
-        })
         expect(notifyMock).toHaveBeenCalledWith({
             message: 'Einstellungen gespeichert.',
             type: 'success',
@@ -356,31 +365,19 @@ describe('TeachingStore', () => {
             teaching_schemas: [],
             teaching_behaviour: [],
             teaching_notifications: [],
-            teaching_grade_columns: {
-                show_sem1: false,
-                show_sem2: true,
-                show_year: false,
-            },
-            teaching_student_grade_columns: {
-                show_sem1: true,
-                show_sem2: false,
-                show_year: true,
-            },
         }
 
         axiosMock.post.mockResolvedValueOnce({ data: { settings: savedSettings } })
 
         const store = useTeachingStore()
         const success = await store.saveSettings({
-            teaching_grade_columns: savedSettings.teaching_grade_columns,
+            teaching_show_calculated_grade: true,
         }, {
             notifySuccess: false,
         })
 
         expect(success).toBe(true)
         expect(store.settings).toEqual(savedSettings)
-        expect(adminStoreMock.config.user.teaching_grade_columns).toEqual(savedSettings.teaching_grade_columns)
-        expect(adminStoreMock.config.user.teaching_student_grade_columns).toEqual(savedSettings.teaching_student_grade_columns)
         expect(notifyMock).not.toHaveBeenCalledWith(expect.objectContaining({
             message: 'Einstellungen gespeichert.',
             type: 'success',

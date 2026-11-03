@@ -734,6 +734,11 @@ describe('CurriculumDetail preview layout', () => {
         expect(wrapper.find('.curriculum-detail__side-card--unit-actions').text()).toContain('Anmelden')
         expect(wrapper.find('.curriculum-detail__unit-action-edit').text()).toBe('Ändern')
         expect(wrapper.find('.curriculum-detail__unit-action-material').text()).toBe('Material hinzufügen')
+        const explanationAction = wrapper.get('.curriculum-detail__unit-action-explanation')
+        await explanationAction.trigger('click')
+        expect((wrapper.vm as any).unitFilesExplanationMode).toBe(true)
+        expect((wrapper.vm as any).unitFilesDialogOpen).toBe(true)
+        await wrapper.setData({ unitFilesDialogOpen: false })
         expect(wrapper.find('.curriculum-detail__unit-action-delete').text()).toBe('Einheit löschen')
 
         await wrapper.setData({

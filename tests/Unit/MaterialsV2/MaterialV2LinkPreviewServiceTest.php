@@ -3,6 +3,7 @@
 use App\Services\MaterialsV2\MaterialV2LinkPreviewService;
 use App\Support\RemoteUrlGuard;
 use Illuminate\Support\Facades\Http;
+use Symfony\Component\Process\Process;
 use Tests\TestCase;
 
 uses(TestCase::class);
@@ -158,7 +159,7 @@ it('warns when the target is unavailable, not html, or has no title', function (
         '',
         0,
         [],
-        'nicht erreichbar',
+        'nicht geprüft',
     ],
     'http failure' => [
         'response',
@@ -191,4 +192,53 @@ it('warns when the target is unavailable, not html, or has no title', function (
         ],
         'zu groß',
     ],
+]);
+
+it('uses the pinned address and bounds real responses without the PHP stream transport', function (string $prefix, int $extraBytes, string $status, ?string $title) {
+    $serverCode = <<<'PHP'
+        $server = stream_socket_server('tcp://127.0.0.1:0', $errno, $error);
+        if ($server === false) { throw new RuntimeException($error); }
+        echo stream_socket_get_name($server, false)."\n";
+        flush();
+        $client = stream_socket_accept($server, 10);
+        if ($client === false) { exit(1); }
+        while (($line = fgets($client)) !== false && trim($line) !== '') {}
+        $body = base64_decode($argv[1]).str_repeat('x', (int) $argv[2]);
+        fwrite($client, "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nConnection: close\r\n\r\n");
+        for ($offset = 0; $offset < strlen($body); $offset += 8192) {
+            if (@fwrite($client, substr($body, $offset, 8192)) === false) { break; }
+        }
+        fclose($client);
+        fclose($server);
+        PHP;
+    $server = new Process([PHP_BINARY, '-r', $serverCode, base64_encode($prefix), (string) $extraBytes], timeout: 15);
+    $server->start();
+
+    try {
+        expect($server->waitUntil(fn (string $type, string $output): bool => $type === Process::OUT && str_contains($output, "\n")))->toBeTrue();
+        $port = (int) substr(trim($server->getOutput()), strlen('127.0.0.1:'));
+        $url = "http://materials-preview.invalid:{$port}/lesson";
+        $this->mock(RemoteUrlGuard::class)
+            ->shouldReceive('resolve')
+            ->once()
+            ->with($url)
+            ->andReturn(['url' => $url, 'host' => 'materials-preview.invalid', 'port' => $port, 'ip' => '127.0.0.1']);
+        Http::allowStrayRequests([$url]);
+
+        $result = app(MaterialV2LinkPreviewService::class)->inspect($url);
+
+        expect($result)->toMatchArray([
+            'reachable' => true,
+            'status' => $status,
+            'title' => $title,
+            'http_status' => 200,
+        ]);
+    } finally {
+        $server->stop();
+    }
+})->with([
+    'complete title before a large body' => ['<html><head><title>Unterricht</title></head><body>', 600000, 'success', 'Unterricht'],
+    'body exceeds the title preview limit' => ['<html><head>', 600000, 'warning', null],
+    'small page without title' => ['<html><head></head><body>Unterricht</body></html>', 0, 'warning', null],
+    'page ending without a head closing tag' => ['<html><title>Unterricht</title><body>Inhalt</body></html>', 0, 'success', 'Unterricht'],
 ]);

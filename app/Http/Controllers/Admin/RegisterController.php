@@ -10,10 +10,16 @@ use App\Http\Requests\Admin\RegisterUpdateRequest;
 use App\Http\Requests\Admin\SetActiveRegisterRequest;
 use App\Http\Resources\Admin\RegisterResource;
 use App\Models\Register;
+use App\Models\RegisterDate;
+use App\Models\RegisterDateBooking;
+use App\Models\User;
 use App\Services\RegisterService;
+use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Validation\Rule;
 
 class RegisterController extends Controller
 {
@@ -132,7 +138,7 @@ class RegisterController extends Controller
     /**
      * Remove the specified resource from storage.
      */
-    public function destroy(Register $register)
+    public function destroy(Request $request, Register $register): Response
     {
         if (! $auth_user = $this->userHasRole(['admin', 'register_admin'])) {
             abort(403, 'Sie haben keine Berechtigung');
@@ -140,14 +146,24 @@ class RegisterController extends Controller
 
         Gate::forUser($auth_user)->authorize('delete', $register);
 
-        if ($register->hasDependencies()) {
-            abort(409, 'Das Anmeldesystem hat noch Abhängigkeiten und kann nicht gelöscht werden');
-        }
+        DB::transaction(function () use ($request, $register): void {
+            $register = Register::query()->lockForUpdate()->findOrFail($register->id);
 
-        $auth_user->register_id = null;
-        $auth_user->save();
+            $request->validate([
+                'confirmation' => ['required', 'string', Rule::in([$register->name])],
+            ], [
+                'confirmation.required' => 'Bitte geben Sie zur Löschbestätigung den vollständigen Namen des Anmeldetools ein.',
+                'confirmation.in' => 'Die Löschbestätigung stimmt nicht mit dem Namen des Anmeldetools überein.',
+            ]);
 
-        $register->delete();
+            RegisterDateBooking::query()
+                ->where('register_id', $register->id)
+                ->orWhereIn('register_date_id', RegisterDate::query()->select('id')->where('register_id', $register->id))
+                ->delete();
+            $register->dates()->delete();
+            User::query()->where('register_id', $register->id)->update(['register_id' => null]);
+            $register->delete();
+        });
 
         return response()->noContent();
     }

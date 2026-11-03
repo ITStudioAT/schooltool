@@ -10,28 +10,28 @@ Die Anleitung beschreibt den implementierten Ablauf und seine Einrichtung. Sie i
 
 ### Befehle und Auswirkungen
 
-| Befehl | Ausführen | Auswirkung |
-| --- | --- | --- |
-| `composer setup:powershell` | Windows, Projektordner | Installiert oder aktualisiert die Helfer in den eigenen PowerShell-Profilen. Danach ein neues Terminal öffnen. |
-| `gitstart "neue-funktion"` | Windows | Reserviert ein weiteres unabhängiges Feature, erstellt `feature/neue-funktion` aus GitHub-`main`, pusht und wechselt dorthin. Andere offene Features bleiben erhalten. |
-| `gitwork "neue-funktion"` | Windows | Wählt das benannte Feature, holt es und bereitet Abhängigkeiten und Frontend vor. Ältere Branches ohne Reservierung werden gezielt registriert. Ohne Namen nur bei genau einem offenen Feature. |
-| `gitmain` | Windows | Wechselt sicher zu `main`, holt dessen GitHub-Stand und bereitet Abhängigkeiten und Frontend vor. Keine Migrationen oder Seeder. |
-| `gitsave "Beschreibung"` | Windows, Feature | Committet und pusht ausschließlich das aktuelle Feature. Keine Version, kein Deployment; Zwischenstände sind erlaubt. |
-| `gitsave "Beschreibung"` | Windows, `main` | Bereitet Abhängigkeiten vor, prüft Format und Encoding, baut das Frontend, committet und pusht den gebundenen Release. GitHub führt die erforderlichen Prüfungen im Hintergrund aus. Kein Live-Deployment. |
-| `gitsave "Beschreibung" "3.49.0"` | Windows, `main` | Zusätzlich Versionsnummer, Changelog und Dokumentation aktualisieren sowie `v3.49.0` veröffentlichen. Auf dem Feature ist diese Variante gesperrt. |
-| `gitsave "Beschreibung" ["Version"] -Full` | Windows, `main` | Optional zusätzlich die vollständigen lokalen Releaseprüfungen ausführen. GitHub prüft weiterhin im Hintergrund. |
-| `gitupdate` | Windows, gespeichertes Feature | Übernimmt den aktuellen GitHub-`main` in das Feature und bereitet es lokal vor. Danach testen und mit `gitsave` sichern. Keine Online-Aktualisierung. |
-| `gitcheck` | Windows | Zeigt Branch, Änderungen, lokale/entfernte Commits und fehlende `main`-Commits. Fragt die Online-Anwendungen nicht ab. |
-| `gitpreview -Feature "neue-funktion"` | Windows, gespeichertes ausgewähltes Feature | Erstellt einen separaten Kandidaten einschließlich aktuellem `main`, prüft ihn und aktualisiert nach `PREVIEW` die gemeinsame Vorschau über SSH. Der Name muss zum aktuellen Checkout passen. Beim Featurewechsel ersetzt eine frische Live-Kopie die bisherigen Testdaten erst nach zusätzlichem `REFRESH`. |
-| `gitpreview -Feature "neue-funktion" -RefreshData` | Windows, gespeichertes Feature | Ersetzt auch bei unverändertem Feature die aktiven Vorschau-Daten und Dateien durch eine frische Live-Kopie. Vorher private Sicherung; verlangt `REFRESH` und `PREVIEW`. |
-| `gitpreview prepare -Feature "neue-funktion"` | Windows, gespeichertes Feature | Prüft und erstellt ausschließlich einen lokalen Vorschau-Kandidaten. Verändert weder GitHub-Branches noch Server. |
-| `gitpreview resume <Bundle-ID> -Feature "neue-funktion"` | Derselbe Windows-PC und Benutzer, ursprünglicher Projektordner | Setzt einen vor der Veröffentlichung abgebrochenen Kandidaten mit erfolgreicher Build- und Paketprüfung fort. Prüft Nachweis, Paket, Quellstand und aktuelle GitHub-Branches erneut; veröffentlicht erst nach `PREVIEW`. Datenersatz verlangt zusätzlich `REFRESH`. |
-| `gitrelease "Beschreibung"` | Windows, gespeichertes Feature | Prüft einen separaten Merge-Kandidaten des mit `gitwork NAME` ausgewählten Features mit aktuellem `main`. Nach `RELEASE` auf GitHub veröffentlichen und ausschließlich dieses Feature schließen; andere Features und Reservierungen bleiben erhalten. Lokal zu `main` wechseln und Abhängigkeiten/Frontend vorbereiten, ohne Migrationen oder Seeder. Kein Live-Deployment. |
-| `gitrelease "Beschreibung" "3.49.0"` | Windows, gespeichertes Feature | Zusätzlich Version, Changelog, Dokumentation und Versions-Tag veröffentlichen. |
-| `gitdiscard "testfunktion"` | Windows, sauberer aktueller `main` | Verwirft `feature/testfunktion` ohne Merge. Nach `DISCARD feature/testfunktion` den exakt geprüften Remote-Branch und seine Reservierung atomar schließen und den passenden lokalen Branch entfernen. Wiederherstellungsreferenzen bleiben erhalten. |
-| `gitdeploy` | Windows, sauberes Projekt | Prüft das exakte Release-Paket und einen kurzen isolierten Laufzeit-Smoke. Nach `LIVE` Quellstand erneut prüfen und über SSH installieren, einschließlich vorgesehener Live-Datenbankschritte. Wartet nicht auf umfangreiche GitHub-Tests. |
-| `composer deploy` | Windows, sauberer aktueller `main` | Vollständiges lokales Anwendungsupdate einschließlich lokaler Datenbankschritte. Vorher `gitmain`; auf dem Feature gesperrt. |
-| `composer pdeploy` | Cloudways, intern durch `gitdeploy` | Benötigt die vom bestätigten SSH-Aufruf übergebenen Release-Identitäten und die Kennung `background-ci-v1`. Ein bloßer manueller Aufruf ist gesperrt; im Alltag `gitdeploy` am PC verwenden. |
+| Befehl                                                   | Ausführen                                                      | Auswirkung                                                                                                                                                                                                                                                                                                                                                                  |
+| -------------------------------------------------------- | -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `composer setup:powershell`                              | Windows, Projektordner                                         | Installiert oder aktualisiert die Helfer in den eigenen PowerShell-Profilen. Danach ein neues Terminal öffnen.                                                                                                                                                                                                                                                              |
+| `gitstart "neue-funktion"`                               | Windows                                                        | Reserviert ein weiteres unabhängiges Feature, erstellt `feature/neue-funktion` aus GitHub-`main`, pusht und wechselt dorthin. Andere offene Features bleiben erhalten.                                                                                                                                                                                                      |
+| `gitwork "neue-funktion"`                                | Windows                                                        | Wählt das benannte Feature, holt es und bereitet Abhängigkeiten und Frontend vor. Ältere Branches ohne Reservierung werden gezielt registriert. Ohne Namen nur bei genau einem offenen Feature.                                                                                                                                                                             |
+| `gitmain`                                                | Windows                                                        | Wechselt sicher zu `main`, holt dessen GitHub-Stand und führt automatisch `composer deploy` für das vollständige lokale Update einschließlich Migrationen aus. Ungesicherte Änderungen verhindern das Update.                                                                                                                                                               |
+| `gitsave "Beschreibung"`                                 | Windows, Feature                                               | Committet und pusht ausschließlich das aktuelle Feature. Keine Version, kein Deployment; Zwischenstände sind erlaubt.                                                                                                                                                                                                                                                       |
+| `gitsave "Beschreibung"`                                 | Windows, `main`                                                | Bereitet Abhängigkeiten vor, prüft Format und Encoding, baut das Frontend, committet und pusht den gebundenen Release. GitHub führt die erforderlichen Prüfungen im Hintergrund aus. Kein Live-Deployment.                                                                                                                                                                  |
+| `gitsave "Beschreibung" "3.49.0"`                        | Windows, `main`                                                | Zusätzlich Versionsnummer, Changelog und Dokumentation aktualisieren sowie `v3.49.0` veröffentlichen. Auf dem Feature ist diese Variante gesperrt.                                                                                                                                                                                                                          |
+| `gitsave "Beschreibung" ["Version"] -Full`               | Windows, `main`                                                | Optional zusätzlich die vollständigen lokalen Releaseprüfungen ausführen. GitHub prüft weiterhin im Hintergrund.                                                                                                                                                                                                                                                            |
+| `gitupdate`                                              | Windows, gespeichertes Feature                                 | Sichert offene Änderungen lokal, übernimmt den aktuellen Feature- und `main`-Stand von GitHub und stellt die Änderungen nach der lokalen Vorbereitung wieder her. Bei einem Fehler bleibt die Sicherung erhalten.                                                                                                                                                           |
+| `gitcheck`                                               | Windows                                                        | Zeigt Branch, Änderungen, lokale/entfernte Commits und fehlende `main`-Commits. Fragt die Online-Anwendungen nicht ab.                                                                                                                                                                                                                                                      |
+| `gitpreview -Feature "neue-funktion"`                    | Windows, gespeichertes ausgewähltes Feature                    | Erstellt einen separaten Kandidaten einschließlich aktuellem `main`, prüft ihn und aktualisiert nach `PREVIEW` die gemeinsame Vorschau über SSH. Der Name muss zum aktuellen Checkout passen. Beim Featurewechsel ersetzt eine frische Live-Kopie die bisherigen Testdaten erst nach zusätzlichem `REFRESH`.                                                                |
+| `gitpreview -Feature "neue-funktion" -RefreshData`       | Windows, gespeichertes Feature                                 | Ersetzt auch bei unverändertem Feature die aktiven Vorschau-Daten und Dateien durch eine frische Live-Kopie. Vorher private Sicherung; verlangt `REFRESH` und `PREVIEW`.                                                                                                                                                                                                    |
+| `gitpreview prepare -Feature "neue-funktion"`            | Windows, gespeichertes Feature                                 | Prüft und erstellt ausschließlich einen lokalen Vorschau-Kandidaten. Verändert weder GitHub-Branches noch Server.                                                                                                                                                                                                                                                           |
+| `gitpreview resume <Bundle-ID> -Feature "neue-funktion"` | Derselbe Windows-PC und Benutzer, ursprünglicher Projektordner | Setzt einen vor der Veröffentlichung abgebrochenen Kandidaten mit erfolgreicher Build- und Paketprüfung fort. Prüft Nachweis, Paket, Quellstand und aktuelle GitHub-Branches erneut; veröffentlicht erst nach `PREVIEW`. Datenersatz verlangt zusätzlich `REFRESH`.                                                                                                         |
+| `gitrelease "Beschreibung"`                              | Windows, gespeichertes Feature                                 | Prüft einen separaten Merge-Kandidaten des mit `gitwork NAME` ausgewählten Features mit aktuellem `main`. Nach `RELEASE` auf GitHub veröffentlichen und ausschließlich dieses Feature schließen; andere Features und Reservierungen bleiben erhalten. Lokal zu `main` wechseln und Abhängigkeiten/Frontend vorbereiten, ohne Migrationen oder Seeder. Kein Live-Deployment. |
+| `gitrelease "Beschreibung" "3.49.0"`                     | Windows, gespeichertes Feature                                 | Zusätzlich Version, Changelog, Dokumentation und Versions-Tag veröffentlichen.                                                                                                                                                                                                                                                                                              |
+| `gitdiscard "testfunktion"`                              | Windows, sauberer aktueller `main`                             | Verwirft `feature/testfunktion` ohne Merge. Nach `DISCARD feature/testfunktion` den exakt geprüften Remote-Branch und seine Reservierung atomar schließen und den passenden lokalen Branch entfernen. Wiederherstellungsreferenzen bleiben erhalten.                                                                                                                        |
+| `gitdeploy`                                              | Windows, sauberes Projekt                                      | Prüft das exakte Release-Paket und einen kurzen isolierten Laufzeit-Smoke. Nach `LIVE` Quellstand erneut prüfen und über SSH installieren, einschließlich vorgesehener Live-Datenbankschritte. Wartet nicht auf umfangreiche GitHub-Tests.                                                                                                                                  |
+| `composer deploy`                                        | Windows, sauberer aktueller `main`                             | Vollständiges lokales Anwendungsupdate einschließlich lokaler Datenbankschritte. Wird von `gitmain` automatisch ausgeführt; auf dem Feature gesperrt.                                                                                                                                                                                                                       |
+| `composer pdeploy`                                       | Cloudways, intern durch `gitdeploy`                            | Benötigt die vom bestätigten SSH-Aufruf übergebenen Release-Identitäten und die Kennung `background-ci-v1`. Ein bloßer manueller Aufruf ist gesperrt; im Alltag `gitdeploy` am PC verwenden.                                                                                                                                                                                |
 
 `gitpush "Beschreibung" ["Version"]` bleibt als Kompatibilitätsbefehl für `main` mit denselben Hintergrundprüfungen erhalten; `-Full` ergänzt lokale Vollprüfungen. Im Alltag genügt `gitsave`. Ein `gitget`, `gitcommit` oder `gitmerge` ist für diesen Ablauf nicht erforderlich. `gitcheck` listet die offenen Features. Bei mehreren Features verlangt `gitpreview` ausdrücklich `-Feature NAME`; zuerst mit `gitwork NAME` zum passenden gespeicherten Branch wechseln.
 
@@ -155,18 +155,18 @@ Das Hauptanwendungsziel ist im Projekt zentral hinterlegt. Auf einem neuen Gerä
 
 Die folgenden Windows-Benutzervariablen bleiben als explizite Überschreibungen und für die getrennte Vorschau-Umgebung verfügbar:
 
-| Variable | Wert |
-| --- | --- |
-| `SCHOOLTOOL_MAIN_SSH` | `<hauptanwendungs-login>@<server-host>` |
-| `SCHOOLTOOL_MAIN_UNIX_USER` | Tatsächliches `id -un` der Hauptanwendung nach dem SSH-Login |
-| `SCHOOLTOOL_MAIN_PATH` | Geprüfter absoluter, kanonischer Pfad zur Hauptanwendung, endet auf `/public_html` |
-| `SCHOOLTOOL_MAIN_KEY` | Absoluter lokaler Pfad zum privaten Hauptanwendungsschlüssel, ohne `.pub` |
-| `SCHOOLTOOL_MAIN_KNOWN_HOSTS` | Absoluter lokaler Pfad zur geprüften Hostschlüsseldatei |
-| `SCHOOLTOOL_PREVIEW_SSH` | `schooltool-feature@<server-host>` |
-| `SCHOOLTOOL_PREVIEW_UNIX_USER` | Tatsächliches `id -un` und Eigentümerkonto der Vorschau-Anwendung |
-| `SCHOOLTOOL_PREVIEW_PATH` | Eigener geprüfter kanonischer Vorschau-Pfad, endet auf `/public_html` |
-| `SCHOOLTOOL_PREVIEW_KEY` | Absoluter lokaler Pfad zum privaten Vorschau-Schlüssel, ohne `.pub` |
-| `SCHOOLTOOL_PREVIEW_KNOWN_HOSTS` | Absoluter lokaler Pfad zur geprüften Hostschlüsseldatei |
+| Variable                         | Wert                                                                               |
+| -------------------------------- | ---------------------------------------------------------------------------------- |
+| `SCHOOLTOOL_MAIN_SSH`            | `<hauptanwendungs-login>@<server-host>`                                            |
+| `SCHOOLTOOL_MAIN_UNIX_USER`      | Tatsächliches `id -un` der Hauptanwendung nach dem SSH-Login                       |
+| `SCHOOLTOOL_MAIN_PATH`           | Geprüfter absoluter, kanonischer Pfad zur Hauptanwendung, endet auf `/public_html` |
+| `SCHOOLTOOL_MAIN_KEY`            | Absoluter lokaler Pfad zum privaten Hauptanwendungsschlüssel, ohne `.pub`          |
+| `SCHOOLTOOL_MAIN_KNOWN_HOSTS`    | Absoluter lokaler Pfad zur geprüften Hostschlüsseldatei                            |
+| `SCHOOLTOOL_PREVIEW_SSH`         | `schooltool-feature@<server-host>`                                                 |
+| `SCHOOLTOOL_PREVIEW_UNIX_USER`   | Tatsächliches `id -un` und Eigentümerkonto der Vorschau-Anwendung                  |
+| `SCHOOLTOOL_PREVIEW_PATH`        | Eigener geprüfter kanonischer Vorschau-Pfad, endet auf `/public_html`              |
+| `SCHOOLTOOL_PREVIEW_KEY`         | Absoluter lokaler Pfad zum privaten Vorschau-Schlüssel, ohne `.pub`                |
+| `SCHOOLTOOL_PREVIEW_KNOWN_HOSTS` | Absoluter lokaler Pfad zur geprüften Hostschlüsseldatei                            |
 
 Cloudways kann einen SSH-Login-Alias auf ein anders benanntes Unix-Anwendungskonto abbilden. Deshalb `*_UNIX_USER` anhand von `id -un` setzen und nicht aus dem Login-Namen ableiten. Den Zielpfad mit `pwd -P` und den Vorschau-Verzeichniseigentümer ebenfalls prüfen. Bei ausgelassener `*_KNOWN_HOSTS`-Variable wird die vorhandene Datei `$env:USERPROFILE\.ssh\known_hosts` verwendet.
 
@@ -182,14 +182,14 @@ Für jede Tabellenzeile den passenden Namen/Wert verwenden und anschließend ein
 
 Die Haupt- und Vorschau-Anwendung müssen getrennte Anwendungsordner und Anwendungszugänge haben. Für die Vorschau werden eine eigene Datenbank, ein ausschließlich dafür berechtigtes Datenbankkonto und ein eigener `APP_KEY` benötigt. Die bestehende gemeinsam genutzte Live-Datenbank darf nicht als Vorschau-Ziel weiterverwendet werden.
 
-| Bereich | Benötigte Einrichtung |
-| --- | --- |
-| Hauptanwendung | Veröffentlichter neuer Code, bestehende Live-Datenbank und unveränderter Live-`APP_KEY`; private Schlüsseldatei für die HTTPS-Kontrollverbindung und eigenes privates Snapshot-Verzeichnis ergänzen. |
-| Vorschau | Eigener Code, eigene leere Datenbank mit anderem Namen, eigener Datenbanknutzer, eigener `APP_KEY`, eigene Dateien/Sessions/Caches und eigener Snapshot-Schlüssel. |
-| Kontrollverbindung | Signierte HTTPS-Anfragen an den festen Kontrollendpunkt der Hauptanwendung. Derselbe ausschließlich dafür erzeugte Schlüssel liegt in getrennten privaten Dateien beider Anwendungen. Die Vorschau erhält keine Live-Datenbank-Zugangsdaten. |
-| Vorschau-Datenbankrechte | Nur das Vorschau-Schema; Lese-, Schreib- und für Migrationen erforderliche Schema-Rechte. Keine Live-Rechte, globalen Rechte, Rollen oder `GRANT OPTION`. |
-| Snapshot-Verzeichnisse | Je Anwendung ein vorhandener eigener kanonischer Ordner außerhalb der Anwendung und des Webverzeichnisses; Eigentümer ist das betreffende Anwendungskonto, Modus `0700`, keine Symlinks. Dateien darin sind `0600`. |
-| SMTP | Eigener kontrollierter Vorschau-SMTP-Zugang. Nur freigegebene Anmelde-/Passwort-Nachrichten dürfen versendet werden. |
+| Bereich                  | Benötigte Einrichtung                                                                                                                                                                                                                        |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Hauptanwendung           | Veröffentlichter neuer Code, bestehende Live-Datenbank und unveränderter Live-`APP_KEY`; private Schlüsseldatei für die HTTPS-Kontrollverbindung und eigenes privates Snapshot-Verzeichnis ergänzen.                                         |
+| Vorschau                 | Eigener Code, eigene leere Datenbank mit anderem Namen, eigener Datenbanknutzer, eigener `APP_KEY`, eigene Dateien/Sessions/Caches und eigener Snapshot-Schlüssel.                                                                           |
+| Kontrollverbindung       | Signierte HTTPS-Anfragen an den festen Kontrollendpunkt der Hauptanwendung. Derselbe ausschließlich dafür erzeugte Schlüssel liegt in getrennten privaten Dateien beider Anwendungen. Die Vorschau erhält keine Live-Datenbank-Zugangsdaten. |
+| Vorschau-Datenbankrechte | Nur das Vorschau-Schema; Lese-, Schreib- und für Migrationen erforderliche Schema-Rechte. Keine Live-Rechte, globalen Rechte, Rollen oder `GRANT OPTION`.                                                                                    |
+| Snapshot-Verzeichnisse   | Je Anwendung ein vorhandener eigener kanonischer Ordner außerhalb der Anwendung und des Webverzeichnisses; Eigentümer ist das betreffende Anwendungskonto, Modus `0700`, keine Symlinks. Dateien darin sind `0600`.                          |
+| SMTP                     | Eigener kontrollierter Vorschau-SMTP-Zugang. Nur freigegebene Anmelde-/Passwort-Nachrichten dürfen versendet werden.                                                                                                                         |
 
 Auf Cloudways eignet sich ein eigener Unterordner `private_html/schooltool-preview` neben `public_html`. Cloudways sieht [`private_html` für vertrauliche Dateien außerhalb des Webverzeichnisses](https://support.cloudways.com/en/articles/5123384-securing-app-configuration-files-in-private_html-folder) vor; das Anwendungskonto kann dort seinen privaten Unterordner anlegen, auch wenn der gemeinsame Elternordner `root` gehört. Vorher Eigentümer und kanonischen Pfad prüfen, ausschließlich dem neuen Unterordner Modus `0700` geben und die bestehenden Verzeichnisrechte nicht pauschal verändern. Schlüssel und Sicherungen darin dürfen nicht durch eine Cloudways-Speicherbereinigung gelöscht werden.
 
@@ -203,13 +203,13 @@ Die Snapshot-Funktion unterstützt InnoDB-Basistabellen. Views, Trigger, Routine
 
 Diese Variablen werden in der privaten Konfiguration beider Cloudways-Anwendungen benötigt. Die Kontroll-URL muss auf beiden Seiten exakt gleich sein und auf die Hauptanwendung zeigen; Schlüssel- und Snapshot-Pfade gehören jeweils zum eigenen Anwendungskonto.
 
-| Variable | Bedeutung |
-| --- | --- |
-| `SCHOOLTOOL_PREVIEW_URL` | HTTPS-Ursprung der Vorschau, ohne Query oder Fragment |
-| `SCHOOLTOOL_PREVIEW_LIVE_URL` | HTTPS-Ursprung der Hauptanwendung, anderer Host als die Vorschau |
-| `SCHOOLTOOL_PREVIEW_CONTROL_URL` | `https://<hauptanwendungs-host>/api/feature-preview/control`; genau dieser Pfad, HTTPS-Port `443`, kein Query, Fragment oder Redirect |
-| `SCHOOLTOOL_PREVIEW_CONTROL_KEY_PATH` | Absoluter kanonischer Pfad zur eigenen privaten Datei mit dem gemeinsamen Kontrollschlüssel; außerhalb der Anwendung und jedes `public_html` |
-| `SCHOOLTOOL_PREVIEW_SNAPSHOT_DIRECTORY` | Privater kanonischer Snapshot-Ordner dieser Anwendung außerhalb von `public_html` |
+| Variable                                | Bedeutung                                                                                                                                    |
+| --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SCHOOLTOOL_PREVIEW_URL`                | HTTPS-Ursprung der Vorschau, ohne Query oder Fragment                                                                                        |
+| `SCHOOLTOOL_PREVIEW_LIVE_URL`           | HTTPS-Ursprung der Hauptanwendung, anderer Host als die Vorschau                                                                             |
+| `SCHOOLTOOL_PREVIEW_CONTROL_URL`        | `https://<hauptanwendungs-host>/api/feature-preview/control`; genau dieser Pfad, HTTPS-Port `443`, kein Query, Fragment oder Redirect        |
+| `SCHOOLTOOL_PREVIEW_CONTROL_KEY_PATH`   | Absoluter kanonischer Pfad zur eigenen privaten Datei mit dem gemeinsamen Kontrollschlüssel; außerhalb der Anwendung und jedes `public_html` |
+| `SCHOOLTOOL_PREVIEW_SNAPSHOT_DIRECTORY` | Privater kanonischer Snapshot-Ordner dieser Anwendung außerhalb von `public_html`                                                            |
 
 Alle alten `SCHOOLTOOL_PREVIEW_CONTROL_DB_*`-Variablen und eine eventuell selbst ergänzte `preview_control`-Datenbankverbindung entfernen. Die Vorschauprüfung blockiert verbliebene Live-Kontrolldatenbank-Zugangsdaten. Die Hauptanwendung muss über die angegebene HTTPS-Adresse mit gültigem Zertifikat erreichbar sein. Signierte Anfragen und Antworten werden geprüft; Weiterleitungen werden nicht verfolgt. Beide Serveruhren müssen korrekt synchronisiert sein.
 
@@ -227,34 +227,34 @@ In der Hauptanwendung bleibt `SCHOOLTOOL_PREVIEW_INSTANCE=false`. Ihre vorhanden
 
 ### Serverkonfiguration: ausschließlich Vorschau
 
-| Variable/Einstellung | Vorschau-Wert |
-| --- | --- |
-| `SCHOOLTOOL_PREVIEW_INSTANCE` | `true` |
-| `APP_ENV` | `production` für die online erreichbare Vorschau |
-| `APP_DEBUG` | `false` |
-| `APP_URL` | Genau der HTTPS-Ursprung der Vorschau |
-| `SCHOOLTOOL_PREVIEW_EXPECTED_HOST` | Nur der Vorschau-Hostname, ohne Protokoll oder Pfad |
-| `APP_KEY` | Neu erzeugter eigener Anwendungsschlüssel; niemals den Live-Schlüssel übernehmen |
-| `APP_PREVIOUS_KEYS` | Leer; keine alten Live-Schlüssel hinterlegen |
-| `DB_CONNECTION` | `mysql` oder entsprechend konfigurierte `mariadb`-Verbindung |
-| `DB_HOST`, `DB_PORT`, `DB_DATABASE` | Verbindung zur eigenen Vorschau-Datenbank; Name muss von Live abweichen |
-| `DB_USERNAME`, `DB_PASSWORD` | Ausschließlich für diese Vorschau-Datenbank berechtigtes Konto |
-| `DB_URL`, `DB_SOCKET` | Nicht setzen bzw. leer lassen |
-| `SCHOOLTOOL_PREVIEW_SNAPSHOT_KEY_PATH` | Vollständiger Dateipfad innerhalb des privaten Vorschau-Snapshot-Verzeichnisses |
-| `FILESYSTEM_DISK` | `local`; `local` und `public` bleiben lokale Disks unter dieser Anwendung in `storage/app/private` bzw. `storage/app/public` |
-| `SESSION_DRIVER` | `file` |
-| `SESSION_COOKIE` | Eigener Name mit `preview`, z. B. `schooltool_preview_session` |
-| `SESSION_DOMAIN` | Leer, damit Cookies ausschließlich zum Vorschau-Host gehören |
-| `SESSION_SECURE_COOKIE`, `SESSION_HTTP_ONLY` | Jeweils `true` |
-| `SESSION_SAME_SITE` | `lax` oder `strict` |
-| `CACHE_STORE` | `file`; Rate-Limiter und Berechtigungscache verwenden ebenfalls diesen lokalen Store |
-| `QUEUE_CONNECTION` | `sync` |
-| `BROADCAST_CONNECTION` | `log` oder `null` |
-| `APP_MAINTENANCE_DRIVER` | `file` |
-| `PULSE_ENABLED` | `false`; Telescope/Nightwatch müssen, falls vorhanden, ebenfalls deaktiviert sein |
-| `MAIL_MAILER` | `smtp` |
-| `MAIL_HOST`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD` | Geprüfter Vorschau-SMTP-Zugang |
-| `MAIL_SCHEME`, `MAIL_FROM_ADDRESS`, `MAIL_FROM_NAME` | Zum SMTP-Dienst passende sichere Versandkonfiguration und eindeutig erkennbare Vorschau-Absenderangaben |
+| Variable/Einstellung                                       | Vorschau-Wert                                                                                                                |
+| ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `SCHOOLTOOL_PREVIEW_INSTANCE`                              | `true`                                                                                                                       |
+| `APP_ENV`                                                  | `production` für die online erreichbare Vorschau                                                                             |
+| `APP_DEBUG`                                                | `false`                                                                                                                      |
+| `APP_URL`                                                  | Genau der HTTPS-Ursprung der Vorschau                                                                                        |
+| `SCHOOLTOOL_PREVIEW_EXPECTED_HOST`                         | Nur der Vorschau-Hostname, ohne Protokoll oder Pfad                                                                          |
+| `APP_KEY`                                                  | Neu erzeugter eigener Anwendungsschlüssel; niemals den Live-Schlüssel übernehmen                                             |
+| `APP_PREVIOUS_KEYS`                                        | Leer; keine alten Live-Schlüssel hinterlegen                                                                                 |
+| `DB_CONNECTION`                                            | `mysql` oder entsprechend konfigurierte `mariadb`-Verbindung                                                                 |
+| `DB_HOST`, `DB_PORT`, `DB_DATABASE`                        | Verbindung zur eigenen Vorschau-Datenbank; Name muss von Live abweichen                                                      |
+| `DB_USERNAME`, `DB_PASSWORD`                               | Ausschließlich für diese Vorschau-Datenbank berechtigtes Konto                                                               |
+| `DB_URL`, `DB_SOCKET`                                      | Nicht setzen bzw. leer lassen                                                                                                |
+| `SCHOOLTOOL_PREVIEW_SNAPSHOT_KEY_PATH`                     | Vollständiger Dateipfad innerhalb des privaten Vorschau-Snapshot-Verzeichnisses                                              |
+| `FILESYSTEM_DISK`                                          | `local`; `local` und `public` bleiben lokale Disks unter dieser Anwendung in `storage/app/private` bzw. `storage/app/public` |
+| `SESSION_DRIVER`                                           | `file`                                                                                                                       |
+| `SESSION_COOKIE`                                           | Eigener Name mit `preview`, z. B. `schooltool_preview_session`                                                               |
+| `SESSION_DOMAIN`                                           | Leer, damit Cookies ausschließlich zum Vorschau-Host gehören                                                                 |
+| `SESSION_SECURE_COOKIE`, `SESSION_HTTP_ONLY`               | Jeweils `true`                                                                                                               |
+| `SESSION_SAME_SITE`                                        | `lax` oder `strict`                                                                                                          |
+| `CACHE_STORE`                                              | `file`; Rate-Limiter und Berechtigungscache verwenden ebenfalls diesen lokalen Store                                         |
+| `QUEUE_CONNECTION`                                         | `sync`                                                                                                                       |
+| `BROADCAST_CONNECTION`                                     | `log` oder `null`                                                                                                            |
+| `APP_MAINTENANCE_DRIVER`                                   | `file`                                                                                                                       |
+| `PULSE_ENABLED`                                            | `false`; Telescope/Nightwatch müssen, falls vorhanden, ebenfalls deaktiviert sein                                            |
+| `MAIL_MAILER`                                              | `smtp`                                                                                                                       |
+| `MAIL_HOST`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD` | Geprüfter Vorschau-SMTP-Zugang                                                                                               |
+| `MAIL_SCHEME`, `MAIL_FROM_ADDRESS`, `MAIL_FROM_NAME`       | Zum SMTP-Dienst passende sichere Versandkonfiguration und eindeutig erkennbare Vorschau-Absenderangaben                      |
 
 Die Vorschau erzwingt TLS für SMTP automatisch. Der Dienst muss ESMTP mit STARTTLS oder direktes TLS (`MAIL_SCHEME=smtps`, gewöhnlich Port 465) mit einem gültigen, zum SMTP-Host passenden Zertifikat unterstützen; der Rückfall auf unverschlüsseltes altes SMTP ist gesperrt. `preview:check` prüft den tatsächlich aufgelösten Transport einschließlich `MAIL_URL`; Optionen wie `require_tls=false` für unverschlüsseltes SMTP oder `verify_peer=false` werden abgelehnt. SMTP-Benutzername und Passwort müssen gesetzt sein.
 
@@ -318,16 +318,16 @@ Die Kopie bleibt personenbezogen und ist entsprechend geschützt aufzubewahren. 
 
 ### Störungen und Wiederherstellung
 
-| Situation | Vorgehen |
-| --- | --- |
-| SSH-Zugang scheitert | Zielvariablen, richtiges Unix-Konto, Agent, Schlüsselzuordnung und verifizierten Hostschlüssel prüfen. Hostschlüsselprüfung nicht abschalten. |
-| Vorschau-Kontrollprüfung scheitert | Main-Code und festen HTTPS-Endpunkt, gültiges Zertifikat, gleiche Kontroll-URL/Schlüsselbytes, private Dateirechte, aktuelle Konfiguration und synchronisierte Serveruhren prüfen. Keinen Live-Datenbankzugang als Ersatz eintragen. |
-| GitHub hat neuere Commits | Mit `gitmain` bzw. `gitwork` aktualisieren; bei echter Divergenz bewusst auflösen. Kein blindes Überschreiben oder Zurücksetzen. |
-| Veröffentlichung nach Prüfungen gescheitert | Lokale Commits und Kandidaten bleiben erhalten. Bei Verbindungsabbruch erst `gitcheck` und GitHub prüfen, dann gezielt fortsetzen. |
+| Situation                                               | Vorgehen                                                                                                                                                                                                                                                                 |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| SSH-Zugang scheitert                                    | Zielvariablen, richtiges Unix-Konto, Agent, Schlüsselzuordnung und verifizierten Hostschlüssel prüfen. Hostschlüsselprüfung nicht abschalten.                                                                                                                            |
+| Vorschau-Kontrollprüfung scheitert                      | Main-Code und festen HTTPS-Endpunkt, gültiges Zertifikat, gleiche Kontroll-URL/Schlüsselbytes, private Dateirechte, aktuelle Konfiguration und synchronisierte Serveruhren prüfen. Keinen Live-Datenbankzugang als Ersatz eintragen.                                     |
+| GitHub hat neuere Commits                               | Mit `gitmain` bzw. `gitwork` aktualisieren; bei echter Divergenz bewusst auflösen. Kein blindes Überschreiben oder Zurücksetzen.                                                                                                                                         |
+| Veröffentlichung nach Prüfungen gescheitert             | Lokale Commits und Kandidaten bleiben erhalten. Bei Verbindungsabbruch erst `gitcheck` und GitHub prüfen, dann gezielt fortsetzen.                                                                                                                                       |
 | Release veröffentlicht, lokale Vorbereitung gescheitert | Das Release bleibt veröffentlicht und der lokale Feature-Branch erhalten. Ursache beheben und `gitmain` wiederholen; danach den integrierten lokalen Branch bei Bedarf mit `git branch -d feature/name` entfernen. Nicht erneut veröffentlichen und kein `-D` verwenden. |
-| Vorschau-Export fehlgeschlagen | Die Live-Datenbank wurde vom Export nicht verändert. Ursache beheben; ein vollständiger geprüfter Snapshot wird vor dem Import verlangt. |
-| Vorschau nach Datenimport oder Migration fehlgeschlagen | Vorschau geschlossen lassen. Private Sicherung und Wiederherstellungsmarker erhalten. Den folgenden Wiederherstellungsablauf verwenden. |
-| Live-Deployment fehlgeschlagen | Live-Ausgabe und bestehenden Wartungs-/Deploymentstatus prüfen. Die Vorschau-Wiederherstellung ist kein Live-Rollback. Nicht ungeprüft `artisan up` aufrufen. |
+| Vorschau-Export fehlgeschlagen                          | Die Live-Datenbank wurde vom Export nicht verändert. Ursache beheben; ein vollständiger geprüfter Snapshot wird vor dem Import verlangt.                                                                                                                                 |
+| Vorschau nach Datenimport oder Migration fehlgeschlagen | Vorschau geschlossen lassen. Private Sicherung und Wiederherstellungsmarker erhalten. Den folgenden Wiederherstellungsablauf verwenden.                                                                                                                                  |
+| Live-Deployment fehlgeschlagen                          | Live-Ausgabe und bestehenden Wartungs-/Deploymentstatus prüfen. Die Vorschau-Wiederherstellung ist kein Live-Rollback. Nicht ungeprüft `artisan up` aufrufen.                                                                                                            |
 
 Nach einem begonnenen Vorschau-Import oder einem vorbereiteten Migrationslauf liegt im privaten Snapshot-Ordner ein `snapshot-pending.json` mit dem geprüften Sicherungsbezug. Zur bewussten Wiederherstellung ausschließlich im überprüften Vorschau-Verzeichnis:
 
@@ -339,17 +339,17 @@ Dieser Befehl stellt die zuvor gesicherte Vorschau-Datenbank, Vorschau-Dateien u
 
 ### Typische Abläufe
 
-| Anlass | Ablauf |
-| --- | --- |
-| Feature beginnen | `gitstart "neue-funktion"` → entwickeln → `gitsave "Beschreibung"` |
-| Gerät oder Feature wechseln | Erfolgreiches `gitsave`; anschließend `gitwork NAME` oder `gitmain` |
-| Hauptanwendung korrigieren | Feature sichern → `gitmain` → korrigieren → `gitsave "Fehler behoben"` → `gitdeploy` → Smoke und `LIVE` |
-| Korrektur im Feature weiterverwenden | `gitwork` → `gitupdate` → testen → `gitsave "main übernommen"` |
-| Online testen | `gitwork NAME` → `gitsave "Vorschau vorbereitet"` → `gitpreview -Feature NAME` |
-| Feature freigeben | `gitsave "Funktion fertig"` → `gitrelease "Neue Funktion"` → `gitdeploy` → Smoke und `LIVE` |
-| Lokal den vollständigen Hauptstand installieren | `gitmain` → `composer deploy` |
+| Anlass                                          | Ablauf                                                                                                  |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| Feature beginnen                                | `gitstart "neue-funktion"` → entwickeln → `gitsave "Beschreibung"`                                      |
+| Gerät oder Feature wechseln                     | Erfolgreiches `gitsave`; anschließend `gitwork NAME` oder `gitmain`                                     |
+| Hauptanwendung korrigieren                      | Feature sichern → `gitmain` → korrigieren → `gitsave "Fehler behoben"` → `gitdeploy` → Smoke und `LIVE` |
+| Korrektur im Feature weiterverwenden            | `gitwork` → `gitupdate` → testen → `gitsave "main übernommen"`                                          |
+| Online testen                                   | `gitwork NAME` → `gitsave "Vorschau vorbereitet"` → `gitpreview -Feature NAME`                          |
+| Feature freigeben                               | `gitsave "Funktion fertig"` → `gitrelease "Neue Funktion"` → `gitdeploy` → Smoke und `LIVE`             |
+| Lokal den vollständigen Hauptstand installieren | `gitmain` (führt `composer deploy` automatisch aus)                                                     |
 
-Git wechselt keine lokalen Datenbanken. `gitupdate` führt ausstehende additive Migrationen nach Prüfung von Ziel und SQL automatisch auf der konfigurierten lokalen Datenbank aus; unklare oder destruktive Migrationen werden gestoppt. Für experimentelle Feature-Migrationen eine eigene lokale Feature-Datenbank verwenden. `gitmain` und `gitwork` führen keine Migrationen aus und machen bereits ausgeführte Migrationen nicht rückgängig.
+Git wechselt keine lokalen Datenbanken. gitmain aktualisiert die konfigurierte lokale Datenbank über composer deploy. gitupdate führt ausstehende additive Migrationen nach Prüfung von Ziel und SQL aus. Unklare oder destruktive Migrationen stoppen den Vorgang. Für experimentelle Feature-Migrationen eine eigene lokale Datenbank verwenden. Bereits ausgeführte Migrationen werden beim Branchwechsel nicht rückgängig gemacht.
 
 # Code simplifying with Claude
 

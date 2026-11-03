@@ -115,6 +115,14 @@
                 @endforeach
             </tbody>
         </table>
+        @foreach ($students as $student)
+            @if (! empty($student['points_adjustments']))
+                <div style="margin-top: 18px; break-inside: avoid;">
+                    <strong>{{ $student['name'] }}</strong>
+                    @include('pdfs.teachingPointAdjustments', ['pointsAdjustments' => $student['points_adjustments']])
+                </div>
+            @endif
+        @endforeach
     @endif
 </body>
 </html>

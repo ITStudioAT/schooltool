@@ -13,7 +13,6 @@
 use App\Models\Import116;
 use App\Models\Licence;
 use App\Models\School;
-use App\Models\SchoolTool;
 use App\Models\Schoolyear;
 use App\Models\TeachingCourse;
 use App\Models\TeachingCourseBehaviourEntry;
@@ -695,8 +694,6 @@ describe('settings and semester endpoints', function () {
                     'teaching_behaviour',
                     'teaching_notifications',
                     'teaching_show_behaviour',
-                    'teaching_grade_columns',
-                    'teaching_student_grade_columns',
                 ],
             ]);
 
@@ -712,13 +709,7 @@ describe('settings and semester endpoints', function () {
             ->and($response->json('settings.teaching_notifications.0.short_name'))->toBe('AKTN')
             ->and($response->json('settings.teaching_notifications_usage_count'))->toBe(1)
             ->and($response->json('settings.teaching_notifications_usage_counts.AKTN'))->toBe(1)
-            ->and($response->json('settings.teaching_show_behaviour'))->toBeTrue()
-            ->and($response->json('settings.teaching_grade_columns.show_sem1'))->toBeFalse()
-            ->and($response->json('settings.teaching_grade_columns.show_sem2'))->toBeFalse()
-            ->and($response->json('settings.teaching_grade_columns.show_year'))->toBeFalse()
-            ->and($response->json('settings.teaching_student_grade_columns.show_sem1'))->toBeFalse()
-            ->and($response->json('settings.teaching_student_grade_columns.show_sem2'))->toBeFalse()
-            ->and($response->json('settings.teaching_student_grade_columns.show_year'))->toBeFalse();
+            ->and($response->json('settings.teaching_show_behaviour'))->toBeTrue();
 
         $this->assertDatabaseCount('teaching_schemas', 1);
         $this->assertDatabaseHas('teaching_schemas', [
@@ -1564,114 +1555,106 @@ describe('settings and semester endpoints', function () {
         ]);
     });
 
-    test('save_settings persists teaching grade column visibility by schoolyear', function () {
-        $this->actingAs($this->admin, 'sanctum');
-
-        $payload = validTeachingSettingsPayload('schema-grade-columns');
-        $payload['teaching_grade_columns'] = [
-            'show_sem1' => true,
-            'show_sem2' => false,
-            'show_year' => true,
-        ];
-
-        $response = $this->postJson('/api/admin/teaching/save_settings', $payload);
-
-        $response->assertOk()
-            ->assertJsonPath('settings.teaching_grade_columns.show_sem1', true)
-            ->assertJsonPath('settings.teaching_grade_columns.show_sem2', false)
-            ->assertJsonPath('settings.teaching_grade_columns.show_year', true);
-
-        $this->admin->refresh();
-
-        expect($this->admin->teaching_grade_columns_by_schoolyear)->toBeArray()
-            ->and(data_get($this->admin->teaching_grade_columns_by_schoolyear, "{$this->schoolyear->id}.show_sem1"))->toBeTrue()
-            ->and(data_get($this->admin->teaching_grade_columns_by_schoolyear, "{$this->schoolyear->id}.show_sem2"))->toBeFalse()
-            ->and(data_get($this->admin->teaching_grade_columns_by_schoolyear, "{$this->schoolyear->id}.show_year"))->toBeTrue();
-    });
-
-    test('save_settings persists teaching student grade column visibility by schoolyear', function () {
-        $this->actingAs($this->admin, 'sanctum');
-
-        $payload = validTeachingSettingsPayload('schema-student-grade-columns');
-        $payload['teaching_student_grade_columns'] = [
-            'show_sem1' => false,
-            'show_sem2' => true,
-            'show_year' => true,
-        ];
-
-        $response = $this->postJson('/api/admin/teaching/save_settings', $payload);
-
-        $response->assertOk()
-            ->assertJsonPath('settings.teaching_student_grade_columns.show_sem1', false)
-            ->assertJsonPath('settings.teaching_student_grade_columns.show_sem2', true)
-            ->assertJsonPath('settings.teaching_student_grade_columns.show_year', true);
-
-        $this->admin->refresh();
-
-        expect($this->admin->teaching_student_grade_columns_by_schoolyear)->toBeArray()
-            ->and(data_get($this->admin->teaching_student_grade_columns_by_schoolyear, "{$this->schoolyear->id}.show_sem1"))->toBeFalse()
-            ->and(data_get($this->admin->teaching_student_grade_columns_by_schoolyear, "{$this->schoolyear->id}.show_sem2"))->toBeTrue()
-            ->and(data_get($this->admin->teaching_student_grade_columns_by_schoolyear, "{$this->schoolyear->id}.show_year"))->toBeTrue();
-    });
-
-    test('save_settings persists teaching student grade column visibility by course', function () {
-        $this->actingAs($this->admin, 'sanctum');
-
-        SchoolTool::factory()->create([
-            'school_id' => $this->school->id,
-            'teaching_visible_admin' => true,
-            'teaching_visible_user' => true,
-        ]);
-
-        $firstCourse = TeachingCourse::factory()->create([
+    test('calculated note visibility reloads independently for each course and teacher and preserves other columns', function () {
+        $course = TeachingCourse::factory()->create([
             'school_id' => $this->school->id,
             'schoolyear_id' => $this->schoolyear->id,
-            'user_id' => $this->admin->id,
-            'classes' => ['4A'],
+            'user_id' => $this->teacher->id,
         ]);
-        $secondCourse = TeachingCourse::factory()->create([
+        $otherCourse = TeachingCourse::factory()->create([
             'school_id' => $this->school->id,
             'schoolyear_id' => $this->schoolyear->id,
-            'user_id' => $this->admin->id,
-            'classes' => ['4B'],
+            'user_id' => $this->teacher->id,
         ]);
+        $this->teacher->forceFill(['teaching_grade_columns_by_schoolyear' => [
+            (string) $this->schoolyear->id => ['show_sem1' => true, 'show_calculated_grade' => true],
+        ]])->save();
+        $this->actingAs($this->teacher, 'sanctum');
+        $this->getJson('/api/admin/teaching/load_settings')->assertOk()
+            ->assertJsonPath('settings.teaching_show_calculated_grade', true)
+            ->assertJsonPath('settings.teaching_show_calculated_grade_by_course', []);
+        $this->postJson('/api/admin/teaching/save_settings', [
+            'teaching_course_id' => $otherCourse->id,
+            'teaching_show_calculated_grade' => false,
+        ])->assertOk();
 
-        $firstPayload = validTeachingSettingsPayload('schema-student-grade-columns-first');
-        $firstPayload['teaching_course_id'] = $firstCourse->id;
-        $firstPayload['teaching_student_grade_columns'] = [
-            'show_sem1' => true,
-            'show_sem2' => false,
-            'show_year' => true,
-        ];
-
-        $this->postJson('/api/admin/teaching/save_settings', $firstPayload)
-            ->assertOk();
-
-        $secondPayload = validTeachingSettingsPayload('schema-student-grade-columns-second');
-        $secondPayload['teaching_course_id'] = $secondCourse->id;
-        $secondPayload['teaching_student_grade_columns'] = [
-            'show_sem1' => false,
-            'show_sem2' => true,
-            'show_year' => false,
-        ];
-
-        $this->postJson('/api/admin/teaching/save_settings', $secondPayload)
-            ->assertOk();
-
-        $firstCourse->refresh();
-        $secondCourse->refresh();
-        $this->admin->refresh();
-
-        expect($firstCourse->teaching_student_grade_columns)->toBe([
-            'show_sem1' => true,
-            'show_sem2' => false,
-            'show_year' => true,
-        ])->and($secondCourse->teaching_student_grade_columns)->toBe([
-            'show_sem1' => false,
-            'show_sem2' => true,
-            'show_year' => false,
-        ])->and($this->admin->teaching_student_grade_columns_by_schoolyear)->toBeNull();
+        foreach ([true, false, true] as $visible) {
+            $this->postJson('/api/admin/teaching/save_settings', [
+                'teaching_course_id' => $course->id,
+                'teaching_show_calculated_grade' => $visible,
+            ])->assertOk();
+            $this->getJson('/api/admin/teaching/load_settings')->assertOk()
+                ->assertJsonPath("settings.teaching_show_calculated_grade_by_course.{$course->id}", $visible)
+                ->assertJsonPath("settings.teaching_show_calculated_grade_by_course.{$otherCourse->id}", false)
+                ->assertJsonPath('settings.teaching_show_calculated_grade', true);
+            expect(data_get($this->teacher->fresh()->teaching_grade_columns_by_schoolyear, "{$this->schoolyear->id}.show_calculated_grade_by_course.{$course->id}"))->toBe($visible);
+            expect(data_get($this->teacher->fresh()->teaching_grade_columns_by_schoolyear, "{$this->schoolyear->id}.show_sem1"))->toBeTrue();
+        }
+        $this->actingAs($this->admin, 'sanctum');
+        $this->getJson('/api/admin/teaching/load_settings')->assertOk()
+            ->assertJsonPath('settings.teaching_show_calculated_grade_by_course', []);
+        $this->postJson('/api/admin/teaching/save_settings', [
+            'teaching_course_id' => $course->id,
+            'teaching_show_calculated_grade' => false,
+        ])->assertOk();
+        expect(data_get($this->teacher->fresh()->teaching_grade_columns_by_schoolyear, "{$this->schoolyear->id}.show_calculated_grade_by_course.{$course->id}"))->toBeTrue();
+        expect($course->fresh()->teaching_student_grade_columns)->toBeNull();
     });
+
+    test('calculated note visibility is isolated by schoolyear', function () {
+        $otherYear = Schoolyear::factory()->create(['school_id' => $this->school->id]);
+        $course = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $otherYear->id,
+            'user_id' => $this->teacher->id,
+        ]);
+        $original = [(string) $this->schoolyear->id => ['show_calculated_grade' => true]];
+        $this->teacher->forceFill(['schoolyear_id' => $otherYear->id, 'teaching_grade_columns_by_schoolyear' => $original])->save();
+        $this->actingAs($this->teacher, 'sanctum');
+        $this->getJson('/api/admin/teaching/load_settings')->assertOk()
+            ->assertJsonPath('settings.teaching_show_calculated_grade', false)
+            ->assertJsonPath('settings.teaching_show_calculated_grade_by_course', []);
+        $this->postJson('/api/admin/teaching/save_settings', [
+            'teaching_course_id' => $course->id,
+            'teaching_show_calculated_grade' => true,
+        ])->assertOk();
+        expect($this->teacher->fresh()->teaching_grade_columns_by_schoolyear)->toEqual($original + [
+            (string) $otherYear->id => ['show_calculated_grade_by_course' => [(string) $course->id => true]],
+        ]);
+    });
+
+    test('calculated note visibility requires a valid course and boolean', function (array $payload, string $field) {
+        $this->actingAs($this->teacher, 'sanctum');
+        $this->postJson('/api/admin/teaching/save_settings', $payload)
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors($field);
+        expect($this->teacher->fresh()->teaching_grade_columns_by_schoolyear)->toBeNull();
+    })->with([
+        'enable without course' => [['teaching_show_calculated_grade' => true], 'teaching_course_id'],
+        'disable without course' => [['teaching_show_calculated_grade' => false], 'teaching_course_id'],
+        'invalid course' => [['teaching_show_calculated_grade' => true, 'teaching_course_id' => 'invalid'], 'teaching_course_id'],
+        'invalid boolean' => [['teaching_show_calculated_grade' => 'invalid', 'teaching_course_id' => 1], 'teaching_show_calculated_grade'],
+    ]);
+
+    test('calculated note visibility rejects courses outside the current teachers access', function (string $boundary) {
+        $course = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->teacher->id,
+        ]);
+        $course->forceFill(match ($boundary) {
+            'owner' => ['user_id' => $this->admin->id],
+            'year' => ['schoolyear_id' => Schoolyear::factory()->create(['school_id' => $this->school->id])->id],
+            'school' => ['school_id' => School::factory()->create()->id],
+        })->save();
+        $this->actingAs($this->teacher, 'sanctum');
+        $this->postJson('/api/admin/teaching/save_settings', [
+            'teaching_course_id' => $course->id,
+            'teaching_show_calculated_grade' => true,
+        ])->assertForbidden();
+        expect($this->teacher->fresh()->teaching_grade_columns_by_schoolyear)->toBeNull();
+        expect($this->admin->fresh()->teaching_grade_columns_by_schoolyear)->toBeNull();
+    })->with(['owner', 'year', 'school']);
 
     test('save_settings preserves independent course grade visibility across partial saves', function () {
         $this->actingAs($this->teacher, 'sanctum');
@@ -1692,7 +1675,7 @@ describe('settings and semester endpoints', function () {
             'teaching_student_grade_columns' => ['show_semester_grade' => false, 'show_behaviour_grade' => true],
         ])->assertOk();
 
-        expect($course->fresh()->teaching_student_grade_columns)->toBe([
+        expect($course->fresh()->teaching_student_grade_columns)->toEqual([
             'show_sem1' => true,
             'show_sem2' => false,
             'show_year' => true,
@@ -1702,15 +1685,16 @@ describe('settings and semester endpoints', function () {
 
         $this->postJson('/api/admin/teaching/save_settings', [
             'teaching_course_id' => $course->id,
-            'teaching_student_grade_columns' => ['show_sem1' => false, 'show_sem2' => true, 'show_year' => false],
+            'teaching_student_grade_columns' => ['show_stars' => false],
         ])->assertOk();
 
-        expect($course->fresh()->teaching_student_grade_columns)->toBe([
-            'show_sem1' => false,
-            'show_sem2' => true,
-            'show_year' => false,
+        expect($course->fresh()->teaching_student_grade_columns)->toEqual([
+            'show_sem1' => true,
+            'show_sem2' => false,
+            'show_year' => true,
             'show_semester_grade' => false,
             'show_behaviour_grade' => true,
+            'show_stars' => false,
         ])->and($otherCourse->fresh()->teaching_student_grade_columns)->toBeNull()
             ->and($this->teacher->fresh()->teaching_student_grade_columns_by_schoolyear)->toBeNull();
 
@@ -1733,11 +1717,11 @@ describe('settings and semester endpoints', function () {
             'teaching_student_grade_columns' => [$key => 'invalid'],
         ])->assertUnprocessable()->assertJsonValidationErrors("teaching_student_grade_columns.{$key}");
         expect($course->fresh()->teaching_student_grade_columns)->toBeNull();
-    })->with(['show_semester_grade', 'show_behaviour_grade']);
+    })->with(['show_semester_grade', 'show_behaviour_grade', 'show_points_progress', 'show_stars']);
 
-    test('save_settings requires a course for assigned grade visibility and enforces ownership', function () {
+    test('save_settings requires a course for assigned grade visibility and enforces ownership', function (string $key) {
         $this->actingAs($this->teacher, 'sanctum');
-        $payload = ['teaching_student_grade_columns' => ['show_semester_grade' => false]];
+        $payload = ['teaching_student_grade_columns' => [$key => false]];
         $this->postJson('/api/admin/teaching/save_settings', $payload)
             ->assertUnprocessable()->assertJsonValidationErrors('teaching_course_id');
 
@@ -1749,6 +1733,65 @@ describe('settings and semester endpoints', function () {
         $this->postJson('/api/admin/teaching/save_settings', $payload + ['teaching_course_id' => $course->id])
             ->assertForbidden();
         expect($course->fresh()->teaching_student_grade_columns)->toBeNull();
+    })->with(['show_semester_grade', 'show_points_progress', 'show_stars']);
+
+    test('course stars visibility persists across reloads without changing points, assigned grades or another course', function () {
+        $course = TeachingCourse::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->teacher->id, 'teaching_student_grade_columns' => ['show_points_progress' => true, 'show_semester_grade' => false]]);
+        $other = TeachingCourse::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id, 'user_id' => $this->teacher->id]);
+        $this->actingAs($this->teacher, 'sanctum');
+        foreach ([false, true] as $visible) {
+            $this->postJson('/api/admin/teaching/save_settings', ['teaching_course_id' => $course->id,
+                'teaching_student_grade_columns' => ['show_stars' => $visible],
+            ])->assertOk();
+            $this->getJson("/api/admin/teaching/courses/{$course->id}")->assertOk()
+                ->assertJsonPath('data.teaching_student_grade_columns.show_stars', $visible);
+            expect($course->fresh()->teaching_student_grade_columns)->toEqual([
+                'show_points_progress' => true, 'show_semester_grade' => false, 'show_stars' => $visible,
+            ]);
+            expect($other->fresh()->teaching_student_grade_columns)->toBeNull();
+            expect($this->teacher->fresh()->teaching_student_grade_columns_by_schoolyear)->toBeNull();
+        }
+        $this->getJson("/api/admin/teaching/courses/{$other->id}")->assertOk()
+            ->assertJsonPath('data.teaching_student_grade_columns.show_stars', true);
+    });
+
+    test('removed calculated grade column settings cannot be saved or reappear in settings', function () {
+        $this->actingAs($this->teacher, 'sanctum');
+        $this->postJson('/api/admin/teaching/save_settings', ['teaching_grade_columns' => ['show_sem1' => true]])
+            ->assertOk()->assertJsonMissingPath('settings.teaching_grade_columns')
+            ->assertJsonMissingPath('settings.teaching_student_grade_columns');
+        expect($this->teacher->fresh()->teaching_grade_columns_by_schoolyear)->toBeNull();
+        $course = TeachingCourse::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id, 'user_id' => $this->teacher->id]);
+        $this->postJson('/api/admin/teaching/save_settings', ['teaching_course_id' => $course->id,
+            'teaching_student_grade_columns' => ['show_sem1' => true],
+        ])->assertUnprocessable()->assertJsonValidationErrors('teaching_student_grade_columns');
+        expect($course->fresh()->teaching_student_grade_columns)->toBeNull();
+    });
+
+    test('save_settings persists binary course points progress independently across reloads and partial saves', function () {
+        $course = TeachingCourse::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id, 'user_id' => $this->teacher->id]);
+        $other = TeachingCourse::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id, 'user_id' => $this->teacher->id]);
+        $this->actingAs($this->teacher, 'sanctum');
+        foreach ([true, false] as $enabled) {
+            $this->postJson('/api/admin/teaching/save_settings', ['teaching_course_id' => $course->id,
+                'teaching_student_grade_columns' => ['show_points_progress' => $enabled],
+            ])->assertOk();
+            $this->postJson('/api/admin/teaching/save_settings', ['teaching_course_id' => $course->id,
+                'teaching_student_grade_columns' => ['show_behaviour_grade' => true],
+            ])->assertOk();
+            expect($course->fresh()->teaching_student_grade_columns['show_points_progress'])->toBe($enabled)
+                ->and($other->fresh()->teaching_student_grade_columns)->toBeNull()
+                ->and($this->teacher->fresh()->teaching_student_grade_columns_by_schoolyear)->toBeNull();
+            $this->getJson("/api/admin/teaching/courses/{$course->id}")->assertOk()
+                ->assertJsonPath('data.teaching_student_grade_columns.show_points_progress', $enabled);
+        }
+        $this->actingAs($this->teacher, 'sanctum');
+        $this->teacher->syncRoles(['user']);
+        $this->postJson('/api/admin/teaching/save_settings', ['teaching_course_id' => $course->id,
+            'teaching_student_grade_columns' => ['show_points_progress' => true],
+        ])->assertForbidden();
+        expect($course->fresh()->teaching_student_grade_columns['show_points_progress'])->toBeFalse();
     });
 
     test('save_settings persists category evaluation values inside schema grading', function () {

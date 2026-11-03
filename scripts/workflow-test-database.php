@@ -10,7 +10,17 @@ use Throwable;
 
 function localConnection(): PDO
 {
-    return new PDO('mysql:host=127.0.0.1;port=3306;charset=utf8mb4', 'root', '', [
+    $password = '';
+    if (getenv('GITHUB_ACTIONS') === 'true') {
+        if (getenv('APP_ENV') !== 'testing' || getenv('DB_CONNECTION') !== 'mysql'
+            || getenv('DB_HOST') !== '127.0.0.1' || getenv('DB_PORT') !== '3306'
+            || getenv('DB_USERNAME') !== 'root' || getenv('DB_PASSWORD') !== 'root') {
+            throw new RuntimeException('Owned CI databases require the isolated local GitHub MySQL service.');
+        }
+        $password = 'root';
+    }
+
+    return new PDO('mysql:host=127.0.0.1;port=3306;charset=utf8mb4', 'root', $password, [
         PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
         PDO::ATTR_TIMEOUT => 5,
         PDO::ATTR_EMULATE_PREPARES => false,

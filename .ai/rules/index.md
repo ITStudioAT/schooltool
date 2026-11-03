@@ -103,6 +103,7 @@ Before planning or editing, find the row whose globs match the file's path and r
 | resources/views/pdfs/students-timetable-overview.blade.php, resources/views/pdfs/** | .ai/rules/pdfs.md |
 | {resources/js/stores/admin/AdminStore.js,resources/js/pages/admin/profile/Profile.vue} | .ai/rules/profile.md |
 | resources/js/pages/admin/studentsTimetables/StudentsTimetables.vue, resources/js/pages/admin/studentsTimetables/** | .ai/rules/resources-js-pages-admin-students-timetables.md |
+| resources/** | .ai/rules/resources.md |
 | {app/Services/RestaurantSynchronisationService.php,resources/js/pages/admin/restaurant/components/Synchronisation.vue,tests/Feature/Controllers/Admin/Restaurant/RestaurantSynchronisationControllerTest.php} | .ai/rules/restaurant.md |
 | {scripts/git_helpers.ps1,scripts/update-changelog.mjs}, {scripts/git_helpers.ps1,scripts/git_workflow.ps1,scripts/install_powershell_helpers.ps1} | .ai/rules/scripts-2.md |
 | {scripts/git_preview*.ps1,scripts/deploy_preview_cloudways.sh,app/Services/FeaturePreviewSnapshotService.php} | .ai/rules/scripts-services.md |

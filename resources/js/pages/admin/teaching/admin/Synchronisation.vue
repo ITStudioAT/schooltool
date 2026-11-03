@@ -5,6 +5,8 @@
             <v-alert type="info" variant="tonal" class="mb-3">
                 Zuerst wird der vollständige Unterrichtsumfang geprüft: Kurse, Schülerzuordnungen, Stunden, Bewertungen,
                 Arbeiten, Gruppen, Lehrpläne, Dateien, Einstellungen, Klassenleitungen, Benachrichtigungen und Importhistorie.
+                Unterricht Tools werden ebenfalls übernommen: Multiple-Choice-Kataloge, Tests, Antworten und Ergebnisse sowie
+                Zahlensystem-Spielrunden, Spielstände, Teams und Teilnahmen.
                 Die Cloud wird ausschließlich gelesen. Persönliche Backups und Wiederherstellungshistorien bleiben eigenständig.
             </v-alert>
             <v-alert v-if="!available && !loadingStatus" type="warning" variant="tonal" class="mb-3">
@@ -15,7 +17,10 @@
                 {{ success.message }}
                 <a v-if="success.backup" :href="backupRoute.url(success.backup)" class="d-block mt-2">Verschlüsseltes Sicherheitsbackup herunterladen</a>
                 <p class="mt-2">Das Backup benötigt den Schlüssel dieser Installation und bleibt auch lokal im privaten Speicher erhalten.</p>
-                <v-btn class="mt-2" @click="reload">Unterricht neu laden</v-btn>
+                <ul v-if="success.dropbox_warnings?.length" class="ml-5 mt-2">
+                    <li v-for="warning in success.dropbox_warnings" :key="warning">{{ warning }}</li>
+                </ul>
+                <v-btn color="primary" class="mt-2" @click="reload">Unterricht neu laden</v-btn>
             </v-alert>
             <v-btn color="primary" prepend-icon="mdi-cloud-search-outline" :loading="previewing"
                 :disabled="!available || busy" @click="loadPreview">1. Umfang und Konflikte prüfen</v-btn>
@@ -44,6 +49,14 @@
                     Diese Historieneinträge bleiben erhalten; für sie kann keine Datei kopiert werden.
                     <ul class="ml-5"><li v-for="warning in preview.file_warnings" :key="warning">{{ warning }}</li></ul>
                 </v-alert>
+                <v-alert v-if="preview.dropbox_notices?.length" type="info" variant="tonal" class="mb-3">
+                    Lokale Dropbox-Ordner bleiben beim eindeutig passenden Unterricht erhalten.
+                    <ul class="ml-5"><li v-for="notice in preview.dropbox_notices" :key="notice">{{ notice }}</li></ul>
+                </v-alert>
+                <v-alert v-if="preview.dropbox_warnings?.length" type="warning" variant="tonal" class="mb-3">
+                    Diese lokalen Dropbox-Zuordnungen werden nur im Sicherheitsbackup erhalten:
+                    <ul class="ml-5"><li v-for="warning in preview.dropbox_warnings" :key="warning">{{ warning }}</li></ul>
+                </v-alert>
                 <v-alert v-if="preview.updated_schoolyears?.length" type="warning" variant="tonal" class="mb-3">
                     Die folgenden gemeinsamen Schuljahreinstellungen werden aktualisiert; sie gelten auch in anderen Modulen.
                     <ul class="ml-5"><li v-for="year in preview.updated_schoolyears" :key="year.id">
@@ -63,7 +76,7 @@
                     </li></ul>
                 </v-alert>
                 <v-alert type="warning" variant="tonal" class="mb-3">
-                    Der Start ersetzt alle oben gezählten lokalen Unterrichtsdatensätze dieser Schule in allen Schuljahren.
+                    Der Start ersetzt alle oben gezählten lokalen Unterrichtsdatensätze einschließlich Unterricht Tools dieser Schule in allen Schuljahren.
                     Lokale Unterrichtseinträge ohne Gegenstück im geprüften LIVE-Stand entfallen. Alte Dateien bleiben erhalten;
                     Cloud-Dateien werden privat lokal kopiert. Vorher wird der lokale Unterrichtsstand verschlüsselt gesichert.
                     Bestehende Passwörter, Rollen, persönliche Recoverydaten und Daten anderer Schulen bleiben erhalten.
@@ -81,7 +94,7 @@
                     </li></ul>
                 </v-alert>
                 <v-checkbox v-model="replaceConfirmed" :disabled="busy || !preview.token"
-                    label="Ich bestätige den vollständigen Ersatz der angezeigten lokalen Unterrichtsdaten aller Schuljahre einschließlich lokaler Einträge, die in LIVE fehlen." />
+                    label="Ich bestätige den vollständigen Ersatz der angezeigten lokalen Unterrichtsdaten einschließlich Unterricht Tools aller Schuljahre einschließlich lokaler Einträge, die in LIVE fehlen." />
                 <v-checkbox v-model="contactsConfirmed" :disabled="busy || !preview.token"
                     label="Ich bestätige die angezeigten Änderungen an gemeinsamen Schülerdaten, Lehrerstammdaten und Schuljahreinstellungen sowie die neuen deaktivierten Konten." />
                 <v-btn color="warning" prepend-icon="mdi-download" :loading="applying"
@@ -127,6 +140,10 @@ function tableLabel(table) {
         teaching_course_student_category_evaluations: 'Kategoriebeurteilungen',
         import116_runs: 'Schülerimporthistorie', import116_run_changes: 'Änderungen aus Schülerimporten',
         user_groups: 'Kurskontaktgruppen', user_group_members: 'Mitglieder der Kurskontaktgruppen',
+        mc_catalogs: 'Multiple-Choice-Fragenkataloge', mc_tests: 'Multiple-Choice-Tests',
+        mc_attempts: 'Multiple-Choice-Teilnahmen, Antworten und Ergebnisse',
+        number_system_game_sessions: 'Zahlensystem-Spielrunden', number_system_game_runs: 'Zahlensystem-Spielstände und Teams',
+        number_system_game_members: 'Zahlensystem-Teilnahmen',
     }
     return labels[table] || 'Unterrichtsdaten'
 }
@@ -149,7 +166,7 @@ function fieldLabel(field) {
 
 function conflictLabel(conflict) {
     return conflict
-        .replace(/\b(teaching_[a-z_]+|import116_runs|import116_run_changes|user_groups|user_group_members)\b/g, tableLabel)
+        .replace(/\b(teaching_[a-z_]+|mc_[a-z_]+|number_system_game_[a-z_]+|import116_runs|import116_run_changes|user_groups|user_group_members)\b/g, tableLabel)
         .replace(/material_card_attachments/g, 'Materialanhänge')
         .replace(/material_cards/g, 'Materialkarten')
 }

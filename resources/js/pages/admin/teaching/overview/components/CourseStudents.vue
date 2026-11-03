@@ -8,7 +8,7 @@
             </div>
             <div v-else class="text-caption text-medium-emphasis">Kein Datum</div>
         </template>
-        <v-card class="mt-3 mb-3" color="primary" variant="tonal" data-testid="course-students-semester-selection">
+        <v-card v-if="semesterCount === 2" class="mt-3 mb-3" color="primary" variant="tonal" data-testid="course-students-semester-selection">
             <v-card-text class="d-flex align-center flex-wrap ga-3 px-3 py-2">
                 <span class="text-caption text-medium-emphasis font-weight-medium">Zeitraum:</span>
                 <v-btn-toggle v-model="activeSemester" mandatory density="compact" color="primary" variant="tonal">
@@ -20,7 +20,7 @@
         </v-card>
         <div class="students-action-bar d-flex align-center ga-2 mx-3 mt-2 flex-wrap">
             <v-btn
-                v-if="canEditAttendance && selectedCourseDateForCourse && !isDayOverviewMode && !show_bulk_entry"
+                v-if="attendanceVisible && canEditAttendance && selectedCourseDateForCourse && !isDayOverviewMode && !show_bulk_entry"
                 size="small"
                 class="students-attendance-check-btn"
                 :variant="'flat'"
@@ -41,27 +41,12 @@
                 <v-icon start>{{ isDayOverviewMode ? 'mdi-close' : 'mdi-view-list' }}</v-icon>
                 {{ isDayOverviewMode ? 'Heute schließen' : 'Heute' }}
             </v-btn>
-            <v-btn
-                v-if="!isDayOverviewMode"
-                size="small"
-                class="students-bulk-btn"
-                :variant="show_bulk_entry ? 'flat' : 'outlined'"
-                :color="show_bulk_entry ? 'warning' : 'primary'"
-                @click="toggleBulkEntry">
-                <v-icon v-if="show_bulk_entry" start>mdi-close</v-icon>
-                {{ show_bulk_entry ? 'Sammelaktion schließen' : 'Sammelaktion' }}
-            </v-btn>
+            <v-btn v-if="!isDayOverviewMode && calculationsEnabled" size="default" :color="showCalculatedGrade ? 'success' : 'primary'"
+                :variant="showCalculatedGrade ? 'flat' : 'outlined'" :prepend-icon="showCalculatedGrade ? 'mdi-check' : 'mdi-calculator'" class="font-weight-bold" :aria-pressed="showCalculatedGrade"
+                :loading="savingCalculatedGradePreference" :disabled="savingCalculatedGradePreference || !settings || !selected_course?.id"
+                @click="toggleCalculatedGrade">Note berechnen: {{ showCalculatedGrade ? 'Ein' : 'Aus' }}</v-btn>
             <v-spacer />
-            <v-btn-toggle
-                v-if="!isDayOverviewMode"
-                v-model="students_sort_mode"
-                mandatory
-                density="compact"
-                color="primary"
-                class="students-sort-toggle">
-                <v-btn size="small" value="class_last_name" class="students-sort-toggle-btn">Klasse, Name</v-btn>
-                <v-btn size="small" value="last_name_first_name" class="students-sort-toggle-btn">Name</v-btn>
-            </v-btn-toggle>
+            <span class="text-caption">Nachname, Vorname</span>
         </div>
         <v-card tile flat color="transparent" class="w-100">
             <v-card-text class="text-body-1 d-flex flex-column ga-2">
@@ -175,7 +160,7 @@
                                 v-for="student in sortedSelectedStudents"
                                 :key="student.id"
                                 :link="false">
-                                <div class="student-row d-flex flex-wrap align-center ga-2 w-100" :class="{ 'student-row--canceled': isStudentCanceled(student) }">
+                                <div class="student-row ga-2 w-100" :class="[{ 'student-row--canceled': isStudentCanceled(student) }, showPerformances && !show_bulk_entry ? 'student-row--performances' : 'd-flex flex-wrap align-center']">
                                     <v-checkbox
                                         v-if="show_bulk_entry"
                                         v-model="bulk_entry_form.student_ids"
@@ -186,7 +171,7 @@
                                     <div class="student-identity d-flex align-center ga-2">
                                         <div class="student-presence student-presence--left">
                                             <v-btn
-                                                v-if="canEditAttendance && selectedCourseDateForCourse"
+                                                v-if="attendanceVisible && canEditAttendance && selectedCourseDateForCourse"
                                                 :key="`presence-${student.id}-${isStudentPresentForSelectedDate(student.id) ? '1' : '0'}`"
                                                 size="x-small"
                                                 :color="studentAttendanceStateForSelectedDate(student.id) === null ? undefined : studentAttendanceStateForSelectedDate(student.id) ? 'success' : 'error'"
@@ -198,9 +183,6 @@
                                                 </v-icon>
                                             </v-btn>
                                         </div>
-                                        <v-chip v-if="student.schoolclass || student.class" size="x-small" variant="tonal" color="primary">
-                                            {{ student.schoolclass || student.class }}
-                                        </v-chip>
                                         <div
                                             class="student-name"
                                             :class="studentNameClass(student)">
@@ -208,6 +190,17 @@
                                                 <span class="student-name-text">
                                                     {{ student.last_name }}, {{ student.first_name }}
                                                 </span>
+                                                <v-btn
+                                                    v-if="canImpersonateStudents"
+                                                    size="x-small"
+                                                    variant="tonal"
+                                                    color="primary"
+                                                    prepend-icon="mdi-account-switch"
+                                                    :aria-label="`Account von ${student.first_name} ${student.last_name} öffnen`"
+                                                    :title="student.user_id ? 'Als Schüler anmelden' : 'Kein verknüpfter Account vorhanden'"
+                                                    :loading="impersonatingStudentId !== null && impersonatingStudentId === student.user_id"
+                                                    :disabled="!student.user_id || impersonatingStudentId !== null || hasUnsavedAttendanceChanges || show_bulk_entry"
+                                                    @click.stop="impersonateStudent(student)">Account öffnen</v-btn>
                                                 <CourseStudentIndicators v-if="studentForSelectedSemester(student).stars.length" :student="studentForSelectedSemester(student)" :course-id="selected_course.id" stars-only
                                                     @select="$refs.studentNotes.open(student, $event)" />
                                                 <v-icon
@@ -217,6 +210,9 @@
                                                     :title="studentSexTitle(student)">
                                                     {{ studentSexIcon(student) }}
                                                 </v-icon>
+                                                <v-chip v-if="student.schoolclass || student.class" size="x-small" variant="tonal" color="primary">
+                                                    {{ student.schoolclass || student.class }}
+                                                </v-chip>
                                                 <CourseStudentIndicators :student="studentForSelectedSemester(student)" :course-id="selected_course.id"
                                                     :active-semester="activeSemester" :semester-two-start-date="countSem2StartDate"
                                                     :schoolyear="config.selected_schoolyear"
@@ -232,6 +228,9 @@
                                                     @click.stop="copyEmail(student)">
                                                     {{ copiedEmailId === student.id ? 'mdi-check' : 'mdi-content-copy' }}
                                                 </v-icon>
+                                            </div>
+                                            <div v-if="attendanceVisible" class="student-meta-line text-caption" title="Anteil der anwesenden Termine mit erfasster Anwesenheit im gewählten Zeitraum.">
+                                                Anwesenheit: {{ Number.isFinite(studentPresencePercentages[student.id]) ? `${studentPresencePercentages[student.id]} %` : '—' }}
                                             </div>
                                             <div
                                                 v-if="selected_course?.teaching_show_student_age && studentBirthDetails(student)"
@@ -258,6 +257,8 @@
                                         :behaviour-entries="performanceData.behaviourEntries"
                                         :works="performanceData.works"
                                         :evaluations="performanceData.evaluations"
+                                        :grading-report="performanceData.gradingReport"
+                                        :show-calculated-grade="showCalculatedGrade"
                                         :schema="selectedCourseSchema"
                                         :uses-entry-areas="usesNewBulkEntryDefinitions"
                                         :active-semester="activeSemester"
@@ -287,6 +288,17 @@
                                         <div class="text-body-2 font-weight-medium">
                                             {{ item.student.last_name }}, {{ item.student.first_name }}
                                         </div>
+                                        <v-btn
+                                            v-if="canImpersonateStudents"
+                                            size="x-small"
+                                            variant="tonal"
+                                            color="primary"
+                                            prepend-icon="mdi-account-switch"
+                                            :aria-label="`Account von ${item.student.first_name} ${item.student.last_name} öffnen`"
+                                            :title="item.student.user_id ? 'Als Schüler anmelden' : 'Kein verknüpfter Account vorhanden'"
+                                            :loading="impersonatingStudentId !== null && impersonatingStudentId === item.student.user_id"
+                                            :disabled="!item.student.user_id || impersonatingStudentId !== null || hasUnsavedAttendanceChanges"
+                                            @click.stop="impersonateStudent(item.student)">Account öffnen</v-btn>
                                         <CourseStudentIndicators :student="studentForSelectedSemester(item.student)" :course-id="selected_course.id"
                                             :active-semester="activeSemester" :semester-two-start-date="countSem2StartDate"
                                             :schoolyear="config.selected_schoolyear"
@@ -325,9 +337,13 @@
     </ItsGridBox>
 </template>
 <script>
+import { comparePersonNames } from '@/helpers/personNames'
+import axios from 'axios'
+import { show as showCourseEvaluation } from '@/actions/App/Http/Controllers/Admin/Teaching/CourseEvaluationController'
 import { useValidationRulesSetup } from '@/helpers/rules'
 import { parseLocalDate } from '@/helpers/date'
-import { teachingCourseMatchesSchoolyear, teachingPerformanceDateScope, teachingStarDateScope } from '@/helpers/teachingSemester'
+import { isInTeachingSemester, teachingSemesterCount, teachingCourseMatchesSchoolyear, teachingPerformanceDateScope, teachingStarDateScope } from '@/helpers/teachingSemester'
+import { attendanceChecked, attendancePercentage, attendanceState } from '@/helpers/courseAttendance'
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useImport116Store } from '@/stores/admin/teaching/Import116Store'
@@ -361,6 +377,9 @@ export default {
         this.import116Store = useImport116Store()
         this.courseStore = useCourseStore()
         this.students_sort_mode = this.courseStore?.students_sort_mode || this.students_sort_mode
+        if (['class_last_name', 'last_name_first_name'].includes(this.$route?.query?.student_sort)) {
+            this.students_sort_mode = this.$route.query.student_sort
+        }
         this.courseDateStore = useCourseDateStore()
         this.entryStore = useCourseStudentEntryStore()
         this.behaviourEntryStore = useCourseBehaviourEntryStore()
@@ -377,6 +396,9 @@ export default {
         this.activeSemester = Number(this.config?.user?.teaching_active_semester) || 1
         if (this.selected_course?.id) {
             await this.loadStudentPerformance(this.selected_course.id)
+        }
+        if (this.$route?.query?.student_view === 'day_overview' && this.selectedCourseDateForCourse) {
+            this.students_view_mode = 'day_overview'
         }
     },
 
@@ -395,7 +417,8 @@ export default {
             performanceLoading: true,
             performanceLoadFailed: false,
             performanceRequestId: 0,
-            performanceData: { entries: [], behaviourEntries: [], works: [], evaluations: [] },
+            performanceData: { entries: [], behaviourEntries: [], works: [], evaluations: [], gradingReport: null },
+            savingCalculatedGradePreference: false,
             schoolHourStore: null,
             teachingStore: null,
             is_valid: false,
@@ -415,16 +438,32 @@ export default {
             hasUnsavedAttendanceChanges: false,
             students_sort_mode: 'last_name_first_name',
             copiedEmailId: null,
+            impersonatingStudentId: null,
         }
     },
 
     computed: {
+        calculationsEnabled() {
+            return this.settings?.teaching_calculations_enabled !== false
+        },
+        attendanceVisible() {
+            return this.config?.user?.teaching_show_attendance !== false
+        },
+        showCalculatedGrade() {
+            if (!this.selected_course?.id || this.calculationsEnabled === false) return false
+            return (this.settings?.teaching_show_calculated_grade_by_course?.[this.selected_course.id]
+                ?? this.settings?.teaching_show_calculated_grade) === true
+        },
         ...mapWritableState(useAdminStore, ['action', 'action_2', 'config']),
         ...mapWritableState(useImport116Store, ['import116_students']),
         ...mapWritableState(useCourseStore, ['courses', 'classes', 'selected_course', 'selected_course_id', 'selected_course_student', 'show_students', 'uses_entry_areas_for_grading_schema']),
         ...mapWritableState(useCourseDateStore, ['selected_courseDate']),
         ...mapWritableState(useSchoolHourStore, ['school_hours']),
         ...mapWritableState(useTeachingStore, ['settings']),
+        canImpersonateStudents() {
+            return Array.isArray(this.config?.roles) && this.config.roles.includes('super_admin')
+                && !this.config?.impersonation?.is_impersonating
+        },
         schoolHoursByHour() {
             const entries = Array.isArray(this.school_hours) ? this.school_hours : []
 
@@ -455,8 +494,7 @@ export default {
             return schemaId ? this.teachingStore?.schemaById(schemaId) : null
         },
         semesterCount() {
-            const grading = this.selectedCourseSchema?.grading || {}
-            return Number(grading.semester_count) || 1
+            return teachingSemesterCount(this.selected_course, this.selectedCourseSchema)
         },
         teachingWorks() {
             const assignedEntryArea = this.selected_course?.teaching_entry_area || null
@@ -694,7 +732,7 @@ export default {
             if (!teachingCourseMatchesSchoolyear(this.selected_course, this.config?.selected_schoolyear)) return []
             const dateKey = this.selectedCourseDateKey
             if (!dateKey) return []
-            if (teachingPerformanceDateScope(dateKey, this.activeSemester, this.countSem2StartDate, this.config?.selected_schoolyear) !== 'included') return []
+            if (teachingPerformanceDateScope(dateKey, this.semesterCount === 1 ? 3 : this.activeSemester, this.countSem2StartDate, this.config?.selected_schoolyear) !== 'included') return []
 
             const entriesByStudent = {}
             const studentEntries = this.entryStore?.courseEntries || []
@@ -754,6 +792,17 @@ export default {
                     return ha - hb
                 })
         },
+        studentPresencePercentages() {
+            const semester = this.semesterCount === 2 ? this.activeSemester : 3
+            const boundary = this.schoolSem2StartDate || this.countSem2StartDate
+            const dates = this.sortedCourseDates.filter(courseDate => courseDate.id
+                && !(Array.isArray(courseDate.status) ? courseDate.status : []).some(status => ['free', 'entfaellt'].includes(status))
+                && isInTeachingSemester(courseDate.date, semester, boundary))
+                .map(courseDate => ({ attendance: this.getAttendanceMap(courseDate), checked: attendanceChecked(courseDate) }))
+            return Object.fromEntries((this.selected_course?.students_info || []).map(student => [student.id,
+                attendancePercentage(dates.map(date => attendanceState(date.attendance, student.id, date.checked))),
+            ]))
+        },
         selectedCourseDateIndex() {
             if (!this.selectedCourseDateForCourse?.id) return -1
             return this.sortedCourseDates.findIndex((d) => String(d?.id) === String(this.selectedCourseDateForCourse.id))
@@ -794,7 +843,7 @@ export default {
         'config.selected_schoolyear.id'(value, previous) {
             if (value === previous) return
             this.performanceRequestId++
-            this.performanceData = { entries: [], behaviourEntries: [], works: [], evaluations: [] }
+            this.performanceData = { entries: [], behaviourEntries: [], works: [], evaluations: [], gradingReport: null }
             this.performanceLoading = true
             this.courseStore?.index()
         },
@@ -804,12 +853,20 @@ export default {
             }
         },
         activeSemester(val) {
+            if (this.semesterCount === 1 && val !== 1) {
+                this.activeSemester = 1
+                return
+            }
             if (val !== this.config?.user?.teaching_active_semester) {
                 this.teachingStore.saveActiveSemester(val)
             }
         },
         'config.user.teaching_active_semester'(val) {
-            if (val) this.activeSemester = Number(val) || 1
+            if (val) this.activeSemester = this.semesterCount === 1 ? 1 : Number(val) || 1
+        },
+        semesterCount: {
+            immediate: true,
+            handler(count) { if (count === 1) this.activeSemester = 1 },
         },
         selected_course: {
             handler(course) {
@@ -875,13 +932,47 @@ export default {
     },
 
     methods: {
+        async impersonateStudent(student) {
+            if (!this.canImpersonateStudents || !student?.user_id || !this.selected_course?.id
+                || this.impersonatingStudentId !== null || this.hasUnsavedAttendanceChanges || this.show_bulk_entry) return
+            this.impersonatingStudentId = student.user_id
+            try {
+                const returnUrl = this.$router.resolve({
+                    path: this.$route.path,
+                    query: {
+                        ...this.$route.query, course: String(this.selected_course.id), panel: 'students',
+                        student_sort: this.students_sort_mode, student_view: this.students_view_mode,
+                        ...(this.selectedCourseDateForCourse?.id ? { date: String(this.selectedCourseDateForCourse.id) } : {}),
+                    },
+                    hash: this.$route.hash,
+                }).href
+                if (await this.adminStore.startImpersonation(student.user_id, { teachingCourseId: this.selected_course.id, returnUrl })) {
+                    window.location.href = `/student/course/${this.selected_course.id}`
+                }
+            } finally {
+                this.impersonatingStudentId = null
+            }
+        },
+        async toggleCalculatedGrade() {
+            if (this.savingCalculatedGradePreference || !this.settings || !this.selected_course?.id) return
+            this.savingCalculatedGradePreference = true
+            try {
+                const value = !this.showCalculatedGrade
+                await this.teachingStore.saveSettings({
+                    teaching_course_id: this.selected_course.id,
+                    teaching_show_calculated_grade: value,
+                }, { notifySuccess: false })
+            } finally {
+                this.savingCalculatedGradePreference = false
+            }
+        },
         studentForSelectedSemester(student) {
             const schoolyear = this.config?.selected_schoolyear
             const matchesSchoolyear = teachingCourseMatchesSchoolyear(this.selected_course, schoolyear)
             return {
                 ...student,
                 user_id: matchesSchoolyear ? student.user_id : null,
-                stars: matchesSchoolyear ? (student.stars || []).filter((star) => teachingStarDateScope(star.date, this.activeSemester, this.countSem2StartDate) === 'included') : [],
+                stars: matchesSchoolyear ? (student.stars || []).filter((star) => teachingStarDateScope(star.date, this.semesterCount === 1 ? 3 : this.activeSemester, this.countSem2StartDate) === 'included') : [],
             }
         },
         async loadStudentPerformance(courseId) {
@@ -892,17 +983,24 @@ export default {
             const requestId = ++this.performanceRequestId
             this.performanceLoading = true
             this.performanceLoadFailed = false
+            const schoolyearId = this.config?.selected_schoolyear?.id
             const results = await Promise.allSettled([
                 this.behaviourEntryStore.indexByCourse(courseId).then((success) => ({ success, data: this.behaviourEntryStore.courseEntries || [] })),
                 this.entryStore.indexByCourse(courseId).then((success) => ({ success, data: this.entryStore.courseEntries || [] })),
                 this.courseWorkStore.index(courseId).then((success) => ({ success, data: this.courseWorkStore.courseWorks || [] })),
                 this.categoryEvaluationStore.indexByCourse(courseId).then((success) => ({ success, data: this.categoryEvaluationStore.evaluations || [] })),
+                this.usesNewBulkEntryDefinitions && this.calculationsEnabled !== false
+                    ? axios.get(showCourseEvaluation.url(courseId, { query: { semester: 3 } })).then(({ data }) => ({
+                        success: String(data.data?.course_id) === String(courseId) && String(data.data?.schoolyear_id) === String(schoolyearId),
+                        data: data.data,
+                    }))
+                    : Promise.resolve({ success: true, data: null }),
             ])
             if (requestId !== this.performanceRequestId) return
             this.performanceLoadFailed = results.some((result) => result.status === 'rejected' || !result.value.success)
             if (!this.performanceLoadFailed) {
-                const [behaviourEntries, entries, works, evaluations] = results.map((result) => result.value.data)
-                this.performanceData = { behaviourEntries, entries, works, evaluations }
+                const [behaviourEntries, entries, works, evaluations, gradingReport] = results.map((result) => result.value.data)
+                this.performanceData = { behaviourEntries, entries, works, evaluations, gradingReport }
             }
             this.performanceLoading = false
         },
@@ -1057,26 +1155,7 @@ export default {
             return (student?.schoolclass || student?.class || '').toString()
         },
         compareStudentsBySelectedSort(a, b) {
-            const lastA = (a?.last_name || '').toString()
-            const lastB = (b?.last_name || '').toString()
-            const firstA = (a?.first_name || '').toString()
-            const firstB = (b?.first_name || '').toString()
-            const classA = this.studentClassValue(a)
-            const classB = this.studentClassValue(b)
-
-            if (this.students_sort_mode === 'last_name_first_name') {
-                const lastCmp = lastA.localeCompare(lastB, 'de', { sensitivity: 'base' })
-                if (lastCmp !== 0) return lastCmp
-                const firstCmp = firstA.localeCompare(firstB, 'de', { sensitivity: 'base' })
-                if (firstCmp !== 0) return firstCmp
-                return classA.localeCompare(classB, 'de', { numeric: true, sensitivity: 'base' })
-            }
-
-            const classCmp = classA.localeCompare(classB, 'de', { numeric: true, sensitivity: 'base' })
-            if (classCmp !== 0) return classCmp
-            const lastCmp = lastA.localeCompare(lastB, 'de', { sensitivity: 'base' })
-            if (lastCmp !== 0) return lastCmp
-            return firstA.localeCompare(firstB, 'de', { sensitivity: 'base' })
+            return comparePersonNames(a, b)
         },
         toDateString(date) {
             const d = parseLocalDate(date)
@@ -1683,6 +1762,49 @@ export default {
     box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
 }
 
+.student-row--performances {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+}
+
+.student-row--performances .student-identity {
+    grid-column: 1;
+    grid-row: 1;
+}
+
+.student-row--performances :deep(.grading-part-cards) {
+    grid-column: 2;
+    grid-row: 1;
+    max-width: 100%;
+}
+
+.student-row--performances :deep(.performance-details) {
+    grid-column: 1 / -1;
+    grid-row: 2;
+}
+
+.student-row--performances :deep(.assignment-progress) {
+    grid-column: 1 / -1;
+}
+
+@media (max-width: 600px) {
+    .student-row--performances {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .student-row--performances :deep(.grading-part-cards) {
+        grid-column: 1;
+        grid-row: 2;
+        justify-content: flex-start;
+        margin-left: 0;
+    }
+
+    .student-row--performances :deep(.performance-details) {
+        grid-row: 3;
+    }
+}
+
 .student-row--canceled {
     background: linear-gradient(180deg, #fefce8 0%, #fef9c3 100%);
     border-color: rgba(234, 179, 8, 0.2);
@@ -1810,10 +1932,6 @@ export default {
         flex: 1 1 0;
     }
 
-    .students-bulk-btn {
-        width: 100%;
-        margin-top: 6px;
-    }
 
     .students-attendance-check-btn {
         width: 100%;

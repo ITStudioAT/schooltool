@@ -38,7 +38,14 @@ function stripUiTestTypesPlugin() {
 }
 
 export default defineConfig({
-    plugins: [stripUiTestTypesPlugin(), vue()],
+    plugins: [stripUiTestTypesPlugin(), vue({
+        template: {
+            transformAssetUrls: {
+                base: null,
+                includeAbsolute: false,
+            },
+        },
+    })],
     esbuild: false,
     test: {
         environment: 'happy-dom',

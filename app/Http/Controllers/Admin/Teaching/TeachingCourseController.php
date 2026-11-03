@@ -47,7 +47,9 @@ class TeachingCourseController extends Controller
         }
 
         $coursesQuery = TeachingCourse::with([
-            'teachingEntryArea:id,name',
+            'user:id,teaching_curricula_enabled',
+            'teachingEntryArea:id,name,school_id,schoolyear_id,user_id,semester_count',
+            'teachingCourseWorks:id,teaching_course_id,is_group_work,date_for_all_groups,groups',
             'teachingCourseDates' => fn ($query) => $query
                 ->select([
                     'id',
@@ -56,6 +58,7 @@ class TeachingCourseController extends Controller
                     'hours',
                     'content',
                     'status',
+                    'attendance',
                     'attendance_checked',
                 ])
                 ->withExists('materials')
@@ -532,6 +535,10 @@ class TeachingCourseController extends Controller
             'teaching_show_student_last_login' => ['sometimes', 'boolean'],
         ]);
 
+        if (! empty($validated['teaching_curriculum_id'])) {
+            abort_unless($auth_user->teaching_curricula_enabled ?? true, 403, 'Curricula sind ausgeschaltet.');
+        }
+
         $sortedClasses = $validated['classes'];
         sort($sortedClasses);
 
@@ -602,9 +609,9 @@ class TeachingCourseController extends Controller
         Gate::authorize('view', $course);
 
         $course->load([
-            'user:id,first_name,last_name,short,email,teaching_behaviour_by_schoolyear,teaching_notifications_by_schoolyear,teaching_show_behaviour,teaching_student_grade_columns_by_schoolyear',
+            'user:id,first_name,last_name,short,email,teaching_behaviour_by_schoolyear,teaching_notifications_by_schoolyear,teaching_show_behaviour,teaching_curricula_enabled',
             'teachingCurriculum:id,school_id,schoolyear_id,user_id,title,description,semester_count',
-            'teachingEntryArea:id,name',
+            'teachingEntryArea:id,name,school_id,schoolyear_id,user_id,semester_count',
             'teachingEntryArea.entryDefinitions' => fn ($query) => $query
                 ->orderBy('category')
                 ->orderBy('short_name'),
@@ -721,7 +728,7 @@ class TeachingCourseController extends Controller
         );
         $course->setAttribute(
             'teaching_student_grade_columns',
-            $this->teachingStudentGradeColumnsForCourse($course, $courseActor)
+            $this->teachingStudentGradeColumnsForCourse($course)
         );
         $course->setAttribute('details_loaded', true);
 
@@ -833,6 +840,10 @@ class TeachingCourseController extends Controller
         $curriculumId = array_key_exists('teaching_curriculum_id', $validated)
             ? $validated['teaching_curriculum_id']
             : $course->teaching_curriculum_id;
+
+        if ((int) $curriculumId !== (int) $course->teaching_curriculum_id) {
+            abort_unless(($auth_user->teaching_curricula_enabled ?? true) && ($courseActor->teaching_curricula_enabled ?? true), 403, 'Curricula sind ausgeschaltet.');
+        }
 
         DB::transaction(function () use (
             $course,
@@ -1057,48 +1068,18 @@ class TeachingCourseController extends Controller
     }
 
     /**
-     * @return array{show_sem1: bool, show_sem2: bool, show_year: bool, show_semester_grade: bool, show_behaviour_grade: bool}
+     * @return array<string, bool>
      */
-    private function teachingStudentGradeColumnsForCourse(TeachingCourse $course, User $user): array
+    private function teachingStudentGradeColumnsForCourse(TeachingCourse $course): array
     {
         $gradeVisibility = [
             'show_semester_grade' => (bool) ($course->teaching_student_grade_columns['show_semester_grade'] ?? true),
             'show_behaviour_grade' => (bool) ($course->teaching_student_grade_columns['show_behaviour_grade'] ?? true),
+            'show_points_progress' => (bool) ($course->teaching_student_grade_columns['show_points_progress'] ?? false),
+            'show_stars' => (bool) ($course->teaching_student_grade_columns['show_stars'] ?? true),
         ];
 
-        if (is_array($course->teaching_student_grade_columns)) {
-            return [
-                'show_sem1' => (bool) ($course->teaching_student_grade_columns['show_sem1'] ?? false),
-                'show_sem2' => (bool) ($course->teaching_student_grade_columns['show_sem2'] ?? false),
-                'show_year' => (bool) ($course->teaching_student_grade_columns['show_year'] ?? false),
-            ] + $gradeVisibility;
-        }
-
-        $bySchoolyear = $user->teaching_student_grade_columns_by_schoolyear;
-
-        if ($course->schoolyear_id === null || ! is_array($bySchoolyear)) {
-            return [
-                'show_sem1' => false,
-                'show_sem2' => false,
-                'show_year' => false,
-            ] + $gradeVisibility;
-        }
-
-        $columns = $bySchoolyear[(string) $course->schoolyear_id] ?? null;
-
-        if (! is_array($columns)) {
-            return [
-                'show_sem1' => false,
-                'show_sem2' => false,
-                'show_year' => false,
-            ] + $gradeVisibility;
-        }
-
-        return [
-            'show_sem1' => (bool) ($columns['show_sem1'] ?? false),
-            'show_sem2' => (bool) ($columns['show_sem2'] ?? false),
-            'show_year' => (bool) ($columns['show_year'] ?? false),
-        ] + $gradeVisibility;
+        return $gradeVisibility;
     }
 
     private function serializeCourseStudent(

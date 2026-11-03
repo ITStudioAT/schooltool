@@ -40,7 +40,7 @@
 
         <v-row v-if="selected_course && action != 'teaching_course_new_or_edit' && show_students && action_2 != 'course_student_view'">
             <v-col>
-                <CourseEvaluations v-if="studentPanel === 'evaluations'"
+                <CourseEvaluations v-if="studentPanel === 'evaluations' && calculationsEnabled"
                     :course="selected_course" :schoolyear="config?.selected_schoolyear"
                     :active-semester="activeSemester" @update:active-semester="activeSemester = $event" />
                 <CourseStudents v-else />
@@ -115,7 +115,7 @@
         </v-row>
     </v-col>
 
-    <v-col cols="12" v-if="selected_course && (show_performances || show_performances_plus) && action != 'teaching_course_new_or_edit'" :style="contentLockStyle">
+    <v-col cols="12" v-if="calculationsEnabled && selected_course && (show_performances || show_performances_plus) && action != 'teaching_course_new_or_edit'" :style="contentLockStyle">
         <div v-if="semesterCount === 2" class="d-flex align-center ga-2 mb-2">
             <v-btn-toggle v-model="activeSemester" mandatory density="compact" color="primary">
                 <v-btn :value="1" size="small">Sem 1</v-btn>
@@ -147,7 +147,7 @@
         <MyCourses />
     </div>
 
-    <v-dialog v-model="curriculumEditMode" persistent scrollable max-width="800">
+    <v-dialog v-if="curriculaEnabled" v-model="curriculumEditMode" persistent scrollable max-width="800">
         <v-card title="Curriculum zuordnen">
             <v-card-text>
                 <v-autocomplete v-model="curriculumSelectionId" :items="curriculumOptions"
@@ -193,6 +193,7 @@
 </template>
 
 <script>
+import { teachingSemesterCount } from '@/helpers/teachingSemester'
 import { defineAsyncComponent } from 'vue'
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
@@ -238,6 +239,7 @@ export default {
         this.curriculumStore = useCurriculumStore()
         this.schoolHourStore = useSchoolHourStore()
         this.teachingStore = useTeachingStore()
+        if (!this.teachingStore.settings) this.teachingStore.loadSettings()
         this.selected_course_student = null
         this.action_2 = ''
         this.activeSemester = Number(this.config?.user?.teaching_active_semester) || 1
@@ -269,6 +271,15 @@ export default {
     },
 
     computed: {
+        calculationsEnabled() {
+            return this.teachingStore?.settings?.teaching_calculations_enabled !== false
+        },
+        attendanceVisible() {
+            return this.config?.user?.teaching_show_attendance !== false
+        },
+        curriculaEnabled() {
+            return this.config?.user?.teaching_curricula_enabled !== false && this.selected_course?.curricula_enabled !== false
+        },
         ...mapWritableState(useAdminStore, ['action', 'action_2', 'config']),
         ...mapWritableState(useCourseStore, [
             'selected_course',
@@ -310,7 +321,7 @@ export default {
             return this.teachingSchemas.find((s) => String(s.id) === String(schemaId)) || null
         },
         semesterCount() {
-            return Number(this.selectedSchema?.grading?.semester_count) || 1
+            return teachingSemesterCount(this.selected_course, this.selectedSchema)
         },
         sem2StartDate() {
             return this.config?.selected_schoolyear?.sem_2_start || this.config?.user?.teaching_count_for_semester_2_date || null
@@ -329,6 +340,7 @@ export default {
             return this.selectedCourseCurriculum
         },
         selectedCourseCurriculumId() {
+            if (this.curriculaEnabled === false) return null
             const value = this.selected_course?.teaching_curriculum_id ?? this.selectedCourseCurriculum?.id ?? null
             const normalized = Number(value)
             return Number.isFinite(normalized) && normalized > 0 ? normalized : null
@@ -460,12 +472,14 @@ export default {
             const panels = []
             if (this.selected_course) {
                 panels.push({ id: 'table', label: 'Tabelle', icon: 'mdi-table-large' })
-                panels.push({ id: 'attendance', label: 'Anwesenheiten', icon: 'mdi-account-check' })
+                if (this.attendanceVisible !== false) {
+                    panels.push({ id: 'attendance', label: 'Anwesenheiten', icon: 'mdi-account-check' })
+                }
                 panels.push({ id: 'dates', label: 'Termine', icon: 'mdi-calendar-clock-outline' })
                 panels.push({ id: 'students', label: 'Schüler:innen', icon: 'mdi-account-group' })
-                panels.push({ id: 'evaluations', label: 'Auswertungen', icon: 'mdi-chart-box-outline' })
                 panels.push({ id: 'infos', label: 'Infos', icon: 'mdi-information-outline' })
-                panels.push({ id: 'works', label: 'Arbeiten', icon: 'mdi-file-document-edit-outline' })
+                panels.push({ id: 'works', label: 'Arbeiten', icon: 'mdi-brain' })
+                if (this.calculationsEnabled) panels.push({ id: 'evaluations', label: 'Auswertungen', icon: 'mdi-chart-box-outline' })
                 panels.push({ id: 'print', label: 'Druck', icon: 'mdi-printer-outline' })
                 panels.push({ id: 'lists', label: 'Listen', icon: 'mdi-format-list-bulleted' })
             }
@@ -477,19 +491,20 @@ export default {
         functionalPanelSelection: {
             get() {
                 if (!this.selected_course) return undefined
-                if (this.show_students) return this.studentPanel === 'evaluations' ? 'evaluations' : 'students'
+                if (this.show_students) return this.studentPanel === 'evaluations' && this.calculationsEnabled ? 'evaluations' : 'students'
                 if (this.show_infos) return 'infos'
                 if (this.show_works) return 'works'
                 if (this.show_print) return 'print'
                 if (this.show_lists) return 'lists'
                 if (this.show_dates) return 'dates'
                 if (this.show_table) return 'table'
-                if (this.show_attendance) return 'attendance'
+                if (this.show_attendance) return this.attendanceVisible === false ? 'table' : 'attendance'
                 if (this.show_performances) return 'performances'
                 if (this.show_performances_plus) return 'performances_plus'
                 return undefined
             },
             set(value) {
+                if (value === 'attendance' && this.attendanceVisible === false) value = 'table'
                 this.studentPanel = value === 'evaluations' ? 'evaluations' : 'students'
                 this.show_students = ['students', 'evaluations'].includes(value)
                 this.show_infos = value === 'infos'
@@ -518,6 +533,9 @@ export default {
     },
 
     watch: {
+        attendanceVisible(visible) {
+            if (!visible && this.show_attendance) this.functionalPanelSelection = 'table'
+        },
         selected_course: {
             immediate: true,
             async handler(newCourse, oldCourse) {
@@ -538,9 +556,10 @@ export default {
             if (!this._urlPanelRestored) {
                 const requestedPanel = this.$route?.query?.panel
                 const requestedView = this.$route?.query?.view
-                const urlPanel = requestedPanel === 'table' && requestedView === 'attendance'
+                let urlPanel = requestedPanel === 'table' && requestedView === 'attendance'
                     ? 'attendance'
                     : requestedPanel
+                if (urlPanel === 'attendance' && this.attendanceVisible === false) urlPanel = 'table'
                 const urlGrades = this.$route?.query?.grades
                 if (urlPanel === 'curriculum') {
                     this.studentPanel = 'students'
@@ -584,7 +603,7 @@ export default {
                 this._lastCourseId = newCourse.id
                 if (urlPanel && validPanels.includes(urlPanel)) {
                     if (
-                        requestedView !== undefined
+                        (requestedView !== undefined || urlPanel !== requestedPanel)
                         && ['attendance', 'table'].includes(urlPanel)
                         && this.$route
                         && this.$router
@@ -599,7 +618,7 @@ export default {
                             query,
                         }).catch(() => {})
                     }
-                    this.studentPanel = urlPanel === 'evaluations' ? 'evaluations' : 'students'
+                    this.studentPanel = urlPanel === 'evaluations' && this.calculationsEnabled ? 'evaluations' : 'students'
                     this.show_students = ['students', 'evaluations'].includes(urlPanel)
                     this.show_infos = urlPanel === 'infos'
                     this.show_works = urlPanel === 'works'
@@ -650,12 +669,20 @@ export default {
             },
         },
         activeSemester(val) {
+            if (this.semesterCount === 1 && val !== 1) {
+                this.activeSemester = 1
+                return
+            }
             if (val !== this.config?.user?.teaching_active_semester) {
                 this.teachingStore?.saveActiveSemester(val)
             }
         },
         'config.user.teaching_active_semester'(val) {
-            if (val) this.activeSemester = Number(val) || 1
+            if (val) this.activeSemester = this.semesterCount === 1 ? 1 : Number(val) || 1
+        },
+        semesterCount: {
+            immediate: true,
+            handler(count) { if (count === 1) this.activeSemester = 1 },
         },
     },
 
@@ -751,6 +778,7 @@ export default {
             }
         },
         async startCurriculumEdit() {
+            if (this.curriculaEnabled === false) return
             if (!this.selected_course?.id || this.curriculumSaveLoading) return
             const courseId = this.selected_course.id
             await this.loadCurricula()

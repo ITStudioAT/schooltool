@@ -9,6 +9,7 @@ use App\Models\RestaurantMenuPlanEntry;
 use App\Models\School;
 use App\Models\User;
 use App\Services\RestaurantBillingPdfService;
+use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
 use Spatie\Permission\Models\Role;
@@ -287,4 +288,27 @@ test('restaurant billing preview renders a pdf without creating a billing', func
         ->assertHeader('content-disposition', 'inline; filename="restaurant-billing-preview-test.pdf"');
 
     expect(RestaurantBilling::query()->count())->toBe(0);
+});
+
+test('independent week selection bills only checked weeks and leaves gaps open for a later billing', function () {
+    $entries = [];
+    $plans = [];
+    foreach (['2026-03-23' => 2, '2026-03-30' => 100, '2026-04-06' => 3] as $week => $price) {
+        $plans[$week] = RestaurantMenuPlan::factory()->create(['school_id' => $this->school->id, 'start_date' => $week, 'end_date' => Carbon::parse($week)->addDays(4)->toDateString()]);
+        $entries[$week] = RestaurantMenuPlanEntry::factory()->create(['restaurant_menu_plan_id' => $plans[$week]->id, 'restaurant_menu_id' => $this->menu->id, 'plan_date' => $week, 'price' => $price]);
+        RestaurantMenuPlanBooking::query()->create(['school_id' => $this->school->id, 'user_id' => $this->admin->id, 'restaurant_menu_plan_entry_id' => $entries[$week]->id, 'price' => $price, 'quantity' => 1, 'booked_at' => now()]);
+    }
+    $selected = ['2026-03-23', '2026-04-06'];
+    $response = $this->actingAs($this->admin, 'sanctum')->postJson('/api/admin/restaurant/billings', ['weeks' => $selected])->assertCreated()
+        ->assertJsonPath('data.weeks_count', 2)->assertJsonPath('data.bookings_count', 2)->assertJsonPath('data.total_amount', '5.00')->assertJsonPath('data.week_starts', $selected);
+    $billing = RestaurantBilling::query()->findOrFail($response->json('data.id'));
+    expect($billing->snapshot['week_starts'])->toBe($selected)->and($billing->coversDate('2026-03-30'))->toBeFalse()
+        ->and($billing->coversDate('2026-04-07'))->toBeTrue()->and($billing->coversPeriod('2026-03-30', '2026-04-05'))->toBeFalse()
+        ->and(RestaurantBilling::query()->coveringDate('2026-03-30')->exists())->toBeFalse();
+    $this->getJson('/api/admin/restaurant/billings')->assertJsonPath('weeks.0.is_billed', true)->assertJsonPath('weeks.1.is_billed', false)->assertJsonPath('weeks.2.is_billed', true);
+    $this->getJson('/api/admin/restaurant/menu-plans/'.$plans['2026-03-30']->id)->assertJsonPath('data.can_delete', true)->assertJsonPath('data.entries.0.can_manage_bookings', true);
+    $this->getJson('/api/admin/restaurant/menu-plans/'.$plans['2026-03-23']->id)->assertJsonPath('data.can_delete', false)->assertJsonPath('data.entries.0.can_manage_bookings', false);
+    $this->postJson('/api/admin/restaurant/billings', ['weeks' => ['2026-03-30']])->assertCreated()->assertJsonPath('data.total_amount', '100.00');
+    $this->postJson('/api/admin/restaurant/billings', ['weeks' => $selected])->assertConflict();
+    expect(RestaurantBilling::query()->count())->toBe(2);
 });

@@ -1,15 +1,21 @@
 <template>
     <v-dialog v-model="import_open" persistent scrollable max-width="850">
         <v-card>
-            <v-card-title class="text-wrap">Importieren · {{ import_work?.title }}</v-card-title>
-            <v-card-text>
-                <p class="mb-3">Leistungsfeststellungs- oder Übungsordner auswählen. Darin werden Schooltool-Bewertungen.json, die referenzierten PDFs und Versandprotokolle geprüft. Zuerst erscheint eine Vorschau; die Übernahme erfolgt separat.</p>
-                <p class="text-caption mb-3">Importiert wird die gespeicherte Arbeit. Ungespeicherte Änderungen werden verworfen.</p>
+            <v-card-title class="work-import-title text-wrap text-body-1 font-weight-bold px-4 py-3">{{ results_options ? 'Ergebnisse übernehmen' : 'Beurteilungen importieren' }} · {{ import_work?.title }}</v-card-title>
+            <v-card-text class="px-4 pt-0 pb-3">
+                <p v-if="results_options" class="text-body-2 mb-2">Die Ergebnisse werden den Schülern dieser Arbeit zugeordnet. Prüfen Sie die Punkte und übernehmen Sie die Bewertungen.</p>
+                <v-alert v-if="results_options && results_simulation" type="warning" variant="tonal" class="mb-3">Simulation: Mit „Testbewertungen übernehmen“ werden Testpunkte, Kommentare und Auswertungs-PDFs in die lokalen Schülerbewertungen dieser Arbeit eingetragen.</v-alert>
+                <template v-if="!results_options">
+                <p class="text-caption mb-2">Ordner prüfen, Vorschau ansehen, Änderungen übernehmen.</p>
+                <p class="text-caption mb-2">Importiert wird die gespeicherte Arbeit. Ungespeicherte Änderungen werden verworfen.</p>
+                <WorkDropboxSource :work="import_work" :active="import_open" :busy="import_busy" @preview="previewDropbox(false)" @changed="json_preview = null; import_summary = null" />
                 <v-file-input
+                    v-if="!directory_access_supported"
                     v-model="import_files"
                     webkitdirectory
                     multiple
                     label="Leistungsfeststellungs- oder Übungsordner auswählen"
+                    density="compact"
                     prepend-icon="mdi-folder-open-outline"
                     variant="outlined"
                     hide-details="auto"
@@ -19,9 +25,14 @@
                     @change="selectJsonFolder">
                     <template #selection><span class="work-import-selection">{{ import_selection }}</span></template>
                 </v-file-input>
-                <p v-if="import_busy" class="text-caption mt-3">Dateien prüfen und importieren …</p>
-                <v-alert v-if="import_error" type="error" variant="tonal" class="mt-3">{{ import_error }}</v-alert>
-                <v-btn v-if="import_error && json_uploads" class="mt-3" variant="outlined"
+                <div v-else>
+                    <v-btn class="work-import-folder-button" variant="outlined" prepend-icon="mdi-folder-open-outline" :disabled="import_busy" @click="chooseDirectory">Ordner auswählen</v-btn>
+                    <p v-if="import_selection" class="work-import-selection mt-2">{{ import_selection }}</p>
+                </div>
+                </template>
+                <p v-if="import_busy" class="text-caption mt-2">{{ results_options ? 'Ergebnisse prüfen …' : deadline_saving ? 'Abgabefrist speichern …' : import_source === 'dropbox' ? 'Dropbox-Dateien prüfen …' : 'Dateien prüfen …' }}</p>
+                <v-alert v-if="import_error" type="error" variant="tonal" class="mt-2" density="compact">{{ import_error }}</v-alert>
+                <v-btn v-if="import_error && (results_options || json_uploads || import_source === 'dropbox')" class="mt-2" variant="outlined" size="small"
                     :disabled="import_busy" :loading="import_busy" @click="sendJson(false)">
                     Vorschau erneut laden
                 </v-btn>
@@ -29,59 +40,131 @@
                     <div v-for="message in import_summary.messages" :key="message">{{ message }}</div>
                     <div v-if="import_summary.missing?.length" class="text-caption mt-2">Nicht vorhanden (optional): {{ import_summary.missing.join(', ') }}.</div>
                 </v-alert>
-                <div v-if="json_preview" class="mt-4 json-preview">
-                    <p><strong>Ziel:</strong> {{ json_preview.target_work.course_title }} · {{ json_preview.target_work.title }}</p>
-                    <p><strong>Quelle:</strong> {{ json_preview.exercise.title }} · {{ json_preview.exercise.subject }} · {{ json_preview.exercise.group }}</p>
-                    <p>{{ json_preview.exercise.date }} · Prüfstand: {{ json_preview.exercise.checkpoint }} · Maximum: {{ minorPoints(json_preview.maximum_minor) }}</p>
-                    <p v-if="json_preview.exercise.deadline"><strong>Paketfrist:</strong> {{ json_preview.exercise.deadline }}</p>
-                    <v-alert v-if="json_preview.deadline_context" :type="json_preview.deadline_context.requires_review ? 'warning' : 'info'" variant="tonal" class="mt-3 mb-3">
-                        <strong>Aktuelle Lehrkraftfrist</strong>
-                        <p v-if="json_preview.deadline_context.current_at">{{ assessmentTimeText(json_preview.deadline_context.current_at) }} (Europe/Vienna).</p>
-                        <p v-else>{{ json_preview.deadline_context.current_date ?? 'Datum fehlt' }} · {{ json_preview.deadline_context.current_time ?? 'Uhrzeit fehlt' }}.</p>
-                        <p>{{ json_preview.deadline_context.message }}</p>
+                <div v-if="json_preview" class="mt-3 json-preview">
+                    <v-table v-if="results_options" density="compact" aria-label="Schülerergebnisse">
+                        <thead><tr><th>Schüler/in</th><th>Punkte bisher</th><th>Ergebnis</th><th>Übernahme</th></tr></thead>
+                        <tbody><tr v-for="row in sortedPeople(json_preview.rows)" :key="row.participant_id">
+                            <td>{{ row.identity.last_name }}, {{ row.identity.first_name }}</td>
+                            <td>{{ row.previous.points ?? row.previous.grades ?? '—' }}</td>
+                            <td>{{ resultPoints(row) }}</td>
+                            <td>{{ row.will_replace ? 'Punkte, Kommentar und PDF' : 'Bestehende Bewertung bleibt' }}</td>
+                        </tr></tbody>
+                    </v-table>
+                    <div class="work-import-overview border rounded pa-3">
+                        <p><strong>Vorschau · {{ preview_student_count }} zugeordnete Studierende</strong></p>
+                        <ol class="text-body-2 pl-5">
+                            <li v-for="line in preview_actions" :key="line">{{ line }}</li>
+                        </ol>
+                        <p class="text-caption mt-1">{{ json_preview.can_import ? 'Diese Änderungen werden erst mit „Übernehmen“ gespeichert.' : 'Übernehmen gesperrt. Hinweise unten prüfen.' }}</p>
+                    </div>
+                    <v-alert v-if="preview_issues.length" :type="json_preview.can_import ? 'warning' : 'error'" variant="tonal" density="compact" class="mt-2">
+                        <p v-for="issue in preview_issues" :key="issue">{{ issue }}</p>
                     </v-alert>
-                    <div v-if="json_preview.final_download" class="mt-3">
-                        <p><strong>Lokaler Abschlussdownload:</strong> {{ assessmentTimeText(json_preview.final_download.download_completed_at) }} · Frist: {{ assessmentTimeText(json_preview.final_download.deadline_at) }}</p>
-                        <p>{{ json_preview.final_download.scope }}</p>
-                        <p>Ein leerer zugeordneter Bestand wird mit 0 Punkten bewertet: Innerhalb der Frist nicht abgegeben.</p>
-                    </div>
-                    <p v-if="json_preview.overview_pdf">Gesamtübersicht: {{ json_preview.overview_pdf.filename }} · {{ json_preview.overview_will_replace ? 'wird übernommen' : 'unverändert' }}</p>
-                    <p v-if="json_preview.submission_check">Abgabeprüfung: {{ json_preview.submission_check.state === 'complete' ? 'abgeschlossen' : 'noch offen' }} · Prüfstand: {{ assessmentTimeText(json_preview.submission_check.checked_at) }}</p>
-                    <v-alert v-if="!json_preview.can_import" type="error" variant="tonal" class="mt-3">Das Paket kann noch nicht übernommen werden. Hinweise zu Frist und Zuordnungen prüfen.</v-alert>
-                    <div v-for="dispatch in json_preview.dispatches || []" :key="dispatch.source" class="border rounded pa-3 mt-3">
-                        <strong>{{ dispatch.purpose === 'results' ? 'Ergebnisbenachrichtigung' : 'Aufgabenversand' }}</strong>
-                        <p>{{ dispatch.source }}</p>
-                        <p>{{ dispatch.rows.filter(row => row.accepted).length }} Personen mit bestätigtem Live-Versand</p>
-                        <p v-for="row in dispatch.rows" :key="row.person + row.student_id">{{ row.person }} · {{ row.status }}</p>
-                    </div>
-                    <div v-for="row in json_preview.rows" :key="row.participant_id" class="border rounded pa-3 mt-3">
-                        <p><strong>{{ row.identity.first_name }} {{ row.identity.last_name }} / {{ row.identity.class_name }} · {{ row.identity.group_name }}</strong></p>
-                        <p v-if="row.target">Zugeordnet: {{ row.target.first_name }} {{ row.target.last_name }} / {{ row.target.class_name }} · {{ row.target.group_name }}</p>
-                        <p>{{ row.status }} · {{ changeLabel(row.change) }}</p>
-                        <p v-if="row.deadline_requires_review">Fristbezug erneut prüfen; bestehende Bewertung bleibt erhalten.</p>
-                        <p>Abgabe: {{ stateLabel(row.submission_state) }} · {{ row.submission_note }}</p>
-                        <p>Bewertung: {{ stateLabel(row.evaluation_state) }} · {{ row.evaluation_note }}</p>
-                        <p>Abgabe eingesammelt · bisher: {{ assessmentTimeText(row.previous_event_times?.email_collected_at) }} · neu: {{ assessmentTimeText(row.event_times?.email_collected_at) }}</p>
-                        <p>Beurteilung abgeschlossen · bisher: {{ assessmentCompletionText(row.previous_event_times?.evaluation_completed_at, row.previous_evaluation_state) }} · neu: {{ assessmentCompletionText(row.event_times?.evaluation_completed_at, row.evaluation_state) }}</p>
-                        <p v-if="row.change !== 'unchanged'" class="text-caption">Frühere Fassungen und ihre Zeitnachweise bleiben gespeichert. Unbekannte Zeiten werden nicht aus früheren Fassungen ergänzt.</p>
-                        <p>Punkte bisher: {{ row.previous.points ?? row.previous.grades ?? '—' }} · Quelle: {{ minorPoints(row.total_minor) }}</p>
-                        <p><strong>{{ row.will_replace ? 'Punkte und Bewertungskommentar werden ersetzt.' : 'Bestehende Bewertung bleibt erhalten.' }}</strong></p>
-                        <details>
-                            <summary>Kommentare, Kriterien und PDFs</summary>
-                            <p class="json-comment">Bisher: {{ row.previous.comments ?? '—' }}</p>
-                            <p class="json-comment">Quelle: {{ row.comment }}</p>
-                            <p v-for="criterion in row.criteria" :key="criterion.criterion">{{ criterion.criterion }}: {{ minorPoints(criterion.earned_minor) }} / {{ minorPoints(criterion.maximum_minor) }} · {{ stateLabel(criterion.checkability) }} · {{ criterion.reason }}</p>
-                            <p v-for="(adjustment, index) in row.adjustments" :key="index">{{ adjustment.label }}: {{ minorPoints(adjustment.amount_minor) }} · {{ adjustment.reason }}</p>
-                            <p>PDF bisher: {{ row.previous_pdf?.name ?? '—' }}</p>
-                            <p>PDF Quelle: {{ row.pdf?.filename ?? '—' }} · {{ row.will_replace && row.pdf ? 'wird übernommen' : 'bestehendes PDF bleibt erhalten' }}</p>
+                    <v-alert v-else-if="!json_preview.can_import" type="error" variant="tonal" density="compact" class="mt-2">Übernehmen gesperrt. Frist und Zuordnungen in den Details prüfen.</v-alert>
+                    <v-alert v-if="json_preview.deadline_update" type="info" variant="tonal" density="compact" class="mt-2 mb-2">
+                        Prüfungsschluss wird aus dem Arbeitsordner übernommen: {{ assessmentTimeText(json_preview.deadline_update.at) }} (Europe/Vienna).
+                    </v-alert>
+                    <v-alert v-if="json_preview.final_download" type="warning" variant="tonal" density="compact" class="mt-2">
+                        Abschlussdownload: Bestätigte Nichtabgaben werden mit 0 Punkten bewertet.
+                    </v-alert>
+                    <details :key="json_preview.hash" class="work-import-details mt-2">
+                        <summary>Einzelheiten und Prüfnachweise</summary>
+                        <div class="pt-2">
+                        <p><strong>Ziel:</strong> {{ json_preview.target_work.course_title }} · {{ json_preview.target_work.title }}</p>
+                        <p v-if="json_preview.identity_binding" class="text-caption">Personenzuordnung anhand des ursprünglichen Arbeitsdatenexports und der vollständigen Kursliste geprüft.</p>
+                        <details v-if="json_preview.exercise" class="text-caption mt-1 mb-2">
+                            <summary>Quelle und Prüfnachweise</summary>
+                            <p><strong>Quelle:</strong> {{ json_preview.exercise.title }} · {{ json_preview.exercise.subject }} · {{ json_preview.exercise.group }}</p>
+                            <p>{{ json_preview.exercise.date }} · Prüfstand: {{ json_preview.exercise.checkpoint }} · Maximum: {{ minorPoints(json_preview.maximum_minor) }}</p>
+                            <p v-if="json_preview.exercise.deadline"><strong>Paketfrist:</strong> {{ json_preview.exercise.deadline }}</p>
                         </details>
-                    </div>
+                        <p v-else>Bereitstellung, Vorbereitung und Versanddaten · keine Bewertungen enthalten.</p>
+                        <v-alert v-if="json_preview.deadline_context" :type="json_preview.deadline_context.requires_review ? 'warning' : 'info'" variant="tonal" density="compact" class="mt-2 mb-2">
+                            <strong>Aktuelle Lehrkraftfrist</strong>
+                            <p v-if="json_preview.deadline_context.current_at">{{ assessmentTimeText(json_preview.deadline_context.current_at) }} (Europe/Vienna).</p>
+                            <p v-else>{{ json_preview.deadline_context.current_date ?? 'Datum fehlt' }} · {{ json_preview.deadline_context.current_time ?? 'Uhrzeit fehlt' }}.</p>
+                            <p class="text-caption">{{ json_preview.deadline_context.message }}</p>
+                        </v-alert>
+                        <div v-if="json_preview.final_download" class="mt-3">
+                            <p><strong>Lokaler Abschlussdownload:</strong> {{ assessmentTimeText(json_preview.final_download.download_completed_at) }} · Frist: {{ assessmentTimeText(json_preview.final_download.deadline_at) }}</p>
+                            <p>{{ json_preview.final_download.scope }}</p>
+                            <p>Ein leerer zugeordneter Bestand wird mit 0 Punkten bewertet: Innerhalb der Frist nicht abgegeben.</p>
+                        </div>
+                        <p v-if="json_preview.overview_pdf">Gesamtübersicht: {{ json_preview.overview_pdf.filename }} · {{ json_preview.overview_will_replace ? 'wird übernommen' : 'unverändert' }}</p>
+                        <p v-if="json_preview.submission_check">Abgabeprüfung: {{ json_preview.submission_check.state === 'complete' ? 'abgeschlossen' : 'noch offen' }} · Prüfstand: {{ assessmentTimeText(json_preview.submission_check.checked_at) }}</p>
+                        <div v-for="provision in json_preview.provisions || []" :key="provision.source" class="border rounded pa-3 mt-3">
+                            <strong>Bereitstellung: {{ provision.exercise.title }}</strong>
+                            <p>{{ provision.source }}</p>
+                            <p v-if="!provision.roster_matches">Der Beleg benötigt genau alle aktiven Personen der Zielarbeit.</p>
+                            <p>Belegte Verfügbarkeit für benannte Personen; kein individueller Download oder Empfang bestätigt.</p>
+                            <div v-for="row in sortedPeople(provision.rows)" :key="row.participant_id">
+                                <p>{{ row.identity.last_name }}, {{ row.identity.first_name }} · {{ row.status }}</p>
+                                <p v-for="event in row.events" :key="event.event_id">{{ event.method === 'download_release' ? 'Zum Download bereitgestellt' : 'Direkt ausgegeben' }}: {{ assessmentTimeText(event.available_at) }} (Europe/Vienna).</p>
+                            </div>
+                        </div>
+                        <div v-for="dispatch in json_preview.dispatches || []" :key="dispatch.source" class="border rounded pa-3 mt-3">
+                            <strong>{{ dispatch.purpose === 'results' ? 'Ergebnisbenachrichtigung' : 'Aufgabenversand' }}</strong>
+                            <p>{{ dispatch.source }}</p>
+                            <p>{{ dispatch.rows.filter(row => row.accepted).length }} Personen mit bestätigtem Live-Versand</p>
+                            <p v-for="row in sortedPeople(dispatch.rows)" :key="row.person + row.student_id">{{ row.identity ? `${row.identity.last_name}, ${row.identity.first_name}` : row.person }} · {{ row.status }}<template v-if="row.planned_at"> · Geplanter Versand: {{ assessmentTimeText(row.planned_at) }} (Europe/Vienna)</template></p>
+                        </div>
+                        <p v-if="json_preview.rows.length" class="text-caption mt-2">{{ json_preview.rows.length }} Personen · Einzelheiten aufklappen</p>
+                        <details v-for="row in sortedPeople(json_preview.rows)" :key="row.participant_id" :open="!row.student_id || row.deadline_requires_review || row.status?.includes('gesperrt')" class="work-import-person border rounded pa-2 mt-2">
+                            <summary>
+                                <strong>{{ row.identity.last_name }}, {{ row.identity.first_name }} / {{ row.identity.class_name }}</strong>
+                                <span class="work-import-person-result">{{ row.status }} · Punkte {{ row.previous.points ?? row.previous.grades ?? '—' }}<template v-if="row.will_replace"> → {{ minorPoints(row.total_minor) }}</template><template v-else> bleiben erhalten</template></span>
+                            </summary>
+                            <div class="pt-2">
+                            <p>{{ row.identity.group_name }} · {{ changeLabel(row.change) }}</p>
+                            <p v-if="row.target">Zugeordnet: {{ row.target.last_name }}, {{ row.target.first_name }} / {{ row.target.class_name }} · {{ row.target.group_name }}</p>
+                            <p v-if="row.deadline_requires_review">Fristbezug erneut prüfen; bestehende Bewertung bleibt erhalten.</p>
+                            <p>Abgabe: {{ stateLabel(row.submission_state) }} · {{ row.submission_note }}</p>
+                            <p>Bewertung: {{ stateLabel(row.evaluation_state) }} · {{ row.evaluation_note }}</p>
+                            <p>Abgabe eingesammelt · bisher: {{ assessmentTimeText(row.previous_event_times?.email_collected_at) }} · neu: {{ assessmentTimeText(row.event_times?.email_collected_at) }}</p>
+                            <p>Beurteilung abgeschlossen · bisher: {{ assessmentCompletionText(row.previous_event_times?.evaluation_completed_at, row.previous_evaluation_state) }} · neu: {{ assessmentCompletionText(row.event_times?.evaluation_completed_at, row.evaluation_state) }}</p>
+                            <p v-if="row.change !== 'unchanged'" class="text-caption">Frühere Fassungen und ihre Zeitnachweise bleiben gespeichert. Unbekannte Zeiten werden nicht aus früheren Fassungen ergänzt.</p>
+                            <p>Punkte bisher: {{ row.previous.points ?? row.previous.grades ?? '—' }} · Quelle: {{ minorPoints(row.total_minor) }}</p>
+                            <p><strong>{{ row.will_replace ? 'Punkte und Bewertungskommentar werden ersetzt.' : 'Bestehende Bewertung bleibt erhalten.' }}</strong></p>
+                            <details>
+                                <summary>Kommentare, Kriterien und PDFs</summary>
+                                <p class="json-comment">Bisher: {{ row.previous.comments ?? '—' }}</p>
+                                <p class="json-comment">Quelle: {{ row.comment }}</p>
+                                <p v-for="criterion in row.criteria" :key="criterion.criterion">{{ criterion.criterion }}: {{ minorPoints(criterion.earned_minor) }} / {{ minorPoints(criterion.maximum_minor) }} · {{ stateLabel(criterion.checkability) }} · {{ criterion.reason }}</p>
+                                <p v-for="(adjustment, index) in row.adjustments" :key="index">{{ adjustment.label }}: {{ minorPoints(adjustment.amount_minor) }} · {{ adjustment.reason }}</p>
+                                <p>PDF bisher: {{ row.previous_pdf?.name ?? '—' }}</p>
+                                <p>PDF Quelle: {{ row.pdf?.filename ?? '—' }} · {{ row.will_replace && row.pdf ? 'wird übernommen' : 'bestehendes PDF bleibt erhalten' }}</p>
+                            </details>
+                            </div>
+                        </details>
+                        </div>
+                    </details>
                 </div>
             </v-card-text>
             <v-card-actions class="work-import-actions">
                 <v-spacer />
-                <v-btn v-if="json_preview" color="primary" :disabled="import_busy || !json_preview.can_import" @click="applyJson">Angezeigte Änderungen übernehmen</v-btn>
+                <v-btn v-if="json_preview" color="primary" :disabled="import_busy || !json_preview.can_import" @click="applyJson">{{ results_options ? (results_simulation ? 'Testbewertungen übernehmen' : 'Ergebnisse übernehmen') : 'Angezeigte Änderungen übernehmen' }}</v-btn>
                 <v-btn :disabled="import_busy" @click="import_open = false">Schließen</v-btn>
+            </v-card-actions>
+        </v-card>
+    </v-dialog>
+    <v-dialog v-if="deadline_conflict" :model-value="true" persistent scrollable max-width="600">
+        <v-card>
+            <v-card-title class="text-wrap text-body-1 font-weight-bold">Abgabefrist klären</v-card-title>
+            <v-card-text>
+                <p class="mb-3">Die gespeicherte Frist stimmt nicht mit der Frist im Importpaket überein.</p>
+                <p><strong>Gespeicherte Frist:</strong>
+                    <template v-if="deadline_conflict.current_at">{{ assessmentTimeText(deadline_conflict.current_at) }}</template>
+                    <template v-else>{{ deadline_conflict.current_date ?? 'Datum fehlt' }} · {{ deadline_conflict.current_time ?? 'Uhrzeit fehlt' }}</template>
+                </p>
+                <p><strong>Paketfrist:</strong> {{ assessmentTimeText(deadline_conflict.source_at) }}</p>
+                <p class="text-caption mb-3">Alle Uhrzeiten: Europe/Vienna.</p>
+                <p>Mit „Paketfrist übernehmen“ wird die Abgabefrist dieser Arbeit gespeichert und die Importvorschau erneut geprüft. Anschließend können Sie die angezeigten Bewertungen übernehmen.</p>
+                <v-alert v-if="deadline_error" type="error" variant="tonal" class="mt-3">{{ deadline_error }}</v-alert>
+            </v-card-text>
+            <v-card-actions class="work-import-actions">
+                <v-spacer />
+                <v-btn :disabled="import_busy" @click="cancelDeadlineImport">Gespeicherte Frist behalten und Import abbrechen</v-btn>
+                <v-btn color="primary" :disabled="import_busy || !package_deadline" :loading="deadline_saving" @click="acceptPackageDeadline">Paketfrist übernehmen</v-btn>
             </v-card-actions>
         </v-card>
     </v-dialog>
@@ -89,17 +172,126 @@
 
 <script>
 import { mapState } from 'pinia'
+import { sortedPeople } from '@/helpers/personNames'
+import { markRaw } from 'vue'
+import { useAdminStore } from '@/stores/admin/AdminStore'
+import { readWorkImportDirectory, saveWorkImportDirectory, supportsWorkImportDirectory, workImportDirectories, workImportDirectoryKey } from '@/helpers/workImportDirectory'
+import { workAutomationEnabled } from '@/helpers/workAutomation'
+import { workSimulationCollection } from '@/helpers/workProgress'
 import { assessmentTimeText, assessmentCompletionText } from '@/helpers/workAssessmentTimes'
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
-import { importFolder, importJson } from '@/actions/App/Http/Controllers/Admin/Teaching/CourseWorkController'
+import { importFolder, importJson, update } from '@/actions/App/Http/Controllers/Admin/Teaching/CourseWorkController'
+import { importMethod as importDropbox } from '@/actions/App/Http/Controllers/Admin/Teaching/WorkDropboxController'
+import { loadWorkDropbox, workDropboxKey } from '@/helpers/workDropbox'
+import WorkDropboxSource from './WorkDropboxSource.vue'
 
 export default {
-    emits: ['imported'],
+    components: { WorkDropboxSource },
+    emits: ['imported', 'deadline-updated'],
     data() {
-        return { import_open: false, import_work: null, import_busy: false, import_summary: null, import_error: '', import_selection: '', import_files: [], import_mode: 'markdown', json_files: [], json_preview: null, json_uploads: null }
+        return { results_options: null, results_simulation: false, import_open: false, import_work: null, import_busy: false, import_summary: null, import_error: '', import_selection: '', import_files: [], import_mode: 'markdown', import_source: 'upload', json_files: [], json_preview: null, json_uploads: null, directory_access_supported: supportsWorkImportDirectory(), pending_directory: null, deadline_error: '', deadline_saving: false }
     },
     computed: {
         ...mapState(useCourseStore, ['selected_course']),
+        preview_student_count() {
+            const rows = [
+                ...(this.json_preview?.rows || []),
+                ...(this.json_preview?.provisions || []).flatMap(provision => provision.rows || []),
+                ...(this.json_preview?.dispatches || []).flatMap(dispatch => dispatch.rows || []),
+            ]
+            return new Set(rows.filter(row => row.student_id).map(row => String(row.student_id))).size
+        },
+        preview_actions() {
+            const preview = this.json_preview
+            if (!preview) return []
+            const lines = []
+            const evaluationActions = []
+            if (preview.rows.length) {
+                const replacements = preview.rows.filter(row => row.will_replace).length
+                const retained = preview.rows.length - replacements
+                evaluationActions.push(`${replacements} ${replacements === 1 ? 'Bewertung wird' : 'Bewertungen werden'} übernommen · ${retained} ${retained === 1 ? 'bleibt' : 'bleiben'} erhalten`)
+            }
+            if (preview.overview_pdf) {
+                evaluationActions.push(`Gesamtübersicht-PDF ${preview.overview_will_replace ? 'wird übernommen' : 'bleibt unverändert'}`)
+            }
+            if (preview.submission_check) {
+                evaluationActions.push(`Abgabeprüfung ${preview.submission_check.state === 'complete' ? 'abgeschlossen' : 'noch offen'}`)
+            }
+            if (evaluationActions.length) lines.push(evaluationActions.join(' · ') + '.')
+            if (preview.provisions?.length) {
+                const provisions = preview.provisions
+                const persons = new Set(provisions.flatMap(provision => provision.rows)
+                    .filter(row => row.valid && row.events.length).map(row => String(row.student_id))).size
+                const newSources = provisions.filter(provision => !provision.already_imported).length
+                lines.push(`Bereitstellung für ${persons} Studierende: ${newSources} neue Belege · ${provisions.length - newSources} unverändert. Empfang nicht bestätigt.`)
+            }
+            for (const purpose of ['tasks', 'results']) {
+                const dispatches = (preview.dispatches || []).filter(dispatch => dispatch.purpose === purpose)
+                if (!dispatches.length) continue
+                const rows = dispatches.flatMap(dispatch => dispatch.rows || []).filter(row => row.student_id)
+                const evidenceByStudent = new Map()
+                for (const row of rows) {
+                    const evidence = row.accepted ? 3 : row.mode === 'scheduled' ? 2 : row.mode === 'prepared' ? 1 : 0
+                    const studentId = String(row.student_id)
+                    evidenceByStudent.set(studentId, Math.max(evidenceByStudent.get(studentId) ?? 0, evidence))
+                }
+                const count = evidence => Array.from(evidenceByStudent.values()).filter(value => value === evidence).length
+                const statuses = [
+                    [count(3), 'mit bestätigtem Versand'],
+                    [count(2), 'mit geplantem Versand'],
+                    [count(1), 'nur vorbereitet'],
+                    [count(0), 'ohne bestätigten Versand'],
+                ].filter(([amount]) => amount).map(([amount, label]) => `${amount} ${label}`)
+                const label = purpose === 'tasks' ? 'Aufgabenversand' : 'Ergebnisbenachrichtigung'
+                const newSources = dispatches.filter(dispatch => !dispatch.already_imported).length
+                lines.push(`${label}: ${newSources} neue Protokolle · ${dispatches.length - newSources} unverändert. ${statuses.length ? statuses.join(' · ') : 'Keine Schülerkennzeichnung'}.`)
+            }
+            return lines
+        },
+        preview_issues() {
+            const preview = this.json_preview
+            if (!preview) return []
+            const counts = new Map()
+            const add = message => counts.set(message, (counts.get(message) || 0) + 1)
+            for (const row of preview.rows || []) {
+                if (!row.student_id || row.status?.includes('gesperrt')) add(row.status || 'Person nicht eindeutig zugeordnet')
+            }
+            for (const provision of preview.provisions || []) {
+                if (!provision.roster_matches) add('Bereitstellungsbeleg umfasst nicht genau alle aktiven Personen der Zielarbeit')
+                for (const row of provision.rows) {
+                    if (row.valid === false) add(row.status)
+                }
+            }
+            for (const dispatch of preview.dispatches || []) {
+                for (const row of dispatch.rows) {
+                    if (row.status?.includes('gesperrt')) add(row.status)
+                    if (row.participant_addition) add('Nachzügler werden zu Kurs bzw. Arbeit hinzugefügt')
+                }
+            }
+            const issues = Array.from(counts, ([message, count]) => `${count} × ${message}.`)
+            if (preview.deadline_context?.requires_review) issues.unshift(preview.deadline_context.message || 'Abgabefrist muss geklärt werden.')
+            if ((preview.rows || []).some(row => row.deadline_requires_review) && !preview.deadline_context?.requires_review) {
+                issues.unshift('Fristbezug erneut prüfen; bestehende Bewertungen bleiben erhalten.')
+            }
+            return issues
+        },
+        deadline_conflict() {
+            return this.import_open && !this.json_preview?.deadline_update && this.json_preview?.deadline_context?.requires_review
+                ? this.json_preview.deadline_context : null
+        },
+        package_deadline() {
+            const value = this.deadline_conflict?.source_at
+            if (!value || Number.isNaN(new Date(value).getTime())) return null
+            const parts = new Intl.DateTimeFormat('de-AT', {
+                timeZone: 'Europe/Vienna', year: 'numeric', month: '2-digit', day: '2-digit',
+                hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+            }).formatToParts(new Date(value))
+            const values = Object.fromEntries(parts.map(part => [part.type, part.value]))
+            return {
+                finish_until_date: `${values.year}-${values.month}-${values.day}`,
+                finish_until_time: `${values.hour}:${values.minute}`,
+            }
+        },
     },
     watch: {
         'selected_course.id'() {
@@ -111,15 +303,54 @@ export default {
         },
     },
     methods: {
+        sortedPeople,
+        cancelDeadlineImport() {
+            if (this.import_busy) return
+            this.import_open = false
+            this.json_preview = null
+            this.json_uploads = null
+            this.pending_directory = null
+            this.deadline_error = ''
+        },
+        async acceptPackageDeadline() {
+            const work = this.import_work
+            const fields = this.package_deadline
+            if (this.import_busy || !fields || !this.isSelectedCourseWork(work)) return
+            this.import_busy = true
+            this.deadline_saving = true
+            this.deadline_error = ''
+            let savedWork
+            try {
+                const response = await axios.put(update.url(work.id), fields)
+                if (!this.import_open || this.import_work !== work || !this.isSelectedCourseWork(work)) return
+                this.import_work = response.data.data
+                savedWork = this.import_work
+                this.json_preview = null
+                this.$emit('deadline-updated', savedWork)
+            } catch (error) {
+                if (this.import_open && this.import_work === work && this.isSelectedCourseWork(work)) {
+                    this.deadline_error = Object.values(error.response?.data?.errors || {}).flat().join(' ') || error.response?.data?.message || error.message || 'Die Abgabefrist konnte nicht gespeichert werden. Bitte erneut versuchen.'
+                }
+            } finally {
+                this.import_busy = false
+                this.deadline_saving = false
+            }
+            if (savedWork && this.import_open && this.import_work === savedWork && this.isSelectedCourseWork(savedWork)) {
+                await this.sendJson(false)
+            }
+        },
         assessmentTimeText,
         assessmentCompletionText,
         isSelectedCourseWork(work) {
-            return Boolean(work?.id && this.selected_course?.id
+            return Boolean(workAutomationEnabled(work) && work?.id && this.selected_course?.id
                 && String(work.teaching_course_id) === String(this.selected_course.id))
         },
-        openImport(work) {
+        openImport(work, quick = false, results = null) {
             if (!this.isSelectedCourseWork(work) || this.import_busy) return
+            this.results_options = results
+            this.results_simulation = Boolean(results && workSimulationCollection(work))
             this.import_work = work
+            this.deadline_error = ''
             this.import_error = ''
             this.import_summary = null
             this.import_selection = ''
@@ -128,7 +359,127 @@ export default {
             this.json_files = []
             this.json_preview = null
             this.json_uploads = null
+            this.pending_directory = null
+            this.import_source = 'upload'
             this.import_open = true
+            if (results) return this.previewResults(false)
+            if (quick) return this.previewDropbox(false)
+        },
+        resultPoints(row) {
+            if (row.total_minor !== null) return `${this.minorPoints(row.total_minor)} / ${this.minorPoints(this.json_preview.maximum_minor)}`
+            if (row.evaluation_state !== 'partial') return 'Noch offen'
+            const criteria = row.criteria.filter(criterion => Number.isInteger(criterion.earned_minor))
+            return criteria.length ? `${this.minorPoints(criteria.reduce((sum, criterion) => sum + criterion.earned_minor, 0))} / ${this.minorPoints(this.json_preview.maximum_minor)} (vorläufig)` : 'Teilbewertung'
+        },
+        async previewResults(apply = false) {
+            const work = this.import_work
+            if (this.import_busy || !this.isSelectedCourseWork(work) || (apply && !this.json_preview?.can_import)) return
+            const hash = this.json_preview?.hash
+            this.import_busy = true
+            this.import_error = ''
+            this.json_preview = null
+            try {
+                const response = await axios.post(importDropbox.url(work.id), {
+                    results_only: true, simulation: this.results_simulation,
+                    date: this.results_options.date || work.date_for_all_groups || null,
+                    ...(apply ? { apply: true, hash } : {}),
+                })
+                if (!this.import_open || this.import_work !== work || !this.isSelectedCourseWork(work)) return
+                if (apply) {
+                    this.import_summary = { messages: ['Ergebnisse bei den Schülern eingetragen.'] }
+                    this.$emit('imported', response.data.data)
+                } else this.json_preview = response.data.preview
+            } catch (error) {
+                if (this.import_open && this.import_work === work && this.isSelectedCourseWork(work)) {
+                    this.import_error = Object.values(error.response?.data?.errors || {}).flat().join(' ') || error.response?.data?.message || error.message || 'Ergebnisse konnten nicht geladen werden.'
+                }
+            } finally { this.import_busy = false }
+        },
+        async previewDropbox(apply = false) {
+            const work = this.import_work
+            if (this.import_busy || !this.isSelectedCourseWork(work)) return
+            const hash = this.json_preview?.hash
+            if (apply && !this.json_preview?.can_import) return
+            this.import_source = 'dropbox'
+            this.import_busy = true
+            this.import_error = ''
+            this.import_summary = null
+            this.json_preview = null
+            this.json_uploads = null
+            this.pending_directory = null
+            try {
+                const state = await loadWorkDropbox(workDropboxKey(useAdminStore().config?.user?.id, work), work.id, true)
+                if (!this.import_open || this.import_work !== work || !this.isSelectedCourseWork(work)) return
+                if (!(state?.can_preview ?? state?.can_quick_import)) throw new Error(state?.message || 'Für diese Arbeit ist noch kein Dropbox-Ordner zugeordnet.')
+                this.import_selection = 'Dropbox · ' + state.folder.name
+                const response = await axios.post(importDropbox.url(work.id), apply ? { apply: true, hash } : {})
+                if (!this.import_open || this.import_work !== work || !this.isSelectedCourseWork(work)) return
+                if (apply) {
+                    this.import_summary = { messages: ['Dropbox-Paket übernommen.', ...(response.data.messages || [])] }
+                    this.$emit('imported', response.data.data)
+                    loadWorkDropbox(workDropboxKey(useAdminStore().config?.user?.id, work), work.id, true).catch(() => {})
+                } else {
+                    this.json_preview = response.data.preview
+                }
+            } catch (error) {
+                if (this.import_open && this.import_work === work && this.isSelectedCourseWork(work)) {
+                    this.import_error = Object.values(error.response?.data?.errors || {}).flat().join(' ') || error.response?.data?.message || error.message || 'Dropbox-Import fehlgeschlagen. Bitte den normalen Ordnerupload verwenden.'
+                }
+            } finally {
+                this.import_busy = false
+            }
+        },
+        directoryKey(work = this.import_work) {
+            return workImportDirectoryKey(useAdminStore().config?.user?.id, work)
+        },
+        async chooseDirectory() {
+            if (this.import_busy || !this.isSelectedCourseWork(this.import_work)) return
+            const work = this.import_work
+            try {
+                const handle = await window.showDirectoryPicker({ mode: 'read', id: 'schooltool-work-import' })
+                if (this.import_work !== work || !this.import_open || !this.isSelectedCourseWork(work)) return
+                await this.previewDirectory(handle, work)
+            } catch (error) {
+                if (error.name !== 'AbortError' && this.import_work === work) {
+                    this.import_error = 'Ordnerzugriff fehlgeschlagen. Bitte den Ordner erneut auswählen.'
+                }
+            }
+        },
+        async reuseDirectory() {
+            const work = this.import_work
+            const handle = workImportDirectories.get(this.directoryKey(work))
+            if (!handle) {
+                this.import_error = 'Für diese Arbeit ist noch kein Ordner gespeichert. Bitte den Ordner auswählen.'
+                return
+            }
+            this.import_busy = true
+            try {
+                const permission = await handle.queryPermission({ mode: 'read' })
+                if (permission !== 'granted' && await handle.requestPermission({ mode: 'read' }) !== 'granted') {
+                    throw new Error('Ordnerzugriff nicht freigegeben')
+                }
+                if (this.import_work !== work || !this.import_open || !this.isSelectedCourseWork(work)) return
+                await this.previewDirectory(handle, work)
+            } catch {
+                if (this.import_work === work) this.import_error = 'Der gespeicherte Ordner ist nicht verfügbar oder nicht freigegeben. Bitte den Ordner erneut auswählen.'
+            } finally { this.import_busy = false }
+        },
+        async previewDirectory(handle, work) {
+            this.import_busy = true
+            try {
+                const files = await readWorkImportDirectory(handle)
+                if (this.import_work !== work || !this.import_open || !this.isSelectedCourseWork(work)) return
+                this.pending_directory = markRaw(handle)
+                this.import_busy = false
+                if (!files.length) throw new Error('Der gespeicherte Ordner enthält keine Importdateien. Bitte den Ordner erneut auswählen.')
+                await this.selectJsonFolder({ target: { files, value: '' } })
+            } catch (error) {
+                if (this.import_work === work && this.import_open) {
+                    this.import_error = ['NotFoundError', 'NotAllowedError'].includes(error.name)
+                        ? 'Der gespeicherte Ordner ist nicht verfügbar oder nicht freigegeben. Bitte den Ordner erneut auswählen.'
+                        : (error.message || 'Der Ordner konnte nicht gelesen werden. Bitte erneut auswählen.')
+                }
+            } finally { this.import_busy = false }
         },
         changeMode(mode) {
             this.import_mode = mode
@@ -154,6 +505,7 @@ export default {
             const work = this.import_work
             const selected = Array.from(event.target.files || [])
             if (!selected.length || this.import_busy || !this.isSelectedCourseWork(work)) return
+            this.import_source = 'upload'
             this.json_preview = null
             this.json_uploads = null
             this.import_summary = null
@@ -168,16 +520,20 @@ export default {
                 }
                 this.import_selection = folder
                 const packages = selected.filter(file => /^[^/]+\/(?:Beurteilungen\/)?Schooltool-Bewertungen\.json$/.test(relativePath(file)))
-                if (packages.length !== 1) {
-                    throw new Error('Der ausgewählte Ordner muss genau eine Schooltool-Bewertungen.json direkt oder unter Beurteilungen enthalten. Den einzelnen Leistungsfeststellungs- oder Übungsordner auswählen; Markdown-Dateien werden nicht als Bewertungsquelle importiert.')
+                if (packages.length > 1) {
+                    throw new Error('Der ausgewählte Ordner darf nur eine Schooltool-Bewertungen.json direkt oder unter Beurteilungen enthalten.')
                 }
                 const [packageFile] = packages
-                if (packageFile.size > 262144) {
+                const identityExports = selected.filter(file => /^[^/]+\/Schooltool_Arbeitsdaten\.json$/i.test(relativePath(file)))
+                if (identityExports.length > 1 || identityExports.some(file => file.size > 1048576)) {
+                    throw new Error('Höchstens einen ursprünglichen Schooltool_Arbeitsdaten.json-Export bis 1 MiB auswählen.')
+                }
+                if (packageFile?.size > 262144) {
                     throw new Error('Schooltool-Bewertungen.json überschreitet 256 KiB.')
                 }
-                let packageData
+                let packageData = { records: [] }
                 try {
-                    packageData = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(await packageFile.arrayBuffer()))
+                    if (packageFile) packageData = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(await packageFile.arrayBuffer()))
                 } catch {
                     throw new Error('Schooltool-Bewertungen.json kann nicht als UTF-8-JSON gelesen werden.')
                 }
@@ -185,7 +541,7 @@ export default {
                 if (!packageData || !Array.isArray(packageData.records)) {
                     throw new Error('Schooltool-Bewertungen.json enthält keine gültige Datensatzliste.')
                 }
-                const packageDirectory = relativePath(packageFile).slice(0, -packageFile.name.length)
+                const packageDirectory = packageFile ? relativePath(packageFile).slice(0, -packageFile.name.length) : ''
                 const references = [packageData.overview_pdf, ...packageData.records.map(record => record?.pdf)].filter(Boolean)
                 const pdfs = references.map(reference => {
                     const matches = selected.filter(file => relativePath(file) === packageDirectory + reference.filename && /\.pdf$/i.test(file.name))
@@ -194,16 +550,24 @@ export default {
                     }
                     return matches[0]
                 })
-                const protocols = selected.filter(file => /^[^/]+\/Versand\/(?:Aufgaben|Ergebnisse)\/Versand_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\/Versandprotokoll\.txt$/i.test(relativePath(file)))
+                const protocols = selected.filter(file => /^[^/]+\/Versand\/(?:Aufgaben|Ergebnisse)\/Versand_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\/Versandprotokoll\.txt$/i.test(relativePath(file))
+                    || /^[^/]+\/Schooltool-(?:Vorbereitung|Versandvorbereitung|Bereitstellung)\.json$/i.test(relativePath(file))
+                    || /^[^/]+\/Anlage_und_Quellen\.json$/i.test(relativePath(file)))
+                if (!packageFile && !protocols.length) throw new Error('Der Ordner enthält weder Bewertungen noch Bereitstellungsbelege, eine Vorbereitung oder Versandprotokolle.')
                 if (protocols.length > 30 || protocols.some(file => file.size > 1048576)
-                    || [packageFile, ...pdfs, ...protocols].reduce((sum, file) => sum + file.size, 0) > 6 * 1024 * 1024) {
+                    || [...packages, ...pdfs, ...protocols, ...identityExports].reduce((sum, file) => sum + file.size, 0) > 6 * 1024 * 1024) {
                     throw new Error('Maximal 30 Versandprotokolle und insgesamt 6 MiB pro Ordnerimport auswählen.')
                 }
                 const documents = await Promise.all(protocols.map(async file => ({ path: relativePath(file), text: new TextDecoder('utf-8', { fatal: true }).decode(await file.arrayBuffer()) })))
                 if (!this.import_open || this.import_work !== work || !this.isSelectedCourseWork(work)) return
-                this.import_selection = folder + ' · ' + (1 + pdfs.length + protocols.length) + ' Importdateien'
+                this.import_selection = folder + ' · ' + (packages.length + pdfs.length + protocols.length + identityExports.length) + ' Importdateien'
                 this.import_busy = false
-                await this.selectJson({ target: { files: [packageFile, ...pdfs] } }, { folder, documents })
+                if (packageFile) {
+                    await this.selectJson({ target: { files: [packageFile, ...pdfs, ...identityExports] } }, { folder, documents })
+                } else {
+                    this.json_uploads = { pdfs: [], folder, documents }
+                    await this.sendJson(false)
+                }
             } catch (error) {
                 if (this.import_open && this.import_work === work && this.isSelectedCourseWork(work)) {
                     this.import_error = error.message || 'JSON-Paket im Ordner konnte nicht gelesen werden.'
@@ -220,26 +584,32 @@ export default {
             this.json_uploads = null
             this.import_summary = null
             this.import_error = ''
-            const packages = selected.filter(file => /\.json$/i.test(file.name))
+            const identityExports = selected.filter(file => /^Schooltool_Arbeitsdaten\.json$/i.test(file.name))
+            const packages = selected.filter(file => /\.json$/i.test(file.name) && !identityExports.includes(file))
             const pdfs = selected.filter(file => /\.pdf$/i.test(file.name))
-            if (packages.length !== 1 || packages.length + pdfs.length !== selected.length || pdfs.length > 20 || packages[0].size > 262144 || selected.reduce((sum, file) => sum + file.size, 0) > 6 * 1024 * 1024) {
-                this.import_error = 'Genau eine JSON-Datei (maximal 256 KiB) und höchstens 20 referenzierte PDFs auswählen; insgesamt höchstens 6 MiB.'
+            if (packages.length !== 1 || identityExports.length > 1 || identityExports.some(file => file.size > 1048576)
+                || packages.length + pdfs.length + identityExports.length !== selected.length || pdfs.length > 20
+                || packages[0].size > 262144 || selected.reduce((sum, file) => sum + file.size, 0) > 6 * 1024 * 1024) {
+                this.import_error = 'Eine Bewertungs-JSON (maximal 256 KiB), höchstens 20 referenzierte PDFs und optional den ursprünglichen Schooltool_Arbeitsdaten.json-Export (maximal 1 MiB) auswählen; insgesamt höchstens 6 MiB.'
                 return
             }
-            this.json_uploads = { package: packages[0], pdfs, ...dispatch }
+            this.json_uploads = { package: packages[0], pdfs, identity_export: identityExports[0], ...dispatch }
             await this.sendJson(false)
         },
         async applyJson() {
             if (this.json_preview?.can_import) await this.sendJson(true)
         },
         async sendJson(apply) {
+            if (this.results_options) return this.previewResults(apply)
+            if (this.import_source === 'dropbox') return this.previewDropbox(apply)
             const work = this.import_work
             if (this.import_busy || !this.json_uploads || !this.isSelectedCourseWork(work)) return
             this.import_busy = true
             this.import_error = ''
             try {
                 const payload = new FormData()
-                payload.append('package', this.json_uploads.package, this.json_uploads.package.name)
+                if (this.json_uploads.package) payload.append('package', this.json_uploads.package, this.json_uploads.package.name)
+                if (this.json_uploads.identity_export) payload.append('identity_export', this.json_uploads.identity_export, this.json_uploads.identity_export.name)
                 for (const pdf of this.json_uploads.pdfs) payload.append('pdfs[]', pdf, pdf.name)
                 if (this.json_uploads.documents?.length) {
                     payload.append('folder', this.json_uploads.folder)
@@ -252,10 +622,16 @@ export default {
                 const response = await axios.post(importJson.url(work.id), payload)
                 if (!this.import_open || this.import_work !== work || !this.isSelectedCourseWork(work)) return
                 if (apply) {
+                    if (this.pending_directory) {
+                        try { await saveWorkImportDirectory(this.directoryKey(work), this.pending_directory) }
+                        catch { this.import_error = 'Import erfolgreich; der Ordnerzugriff konnte nicht für Quick-Import gespeichert werden.' }
+                    }
+                    if (!this.import_open || this.import_work !== work || !this.isSelectedCourseWork(work)) return
                     this.json_preview = null
                     this.json_uploads = null
-                    this.import_summary = { messages: ['JSON-Paket übernommen. Offene und teilweise bewertete Fälle erhalten ihre bisherige Bewertung.', ...(response.data.messages || [])] }
+                    this.import_summary = { messages: ['Import übernommen.', ...(response.data.messages || [])] }
                     this.$emit('imported', response.data.data)
+                    loadWorkDropbox(workDropboxKey(useAdminStore().config?.user?.id, work), work.id, true).catch(() => {})
                 } else {
                     this.json_preview = response.data.preview
                 }
@@ -330,9 +706,15 @@ export default {
     white-space: normal;
 }
 .json-preview { overflow-wrap: anywhere; }
+.work-import-title { overflow-wrap: anywhere; }
 .json-comment { white-space: pre-wrap; }
+.json-preview summary { cursor: pointer; }
+.work-import-person summary { line-height: 1.4; }
+.work-import-person-result { display: block; margin-left: 16px; font-size: 0.8125rem; }
 .work-import-actions { flex-wrap: wrap; }
 .work-import-actions :deep(.v-btn__content) { white-space: normal; }
+.work-import-folder-button { max-width: 100%; height: auto; min-height: 40px; padding-block: 8px; }
+.work-import-folder-button :deep(.v-btn__content) { white-space: normal; }
 @media (max-width: 600px) {
     .work-import-actions .v-btn { width: 100%; margin-inline: 0; height: auto; min-height: 40px; padding-block: 8px; }
 }

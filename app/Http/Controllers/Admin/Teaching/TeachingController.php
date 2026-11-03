@@ -182,18 +182,21 @@ class TeachingController extends Controller
             'teaching_notifications.*.short_name' => 'required|string|max:10',
             'teaching_notifications.*.name' => 'required|string|max:255',
             'teaching_show_behaviour' => 'nullable|boolean',
-            'teaching_grade_columns' => 'nullable|array',
-            'teaching_grade_columns.show_sem1' => 'nullable|boolean',
-            'teaching_grade_columns.show_sem2' => 'nullable|boolean',
-            'teaching_grade_columns.show_year' => 'nullable|boolean',
-            'teaching_student_grade_columns' => 'nullable|array',
-            'teaching_student_grade_columns.show_sem1' => 'nullable|boolean',
-            'teaching_student_grade_columns.show_sem2' => 'nullable|boolean',
-            'teaching_student_grade_columns.show_year' => 'nullable|boolean',
+            'teaching_curricula_enabled' => ['sometimes', 'boolean'],
+            'teaching_show_attendance' => ['sometimes', 'boolean'],
+            'teaching_calculations_enabled' => ['sometimes', 'boolean'],
+            'teaching_show_calculated_grade' => ['sometimes', 'boolean'],
+            'teaching_student_grade_columns' => ['sometimes', 'array:show_semester_grade,show_behaviour_grade,show_points_progress,show_stars'],
             'teaching_student_grade_columns.show_semester_grade' => ['sometimes', 'boolean'],
             'teaching_student_grade_columns.show_behaviour_grade' => ['sometimes', 'boolean'],
-            'teaching_course_id' => 'required_with:teaching_student_grade_columns.show_semester_grade,teaching_student_grade_columns.show_behaviour_grade|nullable|integer',
+            'teaching_student_grade_columns.show_points_progress' => ['sometimes', 'boolean'],
+            'teaching_student_grade_columns.show_stars' => ['sometimes', 'boolean'],
+            'teaching_course_id' => 'required_with:teaching_show_calculated_grade,teaching_student_grade_columns.show_semester_grade,teaching_student_grade_columns.show_behaviour_grade,teaching_student_grade_columns.show_points_progress,teaching_student_grade_columns.show_stars|nullable|integer',
         ]);
+
+        if (array_key_exists('teaching_show_attendance', $validated) && ! Schema::hasColumn('users', 'teaching_show_attendance')) {
+            abort(422, 'Diese Anzeigeeinstellung ist noch nicht verfügbar.');
+        }
 
         if (isset($validated['teaching_schemas'])) {
             $usedNames = $teachingService->hasDependencies($auth_user, $validated['teaching_schemas'], $auth_user->schoolyear_id);
@@ -249,12 +252,26 @@ class TeachingController extends Controller
         if (array_key_exists('teaching_show_behaviour', $validated)) {
             $auth_user->teaching_show_behaviour = (bool) $validated['teaching_show_behaviour'];
         }
-        if (array_key_exists('teaching_grade_columns', $validated)) {
-            $this->storeTeachingGradeColumnsForSchoolyear(
-                $auth_user,
-                $auth_user->schoolyear_id,
-                is_array($validated['teaching_grade_columns']) ? $validated['teaching_grade_columns'] : []
-            );
+        if (array_key_exists('teaching_curricula_enabled', $validated)) {
+            $auth_user->teaching_curricula_enabled = (bool) $validated['teaching_curricula_enabled'];
+        }
+        if (array_key_exists('teaching_show_attendance', $validated)) {
+            $auth_user->teaching_show_attendance = (bool) $validated['teaching_show_attendance'];
+        }
+        if (array_key_exists('teaching_calculations_enabled', $validated)) {
+            $gradeColumns = is_array($auth_user->teaching_grade_columns_by_schoolyear) ? $auth_user->teaching_grade_columns_by_schoolyear : [];
+            $gradeColumns['calculations_enabled'] = (bool) $validated['teaching_calculations_enabled'];
+            $auth_user->teaching_grade_columns_by_schoolyear = $gradeColumns;
+        }
+        if (array_key_exists('teaching_show_calculated_grade', $validated)) {
+            $course = TeachingCourse::query()->findOrFail((int) $validated['teaching_course_id']);
+            $this->authorizeTeachingCourseAccess($course, $auth_user);
+
+            $gradeColumns = is_array($auth_user->teaching_grade_columns_by_schoolyear)
+                ? $auth_user->teaching_grade_columns_by_schoolyear
+                : [];
+            $gradeColumns[(string) $auth_user->schoolyear_id]['show_calculated_grade_by_course'][(string) $course->id] = (bool) $validated['teaching_show_calculated_grade'];
+            $auth_user->teaching_grade_columns_by_schoolyear = $gradeColumns;
         }
         if (array_key_exists('teaching_student_grade_columns', $validated)) {
             $studentGradeColumns = is_array($validated['teaching_student_grade_columns'])
@@ -266,12 +283,6 @@ class TeachingController extends Controller
 
                 $this->authorizeTeachingCourseAccess($course, $auth_user);
                 $this->storeTeachingStudentGradeColumnsForCourse($course, $studentGradeColumns);
-            } else {
-                $this->storeTeachingStudentGradeColumnsForSchoolyear(
-                    $auth_user,
-                    $auth_user->schoolyear_id,
-                    $studentGradeColumns
-                );
             }
         }
         $auth_user->save();
@@ -665,130 +676,13 @@ class TeachingController extends Controller
             'teaching_notifications_usage_count' => $this->teachingCourseBehaviourEntryCountForKind($user, $user->schoolyear_id, 'notification'),
             'teaching_notifications_usage_counts' => $this->teachingCourseBehaviourEntryCountsByTypeForKind($user, $user->schoolyear_id, 'notification'),
             'teaching_show_behaviour' => $user->teaching_show_behaviour ?? true,
-            'teaching_grade_columns' => $this->teachingGradeColumnsForSchoolyear($user, $user->schoolyear_id),
-            'teaching_student_grade_columns' => $this->teachingStudentGradeColumnsForSchoolyear($user, $user->schoolyear_id),
+            'teaching_curricula_enabled' => $user->teaching_curricula_enabled ?? true,
+            'teaching_show_attendance' => $user->teaching_show_attendance ?? true,
+            'teaching_calculations_enabled' => data_get($user->teaching_grade_columns_by_schoolyear, 'calculations_enabled', true) !== false,
+            'teaching_show_attendance_available' => Schema::hasColumn('users', 'teaching_show_attendance'),
+            'teaching_show_calculated_grade' => (bool) data_get($user->teaching_grade_columns_by_schoolyear, "{$user->schoolyear_id}.show_calculated_grade", false),
+            'teaching_show_calculated_grade_by_course' => (object) data_get($user->teaching_grade_columns_by_schoolyear, "{$user->schoolyear_id}.show_calculated_grade_by_course", []),
         ];
-    }
-
-    /**
-     * @return array{show_sem1: bool, show_sem2: bool, show_year: bool}
-     */
-    private function teachingGradeColumnsForSchoolyear(?User $user, ?int $schoolyearId): array
-    {
-        $defaults = [
-            'show_sem1' => false,
-            'show_sem2' => false,
-            'show_year' => false,
-        ];
-
-        if (! $user || $schoolyearId === null) {
-            return $defaults;
-        }
-
-        $bySchoolyear = $user->teaching_grade_columns_by_schoolyear;
-
-        if (! is_array($bySchoolyear)) {
-            return $defaults;
-        }
-
-        $columns = $bySchoolyear[(string) $schoolyearId] ?? null;
-
-        if (! is_array($columns)) {
-            return $defaults;
-        }
-
-        return [
-            'show_sem1' => (bool) ($columns['show_sem1'] ?? false),
-            'show_sem2' => (bool) ($columns['show_sem2'] ?? false),
-            'show_year' => (bool) ($columns['show_year'] ?? false),
-        ];
-    }
-
-    /**
-     * @param  array<string, mixed>  $columns
-     */
-    private function storeTeachingGradeColumnsForSchoolyear(User $user, ?int $schoolyearId, array $columns): void
-    {
-        if ($schoolyearId === null) {
-            return;
-        }
-
-        $bySchoolyear = is_array($user->teaching_grade_columns_by_schoolyear)
-            ? $user->teaching_grade_columns_by_schoolyear
-            : [];
-
-        $bySchoolyear[(string) $schoolyearId] = [
-            'show_sem1' => (bool) ($columns['show_sem1'] ?? false),
-            'show_sem2' => (bool) ($columns['show_sem2'] ?? false),
-            'show_year' => (bool) ($columns['show_year'] ?? false),
-        ];
-
-        $user->teaching_grade_columns_by_schoolyear = $bySchoolyear;
-    }
-
-    /**
-     * @return array{show_sem1: bool, show_sem2: bool, show_year: bool}
-     */
-    private function teachingStudentGradeColumnsForSchoolyear(?User $user, ?int $schoolyearId): array
-    {
-        $defaults = [
-            'show_sem1' => false,
-            'show_sem2' => false,
-            'show_year' => false,
-        ];
-
-        if (! $user || $schoolyearId === null) {
-            return $defaults;
-        }
-
-        $bySchoolyear = $user->teaching_student_grade_columns_by_schoolyear;
-
-        if (! is_array($bySchoolyear)) {
-            return $defaults;
-        }
-
-        $columns = $bySchoolyear[(string) $schoolyearId] ?? null;
-
-        if (! is_array($columns)) {
-            return $defaults;
-        }
-
-        return [
-            'show_sem1' => (bool) ($columns['show_sem1'] ?? false),
-            'show_sem2' => (bool) ($columns['show_sem2'] ?? false),
-            'show_year' => (bool) ($columns['show_year'] ?? false),
-        ];
-    }
-
-    /**
-     * @param  array<string, mixed>  $columns
-     * @return array{show_sem1: bool, show_sem2: bool, show_year: bool}
-     */
-    private function normalizedTeachingGradeColumns(array $columns): array
-    {
-        return [
-            'show_sem1' => (bool) ($columns['show_sem1'] ?? false),
-            'show_sem2' => (bool) ($columns['show_sem2'] ?? false),
-            'show_year' => (bool) ($columns['show_year'] ?? false),
-        ];
-    }
-
-    /**
-     * @param  array<string, mixed>  $columns
-     */
-    private function storeTeachingStudentGradeColumnsForSchoolyear(User $user, ?int $schoolyearId, array $columns): void
-    {
-        if ($schoolyearId === null) {
-            return;
-        }
-
-        $bySchoolyear = is_array($user->teaching_student_grade_columns_by_schoolyear)
-            ? $user->teaching_student_grade_columns_by_schoolyear
-            : [];
-
-        $bySchoolyear[(string) $schoolyearId] = $this->normalizedTeachingGradeColumns($columns);
-
-        $user->teaching_student_grade_columns_by_schoolyear = $bySchoolyear;
     }
 
     /**
@@ -798,11 +692,11 @@ class TeachingController extends Controller
     {
         $existingColumns = is_array($course->teaching_student_grade_columns)
             ? $course->teaching_student_grade_columns
-            : $this->teachingStudentGradeColumnsForSchoolyear($course->user, $course->schoolyear_id);
+            : [];
         $mergedColumns = array_replace($existingColumns, $columns);
-        $normalizedColumns = $this->normalizedTeachingGradeColumns($mergedColumns);
+        $normalizedColumns = $existingColumns;
 
-        foreach (['show_semester_grade', 'show_behaviour_grade'] as $key) {
+        foreach (['show_semester_grade', 'show_behaviour_grade', 'show_points_progress', 'show_stars'] as $key) {
             if (array_key_exists($key, $mergedColumns)) {
                 $normalizedColumns[$key] = (bool) $mergedColumns[$key];
             }

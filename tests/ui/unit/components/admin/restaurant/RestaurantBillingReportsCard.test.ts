@@ -106,9 +106,9 @@ describe('Restaurant billing reports card', () => {
 
         expect(wrapper.text()).toContain('Abrechnung drucken')
         expect(wrapper.text()).toContain('Kalenderwochen')
-        expect(wrapper.text()).toContain('Zeitraum')
+        expect(wrapper.text()).toContain('Ausgewählte Kalenderwochen')
         expect(wrapper.text()).toContain('Zu erstellende Abrechnung')
-        expect(wrapper.text().indexOf('Kalenderwochen')).toBeLessThan(wrapper.text().indexOf('Zeitraum'))
+        expect(wrapper.text().indexOf('Kalenderwochen')).toBeLessThan(wrapper.text().indexOf('Ausgewählte Kalenderwochen'))
         expect(wrapper.text().indexOf('Kalenderwochen')).toBeLessThan(wrapper.text().indexOf('Zu erstellende Abrechnung'))
         expect(wrapper.text().indexOf('KW 14/2026')).toBeLessThan(wrapper.text().indexOf('KW 13/2026'))
 
@@ -123,15 +123,15 @@ describe('Restaurant billing reports card', () => {
         openSpy.mockRestore()
     })
 
-    it('extends the selection across connected weeks and shows a persistent confirmation dialog', async () => {
+    it('selects only the clicked week and shows a persistent confirmation dialog', async () => {
         const wrapper = mountBillingReportsCard()
 
         expect(wrapper.text()).toContain('KW 15')
 
         await wrapper.find('[data-testid="restaurant-billing-week-2026-03-30"]').trigger('click')
 
-        expect(wrapper.text()).toContain('KW 08-14/2026')
-        expect(wrapper.text()).toContain('16.02.2026 - 05.04.2026')
+        expect((wrapper.vm as any).selectedWeeks.map(week => week.week_start)).toEqual(['2026-03-30'])
+        expect(wrapper.text()).toContain('30.03.2026 – 05.04.2026')
 
         const createButton = wrapper.findAll('button').find((button) => button.text().includes('Abrechnung drucken'))
         await createButton?.trigger('click')
@@ -139,7 +139,7 @@ describe('Restaurant billing reports card', () => {
         const dialog = wrapper.find('.dialog-stub')
         expect(dialog.exists()).toBe(true)
         expect(dialog.attributes('data-persistent')).toBe('true')
-        expect(wrapper.text()).toContain('Soll der Zeitraum')
+        expect(wrapper.text()).toContain('Sollen die ausgewählten Kalenderwochen')
     })
 
     it('opens a preview pdf for the selected weeks without opening the confirm dialog', async () => {
@@ -152,7 +152,7 @@ describe('Restaurant billing reports card', () => {
         await previewButton?.trigger('click')
 
         expect(openSpy).toHaveBeenCalledWith(
-            '/api/admin/restaurant/billings/preview?weeks%5B%5D=2026-02-16&weeks%5B%5D=2026-02-23&weeks%5B%5D=2026-03-02&weeks%5B%5D=2026-03-09&weeks%5B%5D=2026-03-16&weeks%5B%5D=2026-03-23&weeks%5B%5D=2026-03-30',
+            '/api/admin/restaurant/billings/preview?weeks%5B%5D=2026-03-30',
             '_blank',
             'noopener',
         )
@@ -190,7 +190,7 @@ describe('Restaurant billing reports card', () => {
         await flushPromises()
 
         expect(billingStore.create).toHaveBeenCalledWith({
-            weeks: ['2026-02-16', '2026-02-23', '2026-03-02', '2026-03-09', '2026-03-16', '2026-03-23', '2026-03-30'],
+            weeks: ['2026-03-30'],
         })
         expect(openSpy).toHaveBeenCalledWith('/api/admin/restaurant/billings/99/print', '_blank', 'noopener')
         expect(wrapper.findAll('button').some((button) => button.text().includes('Abrechnung ansehen'))).toBe(false)
@@ -201,4 +201,22 @@ describe('Restaurant billing reports card', () => {
 
         openSpy.mockRestore()
     })
+})
+
+
+it('toggles independent weeks on and off including all deselected without selecting the weeks in between', async () => {
+    const wrapper = mountBillingReportsCard()
+    await flushPromises()
+    const vm = wrapper.vm as any
+    expect(vm.selectedWeeks).toEqual([])
+    await wrapper.find('[data-testid="restaurant-billing-week-2026-03-23"]').trigger('click')
+    await wrapper.find('[data-testid="restaurant-billing-week-2026-04-06"]').trigger('click')
+    expect(vm.selectedWeeks.map(week => week.week_start)).toEqual(['2026-03-23', '2026-04-06'])
+    expect(wrapper.find('[data-testid="restaurant-billing-week-2026-03-30"]').attributes('aria-pressed')).toBe('false')
+    await wrapper.find('[data-testid="restaurant-billing-week-2026-03-23"]').trigger('click')
+    expect(vm.selectedWeeks.map(week => week.week_start)).toEqual(['2026-04-06'])
+    await wrapper.find('[data-testid="restaurant-billing-week-2026-04-06"]').trigger('click')
+    expect(vm.selectedWeeks).toEqual([])
+    expect(wrapper.findAll('button').find(button => button.text().includes('Abrechnung drucken')).attributes('disabled')).toBeDefined()
+    wrapper.unmount()
 })

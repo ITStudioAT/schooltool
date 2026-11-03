@@ -7,6 +7,7 @@ export const useCourseWorkStore = defineStore('AdminCourseWorkStore', {
     state: () => {
         return {
             courseWorks: [],
+            loadedCourseId: null,
             selected_courseWork: null,
         }
     },
@@ -22,6 +23,7 @@ export const useCourseWorkStore = defineStore('AdminCourseWorkStore', {
                     params: { course_id: courseId },
                 })
                 this.courseWorks = response.data.data
+                this.loadedCourseId = Number(courseId)
                 if (selectedId) {
                     this.selected_courseWork = this.courseWorks.find((w) => w.id === selectedId) || null
                 }
@@ -116,6 +118,7 @@ export const useCourseWorkStore = defineStore('AdminCourseWorkStore', {
 
         clearWorks() {
             this.courseWorks = []
+            this.loadedCourseId = null
             this.selected_courseWork = null
         },
     },

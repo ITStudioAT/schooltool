@@ -5,8 +5,10 @@ namespace App\Services\Materials;
 use App\Models\MaterialCardAttachment;
 use App\Models\MaterialV2Attachment;
 use App\Models\TeachingCurriculumDocument;
+use App\Support\PowerPoint2007Reader;
 use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Storage;
+use PhpOffice\PhpPresentation\Exception\InvalidFileFormatException as PresentationInvalidFileFormatException;
 use PhpOffice\PhpPresentation\IOFactory as PresentationIOFactory;
 use PhpOffice\PhpSpreadsheet\IOFactory as SpreadsheetIOFactory;
 use PhpOffice\PhpSpreadsheet\Writer\Html as SpreadsheetHtmlWriter;
@@ -456,7 +458,17 @@ class MaterialAttachmentPreviewService
 
     private function renderPresentationHtml(string $absolutePath): string
     {
-        $presentation = PresentationIOFactory::load($absolutePath);
+        try {
+            $presentation = PresentationIOFactory::load($absolutePath);
+        } catch (PresentationInvalidFileFormatException $error) {
+            $reader = new PowerPoint2007Reader;
+            if (! $reader->canRead($absolutePath)) {
+                throw $error;
+            }
+
+            $presentation = $reader->load($absolutePath);
+        }
+
         $writer = PresentationIOFactory::createWriter($presentation, 'HTML');
 
         return $this->captureOutput(fn () => $writer->save('php://output'));

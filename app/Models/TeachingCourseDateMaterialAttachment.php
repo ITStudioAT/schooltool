@@ -11,6 +11,7 @@ class TeachingCourseDateMaterialAttachment extends Model
         'teaching_course_date_material_id',
         'source_material_card_attachment_id',
         'source_teaching_curriculum_document_id',
+        'explanation_key',
         'name',
         'file_path',
         'mime_type',

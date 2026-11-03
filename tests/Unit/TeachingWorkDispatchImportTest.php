@@ -1,11 +1,107 @@
 <?php
 
 use App\Services\TeachingWorkDispatchImport;
+use App\Support\SchooltoolAssessmentJson;
 use Illuminate\Validation\ValidationException;
 use Tests\Support\TeachingWorkDispatchFixture;
 use Tests\TestCase;
 
 uses(TestCase::class);
+
+test('document preparations do not require email addresses and never authorize dispatch or provision', function () {
+    $this->travelTo(now()->setDate(2026, 10, 14)->setTime(12, 0));
+    $text = json_encode(TeachingWorkDispatchFixture::documentPreparation(), JSON_THROW_ON_ERROR);
+
+    $report = app(TeachingWorkDispatchImport::class)->parse($text);
+
+    expect($report['mode'])->toBe('prepared');
+    expect($report['live'])->toBeFalse();
+    expect($report['date'])->toBe('2026-10-15');
+    expect($report['recipients'][0]['SchooltoolPersonId'])->toBe('12');
+    expect($report['recipients'][0])->not->toHaveKey('To');
+});
+
+test('document preparations reject fabricated dispatch fields invalid dates and checksums', function (string $case) {
+    $this->travelTo(now()->setDate(2026, 10, 14)->setTime(12, 0));
+    $package = TeachingWorkDispatchFixture::documentPreparation();
+    unset($package['preparation_checksum']);
+    match ($case) {
+        'dispatch' => $package['sent_at'] = '2026-10-14T08:00:00Z',
+        'availability' => $package['available_at'] = '2026-10-14T08:00:00Z',
+        'future creation' => $package['prepared_at'] = '2026-10-15T08:00:00Z',
+        'duplicate person' => $package['participants'][] = $package['participants'][0],
+        'invalid date' => $package['exercise']['scheduled_date'] = '2026-02-30',
+        'unsafe file' => $package['assignment']['filename'] = '../Aufgabenstellung_E-Mails.pdf',
+        'checksum' => null,
+    };
+    $package['preparation_checksum'] = $case === 'checksum' ? str_repeat('0', 64) : SchooltoolAssessmentJson::digest($package);
+
+    expect(fn () => app(TeachingWorkDispatchImport::class)->parse(json_encode($package, JSON_THROW_ON_ERROR)))
+        ->toThrow(ValidationException::class);
+})->with(['dispatch', 'availability', 'future creation', 'duplicate person', 'invalid date', 'unsafe file', 'checksum']);
+
+test('preparation packages retain their intended date and never authorize live evidence', function () {
+    $report = app(TeachingWorkDispatchImport::class)->parse(TeachingWorkDispatchFixture::preparedTasksText());
+
+    expect($report['mode'])->toBe('prepared')->and($report['live'])->toBeFalse()
+        ->and($report['metadata']['Termin'])->toBe('2026-10-13T08:40:00+02:00')
+        ->and($report['recipients'])->toHaveCount(1);
+});
+
+test('dispatch readiness requires checked messages and attachments without creating send evidence', function () {
+    $report = app(TeachingWorkDispatchImport::class)->parse(TeachingWorkDispatchFixture::readyTasksText());
+
+    expect($report['metadata']['Versandbereit'])->toBeTrue();
+    expect($report['mode'])->toBe('prepared');
+    expect($report['live'])->toBeFalse();
+    expect($report['recipients'][0])->not->toHaveKey('Office_Zustand');
+});
+
+test('dispatch readiness rejects incomplete or contradictory preparation evidence', function (string $case) {
+    $package = json_decode(TeachingWorkDispatchFixture::readyTasksText(), true, flags: JSON_THROW_ON_ERROR);
+    match ($case) {
+        'text' => $package['Textquelle_SHA256'] = '',
+        'message' => $package['Empfaenger'][0]['Nachricht_SHA256'] = '',
+        'unchecked' => $package['Empfaenger'][0]['AnhaengeGeprueft'] = false,
+        'attachment' => $package['Empfaenger'][0]['VorbereiteteAnhaenge'][0]['SHA256'] = '',
+        'duplicate' => $package['Empfaenger'][0]['VorbereiteteAnhaenge'][] = $package['Empfaenger'][0]['VorbereiteteAnhaenge'][0],
+        'flag' => $package['Versandbereit'] = 'true',
+    };
+
+    expect(fn () => app(TeachingWorkDispatchImport::class)->parse(json_encode($package, JSON_THROW_ON_ERROR)))
+        ->toThrow(ValidationException::class);
+})->with(['text', 'message', 'unchecked', 'attachment', 'duplicate', 'flag']);
+
+test('prepared and scheduled tasks retain approved task subjects with a colon', function (bool $scheduled) {
+    $text = str_replace('Leistungsfeststellung E-Mails – INF 1',
+        'Leistungsfeststellung: Verantwortung, Datenschutz und Datensicherheit – INF 2 Abend, 13.10.2026',
+        TeachingWorkDispatchFixture::preparedTasksText($scheduled));
+    $report = app(TeachingWorkDispatchImport::class)->parse($text);
+
+    expect($report['purpose'])->toBe('tasks')->and($report['title'])->toBe('verantwortung, datenschutz und datensicherheit')
+        ->and($report['recipients'][0]['Betreff'])->toBe('Leistungsfeststellung: Verantwortung, Datenschutz und Datensicherheit – INF 2 Abend, 13.10.2026');
+})->with([false, true]);
+
+test('preparation packages reject embedded send or scheduling claims', function (string $key) {
+    $value = json_decode(TeachingWorkDispatchFixture::preparedTasksText(), true, flags: JSON_THROW_ON_ERROR);
+    $value['Empfaenger'][0][$key] = [];
+
+    expect(fn () => app(TeachingWorkDispatchImport::class)->parse(json_encode($value, JSON_THROW_ON_ERROR)))
+        ->toThrow(ValidationException::class);
+})->with(['Office_Zustand', 'Native_Terminierung', 'Providerzeit', 'Providerkennung']);
+
+test('planned journals reject invalid dates offsets and conflicting schedule evidence', function (string $case) {
+    $text = TeachingWorkDispatchFixture::preparedTasksText(true);
+    $metadata = json_decode(substr($text, strpos($text, '{')), true, flags: JSON_THROW_ON_ERROR);
+    match ($case) {
+        'invalid date' => $metadata['Termin'] = '2026-02-30T08:40:00+01:00',
+        'offset' => $metadata['Termin'] = '2026-10-13T08:40:00+01:00',
+        'conflict' => $metadata['Empfaenger'][0]['Native_Terminierung']['ScheduledAt'] = '2026-10-13T08:50:00+02:00',
+    };
+    $text = substr($text, 0, strpos($text, '{')).json_encode($metadata, JSON_THROW_ON_ERROR);
+
+    expect(fn () => app(TeachingWorkDispatchImport::class)->parse($text))->toThrow(ValidationException::class);
+})->with(['invalid date', 'offset', 'conflict']);
 
 test('embedded Mailpit task protocols retain recipients and remain local tests', function () {
     $report = app(TeachingWorkDispatchImport::class)->parse(TeachingWorkDispatchFixture::mailpitTasksText());

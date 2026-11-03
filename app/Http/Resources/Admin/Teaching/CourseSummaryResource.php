@@ -4,6 +4,7 @@ namespace App\Http\Resources\Admin\Teaching;
 
 use App\Models\TeachingCourseDate;
 use App\Models\TeachingCourseStudent;
+use App\Services\TeachingCourseDateService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -26,6 +27,7 @@ class CourseSummaryResource extends JsonResource
             'teaching_schema_id' => $this->teaching_schema_id,
             'teaching_entry_area_id' => $this->teaching_entry_area_id ? (int) $this->teaching_entry_area_id : null,
             'teaching_curriculum_id' => $this->teaching_curriculum_id ? (int) $this->teaching_curriculum_id : null,
+            'curricula_enabled' => $this->resource->user?->teaching_curricula_enabled ?? true,
             'teaching_show_student_age' => (bool) $this->teaching_show_student_age,
             'teaching_show_student_last_login' => (bool) $this->teaching_show_student_last_login,
             'teaching_entry_area' => $this->whenLoaded('teachingEntryArea', fn (): ?array => $this->teachingEntryArea ? [
@@ -39,22 +41,30 @@ class CourseSummaryResource extends JsonResource
                 ->values()
                 ->all()),
             'students_deleted' => [],
+            'scheduled_work_dates' => app(TeachingCourseDateService::class)->scheduledWorkDates($this->resource),
             'course_dates' => $this->whenLoaded('teachingCourseDates', fn () => $this->teachingCourseDates
-                ->map(fn (TeachingCourseDate $courseDate): array => [
-                    'id' => (int) $courseDate->id,
-                    'date' => $courseDate->date?->format('Y-m-d'),
-                    'hours' => $courseDate->hours ?? [],
-                    'content' => $courseDate->content,
-                    'status' => $courseDate->status ?? [],
-                    'free_reason' => null,
-                    'attendance_checked' => (bool) $courseDate->attendance_checked,
-                    'has_curriculum_assignment' => (bool) $courseDate->materials_exists,
-                    'shared_curriculum_attachments_count' => (int) $courseDate->shared_curriculum_attachments_count,
-                    'private_curriculum_attachments_count' => (int) $courseDate->private_curriculum_attachments_count,
-                    'unadopted_curriculum_attachments_count' => (int) $courseDate->unadopted_curriculum_attachments_count,
-                    'has_shared_curriculum_attachments' => (int) $courseDate->shared_curriculum_attachments_count > 0,
-                    'has_private_curriculum_attachments' => (int) $courseDate->private_curriculum_attachments_count > 0,
-                ])
+                ->map(function (TeachingCourseDate $courseDate): array {
+                    $attendanceCounts = $this->attendanceCounts($courseDate);
+
+                    return [
+                        'id' => (int) $courseDate->id,
+                        'date' => $courseDate->date?->format('Y-m-d'),
+                        'hours' => $courseDate->hours ?? [],
+                        'cancelled_hours' => $courseDate->cancelledHours(),
+                        'content' => $courseDate->content,
+                        'status' => $courseDate->status ?? [],
+                        'free_reason' => null,
+                        'attendance_checked' => (bool) $courseDate->attendance_checked,
+                        'attendance_complete' => $attendanceCounts !== null,
+                        'attendance_counts' => $attendanceCounts,
+                        'has_curriculum_assignment' => (bool) $courseDate->materials_exists,
+                        'shared_curriculum_attachments_count' => (int) $courseDate->shared_curriculum_attachments_count,
+                        'private_curriculum_attachments_count' => (int) $courseDate->private_curriculum_attachments_count,
+                        'unadopted_curriculum_attachments_count' => (int) $courseDate->unadopted_curriculum_attachments_count,
+                        'has_shared_curriculum_attachments' => (int) $courseDate->shared_curriculum_attachments_count > 0,
+                        'has_private_curriculum_attachments' => (int) $courseDate->private_curriculum_attachments_count > 0,
+                    ];
+                })
                 ->values()),
             'details_loaded' => false,
         ];
@@ -80,5 +90,32 @@ class CourseSummaryResource extends JsonResource
         return $courseStudent->import116->user_id
             ? (int) $courseStudent->import116->user_id
             : (int) $courseStudent->import116->id;
+    }
+
+    /** @return array{present: int, absent: int}|null */
+    private function attendanceCounts(TeachingCourseDate $courseDate): ?array
+    {
+        $studentIds = $this->teachingCourseStudents
+            ->reject(fn (TeachingCourseStudent $student): bool => $student->canceled_at !== null)
+            ->map(fn (TeachingCourseStudent $student): ?int => $this->summaryStudentId($student))
+            ->filter()
+            ->unique();
+        if ($studentIds->isEmpty()) {
+            return null;
+        }
+
+        $service = app(TeachingCourseDateService::class);
+        $attendance = $service->normalizeAttendanceMapForToggle(
+            $courseDate->attendance ?? $service->attendanceFromStatus($courseDate->status ?? []),
+            $this->resource,
+        );
+
+        if (! $studentIds->every(fn (int $studentId): bool => isset($attendance['s_'.$studentId]))) {
+            return null;
+        }
+
+        $present = $studentIds->filter(fn (int $studentId): bool => $attendance['s_'.$studentId] === true)->count();
+
+        return ['present' => $present, 'absent' => $studentIds->count() - $present];
     }
 }

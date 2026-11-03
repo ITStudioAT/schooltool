@@ -598,6 +598,15 @@ class Import116Job implements ShouldQueue
                         $usersByEmail[$this->normalizedEmail($linkedUser->email)] = $linkedUser;
                     }
                 }
+                if ($linkedUser
+                    && filter_var($record->email, FILTER_VALIDATE_EMAIL)
+                    && ! $this->isPlaceholderEmail($record->email)
+                    && $this->normalizedEmail($linkedUser->email) === $this->normalizedEmail($record->email)
+                    && ! $linkedUser->hasRole('student', 'web')) {
+                    $linkedUser->is_active = true;
+                    $linkedUser->save();
+                    $linkedUser->assignRole('student');
+                }
             }
 
             if (! $record->email && ! $record->user_id) {

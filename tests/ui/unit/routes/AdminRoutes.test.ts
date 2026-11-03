@@ -2,6 +2,34 @@ import { describe, expect, it } from 'vitest'
 import router, { resolveAdminRouteAccess, routes } from '../../../../resources/routes/admin.js'
 
 describe('admin routes', () => {
+    it.each([
+        ['/admin/teaching-tools/simulator', { section: 'simulator' }],
+        ['/admin/teaching-tools/games', { section: 'games' }],
+        ['/admin/teaching-tools/explanations', { section: 'explanations' }],
+        ['/admin/teaching-tools/explanations/number-systems', { section: 'explanations', category: 'number-systems' }],
+        ['/admin/teaching-tools/explanations/decimal-to-binary', { section: 'explanations', explanation: 'decimal-to-binary' }],
+        ['/admin/teaching-tools/explanations/network-protocols', { section: 'explanations', explanation: 'network-protocols' }],
+        ['/admin/teaching-tools/explanations/network-security', { section: 'explanations', explanation: 'network-security' }],
+        ['/admin/teaching-tools/explanations/network-operations', { section: 'explanations', explanation: 'network-operations' }],
+        ['/admin/teaching-tools/games/number-systems', { section: 'games', game: 'number-systems' }],
+        ['/admin/teaching-tools/games/networks', { section: 'games', game: 'networks' }],
+    ])('opens %s with the existing teaching capability', (path, props) => {
+        const resolvedRoute = router.resolve(path)
+
+        expect(resolvedRoute.matched).toHaveLength(1)
+        expect(resolveAdminRouteAccess(path)).toEqual({ public: false, capability: 'teaching' })
+        expect(resolvedRoute.matched[0].props.default).toEqual(props)
+    })
+
+    it('opens Multiple Choice under teaching tools with teaching access', () => {
+        const resolvedRoute = router.resolve('/admin/teaching-tools/multiple-choice')
+
+        expect(resolvedRoute.matched).toHaveLength(1)
+        expect(resolveAdminRouteAccess(resolvedRoute.path)).toEqual({ public: false, capability: 'teaching' })
+        expect(routes.find((route) => route.path === '/admin/teaching-tools')?.redirect)
+            .toBe('/admin/teaching-tools/multiple-choice')
+    })
+
     it('protects the standalone groups page with its dedicated capability', () => {
         expect(router.resolve('/admin/groups?panel=groups_own').matched).toHaveLength(1)
         expect(resolveAdminRouteAccess('/admin/groups')).toEqual({ public: false, capability: 'groups' })

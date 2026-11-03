@@ -10,8 +10,10 @@ use App\Models\RestaurantMenuPlan;
 use App\Models\RestaurantMenuPlanBooking;
 use App\Models\RestaurantMenuPlanEntry;
 use App\Models\School;
+use App\Models\SchoolTool;
 use App\Models\Schoolyear;
 use App\Models\User;
+use App\Services\RestaurantBookingService;
 use App\Services\RestaurantMenuPlanPdfService;
 use App\Services\RestaurantService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -937,14 +939,14 @@ test('destroy deletes plan and cascades entries', function () {
     ]);
 
     $this->actingAs($this->admin, 'sanctum')
-        ->deleteJson("/api/admin/restaurant/menu-plans/{$plan->id}")
+        ->deleteJson("/api/admin/restaurant/menu-plans/{$plan->id}", ['confirmation' => 'MENÜPLAN LÖSCHEN'])
         ->assertOk();
 
     expect(RestaurantMenuPlan::query()->find($plan->id))->toBeNull();
     expect(RestaurantMenuPlanEntry::query()->where('restaurant_menu_plan_id', $plan->id)->count())->toBe(0);
 });
 
-test('destroy returns conflict when menu plan has bookings', function () {
+test('destroy removes a menu plan including its unbilled bookings', function () {
     $plan = RestaurantMenuPlan::factory()->create([
         'school_id' => $this->school->id,
         'start_date' => '2026-04-07',
@@ -968,11 +970,12 @@ test('destroy returns conflict when menu plan has bookings', function () {
     ]);
 
     $this->actingAs($this->admin, 'sanctum')
-        ->deleteJson("/api/admin/restaurant/menu-plans/{$plan->id}")
-        ->assertStatus(409)
-        ->assertJsonPath('message', 'Menüplan kann nicht gelöscht werden, da bereits Buchungen vorhanden sind.');
+        ->deleteJson("/api/admin/restaurant/menu-plans/{$plan->id}", ['confirmation' => 'MENÜPLAN LÖSCHEN'])
+        ->assertOk();
 
-    expect(RestaurantMenuPlan::query()->find($plan->id))->not->toBeNull();
+    expect(RestaurantMenuPlan::query()->find($plan->id))->toBeNull();
+    expect(RestaurantMenuPlanEntry::query()->find($entry->id))->toBeNull();
+    expect(RestaurantMenuPlanBooking::query()->where('restaurant_menu_plan_entry_id', $entry->id)->exists())->toBeFalse();
 });
 
 test('entry bookings use a fallback display name and omit prices', function () {
@@ -1357,6 +1360,8 @@ test('store entry booking creates a restaurant booking for a sepa lunch user', f
                 'user_id' => $bookingUser->id,
                 'restaurant_eating_time_id' => $this->eatingTime->id,
                 'quantity' => 2,
+                'recipient_type' => 'child',
+                'child_ids' => [$firstChild->id, $secondChild->id],
             ],
         ])
         ->assertCreated()
@@ -1413,6 +1418,7 @@ test('store entry booking rejects billed weeks', function () {
                 'user_id' => $bookingUser->id,
                 'restaurant_eating_time_id' => $this->eatingTime->id,
                 'quantity' => 1,
+                'recipient_type' => 'self',
             ],
         ])
         ->assertStatus(409)
@@ -1420,6 +1426,86 @@ test('store entry booking rejects billed weeks', function () {
 
     expect(RestaurantMenuPlanBooking::query()->count())->toBe(0);
 });
+
+test('manual booking explicitly selects self or the chosen current schoolyear child', function (string $recipientType) {
+    $year = Schoolyear::factory()->create(['school_id' => $this->school->id]);
+    $oldYear = Schoolyear::factory()->create(['school_id' => $this->school->id]);
+    $this->admin->update(['schoolyear_id' => $year->id]);
+    SchoolTool::query()->where('school_id', $this->school->id)->update(['active_schoolyear_id' => $year->id]);
+    $parent = User::factory()->create([
+        'school_id' => $this->school->id, 'schoolyear_id' => null,
+        'first_name' => 'Petra', 'last_name' => 'Planer', 'sex' => 'w', 'sepa_at' => now(),
+    ]);
+    $parent->assignRole(['lunch_user', 'teacher']);
+    $oldChild = Import116::factory()->create([
+        'school_id' => $this->school->id, 'schoolyear_id' => $oldYear->id,
+        'first_name' => 'Josef', 'last_name' => 'Khalil', 'class' => '5L1', 'mother_email' => $parent->email,
+    ]);
+    $child = Import116::factory()->create([
+        'school_id' => $this->school->id, 'schoolyear_id' => $year->id,
+        'first_name' => 'Josef', 'last_name' => 'Khalil', 'class' => '6L1', 'mother_email' => $parent->email,
+        'student_code' => $oldChild->student_code,
+    ]);
+    expect(array_column(app(RestaurantBookingService::class)->getChildOptionsForUser($parent), 'id'))->toBe([$child->id]);
+    $plan = RestaurantMenuPlan::factory()->create([
+        'school_id' => $this->school->id, 'start_date' => '2026-10-05', 'end_date' => '2026-10-08',
+    ]);
+    $entry = RestaurantMenuPlanEntry::factory()->create(['restaurant_menu_plan_id' => $plan->id, 'plan_date' => '2026-10-05']);
+
+    $this->actingAs($this->admin, 'sanctum')
+        ->getJson("/api/admin/restaurant/menu-plans/{$plan->id}/entries/{$entry->id}/booking-users?search_string=Planer")
+        ->assertOk()->assertJsonCount(1, 'data.0.child_options')
+        ->assertJsonPath('data.0.child_options.0.id', $child->id);
+
+    $this->postJson("/api/admin/restaurant/menu-plans/{$plan->id}/entries/{$entry->id}/bookings", ['data' => [
+        'user_id' => $parent->id, 'quantity' => 1, 'recipient_type' => $recipientType,
+        'child_ids' => $recipientType === 'child' ? [$child->id] : [$oldChild->id],
+    ]])->assertCreated()->assertJsonPath('data.ordered_for', $recipientType === 'self' ? 'Petra Planer' : 'Josef Khalil, 6L1');
+
+    $booking = RestaurantMenuPlanBooking::query()->sole();
+    expect($booking->child_type)->toBe($recipientType)
+        ->and($booking->child_name)->toBe($recipientType === 'self' ? 'Petra Planer' : 'Josef Khalil')
+        ->and($booking->import116_id)->toBe($recipientType === 'self' ? null : $child->id)
+        ->and($booking->metadata['recipients'][0]['type'])->toBe($recipientType)
+        ->and($parent->fresh()->restaurant_booking_defaults)->toBeNull();
+
+    $this->getJson('/api/admin/restaurant/bookings?week_start=2026-10-05')->assertOk()
+        ->assertJsonPath('data.0.person', $recipientType === 'self' ? 'Planer Petra, Lehrerin' : 'Khalil Josef, 6L1');
+})->with(['self' => ['self'], 'child' => ['child']]);
+
+test('manual booking rejects missing choices and children outside the selected parent and schoolyear', function (string $case) {
+    $year = Schoolyear::factory()->create(['school_id' => $this->school->id]);
+    $oldYear = Schoolyear::factory()->create(['school_id' => $this->school->id]);
+    $this->admin->update(['schoolyear_id' => $year->id]);
+    $parent = User::factory()->create(['school_id' => $this->school->id, 'sepa_at' => now()]);
+    $parent->assignRole('lunch_user');
+    $child = Import116::factory()->create([
+        'school_id' => $this->school->id, 'schoolyear_id' => $year->id, 'mother_email' => $parent->email,
+    ]);
+    $oldChild = Import116::factory()->create([
+        'school_id' => $this->school->id, 'schoolyear_id' => $oldYear->id, 'mother_email' => $parent->email,
+    ]);
+    $unrelatedChild = Import116::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $year->id]);
+    $foreignChild = Import116::factory()->create(['school_id' => $this->otherSchool->id, 'mother_email' => $parent->email]);
+    $plan = RestaurantMenuPlan::factory()->create(['school_id' => $this->school->id]);
+    $entry = RestaurantMenuPlanEntry::factory()->create(['restaurant_menu_plan_id' => $plan->id]);
+    $data = ['user_id' => $parent->id, 'quantity' => 1, 'recipient_type' => 'child', 'child_ids' => [$child->id]];
+    $data = match ($case) {
+        'missing type' => array_diff_key($data, ['recipient_type' => true]),
+        'missing child' => [...$data, 'child_ids' => []],
+        'old year' => [...$data, 'child_ids' => [$oldChild->id]],
+        'other parent' => [...$data, 'child_ids' => [$unrelatedChild->id]],
+        'other school' => [...$data, 'child_ids' => [$foreignChild->id]],
+        'duplicate child' => [...$data, 'quantity' => 2, 'child_ids' => [$child->id, $child->id]],
+        'quantity mismatch' => [...$data, 'quantity' => 2],
+        'multiple self' => [...$data, 'recipient_type' => 'self', 'quantity' => 2],
+    };
+
+    $this->actingAs($this->admin, 'sanctum')
+        ->postJson("/api/admin/restaurant/menu-plans/{$plan->id}/entries/{$entry->id}/bookings", ['data' => $data])
+        ->assertUnprocessable();
+    $this->assertDatabaseCount('restaurant_menu_plan_bookings', 0);
+})->with(['missing type', 'missing child', 'old year', 'other parent', 'other school', 'duplicate child', 'quantity mismatch', 'multiple self']);
 
 test('destroy entry booking deletes a booking when the week is not billed', function () {
     $plan = RestaurantMenuPlan::factory()->create([
@@ -1597,4 +1683,36 @@ test('cannot print plan from another school', function () {
     $this->actingAs($this->admin, 'sanctum')
         ->get("/api/admin/restaurant/menu-plans/{$plan->id}/print")
         ->assertNotFound();
+});
+
+test('whole plan deletion requires exact typed confirmation and restaurant administration in the same school', function () {
+    $plan = RestaurantMenuPlan::factory()->create(['school_id' => $this->school->id]);
+    $url = "/api/admin/restaurant/menu-plans/{$plan->id}";
+    $this->deleteJson($url, ['confirmation' => 'MENÜPLAN LÖSCHEN'])->assertUnauthorized();
+    $this->actingAs($this->teacher, 'sanctum')->deleteJson($url, ['confirmation' => 'MENÜPLAN LÖSCHEN'])->assertForbidden();
+    $this->actingAs($this->admin, 'sanctum')->deleteJson($url)->assertUnprocessable();
+    $this->deleteJson($url, ['confirmation' => 'löschen'])->assertUnprocessable();
+    expect($plan->fresh())->not->toBeNull();
+    $foreign = RestaurantMenuPlan::factory()->create(['school_id' => $this->otherSchool->id]);
+    $this->deleteJson("/api/admin/restaurant/menu-plans/{$foreign->id}", ['confirmation' => 'MENÜPLAN LÖSCHEN'])->assertNotFound();
+    expect($foreign->fresh())->not->toBeNull();
+});
+
+test('a stale delete confirmation cannot remove a partly billed plan or any of its bookings', function () {
+    $plan = RestaurantMenuPlan::factory()->create(['school_id' => $this->school->id, 'start_date' => '2026-03-23', 'end_date' => '2026-04-03']);
+    $entry = RestaurantMenuPlanEntry::factory()->create(['restaurant_menu_plan_id' => $plan->id, 'restaurant_menu_id' => $this->menu->id, 'plan_date' => '2026-03-24']);
+    $entry->eatingTimes()->attach($this->eatingTime->id);
+    $booking = RestaurantMenuPlanBooking::query()->create(['school_id' => $this->school->id, 'user_id' => $this->admin->id, 'restaurant_menu_plan_entry_id' => $entry->id, 'price' => 5, 'quantity' => 2, 'booked_at' => now()]);
+    $this->actingAs($this->admin, 'sanctum')->getJson("/api/admin/restaurant/menu-plans/{$plan->id}")->assertOk()->assertJsonPath('data.can_delete', true);
+    RestaurantBilling::factory()->create(['school_id' => $this->school->id, 'created_by_user_id' => $this->admin->id, 'start_date' => '2026-03-30', 'end_date' => '2026-04-05']);
+    $this->deleteJson("/api/admin/restaurant/menu-plans/{$plan->id}", ['confirmation' => 'MENÜPLAN LÖSCHEN'])->assertConflict();
+    expect($plan->fresh())->not->toBeNull()->and($booking->fresh())->not->toBeNull()->and($entry->fresh()->eatingTimes()->count())->toBe(1);
+    $this->getJson("/api/admin/restaurant/menu-plans/{$plan->id}")->assertJsonPath('data.can_delete', false)->assertJsonPath('data.has_billed_entries', true);
+});
+
+test('even an empty menu plan in an already billed period cannot be deleted', function () {
+    $plan = RestaurantMenuPlan::factory()->create(['school_id' => $this->school->id, 'start_date' => '2026-03-23', 'end_date' => '2026-03-27']);
+    RestaurantBilling::factory()->create(['school_id' => $this->school->id, 'created_by_user_id' => $this->admin->id, 'start_date' => '2026-03-23', 'end_date' => '2026-03-29']);
+    $this->actingAs($this->admin, 'sanctum')->deleteJson("/api/admin/restaurant/menu-plans/{$plan->id}", ['confirmation' => 'MENÜPLAN LÖSCHEN'])->assertConflict();
+    expect($plan->fresh())->not->toBeNull();
 });

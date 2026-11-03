@@ -10,13 +10,41 @@ use App\Models\TeachingCourseDateMaterial;
 use App\Models\TeachingCourseDateMaterialAttachment;
 use App\Models\TeachingCurriculumDocument;
 use App\Models\User;
+use App\Services\Teaching\TeachingExplanationCatalog;
 use App\Services\TeachingCourseDateService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rule;
 
 class CourseDateController extends Controller
 {
+    public function addGame(Request $request, TeachingCourseDate $course_date): JsonResponse
+    {
+        $user = $this->userHasRole(['admin', 'teaching_admin', 'teacher']);
+        abort_unless($user && $course_date->teachingCourse, 403, 'Sie haben keine Berechtigung');
+        $this->authorizeTeachingCourseAccess($course_date->teachingCourse, $user);
+        $data = $request->validate(['game' => ['required', Rule::in(['number-systems', 'networks'])]]);
+        abort_unless(Schema::hasColumn('teaching_course_dates', 'games'), 503, 'Die Erweiterung für Spiele am Kurstermin muss noch aktiviert werden.');
+
+        $games = DB::transaction(function () use ($course_date, $data): array {
+            $date = TeachingCourseDate::query()->lockForUpdate()->findOrFail($course_date->id);
+            $games = $date->games ?? [];
+            if (! in_array($data['game'], $games, true)) {
+                $games[] = $data['game'];
+                $date->games = $games;
+                $date->save();
+            }
+
+            return $games;
+        }, 3);
+
+        return response()->json(['id' => $course_date->id, 'games' => $games]);
+    }
+
     public function index(Request $request)
     {
         if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
@@ -217,6 +245,8 @@ class CourseDateController extends Controller
             'toggle_student_id' => 'nullable|integer',
             'attendance_state' => 'nullable|boolean',
             'client_toggle_version' => 'nullable|string|max:32',
+            'cancelled_hours' => ['sometimes', 'array'],
+            'cancelled_hours.*' => ['integer', 'distinct', Rule::in($course_date->hours ?? [])],
         ]);
 
         $service->updateCourseDateStatus($course_date, $validated, $course);
@@ -280,6 +310,18 @@ class CourseDateController extends Controller
         $service->deleteAdoptedMaterial($material);
 
         return response()->json(null, 204);
+    }
+
+    public function explanation(Request $request, TeachingCourseDateMaterialAttachment $attachment): JsonResponse|Response
+    {
+        $authUser = $this->userHasRole(['admin', 'teaching_admin', 'teacher']);
+        abort_unless($authUser, 403, 'Sie haben keine Berechtigung');
+        $this->authorizeAdoptedAttachmentAccess($attachment, $authUser);
+        abort_unless(TeachingExplanationCatalog::find($attachment->explanation_key), 404);
+
+        return ($request->expectsJson()
+            ? response()->json(['explanation' => $attachment->explanation_key, 'return_url' => '/admin/teaching?course='.$attachment->material->courseDate->teaching_course_id.'&panel=table'])
+            : response()->view('homepage'))->header('Cache-Control', 'private, no-store');
     }
 
     public function previewAdoptedAttachment(TeachingCourseDateMaterialAttachment $attachment)

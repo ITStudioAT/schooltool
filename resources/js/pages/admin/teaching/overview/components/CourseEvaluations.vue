@@ -183,7 +183,8 @@ export default {
             if (config.properties_mode) add('Eigenschaft', modes[config.properties_mode])
             else if (config.fixed_percentage !== null && config.fixed_percentage !== undefined) add('Fester Anteil (%)', config.fixed_percentage)
             else add('Gewichtung', config.weight)
-            const overallPoints = part?.allowed_entry_types === 'points' && part.points_assessment_mode === 'overall'
+            const overallPoints = part?.points_assessment_mode === 'sum_percent'
+                || (part?.allowed_entry_types === 'points' && part.points_assessment_mode === 'overall')
             let thresholds = null
             let thresholdLabel = 'Notengrenzen'
             if (config.properties_mode === 'points') {
@@ -196,6 +197,8 @@ export default {
                 thresholdLabel = usesPoints ? 'Punktegrenzen' : 'Defizitgrenzen'
             } else if (['plus', 'plus_minus'].includes(config.properties_mode) && config.grading_part_assessment_mode !== 'other') {
                 if (config.maximum_plus_grading_mode === 'other' || !config.allows_maximum_plus) thresholds = config.maximum_plus_grade_thresholds
+            } else if (!config.properties_mode && config.points_assessment_mode === 'sum_percent') {
+                lines.push('Alle Punkte addieren: Noten ab 50 / 62,5 / 75 / 87,5 %')
             } else if (!config.properties_mode && config.allowed_entry_types === 'points' && config.points_assessment_mode === 'overall') {
                 thresholds = config.overall_points_grade_thresholds
                 thresholdLabel = 'Gesamtpunktegrenzen'

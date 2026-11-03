@@ -161,6 +161,25 @@ describe('Admin Teaching CourseStore', () => {
         expect(store.course_detail_request_promises).toEqual({})
     })
 
+    it('forced participant refresh waits for an older request and then fetches the post-import roster', async () => {
+        let resolveOlder: (value: unknown) => void = () => {}
+        axiosMock.get.mockReturnValueOnce(new Promise(resolve => { resolveOlder = resolve }))
+        const students = Array.from({ length: 13 }, (_, index) => ({ id: index + 1, first_name: 'Student' }))
+        axiosMock.get.mockResolvedValueOnce({ data: { data: { id: 28, students, students_deleted: [], details_loaded: true } } })
+        const store = useCourseStore()
+        store.courses = [{ id: 28, students: [], students_deleted: [] }] as never
+        store.selected_course = store.courses[0]
+        const older = store.loadCourseDetails(28)
+        const fresh = store.loadCourseDetails(28, { force: true })
+        expect(axiosMock.get).toHaveBeenCalledTimes(1)
+        resolveOlder({ data: { data: { id: 28, students: students.slice(0, 12), students_deleted: [], details_loaded: true } } })
+        await older
+        await fresh
+        expect(axiosMock.get).toHaveBeenCalledTimes(2)
+        expect(store.selected_course?.students_info).toHaveLength(13)
+        expect(store.courses[0].students_info).toHaveLength(13)
+    })
+
     it('normalizes student collections for courses loaded before URL selection', async () => {
         axiosMock.get.mockResolvedValue({
             data: {

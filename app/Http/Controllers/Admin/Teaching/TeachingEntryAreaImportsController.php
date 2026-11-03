@@ -60,7 +60,7 @@ class TeachingEntryAreaImportsController extends Controller
             $copiedEntries = collect();
             $copiedGradingParts = collect();
             $copiedAreas = $sourceAreas->map(function (TeachingEntryArea $sourceArea) use ($user, $currentSchoolyear, $copiedEntries, $copiedGradingParts): TeachingEntryArea {
-                $copiedArea = $sourceArea->replicate();
+                $copiedArea = $sourceArea->replicate(['grading_part_groups', 'grading_level_weights']);
                 $copiedArea->school_id = $user->school_id;
                 $copiedArea->schoolyear_id = $currentSchoolyear->id;
                 $copiedArea->user_id = $user->id;

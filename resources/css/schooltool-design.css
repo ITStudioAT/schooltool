@@ -9,6 +9,10 @@
     --st-orange-2: #e16f16;
 }
 
+.v-dialog .v-btn:not(.v-btn--icon):not(.v-tab):not(:where(.v-btn-toggle *, .v-date-picker *, .v-time-picker *, .v-pagination *, .v-data-table-footer *, .v-tabs *)) {
+    min-height: 44px;
+}
+
 .st-cloudflare-bg-image {
     position: absolute;
     inset: 0;

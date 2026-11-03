@@ -89,6 +89,8 @@
             <p class="report-subtitle">{{ $report['student_name'] }}@if ($report['student_email'] ?? '') <span class="muted">· {{ $report['student_email'] }}</span>@endif</p>
         </div>
 
+        @include('pdfs.teachingPointAdjustments', ['pointsAdjustments' => $report['points_adjustments'] ?? []])
+
         @php($entryRows = collect())
         @for ($semester = 1; $semester <= $report['semester_count']; $semester++)
             @php(

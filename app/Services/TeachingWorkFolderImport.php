@@ -4,6 +4,8 @@ namespace App\Services;
 
 use App\Models\TeachingCourseWork;
 use App\Models\User;
+use DateTimeImmutable;
+use DateTimeZone;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
@@ -11,7 +13,7 @@ use JsonException;
 
 class TeachingWorkFolderImport
 {
-    public function __construct(private TeachingWorkMarkdownImport $evaluations, private TeachingWorkDispatchImport $dispatches) {}
+    public function __construct(private TeachingWorkMarkdownImport $evaluations, private TeachingWorkDispatchImport $dispatches, private TeachingWorkProvisionImport $provisions) {}
 
     /** @param list<UploadedFile> $uploads
      * @return array<string, mixed>
@@ -31,18 +33,28 @@ class TeachingWorkFolderImport
         }
         $reports = [];
         $protocols = [];
+        $provisions = [];
         $pdfs = [];
         $sources = [];
+        $deadline = null;
+        $workIdentity = null;
         foreach ($texts as $document) {
             if (! is_array($document) || ! is_string($document['path'] ?? null) || ! is_string($document['text'] ?? null)) {
                 $this->reject('Ungültige Textdatei im Ordnerimport.');
             }
             $file = $this->classify($folder, $document['path']);
-            if ($file['kind'] === 'evaluation' && str_ends_with(mb_strtolower($file['name']), '.md')) {
+            if ($file['kind'] === 'deadline') {
+                $metadata = $this->parseDeadline($document['text']);
+                $workIdentity = ['work_id' => $metadata['work_id'], 'course_id' => $metadata['course_id']];
+                $deadline = $metadata['at'] === null ? null : $metadata;
+            } elseif ($file['kind'] === 'evaluation' && str_ends_with(mb_strtolower($file['name']), '.md')) {
                 if (strlen($document['text']) > 262144) {
                     $this->reject($file['name'].': Auswertung überschreitet 256 KB.');
                 }
                 $reports[$file['name']] = $document['text'];
+            } elseif ($file['kind'] === 'provision') {
+                $provisions[] = $file + ['path' => $document['path'], 'report' => $this->provisions->parse($document['text']),
+                    'text' => $document['text'], 'sha256' => hash('sha256', $document['text'])];
             } elseif (in_array($file['kind'], ['tasks', 'results'], true)) {
                 try {
                     $report = $this->dispatches->parse($document['text']);
@@ -52,7 +64,7 @@ class TeachingWorkFolderImport
                 if ($report['purpose'] !== $file['kind']) {
                     $this->reject($document['path'].': Ordnerbereich und Versandzweck widersprechen einander.');
                 }
-                if ($report['mode'] === 'test') {
+                if ($report['mode'] === 'test' && (! app()->isLocal() || ($report['metadata']['Modus'] ?? null) !== 'Mailpit-Test')) {
                     continue;
                 }
                 $protocols[] = $file + ['path' => $document['path'], 'report' => $report, 'text' => $document['text'], 'sha256' => hash('sha256', $document['text'])];
@@ -82,7 +94,78 @@ class TeachingWorkFolderImport
         usort($protocols, fn (array $first, array $second): int => strcmp($first['source'], $second['source']));
 
         return ['folder' => $folder, 'evaluation' => $reports !== [] ? $this->evaluations->parse($reports) : null,
-            'protocols' => $protocols, 'pdfs' => $pdfs, 'uploads' => $uploads, 'sources' => $sources];
+            'protocols' => $protocols, 'provisions' => $provisions, 'deadline' => $deadline, 'work_identity' => $workIdentity, 'pdfs' => $pdfs, 'uploads' => $uploads, 'sources' => $sources];
+    }
+
+    /** @return array{work_id: int, course_id: int, at: ?string, communicated_at?: ?string} */
+    private function parseDeadline(string $text): array
+    {
+        if (str_starts_with($text, "\xEF\xBB\xBF")) {
+            $text = substr($text, 3);
+        }
+        try {
+            $metadata = json_decode($text, true, 32, JSON_THROW_ON_ERROR);
+        } catch (JsonException) {
+            $this->reject('Anlage_und_Quellen.json: Ungültige Fristmetadaten.');
+        }
+        if (! is_array($metadata) || ($metadata['Zeitzone'] ?? null) !== 'Europe/Vienna'
+            || ! is_int($metadata['Schooltool_Arbeit_ID'] ?? null) || $metadata['Schooltool_Arbeit_ID'] < 1
+            || ! is_int($metadata['Schooltool_Kurs_ID'] ?? null) || $metadata['Schooltool_Kurs_ID'] < 1) {
+            $this->reject('Anlage_und_Quellen.json: Eindeutige Arbeits- und Kurskennung sowie Europe/Vienna erforderlich.');
+        }
+        if (($metadata['Abgabeschluss'] ?? null) === null) {
+            if (isset($metadata['MitgeteilteAbgabefrist'])) {
+                $this->reject('Anlage_und_Quellen.json: Zur mitgeteilten Frist fehlt der interne Prüfungsschluss.');
+            }
+
+            return ['work_id' => $metadata['Schooltool_Arbeit_ID'], 'course_id' => $metadata['Schooltool_Kurs_ID'], 'at' => null];
+        }
+        $deadline = $this->deadlineInstant($metadata['Abgabeschluss']);
+        $communicated = isset($metadata['MitgeteilteAbgabefrist']) ? $this->deadlineInstant($metadata['MitgeteilteAbgabefrist']) : null;
+        if ($communicated !== null && $communicated > $deadline) {
+            $this->reject('Anlage_und_Quellen.json: Die mitgeteilte Frist liegt nach dem Prüfungsschluss.');
+        }
+
+        return ['work_id' => $metadata['Schooltool_Arbeit_ID'], 'course_id' => $metadata['Schooltool_Kurs_ID'],
+            'at' => $deadline->setTimezone(new DateTimeZone('Europe/Vienna'))->format('Y-m-d\TH:i:sP'),
+            'communicated_at' => $communicated?->setTimezone(new DateTimeZone('Europe/Vienna'))->format('Y-m-d\TH:i:sP')];
+    }
+
+    private function deadlineInstant(mixed $value): DateTimeImmutable
+    {
+        if (! is_string($value) || ! preg_match('/\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:00(?:Z|[+-]\d{2}:\d{2})\z/', $value)) {
+            $this->reject('Anlage_und_Quellen.json: Prüfungsschluss benötigt Datum, Uhrzeit und explizite Zeitzone.');
+        }
+        $instant = DateTimeImmutable::createFromFormat('!Y-m-d\TH:i:sP', str_replace('Z', '+00:00', $value));
+        if ($instant === false || $instant->format('Y-m-d\TH:i:sP') !== str_replace('Z', '+00:00', $value)
+            || (! str_ends_with($value, 'Z') && $instant->getOffset() !== $instant->setTimezone(new DateTimeZone('Europe/Vienna'))->getOffset())) {
+            $this->reject('Anlage_und_Quellen.json: Ungültiger Zeitpunkt oder falscher Europe/Vienna-Offset.');
+        }
+
+        return $instant;
+    }
+
+    /** @param array<string, mixed> $bundle
+     * @return array<string, mixed>
+     */
+    public function deadlineFields(TeachingCourseWork $work, array $bundle): array
+    {
+        $deadline = $bundle['deadline'] ?? null;
+        $identity = $bundle['work_identity'] ?? $deadline;
+        if ($identity !== null && ($identity['work_id'] !== $work->id || $identity['course_id'] !== $work->teaching_course_id)) {
+            $this->reject('Anlage_und_Quellen.json: Prüfungsschluss gehört zu einer anderen Arbeit oder einem anderen Kurs.');
+        }
+        if ($deadline === null) {
+            return [];
+        }
+        $instant = new DateTimeImmutable($deadline['at']);
+
+        $fields = ['finish_until_date' => $instant->format('Y-m-d'), 'finish_until_time' => $instant->format('H:i')];
+        if (($deadline['communicated_at'] ?? null) !== null) {
+            $fields['status'] = array_merge($work->status ?? [], ['communicated_deadline_at' => $deadline['communicated_at']]);
+        }
+
+        return $fields;
     }
 
     /** @return array{source: string, name: string, kind: string, run: string} */
@@ -93,6 +176,15 @@ class TeachingWorkFolderImport
             $this->reject('Genau einen Leistungsfeststellungs- oder Übungsordner auswählen.');
         }
         $source = substr($path, strlen($folder) + 1);
+        if (mb_strtolower($source) === 'anlage_und_quellen.json') {
+            return ['source' => 'anlage_und_quellen.json', 'name' => 'Anlage_und_Quellen.json', 'kind' => 'deadline', 'run' => 'Frist'];
+        }
+        if (mb_strtolower($source) === 'schooltool-bereitstellung.json') {
+            return ['source' => 'schooltool-bereitstellung.json', 'name' => 'Schooltool-Bereitstellung.json', 'kind' => 'provision', 'run' => 'Bereitstellung'];
+        }
+        if (in_array(mb_strtolower($source), ['schooltool-vorbereitung.json', 'schooltool-versandvorbereitung.json'], true)) {
+            return ['source' => mb_strtolower($source), 'name' => $source, 'kind' => 'tasks', 'run' => 'Vorbereitung'];
+        }
         if (preg_match('/\ABeurteilungen\/((?:(?:Beurteilung_|Gesamtuebersicht_Beurteilungen_).+|Gesamtübersicht|[^\/_]+_[^\/_]+)\.(?:md|pdf))\z/iu', $source, $matches)) {
             return ['source' => mb_strtolower($source), 'name' => $matches[1], 'kind' => 'evaluation', 'run' => ''];
         }
@@ -111,15 +203,110 @@ class TeachingWorkFolderImport
         $sources[$source] = $sha256;
     }
 
+    /** @param array<string, mixed> $bundle
+     * @return list<array<string, mixed>>
+     */
+    public function previewDispatches(TeachingCourseWork $work, array $bundle, ?array $identityBinding = null): array
+    {
+        $additions = $this->dispatches->participantAdditions($work, array_column($bundle['protocols'], 'report'));
+        $previews = [];
+        foreach ($bundle['protocols'] as $file) {
+            $previews[] = ['source' => $file['source']] + $this->dispatches->preview($work, $file['report'], $file['sha256'],
+                requireMatchingTitle: false, participantAdditions: $identityBinding !== null ? [] : $additions, identityBinding: $identityBinding);
+        }
+
+        return $previews;
+    }
+
+    /** @param array<string, mixed> $bundle
+     * @return list<array<string, mixed>>
+     */
+    public function previewProvisions(TeachingCourseWork $work, array $bundle, ?array $identityBinding = null): array
+    {
+        return array_map(fn (array $file): array => ['source' => $file['source']] + $this->provisions->preview($work, $file['report'], $file['sha256'], $identityBinding), $bundle['provisions'] ?? []);
+    }
+
+    /** @param list<array<string, mixed>> $provisions
+     * @param  list<array<string, mixed>>  $dispatches
+     * @return list<array<string, mixed>>
+     */
+    public function availabilitySources(TeachingCourseWork $work, array $provisions, array $dispatches): array
+    {
+        $logs = $work->status['dispatch_logs'] ?? [];
+        $sources = array_values(array_filter($work->status['provision_events'] ?? [], fn (array $event): bool => collect($logs)
+            ->contains(fn (array $log): bool => ($log['origin'] ?? null) === 'provision_import' && $log['sha256'] === $event['log_sha256'])));
+        foreach ($work->status['dispatch_notifications'] ?? [] as $notice) {
+            if (($notice['purpose'] ?? 'results') === 'tasks' && ($notice['origin'] ?? null) === 'dispatch_import'
+                && collect($logs)->contains(fn (array $log): bool => ($log['origin'] ?? null) === 'dispatch_import' && ($log['purpose'] ?? 'results') === 'tasks' && $log['sha256'] === $notice['log_sha256'])) {
+                $sources[] = ['student_id' => $notice['student_id'], 'method' => 'email_dispatch', 'available_at' => $notice['sent_at'], 'log_sha256' => $notice['log_sha256']];
+            }
+        }
+        if (app()->isLocal()) {
+            foreach ($work->status['dispatch_attempts'] ?? [] as $attempt) {
+                if (($attempt['mode'] ?? null) === 'mailpit' && ($attempt['purpose'] ?? null) === 'tasks'
+                    && ($attempt['origin'] ?? null) === 'dispatch_import' && ! empty($attempt['provider_id'])
+                    && ! empty($attempt['sent_at']) && collect($logs)->contains(fn (array $log): bool => ($log['origin'] ?? null) === 'dispatch_import'
+                        && ($log['purpose'] ?? null) === 'tasks' && $log['sha256'] === $attempt['log_sha256'])) {
+                    $sources[] = ['student_id' => $attempt['student_id'], 'method' => 'email_dispatch',
+                        'available_at' => $attempt['sent_at'], 'log_sha256' => $attempt['log_sha256'], 'test_transport' => 'mailpit'];
+                }
+            }
+        }
+        foreach ($provisions as $preview) {
+            if ($preview['can_import']) {
+                $sources = array_merge($sources, $preview['records']);
+            }
+        }
+        foreach ($dispatches as $preview) {
+            if ($preview['purpose'] !== 'tasks' || ! $preview['can_import']) {
+                continue;
+            }
+            $revalidatedStudentIds = array_map('intval', array_column(array_filter($preview['rows'], fn (array $row): bool => $row['accepted']), 'student_id'));
+            $sources = array_values(array_filter($sources, fn (array $source): bool => ! ($source['method'] === 'email_dispatch'
+                && in_array((int) $source['student_id'], $revalidatedStudentIds, true) && $source['log_sha256'] === $preview['source_sha256'])));
+            foreach ($preview['rows'] as $row) {
+                if ($row['accepted']) {
+                    $sources[] = ['student_id' => $row['student_id'], 'method' => 'email_dispatch', 'available_at' => $row['sent_at'], 'log_sha256' => $preview['source_sha256']];
+                } elseif (app()->isLocal() && $row['mode'] === 'mailpit') {
+                    $sources[] = ['student_id' => $row['student_id'], 'method' => 'email_dispatch', 'available_at' => $row['observed_at'],
+                        'log_sha256' => $preview['source_sha256'], 'test_transport' => 'mailpit'];
+                }
+            }
+        }
+
+        return $sources;
+    }
+
     /** Call within the authorized work transaction and clean created files on rollback.
      * @param  array<string, mixed>  $bundle
      * @param  list<string>  $createdPaths
      * @return array{messages: list<string>, missing: list<string>}
      */
-    public function apply(TeachingCourseWork $work, User $actor, array $bundle, array &$createdPaths): array
+    public function apply(TeachingCourseWork $work, User $actor, array $bundle, array &$createdPaths, ?array $identityBinding = null): array
     {
         $messages = [];
+        $deadlineFields = $this->deadlineFields($work, $bundle);
+        if ($deadlineFields !== []) {
+            $work->forceFill($deadlineFields);
+            if ($work->isDirty(['finish_until_date', 'finish_until_time', 'status'])) {
+                $work->save();
+            }
+            $messages[] = 'Prüfungsschluss aus Arbeitsordner übernommen: '.(new DateTimeImmutable($bundle['deadline']['at']))->format('d.m.Y H:i').' Uhr (Europe/Vienna).';
+        }
         $missing = [];
+        $dispatchPreviews = $this->previewDispatches($work, $bundle, $identityBinding);
+        foreach ($dispatchPreviews as $preview) {
+            if (! $preview['can_import']) {
+                $bad = collect($preview['rows'])->first(fn (array $row): bool => str_contains($row['status'], 'gesperrt'));
+                $this->reject($preview['source'].': '.($bad['person'] ?? '').' '.($bad['status'] ?? 'Zuordnung ungeklärt').'. Keine Dateien wurden übernommen.');
+            }
+        }
+        $this->dispatches->applyParticipantAdditions($work, $dispatchPreviews[0]['participant_additions'] ?? []);
+        foreach ($bundle['provisions'] ?? [] as $file) {
+            $preview = $this->provisions->preview($work, $file['report'], $file['sha256'], $identityBinding);
+            $this->provisions->apply($work, $preview, $file['text'], $createdPaths);
+            $messages[] = 'Bereitstellung: '.count($preview['records']).' personenbezogene Verfügbarkeitsbelege geprüft; kein individueller Download bestätigt.';
+        }
         $previous = $work->status['folder_import_sources'] ?? [];
         if ($bundle['evaluation']) {
             $report = $bundle['evaluation'];
@@ -162,7 +349,7 @@ class TeachingWorkFolderImport
             $tests = [];
             foreach ($protocols as $file) {
                 try {
-                    $preview = $this->dispatches->preview($work, $file['report'], $file['sha256'], requireMatchingTitle: false);
+                    $preview = $this->dispatches->preview($work, $file['report'], $file['sha256'], requireMatchingTitle: false, participantAdditions: $identityBinding !== null ? [] : null, identityBinding: $identityBinding);
                 } catch (ValidationException $exception) {
                     $this->reject($file['path'].': '.implode(' ', collect($exception->errors())->flatten()->all()));
                 }
@@ -183,7 +370,7 @@ class TeachingWorkFolderImport
                 foreach ($preview['rows'] as $row) {
                     if ($row['accepted']) {
                         $live[$row['student_id']] = true;
-                    } elseif ($row['student_id'] && $row['mode'] === 'test') {
+                    } elseif ($row['student_id'] && in_array($row['mode'], ['test', 'mailpit'], true)) {
                         $tests[$row['student_id']] = true;
                     }
                 }

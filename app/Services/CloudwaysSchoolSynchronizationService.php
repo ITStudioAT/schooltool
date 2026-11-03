@@ -22,6 +22,8 @@ class CloudwaysSchoolSynchronizationService
     private const int LOCK_SECONDS = 1800;
 
     private const array EXCLUDED_TABLES = [
+        'dropbox_connections',
+        'teaching_work_dropbox_folders',
         'cache',
         'cache_locks',
         'failed_jobs',
@@ -282,6 +284,20 @@ class CloudwaysSchoolSynchronizationService
         $relations = array_merge($metadata['foreign_keys'], $this->availableSemanticRelations($metadata['tables']));
         $this->captureSemanticUserRows($connection, $rows, $metadata);
 
+        $hasAiParticipants = in_array('agent_conversations', $metadata['tables'], true)
+            && $connection->getSchemaBuilder()->hasColumn('agent_conversations', 'participant_type');
+        if ($hasAiParticipants) {
+            $this->mergeRows(
+                $rows,
+                'agent_conversations',
+                $connection->table('agent_conversations')
+                    ->where('participant_type', (new User)->getMorphClass())
+                    ->whereIn('participant_id', array_column($rows['users'] ?? [], 'id'))
+                    ->get()->map(fn (object $row): array => (array) $row)->all(),
+                $metadata['primary_keys'],
+            );
+        }
+
         do {
             $changed = false;
 
@@ -302,6 +318,9 @@ class CloudwaysSchoolSynchronizationService
                 }
 
                 $query = $connection->table($relation['child'])->whereIn($relation['child_column'], $values);
+                if ($hasAiParticipants && $relation['child'] === 'agent_conversations' && $relation['child_column'] === 'user_id') {
+                    $query->whereNull('participant_type');
+                }
                 if (in_array($relation['child'], $metadata['school_tables'], true)) {
                     $query->where('school_id', $schoolId);
                 }

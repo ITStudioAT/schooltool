@@ -12,9 +12,13 @@ use App\Models\TeachingCourseDateMaterialAttachment;
 use App\Models\TeachingSchoolHour;
 use App\Models\User;
 use App\Services\ParentStudentAccessService;
+use App\Services\Teaching\TeachingExplanationCatalog;
 use App\Services\TeachingCourseDateService;
 use App\Services\TeachingHolidaySyncService;
 use App\Services\TeachingService;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Storage;
 use RuntimeException;
@@ -44,7 +48,7 @@ class CourseController extends Controller
                 $query->where('user_id', $auth_user->id)
                     ->whereNull('canceled_at');
             })
-            ->with('user:id,first_name,last_name,short,email,teaching_show_behaviour,teaching_student_grade_columns_by_schoolyear')
+            ->with('user:id,first_name,last_name,short,email,teaching_show_behaviour')
             ->withCount([
                 'teachingCourseStudents as active_students_count' => function ($query) {
                     $query->whereNull('canceled_at');
@@ -78,7 +82,8 @@ class CourseController extends Controller
                     'teacher_email' => $course->user?->email ?? null,
                     'classes' => $course->classes,
                     'students_count' => (int) ($course->active_students_count ?? 0),
-                    'stars' => $studentData?->stars ?? [],
+                    'show_stars' => $studentGradeColumns['show_stars'],
+                    'stars' => $studentGradeColumns['show_stars'] ? ($studentData?->stars ?? []) : [],
                     'sem_1_grade' => $showSemesterGrade ? $studentData?->sem_1_grade : null,
                     'sem_2_grade' => $showSemesterGrade ? $studentData?->sem_2_grade : null,
                     'sem_grade' => $showSemesterGrade ? $studentData?->sem_grade : null,
@@ -215,7 +220,7 @@ class CourseController extends Controller
             ->keyBy(fn (TeachingSchoolHour $schoolHour): int => (int) $schoolHour->hour);
 
         // Get the course
-        $course = TeachingCourse::with('user:id,first_name,last_name,short,email,teaching_notifications_by_schoolyear,teaching_behaviour_by_schoolyear,teaching_show_behaviour,teaching_count_for_semester_2_date,teaching_grade_columns_by_schoolyear,teaching_student_grade_columns_by_schoolyear')
+        $course = TeachingCourse::with('user:id,first_name,last_name,short,email,teaching_notifications_by_schoolyear,teaching_behaviour_by_schoolyear,teaching_show_behaviour,teaching_count_for_semester_2_date,teaching_curricula_enabled')
             ->withCount([
                 'teachingCourseStudents as active_students_count' => function ($query) {
                     $query->whereNull('canceled_at');
@@ -301,19 +306,22 @@ class CourseController extends Controller
                     )
                     : null;
 
-                $adoptedMaterials = $courseDate->materials->map(fn ($m) => [
+                $adoptedMaterials = ($course->user?->teaching_curricula_enabled ?? true) ? $courseDate->materials->map(fn ($m) => [
                     'id' => $m->id,
                     'title' => $m->title,
                     'type' => $m->type,
                     'attachments' => $m->attachments->filter(fn ($a) => $a->student_visible)->map(fn ($a) => [
                         'id' => $a->id,
+                        'explanation_key' => $a->explanation_key,
                         'name' => $this->attachmentNameWithStorageExtension($a->name, $a->file_path),
                         'mime_type' => $a->mime_type,
                         'size_bytes' => $a->size_bytes,
-                        'preview_url' => '/api/homepage/student/course-date-materials/attachments/'.$a->id.'/preview',
-                        'download_url' => '/api/homepage/student/course-date-materials/attachments/'.$a->id.'/download',
+                        'preview_url' => $a->explanation_key
+                            ? route('student-material-explanations.show', $a, false)
+                            : '/api/homepage/student/course-date-materials/attachments/'.$a->id.'/preview',
+                        'download_url' => $a->explanation_key ? null : '/api/homepage/student/course-date-materials/attachments/'.$a->id.'/download',
                     ])->values(),
-                ]);
+                ]) : collect();
 
                 return [
                     'id' => $courseDate->id,
@@ -344,17 +352,19 @@ class CourseController extends Controller
             'description' => $course->description,
             'teaching_schema_id' => $course->teaching_schema_id,
             'teaching_schema' => $teachingSchema,
+            'semester_count' => $course->semesterCount($teachingSchema),
             'sem_2_start' => $schoolyear?->sem_2_start,
             'teacher_count_for_semester_2_date' => $course->user?->teaching_count_for_semester_2_date,
             'teacher' => $course->user ? ($course->user->short ?: ($course->user->first_name.' '.$course->user->last_name)) : '—',
             'teacher_email' => $course->user?->email ?? null,
             'teacher_teaching_notifications' => $this->teachingNotificationsForSchoolyear($course->user, $course->schoolyear_id),
             'teacher_teaching_behaviour' => $showBehaviour ? $this->teachingBehaviourForSchoolyear($course->user, $course->schoolyear_id) : [],
-            'teacher_teaching_grade_columns' => $this->teachingGradeColumnsForSchoolyear($course->user, $course->schoolyear_id),
             'teacher_teaching_student_grade_columns' => $studentGradeColumns,
+            'show_points_progress' => (bool) ($course->teaching_student_grade_columns['show_points_progress'] ?? false) && $course->calculationsEnabled(),
             'classes' => $course->classes,
             'students_count' => (int) ($course->active_students_count ?? 0),
-            'stars' => $studentData->stars ?? [],
+            'show_stars' => $studentGradeColumns['show_stars'],
+            'stars' => $studentGradeColumns['show_stars'] ? ($studentData->stars ?? []) : [],
             'sem_1_grade' => $showSemesterGrade ? $studentData->sem_1_grade : null,
             'sem_2_grade' => $showSemesterGrade ? $studentData->sem_2_grade : null,
             'sem_grade' => $showSemesterGrade ? $studentData->sem_grade : null,
@@ -405,6 +415,18 @@ class CourseController extends Controller
         return $attendanceChecked ? 'present' : null;
     }
 
+    public function explanation(Request $request, TeachingCourseDateMaterialAttachment $attachment, ParentStudentAccessService $parentAccess): JsonResponse|Response
+    {
+        $student = $parentAccess->currentStudent();
+        abort_unless($student, 403, 'Sie haben keine Berechtigung');
+        $this->authorizeStudentAttachmentAccess($attachment, $student);
+        abort_unless(TeachingExplanationCatalog::find($attachment->explanation_key), 404);
+
+        return ($request->expectsJson()
+            ? response()->json(['explanation' => $attachment->explanation_key, 'return_url' => '/student/course/'.$attachment->material->courseDate->teaching_course_id])
+            : response()->view('homepage'))->header('Cache-Control', 'private, no-store');
+    }
+
     public function previewAdoptedAttachment(
         TeachingCourseDateMaterialAttachment $attachment,
         ParentStudentAccessService $parentAccess,
@@ -442,6 +464,8 @@ class CourseController extends Controller
         if (! $course) {
             abort(403, 'Sie haben keine Berechtigung');
         }
+
+        abort_unless($course->user?->teaching_curricula_enabled ?? true, 403, 'Curricula sind ausgeschaltet.');
 
         $schoolTool = SchoolTool::where('school_id', $authUser->school_id)->first();
         $activeSchoolyearId = $schoolTool?->active_schoolyear_id ?? $authUser->schoolyear_id;
@@ -595,83 +619,16 @@ class CourseController extends Controller
     }
 
     /**
-     * @return array{show_sem1: bool, show_sem2: bool, show_year: bool}
-     */
-    private function teachingGradeColumnsForSchoolyear(?User $user, ?int $schoolyearId): array
-    {
-        if (! $user || $schoolyearId === null || ! is_array($user->teaching_grade_columns_by_schoolyear)) {
-            return [
-                'show_sem1' => false,
-                'show_sem2' => false,
-                'show_year' => false,
-            ];
-        }
-
-        $columns = $user->teaching_grade_columns_by_schoolyear[(string) $schoolyearId] ?? null;
-
-        if (! is_array($columns)) {
-            return [
-                'show_sem1' => false,
-                'show_sem2' => false,
-                'show_year' => false,
-            ];
-        }
-
-        return [
-            'show_sem1' => (bool) ($columns['show_sem1'] ?? false),
-            'show_sem2' => (bool) ($columns['show_sem2'] ?? false),
-            'show_year' => (bool) ($columns['show_year'] ?? false),
-        ];
-    }
-
-    /**
-     * @return array{show_sem1: bool, show_sem2: bool, show_year: bool}
-     */
-    private function teachingStudentGradeColumnsForSchoolyear(?User $user, ?int $schoolyearId): array
-    {
-        if (! $user || $schoolyearId === null || ! is_array($user->teaching_student_grade_columns_by_schoolyear)) {
-            return [
-                'show_sem1' => false,
-                'show_sem2' => false,
-                'show_year' => false,
-            ];
-        }
-
-        $columns = $user->teaching_student_grade_columns_by_schoolyear[(string) $schoolyearId] ?? null;
-
-        if (! is_array($columns)) {
-            return [
-                'show_sem1' => false,
-                'show_sem2' => false,
-                'show_year' => false,
-            ];
-        }
-
-        return [
-            'show_sem1' => (bool) ($columns['show_sem1'] ?? false),
-            'show_sem2' => (bool) ($columns['show_sem2'] ?? false),
-            'show_year' => (bool) ($columns['show_year'] ?? false),
-        ];
-    }
-
-    /**
-     * @return array{show_sem1: bool, show_sem2: bool, show_year: bool, show_semester_grade: bool, show_behaviour_grade: bool}
+     * @return array{show_semester_grade: bool, show_behaviour_grade: bool, show_stars: bool}
      */
     private function teachingStudentGradeColumnsForCourse(TeachingCourse $course): array
     {
         $gradeVisibility = [
             'show_semester_grade' => (bool) ($course->teaching_student_grade_columns['show_semester_grade'] ?? true),
             'show_behaviour_grade' => (bool) ($course->teaching_student_grade_columns['show_behaviour_grade'] ?? true),
+            'show_stars' => (bool) ($course->teaching_student_grade_columns['show_stars'] ?? true),
         ];
 
-        if (is_array($course->teaching_student_grade_columns)) {
-            return [
-                'show_sem1' => (bool) ($course->teaching_student_grade_columns['show_sem1'] ?? false),
-                'show_sem2' => (bool) ($course->teaching_student_grade_columns['show_sem2'] ?? false),
-                'show_year' => (bool) ($course->teaching_student_grade_columns['show_year'] ?? false),
-            ] + $gradeVisibility;
-        }
-
-        return $this->teachingStudentGradeColumnsForSchoolyear($course->user, $course->schoolyear_id) + $gradeVisibility;
+        return $gradeVisibility;
     }
 }

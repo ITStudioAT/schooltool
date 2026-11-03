@@ -1,16 +1,282 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises, DOMWrapper } from '@vue/test-utils'
 import { createTestingPinia } from '@pinia/testing'
 import { createVuetify } from 'vuetify'
 import { VFileInput } from 'vuetify/components/VFileInput'
-import { VMenu, VBtn, VList, VListItem, VIcon } from 'vuetify/components'
+import { VMenu, VBtn, VBtnToggle, VList, VListItem, VIcon } from 'vuetify/components'
 import CourseWorks from '@/pages/admin/teaching/overview/components/CourseWorks.vue'
 import { formatViennaDateTime } from '@/helpers/date'
 import WorkEvaluationImport from '@/pages/admin/teaching/overview/components/WorkEvaluationImport.vue'
 import WorkEvaluationPdf from '@/pages/admin/teaching/overview/components/WorkEvaluationPdf.vue'
 import WorkDispatchLog from '@/pages/admin/teaching/overview/components/WorkDispatchLog.vue'
+import { clearWorkDropboxStates, loadWorkExercise, workDropboxStates } from '@/helpers/workDropbox'
+
+describe('New work overview and assessment mode', () => {
+    afterEach(() => { clearWorkDropboxStates(); vi.unstubAllGlobals() })
+
+    it('shows email preparation after creation and refreshes the card to dispatch ready', async () => {
+        const work = { id: 65, teaching_course_id: 2, type: 'A5', title: 'Neue Arbeit', groups: [], status: {} }
+        const status = { connected: true, module_link: { folder: { id: 'id:module' } },
+            exercise: { status: 'found', folder: { id: 'id:exercise', name: 'LF' }, email_preparation: { status: 'missing' } } }
+        const get = vi.fn().mockResolvedValue({ data: status })
+        vi.stubGlobal('axios', { get, post: get })
+        const wrapper = mountOverview(work)
+        try {
+            await flushPromises()
+            expect(wrapper.get('.work-row').text()).toContain('E-Mails vorbereiten')
+            get.mockResolvedValue({ data: { ...status, exercise: { ...status.exercise, email_preparation: { status: 'ready' } } } })
+            await loadWorkExercise('7:2:65', work, '', true)
+            await flushPromises()
+            expect(wrapper.get('.work-row').text()).toContain('Versandbereit')
+            expect(wrapper.get('.work-row').text()).not.toContain('E-Mails vorbereiten')
+        } finally { wrapper.unmount() }
+    })
+
+    function mountOverview(work, folderState = { folder: null }) {
+        if (folderState) workDropboxStates.set('7:2:65', folderState)
+        return mount(CourseWorks, { global: {
+            plugins: [createTestingPinia({ createSpy: vi.fn, initialState: {
+                AdminAdminStore: { action: '', config: { user: { id: 7, teaching_active_semester: 1 } } },
+                AdminCourseStore: { selected_course: { id: 2, title: 'Kurs', students_info: [{ id: 12 }],
+                    teaching_entry_area: { id: 1, entry_definitions: [{ category: 'Benotung', short_name: 'A5', name: 'Arbeit', properties_mode: 'points', maximum_points: 5 }] } } },
+                AdminCourseWorkStore: { courseWorks: [work] },
+                AdminTeachingStore: { settings: {} },
+            } }), createVuetify({ components: { VBtn, VBtnToggle } })],
+            components: { 'v-btn': VBtn, 'v-btn-toggle': VBtnToggle },
+            stubs: { ItsGridBox: { template: '<div><slot name="header-actions" /><slot /></div>' },
+                'v-btn': false, VBtn: false, 'v-btn-toggle': false, VBtnToggle: false,
+                'v-divider': true, 'v-switch': true, 'v-checkbox': true, 'v-textarea': true, 'v-date-input': true,
+                'v-dialog': { props: ['modelValue'], template: '<div v-if="modelValue"><slot /></div>' },
+                WorkImportActions: true, WorkEvaluationPdf: true, WorkDispatchStatus: true, WorkEvaluationImport: true,
+                WorkAiExport: true, WorkDispatchLog: true, WorkStudentDistribution: { name: 'WorkStudentDistribution', props: ['work', 'available'], template: '<div />' } },
+        } })
+    }
+
+    it('offers student distribution only when the exercise assignment is confirmed', async () => {
+        const work = { id: 65, teaching_course_id: 2, type: 'A5', title: 'E-Mails', groups: [], status: {} }
+        const state = { connected: true, module_link: { folder: { id: 'id:module' } },
+            exercise: { status: 'found', folder: { id: 'id:exercise' }, assignment_status: 'missing' } }
+        const get = vi.fn().mockResolvedValue({ data: state })
+        vi.stubGlobal('axios', { get, post: get })
+        const wrapper = mountOverview(work)
+        try {
+            await flushPromises()
+            await wrapper.get('.work-row').trigger('click')
+            expect(wrapper.getComponent({ name: 'WorkDeliveryStatus' }).props('exerciseReady')).toBe(false)
+            get.mockResolvedValue({ data: { ...state, exercise: { ...state.exercise, assignment_status: 'ready' } } })
+            await loadWorkExercise('7:2:65', work, '', true)
+            await flushPromises()
+            expect(wrapper.getComponent({ name: 'WorkDeliveryStatus' }).props('exerciseReady')).toBe(true)
+        } finally { wrapper.unmount() }
+    })
+
+    it('labels the overview card as a simulation as soon as a run is prepared', async () => {
+        const work = { id: 65, teaching_course_id: 2, type: 'A5', title: 'Testarbeit', groups: [{ student_ids: [12] }], status: {},
+            simulation_collection: { origin: 'mailpit_simulation', simulation: true, run_id: 'test-run', work_id: 65, course_id: 2,
+                student_ids: [12], collected_count: 0, non_submission_count: 0, processed_count: 0, complete: false, completed_at: null } }
+        const wrapper = mountOverview(work)
+        try {
+            await flushPromises()
+            expect(wrapper.get('.work-row [aria-label="Simulation – lokaler Testlauf"]').text()).toBe('Simulation')
+            delete (wrapper.vm as any).courseWorks[0].simulation_collection
+            await flushPromises()
+            expect(wrapper.find('.work-row [aria-label="Simulation – lokaler Testlauf"]').exists()).toBe(false)
+        } finally { wrapper.unmount() }
+    })
+
+    it('confirms deletion of the saved work without losing an edited draft on cancellation', async () => {
+        const work = { id: 65, teaching_course_id: 2, type: 'A5', title: 'Gespeicherte Arbeit', groups: [], status: {} }
+        const wrapper = mountOverview(work)
+        const vm = wrapper.vm as any
+        try {
+            await wrapper.get('.work-row').trigger('click')
+            vm.work_form.title = 'Noch nicht gespeicherter Titel'
+            await wrapper.get('[data-testid="work-dialog-delete"]').trigger('click')
+
+            const confirmation = wrapper.get('[data-testid="work-delete-confirmation"]')
+            expect(confirmation.text()).toContain(work.title)
+            expect(confirmation.text()).not.toContain('Noch nicht gespeicherter Titel')
+            expect(vm.courseWorkStore.destroy).not.toHaveBeenCalled()
+
+            await confirmation.get('[data-testid="work-delete-cancel"]').trigger('click')
+
+            expect(wrapper.find('[data-testid="work-delete-confirmation"]').exists()).toBe(false)
+            expect(vm.work_form.title).toBe('Noch nicht gespeicherter Titel')
+            expect(vm.action).toBe('edit_course_work')
+            expect(vm.courseWorkStore.destroy).not.toHaveBeenCalled()
+
+            vm.abortEdit()
+            vm.newWork()
+            await flushPromises()
+            expect(wrapper.find('[data-testid="work-dialog-delete"]').exists()).toBe(false)
+        } finally { wrapper.unmount() }
+    })
+
+    it.each([true, false])('deletes an opened work once and keeps its form on failure: %s', async deleted => {
+        const work = { id: 65, teaching_course_id: 2, type: 'A5', title: 'Gespeicherte Arbeit', groups: [], status: {} }
+        const wrapper = mountOverview(work)
+        const vm = wrapper.vm as any
+        let finishDeletion: (value: boolean) => void = () => {}
+        vm.courseWorkStore.destroy.mockReturnValue(new Promise(resolve => { finishDeletion = resolve }))
+        const refresh = vi.spyOn(vm, 'refreshWorks').mockResolvedValue(undefined)
+        try {
+            await wrapper.get('.work-row').trigger('click')
+            await wrapper.get('[data-testid="work-dialog-delete"]').trigger('click')
+            await wrapper.get('[data-testid="work-delete-confirm"]').trigger('click')
+            await wrapper.get('[data-testid="work-delete-confirm"]').trigger('click')
+
+            expect(vm.courseWorkStore.destroy).toHaveBeenCalledExactlyOnceWith(work.id)
+            expect(wrapper.get('[data-testid="work-delete-cancel"]').attributes('disabled')).toBeDefined()
+
+            finishDeletion(deleted)
+            await flushPromises()
+
+            expect(wrapper.find('[data-testid="work-delete-confirmation"]').exists()).toBe(!deleted)
+            expect(vm.is_deleting_work).toBe(false)
+            if (deleted) {
+                expect(vm.action).toBe('')
+                expect(vm.work_form.id).toBeNull()
+                expect(refresh).toHaveBeenCalledOnce()
+            } else {
+                expect(vm.action).toBe('edit_course_work')
+                expect(vm.work_form.id).toBe(work.id)
+                expect(refresh).not.toHaveBeenCalled()
+            }
+        } finally { wrapper.unmount() }
+    })
+
+    it.each([
+        { enabled: true, icon: 'mdi-brain', label: 'Automatische Beurteilung', nextIcon: 'mdi-account-check-outline', nextLabel: 'Manuelle Beurteilung' },
+        { enabled: false, icon: 'mdi-account-check-outline', label: 'Manuelle Beurteilung', nextIcon: 'mdi-brain', nextLabel: 'Automatische Beurteilung' },
+    ])('shows one mode icon, follows saved mode changes and opens its work: $label', async ({ enabled, icon, label, nextIcon, nextLabel }) => {
+        const work = { id: 65, teaching_course_id: 2, type: 'A5', title: 'Neue Arbeit', groups: [], status: { automation_enabled: enabled } }
+        const wrapper = mountOverview(work)
+        try {
+            await flushPromises()
+            const card = wrapper.get('.work-row')
+            expect(card.text()).toContain('Neue Arbeit')
+            expect(card.text()).not.toContain('Noch kein Ordner verbunden.').not.toContain(label)
+            expect(card.findAll('v-icon')).toHaveLength(2)
+            expect(card.findComponent({ name: 'WorkFolderStatus' }).exists()).toBe(false)
+            expect(card.get('v-icon').attributes('icon')).toBe(icon)
+            expect(card.get('v-icon').attributes('aria-label')).toBe(label)
+            expect(card.findAll('[data-work-status], [data-submission-state]')).toHaveLength(0)
+            expect(card.find('work-import-actions-stub').exists()).toBe(false)
+
+            ;(wrapper.vm as any).courseWorks[0].status.automation_enabled = !enabled
+            await flushPromises()
+            expect(card.get('v-icon').attributes('icon')).toBe(nextIcon)
+            expect(card.get('v-icon').attributes('title')).toBe(nextLabel)
+            expect(card.text()).not.toContain(nextLabel)
+            expect(card.findAll('v-icon')).toHaveLength(2)
+            expect(card.findComponent({ name: 'WorkFolderStatus' }).exists()).toBe(false)
+
+            await card.get('button').trigger('click')
+            expect((wrapper.vm as any).action).toBe('')
+            expect(card.text()).toContain('Endgültig löschen')
+            await card.get('v-icon').trigger('click')
+            expect((wrapper.vm as any).action).toBe('edit_course_work')
+            expect((wrapper.vm as any).work_form.id).toBe(65)
+            expect(wrapper.get('[data-testid="work-assessment-total"]').text()).toBe('0 von 1 beurteilt')
+            expect(wrapper.find('work-import-actions-stub').exists()).toBe(true)
+        } finally { wrapper.unmount() }
+    })
+
+    it('shows the existing participant total and a short deadline without redundant mode or folder text', async () => {
+        const wrapper = mountOverview({ id: 65, teaching_course_id: 2, type: 'A5', title: 'Neue Arbeit',
+            finish_until_date: '2026-10-21', finish_until_time: '14:45', groups: [], status: {} })
+        try {
+            await flushPromises()
+            const card = wrapper.get('.work-row')
+            expect(card.text()).toContain('21.10. · 14:45')
+            expect(card.text()).not.toContain('2026').not.toContain('Beurteilung').not.toContain('Ordner')
+            expect(card.get('[aria-label="1 Schüler:innen"]').text()).toBe('1')
+            expect(card.get('[aria-label="Abgabefrist"]').attributes('icon')).toBe('mdi-calendar-clock-outline')
+        } finally { wrapper.unmount() }
+    })
+
+    it('shows only the date when a deadline has no saved time', async () => {
+        const wrapper = mountOverview({ id: 65, teaching_course_id: 2, type: 'A5', title: 'Neue Arbeit',
+            finish_until_date: '2026-10-21', finish_until_time: null, groups: [], status: {} })
+        try {
+            await flushPromises()
+            const deadline = wrapper.get('[aria-label="Abgabefrist"]').element.parentElement!
+            expect(deadline.textContent!.replace(/\s+/g, ' ').trim()).toBe('21.10.')
+        } finally { wrapper.unmount() }
+    })
+
+    it('uses the saved folder link rather than suggestions and reacts when a folder is assigned', async () => {
+        const work = { id: 65, teaching_course_id: 2, type: 'A5', title: 'Neue Arbeit', groups: [], status: {} }
+        const wrapper = mountOverview(work, { folder: null, suggested_folder: { id: 'id:suggestion' } })
+        try {
+            await flushPromises()
+            expect(wrapper.findComponent({ name: 'WorkFolderStatus' }).exists()).toBe(false)
+
+            workDropboxStates.set('7:2:65', { folder: { id: 'id:saved', name: 'Ordner' } })
+            await flushPromises()
+            expect(wrapper.findComponent({ name: 'WorkFolderStatus' }).exists()).toBe(false)
+            expect(wrapper.get('.work-row').findAll('[data-work-status]')).toHaveLength(0)
+            ;(wrapper.vm as any).courseWorks[0].automation_enabled = false
+            await flushPromises()
+            expect(wrapper.findComponent({ name: 'WorkFolderStatus' }).exists()).toBe(false)
+        } finally { wrapper.unmount() }
+    })
+
+    it('does not invent a folder indicator while loading or after a failed check', async () => {
+        const get = vi.fn().mockRejectedValue(new Error('offline'))
+        vi.stubGlobal('axios', { get })
+        const work = { id: 65, teaching_course_id: 2, type: 'A5', title: 'Neue Arbeit', groups: [], status: {} }
+        const wrapper = mountOverview(work, null)
+        try {
+            expect(wrapper.findComponent({ name: 'WorkFolderStatus' }).exists()).toBe(false)
+            await flushPromises()
+            expect(wrapper.findComponent({ name: 'WorkFolderStatus' }).exists()).toBe(false)
+            expect(wrapper.get('.work-row').text()).not.toContain('Noch kein Ordner verbunden.')
+            expect(get).toHaveBeenCalledOnce()
+        } finally { wrapper.unmount() }
+    })
+
+    it.each([
+        { status: { folder_imported_at: '2026-10-19T08:00:00Z' } },
+        { status: { assessment_records: [{ student_id: 12, submission_state: 'received' }] } },
+        { status: { dispatch_logs: [{ purpose: 'tasks' }] } },
+        { groups: [{ student_ids: [12], grade: '1' }] },
+        { groups: [{ student_ids: [12], points: [{ student_id: 12, points: 0 }] }] },
+        { groups: [{ student_ids: [12], comments: [{ student_id: 12, comment: 'Rückmeldung' }] }] },
+    ])('retains historical evidence and grades when selecting the overview layout: %j', saved => {
+        const methods = (CourseWorks as any).methods
+        const before = JSON.stringify(saved)
+        expect(methods.workIsInitial.call({ workFolderState: () => ({ folder: null }) }, saved)).toBe(false)
+        expect(JSON.stringify(saved)).toBe(before)
+    })
+
+    it('selects exactly one existing boolean mode without changing title, points or saved evidence', async () => {
+        const work = { id: 65, teaching_course_id: 2, type: 'A5', title: 'Bestehende Arbeit',
+            groups: [{ student_ids: [12], points: [{ student_id: 12, points: 4.5 }] }],
+            status: { automation_enabled: true, folder_imported_at: '2026-10-19T08:00:00Z' } }
+        const wrapper = mountOverview(work)
+        try {
+            await flushPromises()
+            const vm = wrapper.vm as any
+            vm.editWork(work)
+            vm.startDetailsEdit()
+            await flushPromises()
+            const modes = wrapper.get('.work-assessment-mode')
+            await modes.findAll('button')[0].trigger('click')
+            expect(vm.work_form.automation_enabled).toBe(false)
+            await modes.findAll('button')[0].trigger('click')
+            expect(vm.work_form.automation_enabled).toBe(false)
+            await modes.findAll('button')[1].trigger('click')
+            expect(vm.work_form.automation_enabled).toBe(true)
+            expect(vm.work_form.title).toBe('Bestehende Arbeit')
+            expect(vm.work_form.groups[0].points[12]).toBe('4,5')
+            expect(vm.work_form.status.folder_imported_at).toBe('2026-10-19T08:00:00Z')
+            expect(work.groups[0].points[0].points).toBe(4.5)
+        } finally { wrapper.unmount() }
+    })
+})
 
 describe('JSON assessment preview and separate apply', () => {
     const work = { id: 65, teaching_course_id: 2, title: 'Gespeicherte Arbeit' }
@@ -24,6 +290,25 @@ describe('JSON assessment preview and separate apply', () => {
             evaluation_state: 'partial', evaluation_note: 'Teilprüfung', total_minor: null, comment: 'Vorläufig',
             previous: { points: 4.75, comments: 'Abgeschlossen' }, criteria: [], adjustments: [], pdf: null, will_replace: false }],
     }
+
+    it('refreshes a saved import deadline without opening the grading view or replacing a different selected work', async () => {
+        const parent: any = { refreshWorks: vi.fn(), editWork: vi.fn(), selected_course: { id: 2 },
+            work_form: { id: 65 }, show_points_grading_view: false }
+        await (CourseWorks as any).methods.importDeadlineUpdated.call(parent, work)
+        expect(parent.refreshWorks).toHaveBeenCalledOnce()
+        expect(parent.editWork).toHaveBeenCalledExactlyOnceWith(work)
+        expect(parent.show_points_grading_view).toBe(false)
+
+        parent.editWork.mockClear()
+        parent.work_form.id = 66
+        await (CourseWorks as any).methods.importDeadlineUpdated.call(parent, work)
+        expect(parent.editWork).not.toHaveBeenCalled()
+
+        parent.refreshWorks.mockClear()
+        parent.selected_course.id = 3
+        await (CourseWorks as any).methods.importDeadlineUpdated.call(parent, work)
+        expect(parent.refreshWorks).not.toHaveBeenCalled()
+    })
 
     it('renders separate statuses and previews before submitting the explicit apply hash', async () => {
         const post = vi.fn().mockResolvedValueOnce({ data: { preview } }).mockResolvedValueOnce({ data: { data: work } })
@@ -267,7 +552,9 @@ describe('CourseWorks automatic folder import', () => {
             expect(ctx.import_error).not.toBe('')
             if (scenario === 'missing package' || scenario === 'duplicate package') {
                 expect(ctx.import_selection).toBe('Test')
-                expect(ctx.import_error).toContain('direkt oder unter Beurteilungen')
+                expect(ctx.import_error).toContain(scenario === 'missing package'
+                    ? 'weder Bewertungen noch Bereitstellungsbelege, eine Vorbereitung oder Versandprotokolle'
+                    : 'direkt oder unter Beurteilungen')
             }
             expect(event.target.value).toBe('')
             expect(ctx.$emit).not.toHaveBeenCalled()
@@ -375,9 +662,11 @@ describe('CourseWorks automatic folder import', () => {
             await ctx.selectFolder(event)
             expect(ctx.import_summary.missing).toEqual(['Auswertungen', 'Ergebnisbenachrichtigung'])
             expect(ctx.$emit).toHaveBeenCalledWith('imported', work)
-            const parent: any = { refreshWorks: vi.fn(), editWork: vi.fn(), selected_course: { id: 2 } }
+            const parent: any = { refreshWorks: vi.fn(), editWork: vi.fn(), selected_course: { id: 2 },
+                courseStore: { loadCourseDetails: vi.fn().mockResolvedValue({ id: 2 }) } }
             await (CourseWorks as any).methods.evaluationImported.call(parent, work)
             expect(parent.refreshWorks).toHaveBeenCalled()
+            expect(parent.courseStore.loadCourseDetails).toHaveBeenCalledWith('2', { force: true })
             expect(parent.editWork).toHaveBeenCalledWith(work)
             expect(event.target.value).toBe('')
         } finally { vi.unstubAllGlobals() }
@@ -533,7 +822,7 @@ describe('CourseWorks title rendering', () => {
         watcher.call(ctx, ctx.work_form.finish_until_date)
 
         expect(source).toContain('v-model="work_form.finish_until_date" clearable label="Fertig bis"')
-        expect(source).toContain('Fertig bis {{ formatDate(work.finish_until_date) }}')
+        expect(source).toContain('<template v-if="work.finish_until_date">{{ formatDate(work.finish_until_date) }}')
         expect(ctx.work_form.finish_until_date).toBe('2026-05-20')
     })
 
@@ -664,8 +953,8 @@ describe('CourseWorks title rendering', () => {
         const source = readFileSync(componentPath, 'utf8')
 
         expect(source).toContain('class="work-list-item cursor-pointer"')
-        expect(source).toContain('.work-list-item {\n    margin-bottom: 12px;\n}')
-        expect(source).toContain('.work-list-item:last-child {\n    margin-bottom: 0;\n}')
+        expect(source.replace(/\r\n/g, '\n')).toContain('.work-list-item {\n    margin-bottom: 12px;\n}')
+        expect(source.replace(/\r\n/g, '\n')).toContain('.work-list-item:last-child {\n    margin-bottom: 0;\n}')
     })
 
     it('renders the Arbeiten list as a responsive two-column grid', () => {
@@ -692,9 +981,10 @@ describe('CourseWorks title rendering', () => {
         )
         const source = readFileSync(componentPath, 'utf8')
         const methods = (CourseWorks as any).methods
-        const firstTypeClass = methods.workEntryBackgroundClass.call({}, { type: 'SA' })
-        const sameTypeClass = methods.workEntryBackgroundClass.call({}, { type: 'SA' })
-        const emptyTypeClass = methods.workEntryBackgroundClass.call({}, { type: '' })
+        const state = { workIsInitial: () => false }
+        const firstTypeClass = methods.workEntryBackgroundClass.call(state, { type: 'SA' })
+        const sameTypeClass = methods.workEntryBackgroundClass.call(state, { type: 'SA' })
+        const emptyTypeClass = methods.workEntryBackgroundClass.call(state, { type: '' })
 
         expect(source).toContain('class="work-row w-100" :class="workEntryBackgroundClass(work)"')
         expect(source).toContain('.work-row--type-1 {')
@@ -764,7 +1054,7 @@ describe('CourseWorks title rendering', () => {
 
         methods.newWork.call(state)
 
-        expect(source).toContain(':disabled="is_saving || isEditingExistingDetails"')
+        expect(source).toContain(':disabled="is_saving || is_deleting_work || isEditingExistingDetails"')
         expect(source).toContain(':style="isEditingExistingDetails ? \'pointer-events:none; opacity:0.45\' : \'\'"')
         expect(source).toContain('<template v-if="action === \'new_course_work\' || details_editable">')
         expect(source).toContain('isEditingExistingDetails()')
@@ -841,7 +1131,7 @@ describe('CourseWorks title rendering', () => {
         const computed = (CourseWorks as any).computed
 
         expect(source).toContain('v-if="!canChangeGroupWorkMode"')
-        expect(source).toContain('<v-switch\n                                    v-else')
+        expect(source.replace(/\r\n/g, '\n')).toContain('<v-switch\n                                    v-else')
         expect(source).toContain('if (!this.canChangeGroupWorkMode) return')
         expect(computed.canChangeGroupWorkMode.call({
             action: 'new_course_work',
@@ -1112,6 +1402,14 @@ describe('CourseWorks points mode', () => {
             semester_points_table: [{ grade: '1', min_points: 5 }],
             semester_points_sonst_grade: '5',
         })).toBe(false)
+    })
+
+    it('disables legacy point-to-grade conversion while retaining modern point entry', () => {
+        const supportsPoints = (CourseWorks as any).methods.workSupportsPoints
+        const context = { settings: { teaching_calculations_enabled: false } }
+        expect(supportsPoints.call(context, { points_note_enabled: true })).toBe(false)
+        expect(supportsPoints.call(context, { has_properties: true, properties_mode: 'points' })).toBe(true)
+        expect(supportsPoints.call({ settings: { teaching_calculations_enabled: true } }, { points_note_enabled: true })).toBe(true)
     })
 
     it('serializes numeric points with student ids for saving', () => {

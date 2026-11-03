@@ -17,6 +17,8 @@ class CourseEvaluationController extends Controller
         $this->authorizeTeachingCourseAccess($course, $user);
         $validated = $request->validate(['semester' => ['sometimes', 'integer', 'in:1,2,3']]);
 
-        return response()->json(['data' => $service->report($course, (int) ($validated['semester'] ?? 3))]);
+        $semester = $course->semesterCount() === 1 ? 1 : (int) ($validated['semester'] ?? 3);
+
+        return response()->json(['data' => $service->report($course, $semester)]);
     }
 }

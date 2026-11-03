@@ -6,6 +6,7 @@ use App\Models\Import116;
 use App\Models\RestaurantMenuPlan;
 use App\Models\RestaurantMenuPlanBooking;
 use App\Models\RestaurantMenuPlanEntry;
+use App\Models\SchoolTool;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\QueryException;
@@ -176,7 +177,7 @@ class RestaurantBookingService
     /**
      * @return array<int, array{id:int,name:string,email:?string,schoolclass:?string}>
      */
-    public function getChildOptionsForUser(User $user): array
+    public function getChildOptionsForUser(User $user, ?int $schoolyearId = null): array
     {
         $normalizedEmail = mb_strtolower(trim((string) $user->email));
         if ($normalizedEmail === '') {
@@ -185,6 +186,7 @@ class RestaurantBookingService
 
         return Import116::query()
             ->where('school_id', $user->school_id)
+            ->where('schoolyear_id', $schoolyearId ?? SchoolTool::query()->where('school_id', $user->school_id)->value('active_schoolyear_id'))
             ->where(function ($query) use ($normalizedEmail): void {
                 $query->whereRaw('LOWER(TRIM(mother_email)) = ?', [$normalizedEmail])
                     ->orWhereRaw('LOWER(TRIM(father_email)) = ?', [$normalizedEmail]);

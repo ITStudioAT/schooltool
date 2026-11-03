@@ -31,6 +31,8 @@ class UserWithRoleResource extends JsonResource
             'login_at' => $this->login_at ? Carbon::parse($this->login_at)->format('d.m.Y  H:i') : null,
             'login_ip' => $this->login_ip ? $this->login_ip : null,
             'teaching_active_semester' => $this->teaching_active_semester,
+            'teaching_curricula_enabled' => $this->teaching_curricula_enabled ?? true,
+            'teaching_show_attendance' => $this->teaching_show_attendance ?? true,
             'teaching_count_for_semester_2_date' => $this->teaching_count_for_semester_2_date,
             'roles' => $this->roles->sortBy('name')->pluck('name')->values(),
         ];

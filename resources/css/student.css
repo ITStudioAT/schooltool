@@ -161,9 +161,12 @@
 .course-eyebrow { color: #c8da8d; font-size: .65rem; font-weight: 800; letter-spacing: .18em; }
 .course-emblem { display: grid; place-items: center; flex-shrink: 0; width: 88px; height: 88px; border-radius: 24px; background: #dbea9d; color: #273755; transform: rotate(8deg); box-shadow: 7px 8px 0 #ffffff0a; }
 .student-workspace.student-course-page .content-card { border: 0; box-shadow: none; border-radius: 0; padding: 0; background: transparent; }
-.student-workspace.student-course-page .student-course-nav { background: #fff; border: 1px solid #e5e7f0; padding: 7px; gap: 5px; border-radius: 18px; box-shadow: 0 4px 14px #202b4b05; }
-.student-workspace.student-course-page .student-course-nav .v-btn { height: 54px; font-size: .82rem; border-radius: 12px; }
-.course-nav-secondary { display: block; font-size: .67rem; line-height: 1.1; margin-top: 2px; opacity: .85; }
+.student-workspace.student-course-page .student-course-nav { background: #e6ebfa; border: 1px solid #c8d2ee; padding: 8px; gap: 8px; border-radius: 18px; box-shadow: 0 4px 14px #202b4b0d; }
+.student-workspace.student-course-page .student-course-nav .v-btn { height: 58px; font-size: .9rem; font-weight: 700; border-radius: 12px; letter-spacing: 0; }
+.student-workspace.student-course-page .student-course-nav .v-btn[aria-pressed="false"] { background: #fff; color: #263e83; border: 1px solid #b5c3e7; box-shadow: 0 2px 4px #263e8314; }
+.student-workspace.student-course-page .student-course-nav .v-btn[aria-pressed="false"]:hover { background: #f0f3ff; border-color: #4056d6; }
+.student-workspace.student-course-page .student-course-nav .v-btn:focus-visible { outline: 3px solid #f3972b; outline-offset: 2px; }
+.course-nav-secondary { display: block; font-size: .76rem; line-height: 1.1; margin-top: 2px; opacity: .95; }
 .feedback-intro { display: flex; justify-content: space-between; align-items: center; gap: 18px; padding: 12px 2px 22px; }
 .feedback-eyebrow { color: #6574c6; font-size: .65rem; font-weight: 800; letter-spacing: .15em; }
 .feedback-intro h2 { font-size: clamp(1.35rem, 3vw, 1.85rem); font-weight: 850; letter-spacing: -.04em; color: #202b4b; line-height: 1.3; margin: 5px 0; }
@@ -210,10 +213,10 @@
     .course-identity { gap: 12px; margin-top: 15px; }
     .course-emblem { width: 56px; height: 64px; border-radius: 17px; }
     .course-emblem .v-icon { font-size: 32px !important; }
-    .student-workspace.student-course-page .student-course-nav { flex-wrap: nowrap; padding: 5px; gap: 2px; border-radius: 16px; }
-    .student-workspace.student-course-page .student-course-nav .v-btn { flex: 1 1 0; height: 76px; font-size: .69rem; padding: 2px; }
+    .student-workspace.student-course-page .student-course-nav { flex-wrap: wrap; padding: 7px; gap: 7px; border-radius: 16px; }
+    .student-workspace.student-course-page .student-course-nav .v-btn { flex: 1 1 calc(50% - 7px); height: 72px; font-size: .85rem; padding: 4px; }
     .student-workspace.student-course-page .student-course-nav .v-btn__content { gap: 5px; line-height: 1.25; white-space: normal; }
-    .course-nav-secondary { font-size: .59rem; margin-top: 0; }
+    .course-nav-secondary { font-size: .73rem; margin-top: 0; }
     .feedback-intro { align-items: flex-start; flex-wrap: wrap; gap: 12px; padding: 8px 2px 18px; }
     .feedback-intro h2 { font-size: 1.4rem; }
     .student-workspace .feedback-refresh { min-height: 38px; height: 38px; font-size: .7rem; }

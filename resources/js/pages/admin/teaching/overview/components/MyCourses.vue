@@ -223,10 +223,7 @@
                             {{ activeSelectedStudentsCount }}
                         </v-chip>
                         <div class="w-100 d-flex flex-wrap align-center justify-end ga-2 mt-1 course-edit-students-actions-row">
-                            <v-btn-toggle v-model="students_sort_mode" mandatory density="compact" color="primary" class="course-edit-students-sort-toggle">
-                                <v-btn size="x-small" value="class_last_name" class="course-edit-students-sort-toggle-btn">Klasse, Name</v-btn>
-                                <v-btn size="x-small" value="last_name_first_name" class="course-edit-students-sort-toggle-btn">Name</v-btn>
-                            </v-btn-toggle>
+                            <span class="text-caption">Nachname, Vorname</span>
                             <v-btn size="x-small" color="error" variant="tonal" prepend-icon="mdi-minus" @click="removeAllStudents">Alle entfernen</v-btn>
                             <v-btn size="x-small" color="primary" variant="tonal" prepend-icon="mdi-plus" @click="addAllStudents">Alle hinzufügen</v-btn>
                         </div>
@@ -325,10 +322,7 @@
                             {{ filteredImport116Students.length }}
                         </v-chip>
                         <v-spacer />
-                        <v-btn-toggle v-model="students_sort_mode" mandatory density="compact" color="primary" class="course-edit-students-sort-toggle">
-                            <v-btn size="x-small" value="class_last_name" class="course-edit-students-sort-toggle-btn">Klasse, Name</v-btn>
-                            <v-btn size="x-small" value="last_name_first_name" class="course-edit-students-sort-toggle-btn">Name</v-btn>
-                        </v-btn-toggle>
+                        <span class="text-caption">Nachname, Vorname</span>
                     </v-card-title>
                     <v-divider />
                     <v-card-text class="pa-0">
@@ -380,6 +374,7 @@
     </v-dialog>
 </template>
 <script>
+import { comparePersonNames } from '@/helpers/personNames'
 import { useValidationRulesSetup } from '@/helpers/rules'
 import { parseLocalDate } from '@/helpers/date'
 import { mapWritableState } from 'pinia'
@@ -861,26 +856,7 @@ export default {
             return (student?.schoolclass || student?.class || '').toString()
         },
         compareStudentsBySelectedSort(a, b) {
-            const lastA = (a?.last_name || '').toString()
-            const lastB = (b?.last_name || '').toString()
-            const firstA = (a?.first_name || '').toString()
-            const firstB = (b?.first_name || '').toString()
-            const classA = this.studentClassValue(a)
-            const classB = this.studentClassValue(b)
-
-            if (this.students_sort_mode === 'last_name_first_name') {
-                const lastCmp = lastA.localeCompare(lastB, 'de', { sensitivity: 'base' })
-                if (lastCmp !== 0) return lastCmp
-                const firstCmp = firstA.localeCompare(firstB, 'de', { sensitivity: 'base' })
-                if (firstCmp !== 0) return firstCmp
-                return classA.localeCompare(classB, 'de', { numeric: true, sensitivity: 'base' })
-            }
-
-            const classCmp = classA.localeCompare(classB, 'de', { numeric: true, sensitivity: 'base' })
-            if (classCmp !== 0) return classCmp
-            const lastCmp = lastA.localeCompare(lastB, 'de', { sensitivity: 'base' })
-            if (lastCmp !== 0) return lastCmp
-            return firstA.localeCompare(firstB, 'de', { sensitivity: 'base' })
+            return comparePersonNames(a, b)
         },
 
         formatDateTime(value) {

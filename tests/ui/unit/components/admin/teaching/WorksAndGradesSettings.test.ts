@@ -26,7 +26,7 @@ describe('Works and grades settings edit flow', () => {
         expect(source).toContain('v-for="(grade, index) in semesterPointsGrades"')
         expect(source).toContain('@update:model-value="updateSemesterPointsThreshold(grade, index, $event)"')
         expect(source).toContain('Punkte-Note-Tabelle pro Arbeit (optional)')
-        expect(source).toContain('<div class="form-group-box mt-4 points-note-box">')
+        expect(source).toContain('class="form-group-box mt-4 points-note-box"')
         expect(source).toContain('v-model="data.points_note_enabled"')
         expect(source).toContain('v-for="(grade, index) in pointsNoteGrades"')
         expect(source).toContain(`:label="index === pointsNoteGrades.length - 1 ? 'Ab Punkte (optional)' : 'Ab Punkte'"`)

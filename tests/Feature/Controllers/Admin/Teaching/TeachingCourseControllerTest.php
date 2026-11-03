@@ -25,6 +25,7 @@ use App\Models\TeachingCourseDateMaterialAttachment;
 use App\Models\TeachingCourseStudent;
 use App\Models\TeachingCourseStudentCategoryEvaluation;
 use App\Models\TeachingCourseStudentEntry;
+use App\Models\TeachingCourseWork;
 use App\Models\TeachingCourseWorkGroupStudent;
 use App\Models\TeachingCurriculum;
 use App\Models\TeachingEntryArea;
@@ -152,6 +153,94 @@ beforeEach(function () {
 // ============================================================================
 
 describe('index', function () {
+    test('timetable work dates follow the existing individual and group scheduling rules', function (bool $groupWork, ?string $date, array $groups, array $expectedDates) {
+        $this->actingAs($this->teacher, 'sanctum');
+        $course = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->teacher->id, 'title' => 'INF 2',
+        ]);
+        TeachingCourseWork::factory()->create([
+            'teaching_course_id' => $course->id, 'is_group_work' => $groupWork,
+            'date_for_all_groups' => $date, 'groups' => $groups,
+            'finish_until_date' => '2026-10-20', 'created_at' => '2026-10-21 12:00:00',
+        ]);
+        $foreignCourse = TeachingCourse::factory()->create([
+            'school_id' => $this->otherSchool->id, 'schoolyear_id' => $this->otherSchoolyear->id,
+            'user_id' => $this->teacher->id,
+        ]);
+        TeachingCourseWork::factory()->create(['teaching_course_id' => $foreignCourse->id, 'date_for_all_groups' => '2026-09-29']);
+
+        $this->getJson('/api/admin/teaching/courses')->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.scheduled_work_dates', $expectedDates)
+            ->assertJsonMissingPath('data.0.teaching_course_works');
+        $this->getJson('/api/admin/teaching/courses/'.$course->id)->assertOk()
+            ->assertJsonPath('data.scheduled_work_dates', $expectedDates)
+            ->assertJsonMissingPath('data.teaching_course_works');
+    })->with([
+        'individual common date' => [false, '2026-09-29', [], ['2026-09-29']],
+        'individual common and personal dates' => [false, '2026-09-29', [['date' => '2026-10-06'], ['date' => '2026-10-13']], ['2026-09-29', '2026-10-06', '2026-10-13']],
+        'group common date' => [true, '2026-09-29', [], ['2026-09-29']],
+        'group own dates replace common date' => [true, '2026-09-29', [['date' => '2026-10-06'], ['date' => '2026-10-13']], ['2026-10-06', '2026-10-13']],
+        'group missing date inherits common date' => [true, '2026-09-29', [['date' => '2026-10-06'], ['date' => null]], ['2026-09-29', '2026-10-06']],
+        'groups without common date' => [true, null, [['date' => '2026-10-06'], ['date' => '2026-10-06']], ['2026-10-06']],
+        'individual without common date' => [false, null, [['date' => '2026-10-06']], ['2026-10-06']],
+        'empty work ignores deadline and creation date' => [false, null, [], []],
+        'empty group dates' => [true, null, [['date' => '']], []],
+    ]);
+
+    test('timetable attendance completeness uses all active participant cells instead of the manual marker', function (array $states, bool $checked, bool $complete, ?array $counts) {
+        $this->actingAs($this->teacher, 'sanctum');
+        $course = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->teacher->id,
+            'title' => 'INF 2',
+        ]);
+        $students = User::factory()->count(2)->create();
+        $students->each(fn (User $student) => TeachingCourseStudent::query()->create([
+            'teaching_course_id' => $course->id,
+            'user_id' => $student->id,
+        ]));
+        TeachingCourseStudent::query()->create([
+            'teaching_course_id' => $course->id, 'user_id' => User::factory()->create()->id, 'canceled_at' => now(),
+        ]);
+        TeachingCourseStudent::query()->create([
+            'teaching_course_id' => $course->id, 'user_id' => User::factory()->create()->id,
+        ])->delete();
+        $attendance = [];
+        foreach ($states as $index => $state) {
+            $attendance['s_'.$students[$index]->id] = $state;
+        }
+        $attendance['s_999999'] = true;
+        TeachingCourseDate::query()->create([
+            'teaching_course_id' => $course->id,
+            'date' => '2026-09-29',
+            'hours' => [11, 12, 13],
+            'status' => ['cancelled_hour:12'],
+            'attendance' => $attendance,
+            'attendance_checked' => $checked,
+        ]);
+
+        $this->getJson('/api/admin/teaching/courses')->assertOk()
+            ->assertJsonCount(2, 'data.0.students')
+            ->assertJsonPath('data.0.course_dates.0.attendance_complete', $complete)
+            ->assertJsonPath('data.0.course_dates.0.attendance_counts', $counts)
+            ->assertJsonPath('data.0.course_dates.0.cancelled_hours.0', 12)
+            ->assertJsonMissingPath('data.0.course_dates.0.attendance');
+    })->with([
+        'all present' => [[true, true], false, true, ['present' => 2, 'absent' => 0]],
+        'mixed present and absent' => [[true, false], false, true, ['present' => 1, 'absent' => 1]],
+        'all absent' => [[false, false], false, true, ['present' => 0, 'absent' => 2]],
+        'encoded states' => [['1', '0'], false, true, ['present' => 1, 'absent' => 1]],
+        'text states' => [['true', 'false'], false, true, ['present' => 1, 'absent' => 1]],
+        'numeric states' => [[1, 0], false, true, ['present' => 1, 'absent' => 1]],
+        'missing participant despite manual check' => [[true], true, false, null],
+        'explicitly empty despite manual check' => [[true, null], true, false, null],
+        'invalid state' => [[true, 'unknown'], false, false, null],
+        'only unrelated participant' => [[], true, false, null],
+    ]);
+
     test('returns 401 when user is not authenticated', function () {
         $response = $this->getJson('/api/admin/teaching/courses');
 

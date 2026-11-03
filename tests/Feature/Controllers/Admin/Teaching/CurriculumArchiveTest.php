@@ -8,6 +8,7 @@ use App\Models\Schoolyear;
 use App\Models\TeachingCurriculum;
 use App\Models\TeachingImportedCurriculum;
 use App\Models\User;
+use App\Services\Teaching\TeachingExplanationCatalog;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
@@ -15,6 +16,22 @@ use Spatie\Permission\Models\Role;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 uses(RefreshDatabase::class);
+
+test('curriculum package preserves stable explanation assignments without public tokens', function (): void {
+    foreach (['decimal-to-binary', 'decimal-to-hexadecimal'] as $key) {
+        $this->curriculum->documents()->create([
+            'topic_id' => 'topic-1', 'unit_id' => 'unit-1', 'source_type' => 'explanation',
+            'explanation_key' => $key, 'name' => TeachingExplanationCatalog::find($key)['title'],
+        ]);
+    }
+    $archive = ($this->exportArchive)();
+    $import = $this->actingAs($this->otherTeacher, 'sanctum')->post('/api/admin/teaching/imported-curricula/import', ['file' => $archive])->assertCreated();
+    $adopt = $this->postJson('/api/admin/teaching/imported-curricula/'.$import->json('data.id').'/adopt')->assertCreated();
+    $copy = TeachingCurriculum::findOrFail($adopt->json('data.id'));
+    expect($copy->documents()->orderBy('id')->pluck('explanation_key')->all())->toBe(['decimal-to-binary', 'decimal-to-hexadecimal'])
+        ->and($copy->documents()->whereNotNull('file_path')->count())->toBe(0);
+    $this->getJson('/api/admin/teaching/curricula/'.$copy->id)->assertOk()->assertJsonPath('data.unit_file_counts.topic-1.unit-1', 2);
+});
 
 beforeEach(function () {
     Storage::fake('local');

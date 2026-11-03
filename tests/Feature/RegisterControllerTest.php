@@ -517,7 +517,7 @@ test('destroy deletes register without dependencies', function () {
     $registerId = $register->id;
 
     $response = $this->actingAs($this->adminUser)
-        ->deleteJson("/api/admin/registers/{$registerId}");
+        ->deleteJson("/api/admin/registers/{$registerId}", ['confirmation' => $register->name]);
 
     $response->assertStatus(204);
 
@@ -536,7 +536,7 @@ test('destroy clears user register_id before deleting', function () {
     $this->adminUser->save();
 
     $response = $this->actingAs($this->adminUser)
-        ->deleteJson("/api/admin/registers/{$register->id}");
+        ->deleteJson("/api/admin/registers/{$register->id}", ['confirmation' => $register->name]);
 
     $response->assertStatus(204);
 
@@ -572,6 +572,143 @@ test('destroy forbids registers from another school', function () {
 });
 
 // Set Active Register Tests
+test('destroy rejects missing or incorrect confirmation without removing dependent data', function (array $payload) {
+    $register = Register::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'name' => 'Come & Discover Tag 2027 - Versuch',
+    ]);
+    $date = RegisterDate::factory()->create([
+        'register_id' => $register->id,
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+    ]);
+    $booking = RegisterDateBooking::factory()->create([
+        'register_id' => $register->id,
+        'register_date_id' => $date->id,
+        'user_id' => $this->regularUser->id,
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+    ]);
+
+    $this->actingAs($this->adminUser)
+        ->deleteJson("/api/admin/registers/{$register->id}", $payload)
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('confirmation');
+
+    $this->assertModelExists($register);
+    $this->assertModelExists($date);
+    $this->assertModelExists($booking);
+})->with([
+    'missing' => [[]],
+    'generic yes' => [['confirmation' => 'Ja']],
+    'wrong tool' => [['confirmation' => 'Come & Discover Tag 2027']],
+]);
+
+test('destroy removes the confirmed tool with all bookings and dates while preserving other tools and accounts', function () {
+    $register = Register::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'name' => 'Come & Discover Tag 2027 - Versuch',
+    ]);
+    $otherRegister = Register::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+    ]);
+    $dates = RegisterDate::factory()->count(2)->create([
+        'register_id' => $register->id,
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+    ]);
+    foreach ($dates as $date) {
+        RegisterDateBooking::factory()->create([
+            'register_id' => $register->id,
+            'register_date_id' => $date->id,
+            'user_id' => $this->regularUser->id,
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+        ]);
+    }
+    $otherDate = RegisterDate::factory()->create([
+        'register_id' => $otherRegister->id,
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+    ]);
+    $otherBooking = RegisterDateBooking::factory()->create([
+        'register_id' => $otherRegister->id,
+        'register_date_id' => $otherDate->id,
+        'user_id' => $this->regularUser->id,
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+    ]);
+    $this->regularUser->update(['register_id' => $register->id]);
+    $this->registerAdmin->update(['register_id' => $register->id]);
+    $this->adminUser->update(['register_id' => $otherRegister->id]);
+
+    $this->actingAs($this->adminUser)
+        ->deleteJson("/api/admin/registers/{$register->id}", ['confirmation' => $register->name])
+        ->assertNoContent();
+
+    $this->assertModelMissing($register);
+    $this->assertDatabaseMissing('register_dates', ['register_id' => $register->id]);
+    $this->assertDatabaseMissing('register_date_bookings', ['register_id' => $register->id]);
+    $this->assertModelExists($otherRegister);
+    $this->assertModelExists($otherDate);
+    $this->assertModelExists($otherBooking);
+    expect($this->regularUser->fresh()->register_id)->toBeNull();
+    expect($this->registerAdmin->fresh()->register_id)->toBeNull();
+    expect($this->adminUser->fresh()->register_id)->toBe($otherRegister->id);
+});
+
+test('destroy rolls back dependent deletions when removing the tool fails', function () {
+    $register = Register::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+    ]);
+    $date = RegisterDate::factory()->create([
+        'register_id' => $register->id,
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+    ]);
+    $booking = RegisterDateBooking::factory()->create([
+        'register_id' => $register->id,
+        'register_date_id' => $date->id,
+        'user_id' => $this->regularUser->id,
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+    ]);
+    $this->regularUser->update(['register_id' => $register->id]);
+    $dispatcher = Register::getEventDispatcher();
+    Register::setEventDispatcher(clone $dispatcher);
+    try {
+        Register::deleting(function () {
+            throw new RuntimeException('Simulated deletion failure');
+        });
+        $this->actingAs($this->adminUser)
+            ->deleteJson("/api/admin/registers/{$register->id}", ['confirmation' => $register->name])
+            ->assertStatus(500);
+    } finally {
+        Register::setEventDispatcher($dispatcher);
+    }
+
+    $this->assertModelExists($register);
+    $this->assertModelExists($date);
+    $this->assertModelExists($booking);
+    expect($this->regularUser->fresh()->register_id)->toBe($register->id);
+});
+
+test('destroy requires authentication even with a matching confirmation', function () {
+    $register = Register::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+    ]);
+
+    $this->deleteJson("/api/admin/registers/{$register->id}", ['confirmation' => $register->name])
+        ->assertUnauthorized();
+
+    $this->assertModelExists($register);
+});
+
 test('setActiveRegister sets register for user', function () {
     $register = Register::factory()->create([
         'school_id' => $this->school->id,

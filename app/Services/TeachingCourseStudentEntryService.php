@@ -16,7 +16,7 @@ class TeachingCourseStudentEntryService
     {
         return match ($mode) {
             'plus' => '/\A\++\z/',
-            'plus_minus' => '/\A(?:\++|-+)\z/',
+            'plus_minus' => '/\A(?:\++|-+|0|~)\z/',
             default => null,
         };
     }
@@ -43,7 +43,9 @@ class TeachingCourseStudentEntryService
                 }
 
                 if ($pattern !== null && (! is_string($value) || preg_match($pattern, $value) !== 1)) {
-                    $fail('Bitte ausschließlich die erlaubten Plus- oder Minuszeichen eingeben.');
+                    $fail($definition->properties_mode === 'plus_minus'
+                        ? 'Bitte Pluszeichen, Minuszeichen, 0 (neutral) oder ~ (+0,5) eingeben.'
+                        : 'Bitte ausschließlich die erlaubten Pluszeichen eingeben.');
                 }
             };
         }

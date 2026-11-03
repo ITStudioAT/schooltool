@@ -3,7 +3,15 @@
 use App\Http\Controllers\Admin\MaturaController;
 use App\Http\Controllers\Homepage\HomepageController;
 use App\Http\Controllers\MaturaStationController;
+use App\Http\Controllers\Admin\Teaching\CourseDateController;
+use App\Http\Controllers\Admin\Teaching\CurriculumUnitFileController;
+use App\Http\Controllers\Admin\Teaching\WorkDropboxController;
+use App\Http\Controllers\MultipleChoiceParticipantController;
+use App\Http\Controllers\NumberSystemPlayerController;
+use App\Http\Controllers\SharedTeachingExplanationController;
+use App\Http\Controllers\Student\CourseController;
 use App\Http\Controllers\TeachingCourseStudentEntryNotificationConfirmationController;
+use App\Http\Middleware\EnsureTeachingCurriculaEnabled;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Facades\Route;
 
@@ -31,6 +39,17 @@ Route::middleware(['throttle:global', 'throttle:web'])->group(function () {
         Route::get('/{matura}/report', [MaturaController::class, 'report'])->name('report');
         Route::get('/{matura}/pdf', [MaturaController::class, 'pdf'])->name('pdf');
     });
+    Route::get('/explanations/{token}', [SharedTeachingExplanationController::class, 'entry'])->where('token', '[A-Za-z0-9]{48}')->name('explanations.entry');
+    Route::get('/api/explanations/{token}', [SharedTeachingExplanationController::class, 'show'])->where('token', '[A-Za-z0-9]{48}')->name('explanations.show');
+
+    Route::middleware(['auth', 'students-timetables-impersonation', 'api-allowed:scope:teaching_access', 'tool-licensed:Lehrertool,auth,scope:teaching_access'])->group(function (): void {
+        Route::get('/learning-materials/curriculum/{file}', [CurriculumUnitFileController::class, 'explanation'])
+            ->whereNumber('file')->middleware(EnsureTeachingCurriculaEnabled::class)->name('curriculum-explanations.show');
+        Route::get('/learning-materials/teaching/{attachment}', [CourseDateController::class, 'explanation'])
+            ->whereNumber('attachment')->middleware(EnsureTeachingCurriculaEnabled::class)->name('teaching-material-explanations.show');
+    });
+    Route::get('/learning-materials/course/{attachment}', [CourseController::class, 'explanation'])
+        ->whereNumber('attachment')->middleware(['auth', 'students-timetables-impersonation', 'tool-licensed:Lehrertool'])->name('student-material-explanations.show');
 
     /***** ADMIN ROUTES *****/
     /* auth-routes */
@@ -69,6 +88,10 @@ Route::middleware(['throttle:global', 'throttle:web'])->group(function () {
         'tool-licensed:Lehrertool,auth,scope:teaching_administration_access',
     ])->name('admin.teaching.administration');
 
+    Route::get('/admin/teaching/dropbox/callback', [WorkDropboxController::class, 'callback'])
+        ->middleware(['auth:sanctum', 'web-allowed:scope:tool_web_access', 'tool-licensed:Lehrertool,auth,scope:tool_web_access'])
+        ->name('teaching.dropbox.callback');
+
     Route::get('/admin/teaching/{any?}', function () {
         return view('spa::admin');
     })->where('any', '.*')->middleware([
@@ -76,6 +99,14 @@ Route::middleware(['throttle:global', 'throttle:web'])->group(function () {
         'web-allowed:scope:tool_web_access',
         'tool-licensed:Lehrertool,auth,scope:tool_web_access',
     ]);
+
+    Route::get('/admin/teaching-tools/{any?}', function (): View {
+        return view('spa::admin');
+    })->where('any', '.*')->middleware([
+        'auth:sanctum',
+        'web-allowed:scope:tool_web_access',
+        'tool-licensed:Lehrertool,auth,scope:tool_web_access',
+    ])->name('admin.teaching-tools');
 
     Route::get('/admin/materials/{any?}', function () {
         return view('spa::admin');
@@ -172,9 +203,37 @@ Route::middleware(['throttle:global', 'throttle:web'])->group(function () {
         return view('homepage');
     });
 
+    Route::get('/student/games/number-systems/{run?}', function (): View {
+        return view('homepage');
+    })->whereNumber('run')->middleware('students-timetables-impersonation')->name('number-systems.entry');
+
     Route::get('/student/{any?}', function () {
         return view('homepage');
     })->where('any', '.*')->middleware('students-timetables-impersonation');
+
+    Route::prefix('/api/number-systems')->middleware(['students-timetables-impersonation', 'throttle:120,1'])->name('number-systems.')->group(function (): void {
+        Route::get('/', [NumberSystemPlayerController::class, 'index'])->name('index');
+        Route::post('/join', [NumberSystemPlayerController::class, 'join'])->middleware('throttle:15,1')->name('join');
+        Route::post('/lookup', [NumberSystemPlayerController::class, 'lookup'])->middleware('throttle:20,1')->name('lookup');
+        Route::get('/runs/{run}', [NumberSystemPlayerController::class, 'show'])->name('show');
+        Route::post('/runs/{run}', [NumberSystemPlayerController::class, 'update'])->name('update');
+        Route::post('/runs/{run}/presence', [NumberSystemPlayerController::class, 'presence'])->name('presence');
+    });
+
+    Route::get('/multiple-choice', function (): View {
+        return view('homepage');
+    })->middleware('students-timetables-impersonation')->name('multiple-choice.entry');
+
+    Route::prefix('/api/multiple-choice')->middleware(['students-timetables-impersonation', 'throttle:multiple-choice'])->name('multiple-choice.')->group(function (): void {
+        Route::get('/attempts', [MultipleChoiceParticipantController::class, 'index'])->name('index');
+        Route::get('/access', [MultipleChoiceParticipantController::class, 'access'])->middleware('throttle:multiple-choice-access')->name('access');
+        Route::get('/attempts/{attempt}', [MultipleChoiceParticipantController::class, 'show'])->name('show');
+        Route::post('/attempts/{attempt}/activity', [MultipleChoiceParticipantController::class, 'activity'])->middleware('throttle:multiple-choice-activity')->name('activity');
+        Route::post('/attempts/{attempt}/start', [MultipleChoiceParticipantController::class, 'start'])->name('start');
+        Route::post('/attempts/{attempt}/ready', [MultipleChoiceParticipantController::class, 'ready'])->name('ready');
+        Route::put('/attempts/{attempt}/answers', [MultipleChoiceParticipantController::class, 'save'])->name('save');
+        Route::post('/attempts/{attempt}/submit', [MultipleChoiceParticipantController::class, 'submit'])->name('submit');
+    });
 
     Route::get('/students-timetables/{any?}', function () {
         return view('homepage');
@@ -185,5 +244,4 @@ Route::middleware(['throttle:global', 'throttle:web'])->group(function () {
     })->where('any', '.*');
 
     Route::get('/homepage/{any?}', [HomepageController::class, 'routing']);
-
 });

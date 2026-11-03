@@ -1,7 +1,269 @@
 import { describe, expect, it, vi } from 'vitest'
 import CourseStudents from '@/pages/admin/teaching/overview/components/CourseStudents.vue'
+import axios from 'axios'
+import { computed, reactive } from 'vue'
+
+vi.mock('axios', () => ({ default: { get: vi.fn() } }))
+
+describe('CourseStudents presence in the selected period', () => {
+    it('defaults attendance display to enabled and follows the personal display preference', () => {
+        const visible = (CourseStudents as any).computed.attendanceVisible
+
+        expect(visible.call({ config: {} })).toBe(true)
+        expect(visible.call({ config: { user: { teaching_show_attendance: false } } })).toBe(false)
+        expect(visible.call({ config: { user: { teaching_show_attendance: true } } })).toBe(true)
+    })
+
+    it.each([1, 2])('uses assigned area semester count %s and normalizes unavailable stored filters', (count) => {
+        const component = CourseStudents as any
+        const state = { selected_course: { semester_count: count }, selectedCourseSchema: { grading: { semester_count: 2 } }, activeSemester: 3 }
+        expect(component.computed.semesterCount.call(state)).toBe(count)
+        component.watch.semesterCount.handler.call(state, count)
+        expect(state.activeSemester).toBe(count === 1 ? 1 : 3)
+    })
+    function context(overrides = {}) {
+        const methods = (CourseStudents as any).methods
+        return {
+            semesterCount: 2, activeSemester: 1, schoolSem2StartDate: '2026-02-09', countSem2StartDate: null,
+            selected_course: { students_info: [{ id: 10 }, { id: 20 }] },
+            sortedCourseDates: [
+                { id: 1, date: '2026-01-12', attendance: { s_10: true, s_20: null }, attendance_checked: true },
+                { id: 2, date: '2026-01-19', attendance: { s_10: false, s_20: null }, attendance_checked: true },
+                { id: 3, date: '2026-02-16', attendance: { s_10: true, s_20: false } },
+                { id: 4, date: '2026-02-23', attendance: {}, attendance_checked: false },
+                { id: 5, date: '2026-01-26', status: ['free'], attendance: { s_10: false } },
+                { id: 6, date: '2026-02-02', status: ['entfaellt'], attendance: { s_10: false } },
+            ],
+            getAttendanceMap: methods.getAttendanceMap, normalizeIndexedAttendance: methods.normalizeIndexedAttendance,
+            sanitizeAttendanceMap: methods.sanitizeAttendanceMap, isAttendancePresentValue: methods.isAttendancePresentValue,
+            ...overrides,
+        }
+    }
+
+    it.each([
+        [1, { 10: 50, 20: null }],
+        [2, { 10: 100, 20: 0 }],
+        [3, { 10: 67, 20: 0 }],
+    ])('uses known attendance in semester selection %s and preserves unknown people', (semester, expected) => {
+        const state = context({ activeSemester: semester })
+        expect((CourseStudents as any).computed.studentPresencePercentages.call(state)).toEqual(expected)
+    })
+
+    it('shows no percentage for an empty or wholly unchecked period', () => {
+        for (const dates of [[], [{ id: 7, date: '2026-01-12', attendance_checked: false, attendance: {} }]]) {
+            expect((CourseStudents as any).computed.studentPresencePercentages.call(context({ sortedCourseDates: dates })))
+                .toEqual({ 10: null, 20: null })
+        }
+    })
+
+    it('reuses whole-date confirmation and explicit unknown precedence for legacy attendance', () => {
+        const state = context({ sortedCourseDates: [
+            { id: 1, date: '2026-01-12', status: ['att_checked:1', 'att:10:0', 'att:20:null'] },
+            { id: 2, date: '2026-01-19', status: ['att_checked:1'] },
+        ] })
+        expect((CourseStudents as any).computed.studentPresencePercentages.call(state)).toEqual({ 10: 50, 20: 100 })
+    })
+})
+
+describe('CourseStudents account switching', () => {
+    it.each([
+        [['super_admin'], false, true],
+        [['teacher'], false, false],
+        [['admin'], false, false],
+        [['super_admin'], true, false],
+        [null, false, false],
+    ])('allows account switching for roles %s while impersonating %s: %s', (roles, isImpersonating, allowed) => {
+        expect((CourseStudents as any).computed.canImpersonateStudents.call({
+            config: { roles, impersonation: { is_impersonating: isImpersonating } },
+        })).toBe(allowed)
+    })
+
+    function context(overrides = {}) {
+        return {
+            canImpersonateStudents: true,
+            selected_course: { id: 17 },
+            impersonatingStudentId: null,
+            hasUnsavedAttendanceChanges: false,
+            show_bulk_entry: false,
+            students_sort_mode: 'class_last_name',
+            students_view_mode: 'students',
+            $route: { path: '/admin/teaching/overview', query: { course: '17', panel: 'students', grades: 'sem1' }, hash: '#students' },
+            $router: { resolve: vi.fn().mockReturnValue({ href: '/admin/teaching/overview?course=17&panel=students&grades=sem1&student_sort=class_last_name#students' }) },
+            adminStore: { startImpersonation: vi.fn().mockResolvedValue(true) },
+            ...overrides,
+        }
+    }
+
+    it('switches to the linked user and opens the selected course in a new document', async () => {
+        const state = context()
+        const location = { href: '/admin/teaching?panel=students&course=17' }
+        vi.stubGlobal('window', { location })
+        try {
+            await (CourseStudents as any).methods.impersonateStudent.call(state, { id: 901, user_id: 42 })
+            expect(state.$router.resolve).toHaveBeenCalledWith({
+                path: '/admin/teaching/overview', query: { course: '17', panel: 'students', grades: 'sem1', student_sort: 'class_last_name', student_view: 'students' }, hash: '#students',
+            })
+            expect(state.adminStore.startImpersonation).toHaveBeenCalledWith(42, {
+                teachingCourseId: 17, returnUrl: '/admin/teaching/overview?course=17&panel=students&grades=sem1&student_sort=class_last_name#students',
+            })
+            expect(location.href).toBe('/student/course/17')
+        } finally {
+            vi.unstubAllGlobals()
+        }
+    })
+
+    it.each([
+        { canImpersonateStudents: false },
+        { impersonatingStudentId: 43 },
+        { hasUnsavedAttendanceChanges: true },
+        { show_bulk_entry: true },
+    ])('preserves the current session when switching is unavailable: %s', async (overrides) => {
+        const state = context(overrides)
+        await (CourseStudents as any).methods.impersonateStudent.call(state, { id: 901, user_id: 42 })
+        expect(state.adminStore.startImpersonation).not.toHaveBeenCalled()
+    })
+
+    it('keeps the selected lesson and day overview in the return target', async () => {
+        const state = context({ students_view_mode: 'day_overview', selectedCourseDateForCourse: { id: 55 },
+            adminStore: { startImpersonation: vi.fn().mockResolvedValue(false) } })
+        await (CourseStudents as any).methods.impersonateStudent.call(state, { user_id: 42 })
+        expect(state.$router.resolve).toHaveBeenCalledWith(expect.objectContaining({ query: {
+            course: '17', panel: 'students', grades: 'sem1', student_sort: 'class_last_name', student_view: 'day_overview', date: '55',
+        } }))
+    })
+
+    it('never uses an import ID as the account ID', async () => {
+        const state = context()
+        await (CourseStudents as any).methods.impersonateStudent.call(state, { id: 901, user_id: null })
+        expect(state.adminStore.startImpersonation).not.toHaveBeenCalled()
+    })
+
+    it('stays in the teacher view and releases the loading state when the server rejects the switch', async () => {
+        const state = context({ adminStore: { startImpersonation: vi.fn().mockResolvedValue(false) } })
+        const location = { href: '/admin/teaching?panel=students&course=17' }
+        vi.stubGlobal('window', { location })
+        try {
+            await (CourseStudents as any).methods.impersonateStudent.call(state, { id: 901, user_id: 42 })
+            expect(location.href).toBe('/admin/teaching?panel=students&course=17')
+            expect(state.impersonatingStudentId).toBeNull()
+        } finally {
+            vi.unstubAllGlobals()
+        }
+    })
+
+    it('prevents duplicate switches while the first request is pending', async () => {
+        let complete: (success: boolean) => void
+        const startImpersonation = vi.fn(() => new Promise<boolean>((resolve) => { complete = resolve }))
+        const state = context({ adminStore: { startImpersonation } })
+        const firstRequest = (CourseStudents as any).methods.impersonateStudent.call(state, { user_id: 42 })
+        await (CourseStudents as any).methods.impersonateStudent.call(state, { user_id: 43 })
+        expect(startImpersonation).toHaveBeenCalledTimes(1)
+        complete!(false)
+        await firstRequest
+        expect(state.impersonatingStudentId).toBeNull()
+    })
+})
 
 describe('CourseStudents complete performance loading', () => {
+    it('restores each course preference on course changes and fresh settings loads', () => {
+        const context = reactive({
+            selected_course: { id: 17 },
+            settings: { teaching_show_calculated_grade: true, teaching_show_calculated_grade_by_course: { 17: false, 18: true } },
+        })
+        const visible = computed(() => (CourseStudents as any).computed.showCalculatedGrade.call(context))
+        expect(visible.value).toBe(false)
+        context.selected_course = { id: 18 }
+        expect(visible.value).toBe(true)
+        context.selected_course = { id: 17 }
+        expect(visible.value).toBe(false)
+        context.settings = JSON.parse(JSON.stringify(context.settings))
+        expect(visible.value).toBe(false)
+    })
+
+    it.each([true, false])('uses the previous preference %s only for courses without a saved choice', (value) => {
+        const context = { selected_course: { id: 17 }, settings: { teaching_show_calculated_grade: value } }
+        expect((CourseStudents as any).computed.showCalculatedGrade.call(context)).toBe(value)
+    })
+
+    it.each([[false, true], [true, false]])('persists calculated note visibility from %s to %s', async (previous, value) => {
+        const saveSettings = vi.fn().mockResolvedValue(true)
+        const context = { selected_course: { id: 17 }, settings: {}, showCalculatedGrade: previous,
+            savingCalculatedGradePreference: false, teachingStore: { saveSettings } }
+        await (CourseStudents as any).methods.toggleCalculatedGrade.call(context)
+        expect(saveSettings).toHaveBeenCalledWith({ teaching_course_id: 17, teaching_show_calculated_grade: value }, { notifySuccess: false })
+        expect(context.savingCalculatedGradePreference).toBe(false)
+    })
+
+    it('retains the calculated note preference when saving fails', async () => {
+        const context = { selected_course: { id: 17 }, settings: {}, showCalculatedGrade: true, savingCalculatedGradePreference: false,
+            teachingStore: { saveSettings: vi.fn().mockResolvedValue(false) } }
+        await (CourseStudents as any).methods.toggleCalculatedGrade.call(context)
+        expect(context.showCalculatedGrade).toBe(true)
+        expect(context.savingCalculatedGradePreference).toBe(false)
+    })
+
+    it('keeps the newly selected course visible when the previous course finishes saving', async () => {
+        let complete: () => void
+        const context: any = reactive({ selected_course: { id: 17 }, savingCalculatedGradePreference: false,
+            settings: { teaching_show_calculated_grade_by_course: { 17: false, 18: false } },
+            teachingStore: { saveSettings: vi.fn(() => new Promise<boolean>((resolve) => {
+                complete = () => {
+                    context.settings = { teaching_show_calculated_grade_by_course: { 17: true, 18: false } }
+                    resolve(true)
+                }
+            })) },
+        })
+        Object.defineProperty(context, 'showCalculatedGrade', {
+            get: () => (CourseStudents as any).computed.showCalculatedGrade.call(context),
+        })
+        const pending = (CourseStudents as any).methods.toggleCalculatedGrade.call(context)
+        context.selected_course = { id: 18 }
+        complete!()
+        await pending
+        expect(context.showCalculatedGrade).toBe(false)
+        context.selected_course = { id: 17 }
+        expect(context.showCalculatedGrade).toBe(true)
+    })
+
+    it.each([{ selected_course: null, settings: {} }, { selected_course: { id: 17 }, settings: null }])(
+        'does not save without a selected course and loaded settings', async (state) => {
+            const saveSettings = vi.fn()
+            await (CourseStudents as any).methods.toggleCalculatedGrade.call({ ...state, teachingStore: { saveSettings } })
+            expect(saveSettings).not.toHaveBeenCalled()
+        },
+    )
+    it.each([18, 99])('loads the shared grading report and rejects a mismatched course %s', async (reportCourseId) => {
+        const report = { course_id: reportCourseId, schoolyear_id: 3, students: [] }
+        vi.mocked(axios.get).mockResolvedValueOnce({ data: { data: report } })
+        const context: any = {
+            performanceRequestId: 0, usesNewBulkEntryDefinitions: true,
+            config: { selected_schoolyear: { id: 3 } },
+            behaviourEntryStore: { indexByCourse: vi.fn().mockResolvedValue(true) },
+            entryStore: { indexByCourse: vi.fn().mockResolvedValue(true) },
+            courseWorkStore: { index: vi.fn().mockResolvedValue(true) },
+            categoryEvaluationStore: { indexByCourse: vi.fn().mockResolvedValue(true) },
+        }
+        await (CourseStudents as any).methods.loadStudentPerformance.call(context, 18)
+        expect(axios.get).toHaveBeenLastCalledWith(expect.stringMatching(/18.*semester=3/))
+        expect(context.performanceLoadFailed).toBe(reportCourseId !== 18)
+        if (reportCourseId === 18) expect(context.performanceData.gradingReport).toEqual(report)
+    })
+    it('loads the recorded performances without requesting a grading report when calculations are disabled', async () => {
+        vi.mocked(axios.get).mockClear()
+        const context: any = {
+            performanceRequestId: 0, usesNewBulkEntryDefinitions: true, calculationsEnabled: false,
+            config: { selected_schoolyear: { id: 3 } },
+            behaviourEntryStore: { indexByCourse: vi.fn().mockResolvedValue(true) },
+            entryStore: { indexByCourse: vi.fn().mockResolvedValue(true), courseEntries: [{ id: 1 }] },
+            courseWorkStore: { index: vi.fn().mockResolvedValue(true) },
+            categoryEvaluationStore: { indexByCourse: vi.fn().mockResolvedValue(true) },
+        }
+        await (CourseStudents as any).methods.loadStudentPerformance.call(context, 18)
+        expect(axios.get).not.toHaveBeenCalled()
+        expect(context.performanceLoadFailed).toBe(false)
+        expect(context.performanceData.entries).toEqual([{ id: 1 }])
+        expect(context.performanceData.gradingReport).toBeNull()
+    })
     it.each(['6,25', '0', 'NA'])('saves bulk points %s as a normalized value', async (grade) => {
         const methods = (CourseStudents as any).methods
         const store = vi.fn().mockResolvedValue(true)
@@ -137,7 +399,7 @@ describe('CourseStudents complete performance loading', () => {
         const context = { performanceRequestId: 4, performanceData: { entries: [{ teaching_course_id: 18 }] }, performanceLoading: false, courseStore: { index: vi.fn() } }
         ;(CourseStudents as any).watch['config.selected_schoolyear.id'].call(context, 4, 3)
         expect(context.performanceRequestId).toBe(5)
-        expect(context.performanceData).toEqual({ entries: [], behaviourEntries: [], works: [], evaluations: [] })
+        expect(context.performanceData).toEqual({ entries: [], behaviourEntries: [], works: [], evaluations: [], gradingReport: null })
         expect(context.performanceLoading).toBe(true)
         expect(context.courseStore.index).toHaveBeenCalledOnce()
     })
@@ -517,8 +779,8 @@ describe('CourseStudents attendance editing', () => {
             fs.readFile('resources/js/pages/admin/teaching/overview/components/CourseStudents.vue', 'utf8')
         )
 
-        expect(source).toContain('v-if="canEditAttendance && selectedCourseDateForCourse && !isDayOverviewMode && !show_bulk_entry"')
-        expect(source).toContain('v-if="canEditAttendance && selectedCourseDateForCourse"')
+        expect(source).toContain('v-if="attendanceVisible && canEditAttendance && selectedCourseDateForCourse && !isDayOverviewMode && !show_bulk_entry"')
+        expect(source).toContain('v-if="attendanceVisible && canEditAttendance && selectedCourseDateForCourse"')
     })
 
     it('does not toggle one student when attendance editing is disabled', () => {

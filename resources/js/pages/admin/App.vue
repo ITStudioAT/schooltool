@@ -1,5 +1,6 @@
 <template>
     <v-app>
+        <ImpersonationTransitionOverlay />
         <admin-navigation-drawer
             v-model="show_navigation_drawer"
             :is-visible="isAdminShellVisible"
@@ -62,6 +63,7 @@ import AdminImportCompletionListener from '@/pages/admin/components/AdminImportC
 import AdminImpersonationAlert from '@/pages/admin/components/AdminImpersonationAlert.vue'
 import AdminNavigationDrawer from '@/pages/admin/components/AdminNavigationDrawer.vue'
 import ItsNotification from '@/pages/components/ItsNotification.vue'
+import ImpersonationTransitionOverlay from '@/pages/components/ImpersonationTransitionOverlay.vue'
 import { useAdminRouteNavigation } from '@/composables/useAdminRouteNavigation'
 import { resolveSelectedSchoolLogoSrc } from '@/helpers/adminSchoolLogo'
 import { resolveAdminShellColor, resolveAdminShellTextColor } from '@/helpers/adminShellTheme'
@@ -77,6 +79,7 @@ export default {
         AdminImpersonationAlert,
         AdminNavigationDrawer,
         ItsNotification,
+        ImpersonationTransitionOverlay,
     },
 
     data() {
@@ -180,8 +183,9 @@ export default {
             window.location.replace('/admin/login')
         },
         async stopImpersonationAndReturn() {
-            if (!(await this.adminStore.stopImpersonation())) return
-            window.location.replace('/admin')
+            const returnUrl = await this.adminStore.stopImpersonation()
+            if (!returnUrl) return
+            window.location.replace(returnUrl)
         },
         openCookiePrefs() {
             if (typeof window.showHideToggleCookiePreferencesModal === 'function') {
@@ -212,11 +216,10 @@ export default {
                 return
             }
 
-            await this.adminStore.loadConfig()
-            await this.$nextTick()
-            this.redirectToPostHopTarget(currentRouteTarget)
+            const nextConfig = await this.adminStore.loadConfig({ navigationOnly: true })
+            this.redirectToPostHopTarget(currentRouteTarget, nextConfig || {})
         },
-        resolvePostHopTarget(target) {
+        resolvePostHopTarget(target, config = this.adminStore?.config) {
             if (typeof target !== 'string' || target.trim() === '') {
                 return '/admin'
             }
@@ -233,10 +236,10 @@ export default {
                 return target
             }
 
-            return this.adminStore?.config?.capabilities?.[routeAccess.capability] === true ? target : '/admin'
+            return config?.capabilities?.[routeAccess.capability] === true ? target : '/admin'
         },
-        redirectToPostHopTarget(target) {
-            window.location.assign(this.resolvePostHopTarget(target))
+        redirectToPostHopTarget(target, config) {
+            window.location.assign(this.resolvePostHopTarget(target, config))
         },
         callItemClick(item) {
             const fnName = item.click

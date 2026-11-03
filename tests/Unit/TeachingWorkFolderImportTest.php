@@ -1,0 +1,141 @@
+<?php
+
+use App\Models\TeachingCourseWork;
+use App\Services\TeachingWorkFolderImport;
+use Illuminate\Validation\ValidationException;
+use Tests\TestCase;
+
+uses(TestCase::class);
+
+test('dispatch precision revalidates only the same task original and preserves multiple confirmed sends', function () {
+    $original = str_repeat('a', 64);
+    $otherOriginal = str_repeat('b', 64);
+    $work = (new TeachingCourseWork)->forceFill(['status' => [
+        'dispatch_logs' => array_map(fn (string $sha256): array => ['sha256' => $sha256, 'origin' => 'dispatch_import', 'purpose' => 'tasks'], [$original, $otherOriginal]),
+        'dispatch_notifications' => [
+            ['student_id' => 12, 'purpose' => 'tasks', 'origin' => 'dispatch_import', 'sent_at' => '2026-10-04T13:36:20Z', 'log_sha256' => $original],
+            ['student_id' => 12, 'purpose' => 'tasks', 'origin' => 'dispatch_import', 'sent_at' => '2026-10-03T12:00:00Z', 'log_sha256' => $otherOriginal],
+        ],
+    ]]);
+
+    $sources = app(TeachingWorkFolderImport::class)->availabilitySources($work, [], [[
+        'purpose' => 'tasks', 'can_import' => true, 'source_sha256' => $original, 'rows' => [
+            ['student_id' => 12, 'accepted' => true, 'sent_at' => '2026-10-04T13:36:20.367Z'],
+            ['student_id' => 12, 'accepted' => true, 'sent_at' => '2026-10-04T13:36:20.9Z'],
+        ],
+    ]]);
+
+    expect(array_column($sources, 'available_at'))->toBe([
+        '2026-10-03T12:00:00Z', '2026-10-04T13:36:20.367Z', '2026-10-04T13:36:20.9Z',
+    ])->and(array_count_values(array_column($sources, 'log_sha256')))->toBe([$otherOriginal => 1, $original => 2]);
+});
+
+test('prepares a folder without a fixed deadline and preserves the existing work deadline', function (array $deadline, string $prefix) {
+    $folder = '2026-10-16_Informatik_1A_1F';
+    $metadata = $deadline + [
+        'Schooltool_Arbeit_ID' => 80,
+        'Schooltool_Kurs_ID' => 27,
+        'Zeitzone' => 'Europe/Vienna',
+        'Schooltool_Hauptfrist' => ['date' => '2026-10-16', 'time' => null],
+    ];
+    $parser = app(TeachingWorkFolderImport::class);
+    $bundle = $parser->parse($folder, json_encode([
+        ['path' => $folder.'/Anlage_und_Quellen.json', 'text' => $prefix.json_encode($metadata, JSON_THROW_ON_ERROR)],
+    ], JSON_THROW_ON_ERROR), '[]', []);
+    $work = (new TeachingCourseWork)->forceFill([
+        'id' => 80, 'teaching_course_id' => 27,
+        'finish_until_date' => '2026-10-16', 'finish_until_time' => '17:50',
+    ]);
+
+    expect($bundle['deadline'])->toBeNull()
+        ->and($parser->deadlineFields($work, $bundle))->toBe([])
+        ->and($work->finish_until_time)->toBe('17:50')
+        ->and($bundle['sources'])->toHaveKey('anlage_und_quellen.json');
+})->with(['absent' => [[]], 'null' => [['Abgabeschluss' => null]]])
+    ->with(['plain UTF-8' => [''], 'UTF-8 BOM' => ["\xEF\xBB\xBF"]]);
+
+test('imports an explicitly specified deadline with its Vienna offset', function (string $prefix, array $communicated) {
+    $folder = '2026-10-16_Informatik_1A_1F';
+    $parser = app(TeachingWorkFolderImport::class);
+    $bundle = $parser->parse($folder, json_encode([
+        ['path' => $folder.'/Anlage_und_Quellen.json', 'text' => $prefix.json_encode([
+            'Schooltool_Arbeit_ID' => 80, 'Schooltool_Kurs_ID' => 27,
+            'Zeitzone' => 'Europe/Vienna', 'Abgabeschluss' => '2026-10-16T17:50:00+02:00',
+            'Zusaetzliche_Quellen' => ['version' => 2, 'Hinweis' => 'Ergänzende Metadaten bleiben kompatibel.'],
+        ] + $communicated, JSON_THROW_ON_ERROR)],
+    ], JSON_THROW_ON_ERROR), '[]', []);
+    $work = (new TeachingCourseWork)->forceFill(['id' => 80, 'teaching_course_id' => 27]);
+
+    $fields = $parser->deadlineFields($work, $bundle);
+    expect(collect($fields)->except('status')->all())->toBe([
+        'finish_until_date' => '2026-10-16', 'finish_until_time' => '17:50',
+    ]);
+    $work->forceFill($fields);
+    expect($work->communicatedDeadline())->toBe($communicated === [] ? null : [
+        'at' => '2026-10-16T17:00:00+02:00', 'date' => '2026-10-16', 'time' => '17:00',
+    ]);
+})->with(['plain UTF-8' => [''], 'UTF-8 BOM' => ["\xEF\xBB\xBF"]])
+    ->with(['single deadline' => [[]], 'earlier communicated deadline' => [['MitgeteilteAbgabefrist' => '2026-10-16T17:00:00+02:00']]]);
+
+test('rejects malformed JSON even with a UTF-8 BOM', function () {
+    $folder = '2026-10-16_Informatik_1A_1F';
+    $documents = json_encode([
+        ['path' => $folder.'/Anlage_und_Quellen.json', 'text' => "\xEF\xBB\xBF".'{"Schooltool_Arbeit_ID":80,}'],
+    ], JSON_THROW_ON_ERROR);
+
+    expect(fn () => app(TeachingWorkFolderImport::class)->parse($folder, $documents, '[]', []))
+        ->toThrow(ValidationException::class, 'Anlage_und_Quellen.json: Ungültige Fristmetadaten.');
+});
+
+test('rejects a later communicated deadline even with a UTF-8 BOM', function () {
+    $folder = '2026-10-16_Informatik_1A_1F';
+    $documents = json_encode([
+        ['path' => $folder.'/Anlage_und_Quellen.json', 'text' => "\xEF\xBB\xBF".json_encode([
+            'Schooltool_Arbeit_ID' => 80, 'Schooltool_Kurs_ID' => 27,
+            'Zeitzone' => 'Europe/Vienna', 'Abgabeschluss' => '2026-10-16T17:50:00+02:00',
+            'MitgeteilteAbgabefrist' => '2026-10-16T18:00:00+02:00',
+        ], JSON_THROW_ON_ERROR)],
+    ], JSON_THROW_ON_ERROR);
+
+    expect(fn () => app(TeachingWorkFolderImport::class)->parse($folder, $documents, '[]', []))
+        ->toThrow(ValidationException::class, 'Anlage_und_Quellen.json: Die mitgeteilte Frist liegt nach dem Prüfungsschluss.');
+});
+
+test('rejects malformed explicit deadlines instead of treating them as unset', function (string $deadline) {
+    $folder = '2026-10-16_Informatik_1A_1F';
+    $documents = json_encode([
+        ['path' => $folder.'/Anlage_und_Quellen.json', 'text' => json_encode([
+            'Schooltool_Arbeit_ID' => 80, 'Schooltool_Kurs_ID' => 27,
+            'Zeitzone' => 'Europe/Vienna', 'Abgabeschluss' => $deadline,
+        ], JSON_THROW_ON_ERROR)],
+    ], JSON_THROW_ON_ERROR);
+
+    expect(fn () => app(TeachingWorkFolderImport::class)->parse($folder, $documents, '[]', []))
+        ->toThrow(ValidationException::class);
+})->with(['', '2026-10-16', '2026-10-16T17:50:00+01:00']);
+
+test('rejects a communicated deadline without its main deadline', function () {
+    $folder = '2026-10-16_Informatik_1A_1F';
+    $documents = json_encode([
+        ['path' => $folder.'/Anlage_und_Quellen.json', 'text' => json_encode([
+            'Schooltool_Arbeit_ID' => 80, 'Schooltool_Kurs_ID' => 27,
+            'Zeitzone' => 'Europe/Vienna', 'MitgeteilteAbgabefrist' => '2026-10-16T17:50:00+02:00',
+        ], JSON_THROW_ON_ERROR)],
+    ], JSON_THROW_ON_ERROR);
+
+    expect(fn () => app(TeachingWorkFolderImport::class)->parse($folder, $documents, '[]', []))
+        ->toThrow(ValidationException::class);
+});
+
+test('rejects metadata for another work or course even without a deadline', function (int $workId, int $courseId) {
+    $folder = '2026-10-16_Informatik_1A_1F';
+    $parser = app(TeachingWorkFolderImport::class);
+    $bundle = $parser->parse($folder, json_encode([
+        ['path' => $folder.'/Anlage_und_Quellen.json', 'text' => json_encode([
+            'Schooltool_Arbeit_ID' => $workId, 'Schooltool_Kurs_ID' => $courseId, 'Zeitzone' => 'Europe/Vienna',
+        ], JSON_THROW_ON_ERROR)],
+    ], JSON_THROW_ON_ERROR), '[]', []);
+    $work = (new TeachingCourseWork)->forceFill(['id' => 80, 'teaching_course_id' => 27]);
+
+    expect(fn () => $parser->deadlineFields($work, $bundle))->toThrow(ValidationException::class);
+})->with([[81, 27], [80, 28]]);

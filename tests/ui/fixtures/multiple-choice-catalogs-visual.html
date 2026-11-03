@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Isolierte Katalog-Darstellungsprüfung</title>
+    <link href="https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css" rel="stylesheet">
+    <style>body { margin: 0; } .catalog-preview { max-width: 1240px; margin: auto; padding: 28px; }</style>
+</head>
+<body>
+<div id="app"></div>
+<script type="module">
+    import { createApp, h } from 'vue'
+    import { VApp, VMain } from 'vuetify/components'
+    import axios from 'axios'
+    import vuetify from '/resources/plugins/admin.js'
+    import MultipleChoiceWorkspace from '/resources/js/pages/admin/teachingTools/MultipleChoiceWorkspace.vue'
+
+    // Only synthetic catalogs in page memory; these methods never contact an API or database.
+    let catalogs = [
+        { id: 900001, title: 'E-Mails und Kommunikation', questions: [
+            { id: 'q1', prompt: 'Wofür steht E-Mail?', type: 'single', active: true, reviewed: true,
+                options: [{ id: 'a', text: 'Elektronische Post' }, { id: 'b', text: 'Briefpost' }], correct_option_ids: ['a'] },
+        ] },
+        { id: 900002, title: 'Textverarbeitung', questions: [] },
+    ]
+    axios.get = async (url) => {
+        if (!String(url).endsWith('/multiple-choice')) { throw new Error('Unexpected preview request') }
+        return { data: { available: true, catalogs: structuredClone(catalogs), tests: [] } }
+    }
+    axios.post = async (url, payload) => {
+        if (!String(url).endsWith('/multiple-choice/catalogs')) { throw new Error('Unexpected preview request') }
+        const catalog = { id: Math.max(...catalogs.map(item => item.id)) + 1, ...structuredClone(payload) }
+        catalogs.push(catalog)
+        return { data: { catalog: structuredClone(catalog) } }
+    }
+    axios.patch = async (url, payload) => {
+        const catalog = catalogs.find(item => String(url).endsWith(`/catalogs/${item.id}`))
+        if (!catalog) { throw new Error('Unexpected preview request') }
+        Object.assign(catalog, structuredClone(payload))
+        return { data: { catalog: structuredClone(catalog) } }
+    }
+    createApp({ render: () => h(VApp, {}, () => h(VMain, {}, () => h('div', { class: 'catalog-preview' }, h(MultipleChoiceWorkspace)))) })
+        .use(vuetify).mount('#app')
+</script>
+</body>
+</html>

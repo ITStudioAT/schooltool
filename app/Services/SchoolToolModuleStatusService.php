@@ -129,6 +129,7 @@ class SchoolToolModuleStatusService
      *     meta:string,
      *     licence_id:int,
      *     licence_name:string,
+     *     hasUserView:bool,
      *     adminVisibleField:string,
      *     userVisibleField:string,
      *     userTestModeField:string,
@@ -230,6 +231,7 @@ class SchoolToolModuleStatusService
      *     meta:string,
      *     licence_id:int,
      *     licence_name:string,
+     *     hasUserView:bool,
      *     adminVisibleField:string,
      *     userVisibleField:string,
      *     userTestModeField:string,
@@ -261,6 +263,7 @@ class SchoolToolModuleStatusService
             'meta' => $meta,
             'licence_id' => (int) $licence->id,
             'licence_name' => $licenceName,
+            'hasUserView' => ! in_array($moduleKey, ['aba', 'materials'], true),
             'adminVisibleField' => $adminVisibleField,
             'userVisibleField' => $userVisibleField,
             'userTestModeField' => $userTestModeField,
@@ -277,7 +280,7 @@ class SchoolToolModuleStatusService
             throw new \InvalidArgumentException(sprintf('Unknown module key [%s].', $moduleKey));
         }
 
-        $attributes = $this->schoolAwareAttributes($school);
+        $attributes = $this->defaultAttributes();
 
         return [
             $this->adminVisibleField($moduleKey) => (bool) $attributes[$this->adminVisibleField($moduleKey)],
@@ -307,25 +310,7 @@ class SchoolToolModuleStatusService
         return sprintf('%s_user_comming_soon', $moduleKey);
     }
 
-    /**
-     * @return array<string, bool|string>
-     */
-    private function schoolAwareAttributes(?School $school = null): array
-    {
-        if ($school) {
-            $school->loadMissing('schoolTool');
-
-            if ($school->schoolTool) {
-                return $this->appendLegacyStatusFields(
-                    array_merge($this->defaultAttributes(), $this->normalizeAttributesFromRecord($school->schoolTool))
-                );
-            }
-        }
-
-        return $this->defaultAttributes();
-    }
-
-    private function globalSchoolTool(): ?SchoolTool
+    public function globalSchoolTool(): ?SchoolTool
     {
         if ($this->globalSchoolToolCache !== null) {
             return $this->globalSchoolToolCache;

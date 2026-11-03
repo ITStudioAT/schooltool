@@ -12,13 +12,16 @@
  * - SchoolTool update for Import 166
  */
 
+use App\Http\Controllers\Admin\Teaching\FileUploadController;
 use App\Jobs\Teaching\Import116Job;
 use App\Models\Licence;
 use App\Models\School;
 use App\Models\SchoolTool;
 use App\Models\Schoolyear;
 use App\Models\User;
+use App\Services\FileUploadService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Queue;
 use Spatie\Permission\Models\Role;
@@ -506,35 +509,47 @@ describe('import 166 school tool update', function () {
         expect($schoolTool->import_166_at)->not->toBeNull();
     });
 
-    test('creates SchoolTool record if not exists when 166 upload completes', function () {
+    test('creates a missing SchoolTool record when the controller completes an authorized 166 upload', function () {
         $this->actingAs($this->admin, 'sanctum');
 
         // Initiate upload
-        $initResponse = $this->post('/api/admin/teaching_upload/166');
+        $initResponse = $this->post('/api/admin/teaching_upload/166')->assertOk();
         $uploadId = $initResponse->getContent();
 
-        // The route requires an active module, but completion must recreate a missing row.
+        // Exercise the controller fallback directly; the route rejects a missing module row.
         SchoolTool::where('school_id', $this->school->id)->delete();
 
-        // Create temp directory
-        $tempDir = storage_path("app/private/temp/{$uploadId}");
-        if (! is_dir($tempDir)) {
-            mkdir($tempDir, 0775, true);
-        }
-
         $content = validTeachingXlsxContents();
-
-        $response = $this->call('PATCH', "/api/admin/teaching_upload/166?patch={$uploadId}", [], [], [], [
+        $request = Request::create("/api/admin/teaching_upload/166?patch={$uploadId}", 'PATCH', [], [], [], [
             'HTTP_Upload-Name' => '166.xlsx',
             'HTTP_Upload-Length' => strlen($content),
             'CONTENT_TYPE' => 'application/octet-stream',
         ], $content);
+        $request->setUserResolver(fn (): User => $this->admin);
 
-        $response->assertOk();
+        $response = app(FileUploadController::class)->uploadNext($request, app(FileUploadService::class), '166');
+
+        expect($response->getStatusCode())->toBe(200);
 
         $schoolTool = SchoolTool::where('school_id', $this->school->id)->first();
         expect($schoolTool)->not->toBeNull()
             ->and($schoolTool->import_166_at)->not->toBeNull();
+    });
+
+    test('returns 403 without recreating SchoolTool when the module row disappears before upload completion', function () {
+        $this->actingAs($this->admin, 'sanctum');
+        $uploadId = $this->post('/api/admin/teaching_upload/166')->assertOk()->getContent();
+        SchoolTool::where('school_id', $this->school->id)->delete();
+        $content = validTeachingXlsxContents();
+
+        $this->call('PATCH', "/api/admin/teaching_upload/166?patch={$uploadId}", [], [], [], [
+            'HTTP_Upload-Name' => '166.xlsx',
+            'HTTP_Upload-Length' => strlen($content),
+            'CONTENT_TYPE' => 'application/octet-stream',
+        ], $content)->assertForbidden();
+
+        $this->assertDatabaseMissing('school_tools', ['school_id' => $this->school->id]);
+        Queue::assertNothingPushed();
     });
 });
 

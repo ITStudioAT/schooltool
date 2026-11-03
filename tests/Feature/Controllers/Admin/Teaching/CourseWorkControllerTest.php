@@ -13,9 +13,11 @@ use App\Models\TeachingEntryDefinition;
 use App\Models\TeachingSchema;
 use App\Models\User;
 use App\Services\TeachingCourseWorkEntrySyncService;
+use App\Services\TeachingWorkFolderImport;
 use App\Support\SchooltoolAssessmentJson;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Storage;
@@ -25,6 +27,20 @@ use Tests\Support\TeachingWorkEvaluationFixture;
 use Tests\Support\TeachingWorkJsonFixture;
 
 uses(RefreshDatabase::class);
+
+test('the work progress check reads fresh historical evidence without importing or modifying a work', function (): void {
+    $work = prepareWorkDispatchImport($this);
+    $before = $work->fresh()->getAttributes();
+    Http::preventStrayRequests();
+    $url = "/api/admin/teaching/course_works/{$work->id}";
+    $this->getJson($url)->assertOk()->assertJsonPath('data.id', $work->id);
+    expect($work->fresh()->getAttributes())->toBe($before);
+    $foreign = User::factory()->create(['school_id' => School::factory()->create()->id]);
+    $foreign->assignRole('teacher');
+    $this->actingAs($foreign, 'sanctum')->getJson($url)->assertForbidden();
+    expect($work->fresh()->getAttributes())->toBe($before);
+    Http::assertNothingSent();
+});
 
 function jsonAssessmentForWork(object $context, TeachingCourseWork $work): array
 {
@@ -314,6 +330,200 @@ test('JSON submission checkpoint rejects changed deadline incomplete roster and 
     expect($work->fresh()->status)->not->toHaveKey('submission_checks')->not->toHaveKey('assessment_json_imports');
 })->with(['deadline', 'no time', 'roster', 'stale preview']);
 
+test('reassessment reuses legacy checks only for the same secured submission inventory and identity', function (string $change) {
+    $this->travelTo('2026-10-08T11:00:00Z');
+    $work = prepareWorkDispatchImport($this);
+    $package = TeachingWorkJsonFixture::withSubmissionCheck(jsonAssessmentForWork($this, $work));
+    $originalPdf = workEvaluationPdf('Beurteilung_Ada.pdf');
+    $package['records'][0]['pdf'] = ['filename' => $originalPdf->getClientOriginalName(), 'sha256' => hash_file('sha256', $originalPdf->getRealPath())];
+    $proof = TeachingWorkJsonFixture::withFinalDownload($package)['final_download'];
+    $proof['deadline_at'] = $package['submission_check']['deadline_at'];
+    $proof['download_completed_at'] = '2026-10-06T10:02:00Z';
+    foreach ($proof['participants'] as &$person) {
+        $person['submission_sha256'] = [hash('sha256', $person['participant_id'].' original submission')];
+    }
+    unset($person, $proof['download_checksum']);
+    $proof['download_checksum'] = SchooltoolAssessmentJson::digest($proof);
+    $package['final_download'] = $proof;
+    $work->update(['finish_until_date' => '2026-10-06', 'finish_until_time' => '12:00']);
+    $url = "/api/admin/teaching/course_works/{$work->id}/import-json";
+    $payload = ['package' => TeachingWorkJsonFixture::upload($package), 'pdfs' => [$originalPdf]];
+    $hash = $this->postJson($url, $payload)->assertOk()->json('preview.hash');
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $hash])->assertOk();
+    $before = $work->fresh()->getAttributes();
+    $originalFingerprint = $package['records'][0]['source_fingerprint'];
+    $package['records'][0]['source_fingerprint'] = hash('sha256', 'Updated evaluation and evidence');
+    $package['records'][0]['criteria'][0]['reason'] = 'Konkreter korrigierter Fehlerhinweis mit Lernverweis.';
+    $package['records'][0]['comment'] = 'Neu erläuterte Beurteilung bei unveränderter Abgabe.';
+    $package['records'][0]['evaluation_completed_at'] = '2026-10-08T10:00:00Z';
+    $updatedPdf = workEvaluationPdf('Beurteilung_Ada_Aktualisiert.pdf');
+    $package['records'][0]['pdf'] = ['filename' => $updatedPdf->getClientOriginalName(), 'sha256' => hash_file('sha256', $updatedPdf->getRealPath())];
+    if (in_array($change, ['submission bytes', 'submission bytes with unchanged fingerprint'], true)) {
+        if ($change === 'submission bytes with unchanged fingerprint') {
+            $package['records'][0]['source_fingerprint'] = $originalFingerprint;
+        }
+        $package['final_download']['participants'][0]['submission_sha256'] = [hash('sha256', 'Changed submission bytes')];
+        $package['final_download']['download_completed_at'] = '2026-10-06T10:03:00Z';
+        unset($package['final_download']['download_checksum']);
+        $package['final_download']['download_checksum'] = SchooltoolAssessmentJson::digest($package['final_download']);
+    } elseif ($change === 'collection time') {
+        $package['records'][0]['email_collected_at'] = '2026-10-04T08:00:01Z';
+    } elseif ($change === 'no secured inventory') {
+        unset($package['final_download']);
+    }
+    $payload = ['package' => TeachingWorkJsonFixture::upload($package), 'pdfs' => [$updatedPdf]];
+    $response = $this->postJson($url, $payload);
+    expect($work->fresh()->getAttributes())->toBe($before);
+    if ($change !== 'feedback') {
+        $response->assertUnprocessable();
+
+        return;
+    }
+    $preview = $response->assertOk()->assertJsonPath('preview.can_import', true)->json('preview');
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $preview['hash']])->assertOk()->assertJsonPath('data.submission_check_status.complete', true);
+    $status = $work->fresh()->status;
+    $receipt = collect($status['assessment_json_imports'])->firstWhere('participant_id', $package['records'][0]['participant_id']);
+    expect($receipt['history'])->toHaveCount(1);
+    expect($receipt['history'][0]['record']['pdf']['sha256'])->toBe(hash_file('sha256', $originalPdf->getRealPath()));
+    expect($status['submission_checks'][0]['check'])->toBe($status['submission_checks'][1]['check']);
+    expect($status['assessment_json_packages'][0]['final_download'])->toBe($status['assessment_json_packages'][1]['final_download']);
+})->with(['feedback', 'submission bytes', 'submission bytes with unchanged fingerprint', 'collection time', 'no secured inventory']);
+
+/** @return array{package: array<string, mixed>, documents: string, folder: string, pdf_paths: string, pdfs: array} */
+function inventoryAssessmentPayload(object $context, TeachingCourseWork $work, bool $includeHashes = true): array
+{
+    $package = TeachingWorkJsonFixture::withSubmissionCheck(jsonAssessmentForWork($context, $work), 'open');
+    $package['submission_check']['deadline_at'] = '2026-10-09T18:00:00Z';
+    unset($package['submission_check']['check_checksum']);
+    $package['submission_check']['check_checksum'] = SchooltoolAssessmentJson::digest($package['submission_check']);
+    $provision = TeachingWorkJsonFixture::provision($package);
+    $text = json_encode($provision, JSON_THROW_ON_ERROR);
+    $package = TeachingWorkJsonFixture::withAvailabilityCheck($package, hash('sha256', $text));
+    if ($includeHashes) {
+        $package = TeachingWorkJsonFixture::withSubmissionHashes($package);
+    }
+    $package['records'][0]['total_minor'] = 495;
+    $package['records'][0]['criteria'][0]['earned_minor'] = 495;
+    $work->update(['finish_until_date' => '2026-10-09', 'finish_until_time' => '20:00']);
+
+    return ['package' => $package] + workFolderPayload([], ['Schooltool-Bereitstellung.json' => $text], false);
+}
+
+test('personal submission bindings allow assessment completion before the deadline without a new checkpoint', function () {
+    $this->travelTo('2026-10-08T11:00:00Z');
+    $work = prepareWorkDispatchImport($this);
+    $payload = inventoryAssessmentPayload($this, $work);
+    $package = $payload['package'];
+    $payload['package'] = TeachingWorkJsonFixture::upload($package);
+    $url = "/api/admin/teaching/course_works/{$work->id}/import-json";
+    $hash = $this->postJson($url, $payload)->assertOk()->json('preview.hash');
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $hash])->assertOk();
+    $firstStatus = $work->fresh()->status;
+    $firstReceipt = $firstStatus['assessment_json_imports'][0];
+    $package['records'][1]['evaluation_state'] = 'complete';
+    $package['records'][1]['total_minor'] = 465;
+    $package['records'][1]['criteria'][0]['earned_minor'] = 465;
+    $package['records'][1]['evaluation_note'] = 'Abgeschlossen';
+    $package['records'][1]['comment'] = 'Endgültige Bewertung: 4,65 von 5.';
+    $package['records'][1]['evaluation_completed_at'] = '2026-10-08T10:00:00Z';
+    $package['records'][1]['source_fingerprint'] = hash('sha256', 'Genuine new evaluation completion proof');
+    $pdf = workEvaluationPdf('Beurteilung_Bea.pdf');
+    $package['records'][1]['pdf'] = ['filename' => $pdf->getClientOriginalName(), 'sha256' => hash_file('sha256', $pdf->getRealPath())];
+    $payload['package'] = TeachingWorkJsonFixture::upload($package);
+    $payload['pdfs'] = [$pdf];
+    $before = $work->fresh()->getAttributes();
+
+    $preview = $this->postJson($url, $payload)->assertOk()->assertJsonPath('preview.can_import', true)->json('preview');
+    expect($work->fresh()->getAttributes())->toBe($before);
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $preview['hash']])->assertOk()
+        ->assertJsonPath('data.submission_check_status.complete', false)
+        ->assertJsonPath('data.submission_check_status.checked_at', $package['submission_check']['checked_at']);
+    $fresh = $work->fresh();
+    expect((string) $fresh->groups[0]['points'][0]['points'])->toBe('4.95');
+    expect((string) $fresh->groups[1]['points'][0]['points'])->toBe('4.65');
+    expect($fresh->status['assessment_json_imports'][0])->toBe($firstReceipt);
+    expect($fresh->status['assessment_json_imports'][1]['history'])->toHaveCount(1);
+    expect($fresh->status['submission_checks'])->toBe($firstStatus['submission_checks']);
+    expect($fresh->status['submission_checks'][0]['binding_kind'])->toBe('submission_sha256');
+    $beforeRepeat = $fresh->getAttributes();
+    $hash = $this->postJson($url, $payload)->assertOk()->json('preview.hash');
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $hash])->assertOk();
+    expect($work->fresh()->getAttributes())->toBe($beforeRepeat);
+});
+
+test('personal submission bindings reject unreviewed inventory collection identity and format changes atomically', function (string $change) {
+    $this->travelTo('2026-10-08T11:00:00Z');
+    $work = prepareWorkDispatchImport($this);
+    $payload = inventoryAssessmentPayload($this, $work);
+    $package = $payload['package'];
+    $payload['package'] = TeachingWorkJsonFixture::upload($package);
+    $url = "/api/admin/teaching/course_works/{$work->id}/import-json";
+    $hash = $this->postJson($url, $payload)->assertOk()->json('preview.hash');
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $hash])->assertOk();
+    $before = $work->fresh()->getAttributes();
+    switch ($change) {
+        case 'changed file': $package['records'][1]['submission_sha256'][0] = str_repeat('f', 64);
+            break;
+        case 'removed file': array_pop($package['records'][1]['submission_sha256']);
+            break;
+        case 'collection': $package['records'][1]['email_collected_at'] = '2026-10-05T10:00:00Z';
+            break;
+        case 'identity': $package['records'][1]['identity']['class_name'] = 'OTHER';
+            break;
+        case 'legacy downgrade':
+            foreach ($package['records'] as &$record) {
+                unset($record['submission_sha256']);
+            }
+            unset($record);
+            break;
+        case 'saved inventory changed':
+            $status = $work->fresh()->status;
+            $status['assessment_json_imports'][1]['record']['submission_sha256'][0] = str_repeat('f', 64);
+            $work->update(['status' => $status]);
+            $before = $work->fresh()->getAttributes();
+            $this->getJson("/api/admin/teaching/course_works/{$work->id}")->assertOk()->assertJsonPath('data.submission_check_status.checked_at', null);
+            break;
+    }
+    $payload['package'] = TeachingWorkJsonFixture::upload($package);
+
+    $this->postJson($url, $payload)->assertUnprocessable();
+    expect($work->fresh()->getAttributes())->toBe($before);
+})->with(['changed file', 'removed file', 'collection', 'identity', 'legacy downgrade', 'saved inventory changed']);
+
+test('historical submission bindings change only with a newer checkpoint and retain the original binding history', function () {
+    $this->travelTo('2026-10-08T11:00:00Z');
+    $work = prepareWorkDispatchImport($this);
+    $payload = inventoryAssessmentPayload($this, $work, false);
+    $legacy = $payload['package'];
+    $payload['package'] = TeachingWorkJsonFixture::upload($legacy);
+    $url = "/api/admin/teaching/course_works/{$work->id}/import-json";
+    $hash = $this->postJson($url, $payload)->assertOk()->json('preview.hash');
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $hash])->assertOk();
+    $status = $work->fresh()->status;
+    unset($status['submission_checks'][0]['binding_kind']);
+    $work->update(['status' => $status]);
+    $historical = $status['submission_checks'][0];
+    $this->getJson("/api/admin/teaching/course_works/{$work->id}")->assertOk()->assertJsonPath('data.submission_check_status.checked_at', $legacy['submission_check']['checked_at']);
+    $package = TeachingWorkJsonFixture::withSubmissionHashes($legacy);
+    $payload['package'] = TeachingWorkJsonFixture::upload($package);
+    $this->postJson($url, $payload)->assertUnprocessable()->assertJsonValidationErrors('package');
+    expect($work->fresh()->status['submission_checks'])->toBe([$historical]);
+    $package['submission_check']['checked_at'] = '2026-10-06T10:02:00Z';
+    unset($package['submission_check']['check_checksum']);
+    $package['submission_check']['check_checksum'] = SchooltoolAssessmentJson::digest($package['submission_check']);
+    $payload['package'] = TeachingWorkJsonFixture::upload($package);
+
+    $hash = $this->postJson($url, $payload)->assertOk()->json('preview.hash');
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $hash])->assertOk();
+    $checks = $work->fresh()->status['submission_checks'];
+    expect($checks)->toHaveCount(2);
+    expect($checks[0])->toBe($historical);
+    expect($checks[1]['binding_kind'])->toBe('submission_sha256');
+    $this->getJson("/api/admin/teaching/course_works/{$work->id}")->assertOk()->assertJsonPath('data.submission_check_status.checked_at', '2026-10-06T10:02:00Z');
+    $payload['package'] = TeachingWorkJsonFixture::upload($legacy);
+    $this->postJson($url, $payload)->assertUnprocessable();
+});
+
 test('JSON submission checkpoint preserves history rejects older proofs and requires a fresh proof for changed submissions', function () {
     $work = prepareWorkDispatchImport($this);
     $package = TeachingWorkJsonFixture::withSubmissionCheck(jsonAssessmentForWork($this, $work));
@@ -449,7 +659,7 @@ test('JSON folder Office Schooltool results preserve eleven individual notificat
     expect($preview['can_import'])->toBeTrue()->and($preview['dispatches'][0]['rows'])->toHaveCount(11);
     foreach ($preview['dispatches'][0]['rows'] as $index => $row) {
         expect($row['student_id'])->toBe($students[$index]->id)->and($row['accepted'])->toBeTrue()
-            ->and($row['sent_at'])->toBe(sprintf('2026-10-08T18:10:%02dZ', 5 + $index * 3));
+            ->and($row['sent_at'])->toBe(sprintf('2026-10-08T18:10:%02d.338Z', 5 + $index * 3));
     }
     $this->postJson($url, $payload + ['apply' => true, 'hash' => $preview['hash']])->assertOk();
     $status = $work->fresh()->status;
@@ -457,10 +667,115 @@ test('JSON folder Office Schooltool results preserve eleven individual notificat
         ->and(Storage::disk('local')->get($status['dispatch_logs'][0]['file_path']))->toBe($text);
     foreach ($status['dispatch_notifications'] as $index => $row) {
         expect($row['student_id'])->toBe($students[$index]->id)->and($row['purpose'])->toBe('results')
-            ->and($row['sent_at'])->toBe(sprintf('2026-10-08T18:10:%02dZ', 5 + $index * 3));
+            ->and($row['sent_at'])->toBe(sprintf('2026-10-08T18:10:%02d.338Z', 5 + $index * 3));
     }
     Mail::assertNothingSent();
     Notification::assertNothingSent();
+});
+
+test('dispatch precision retains exact Office fractions and rejects fractional confirmation contradictions', function (string $fraction, string $expected, bool $matching) {
+    $work = prepareWorkDispatchImport($this);
+    $text = TeachingWorkDispatchFixture::nativeOfficeTasksText(1);
+    $metadata = json_decode(substr($text, strpos($text, '{')), true, flags: JSON_THROW_ON_ERROR);
+    $metadata['Empfaenger'][0]['Providerzeit'] = '2026-10-04T15:36:20'.$fraction.'+02:00';
+    $metadata['Empfaenger'][0]['Office_Zustand']['SentOn'] = $matching
+        ? $metadata['Empfaenger'][0]['Providerzeit'] : '2026-10-04T15:36:20.3680000+02:00';
+    $text = substr($text, 0, strpos($text, '{')).json_encode($metadata, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+
+    $preview = $this->postJson("/api/admin/teaching/course_works/{$work->id}/import-dispatch", [
+        'protocol' => UploadedFile::fake()->createWithContent('Versandprotokoll.txt', $text), 'purpose' => 'tasks',
+    ])->assertOk()->json('preview');
+
+    expect($preview['rows'][0]['accepted'])->toBe($matching)
+        ->and($preview['rows'][0]['sent_at'])->toBe($matching ? '2026-10-04T13:36:20'.$expected.'Z' : null)
+        ->and($work->fresh()->status)->toBe(['manual' => 'Keep']);
+})->with([
+    'seconds' => ['', '', true], 'Office trailing zero' => ['.3670000', '.367', true],
+    'microseconds' => ['.123456', '.123456', true], 'seven meaningful digits' => ['.1234567', '.1234567', true],
+    'zero fraction' => ['.0000000', '', true], 'fraction contradiction' => ['.3670000', '.367', false],
+]);
+
+test('dispatch precision selects the latest exact provider instant across different fraction lengths', function (string $first, string $second) {
+    $work = prepareWorkDispatchImport($this);
+    $recipients = array_slice(TeachingWorkDispatchFixture::recipients(), 0, 2);
+    foreach ($recipients as $index => &$recipient) {
+        $recipient['Betreff'] = 'Leistungsfeststellung E-Mails – INF 1';
+        $recipient['Providerzeit'] = '2026-10-04T13:36:20'.($index === 0 ? $first : $second).'Z';
+        $recipient['HTTPStatus'] = '200';
+        $recipient['Status'] = 'Postmark-API-Annahme bestätigt';
+    }
+    unset($recipient);
+
+    $preview = $this->postJson("/api/admin/teaching/course_works/{$work->id}/import-dispatch", [
+        'protocol' => TeachingWorkDispatchFixture::upload($recipients, ['Versandzweck' => 'Aufgabenversand']), 'purpose' => 'tasks',
+    ])->assertOk()->json('preview');
+
+    expect(array_column($preview['rows'], 'accepted'))->toBe([true, true])
+        ->and($preview['log_info']['dispatch_at'])->toBe('2026-10-04T13:36:20'.$second.'Z');
+})->with([['', '.367'], ['.3', '.367'], ['.1234567', '.1234568']]);
+
+test('dispatch precision binds exact availability and upgrades only the same archived original idempotently', function () {
+    $this->travelTo('2026-10-07T11:00:00Z');
+    $work = prepareWorkDispatchImport($this);
+    $package = TeachingWorkJsonFixture::withSubmissionCheck(jsonAssessmentForWork($this, $work));
+    $provision = TeachingWorkJsonFixture::provision($package);
+    $provision['events'][0]['participant_ids'] = [$package['records'][1]['participant_id']];
+    unset($provision['provision_checksum']);
+    $provision['provision_checksum'] = SchooltoolAssessmentJson::digest($provision);
+    $release = json_encode($provision, JSON_THROW_ON_ERROR);
+    $mail = TeachingWorkDispatchFixture::nativeOfficeTasksText(1);
+    $metadata = json_decode(substr($mail, strpos($mail, '{')), true, flags: JSON_THROW_ON_ERROR);
+    $metadata['Empfaenger'][0]['Providerzeit'] = $metadata['Empfaenger'][0]['Office_Zustand']['SentOn'] = '2026-10-04T15:36:20.3670000+02:00';
+    $mail = substr($mail, 0, strpos($mail, '{')).json_encode($metadata, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+    $package = TeachingWorkJsonFixture::withAvailabilityCheck($package, hash('sha256', $release));
+    $person = &$package['submission_check']['participants'][0];
+    $person['available_at'] = '2026-10-04T13:36:20.367000Z';
+    $person['availability_method'] = 'email_dispatch';
+    $person['availability_evidence_sha256'] = [hash('sha256', $mail)];
+    $person['evidence_sha256'][] = hash('sha256', $mail);
+    unset($person, $package['submission_check']['check_checksum']);
+    $package['submission_check']['check_checksum'] = SchooltoolAssessmentJson::digest($package['submission_check']);
+    $work->update(['finish_until_date' => '2026-10-06', 'finish_until_time' => '12:00']);
+    $payload = workFolderPayload([], ['Schooltool-Bereitstellung.json' => $release,
+        'Versand/Aufgaben/Versand_2026-10-04_15-36-20/Versandprotokoll.txt' => $mail], false)
+        + ['package' => TeachingWorkJsonFixture::upload($package)];
+    $url = "/api/admin/teaching/course_works/{$work->id}/import-json";
+    $preview = $this->postJson($url, $payload)->assertOk()->assertJsonPath('preview.can_import', true)->json('preview');
+    expect($preview['dispatches'][0]['rows'][0]['sent_at'])->toBe('2026-10-04T13:36:20.367Z');
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $preview['hash']])->assertOk();
+    $legacyStatus = $work->fresh()->status;
+    $legacyStatus['dispatch_notifications'][0]['sent_at'] = '2026-10-04T13:36:20Z';
+    $work->update(['status' => $legacyStatus]);
+
+    $changedMail = $mail."\n";
+    $conflict = $this->postJson("/api/admin/teaching/course_works/{$work->id}/import-dispatch", [
+        'protocol' => UploadedFile::fake()->createWithContent('Versandprotokoll.txt', $changedMail), 'purpose' => 'tasks',
+    ])->assertOk()->json('preview');
+    expect($conflict['can_import'])->toBeFalse()->and($conflict['rows'][0]['status'])->toContain('Providerkennung');
+    expect($work->fresh()->status)->toBe($legacyStatus);
+
+    foreach (['2026-10-04T13:36:19Z', '2026-10-04T13:36:20.368Z'] as $contradictoryTime) {
+        $contradictoryStatus = $legacyStatus;
+        $contradictoryStatus['dispatch_notifications'][0]['sent_at'] = $contradictoryTime;
+        $work->update(['status' => $contradictoryStatus]);
+        $conflict = $this->postJson("/api/admin/teaching/course_works/{$work->id}/import-dispatch", [
+            'protocol' => UploadedFile::fake()->createWithContent('Versandprotokoll.txt', $mail), 'purpose' => 'tasks',
+        ])->assertOk()->json('preview');
+        expect($conflict['can_import'])->toBeFalse()->and($work->fresh()->status)->toBe($contradictoryStatus);
+    }
+    $work->update(['status' => $legacyStatus]);
+
+    $preview = $this->postJson($url, $payload)->assertOk()->assertJsonPath('preview.can_import', true)->json('preview');
+    expect($work->fresh()->status)->toBe($legacyStatus);
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $preview['hash']])->assertOk();
+    $status = $work->fresh()->status;
+    expect($status['dispatch_notifications'])->toHaveCount(1)
+        ->and($status['dispatch_notifications'][0]['sent_at'])->toBe('2026-10-04T13:36:20.367Z')
+        ->and($status['dispatch_logs'])->toHaveCount(2)
+        ->and(Storage::disk('local')->get(collect($status['dispatch_logs'])->firstWhere('origin', 'dispatch_import')['file_path']))->toBe($mail);
+    $preview = $this->postJson($url, $payload)->assertOk()->json('preview');
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $preview['hash']])->assertOk();
+    expect($work->fresh()->status)->toBe($status);
 });
 
 test('JSON folder accepted late submission replaces an absence zero and preserves other grades and original Office notifications', function () {
@@ -519,6 +834,72 @@ test('JSON folder accepted late submission replaces an absence zero and preserve
     Mail::assertNothingSent();
     Notification::assertNothingSent();
 });
+
+test('personal corrected Office results preserve strict target and evidence checks', function (string $case) {
+    Mail::fake();
+    Notification::fake();
+    $work = prepareWorkDispatchImport($this);
+    $this->course->update(['title' => 'DGB - 1A - 2']);
+    $work->update(['title' => $case === 'wrong work' ? 'Datenschutz' : ($case === 'singular title' ? 'E-Mail' : 'E-Mails')]);
+    $package = jsonAssessmentForWork($this, $work);
+    $text = TeachingWorkDispatchFixture::officeSchooltoolResultsText(1, 'Deine korrigierte Leistungsfeststellung E-Mails – 1A, Gruppe 2');
+    $metadata = json_decode(substr($text, strpos($text, '{')), true, flags: JSON_THROW_ON_ERROR);
+    $heading = substr($text, 0, strpos($text, '{'));
+    unset($metadata['Bestaetigte_Schuelernachrichten'], $metadata['Bestaetigte_Lehrernachrichten']);
+    $row = &$metadata['Empfaenger'][0];
+    $row['Kurs'] = 'DGB - 1A - 2';
+    $row['TatsaechlicheAnhaenge'] = [['Dateiname' => 'Ada.pdf', 'SHA256' => str_repeat('a', 64)]];
+    $row['Office_Zustand']['Attachments'] = [['Name' => 'Ada.pdf', 'SHA256' => str_repeat('a', 64)]];
+    $row['Office_Zustand']['AttachmentsVerified'] = 1;
+    if ($case === 'wrong class' || $case === 'wrong group') {
+        $row['Betreff'] = str_replace($case === 'wrong class' ? '1A' : 'Gruppe 2', $case === 'wrong class' ? '3B' : 'Gruppe 1', $row['Betreff']);
+    } elseif ($case === 'wrong purpose') {
+        $heading = str_replace('Ergebnisbenachrichtigung', 'Aufgabenversand', $heading);
+        $metadata['Versandzweck'] = 'Aufgabenversand';
+    } elseif ($case === 'wrong provider') {
+        $heading = str_replace('Office/Outlook', 'Postmark', $heading);
+        $metadata['Modus'] = 'Live-Versand (Postmark)';
+    } elseif ($case === 'wrong recipient') {
+        $row['To'] = $row['Office_Zustand']['To'] = 'other@example.test';
+    } elseif ($case === 'different subject') {
+        $row['Office_Zustand']['Subject'] = 'Another result';
+    } elseif ($case === 'attachment mismatch') {
+        $row['Office_Zustand']['Attachments'][0]['SHA256'] = str_repeat('b', 64);
+    } elseif ($case === 'missing state') {
+        unset($row['Office_Zustand']);
+    } elseif ($case === 'Mailpit') {
+        $row['Modus'] = 'Mailpit-Test';
+    }
+    unset($row);
+    $text = $heading.json_encode($metadata, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+    $folder = '2026-10-04_Test';
+    $payload = ['package' => TeachingWorkJsonFixture::upload($package), 'folder' => $folder, 'documents' => json_encode([
+        ['path' => $folder.'/Versand/Ergebnisse/Versand_2026-10-09_09-18-24/Versandprotokoll.txt', 'text' => $text],
+    ], JSON_THROW_ON_ERROR)];
+    $url = "/api/admin/teaching/course_works/{$work->id}/import-json";
+    $before = $work->fresh()->getAttributes();
+    if (in_array($case, ['wrong work', 'wrong class', 'wrong group', 'wrong purpose', 'wrong provider'], true)) {
+        $this->postJson($url, $payload)->assertUnprocessable();
+    } else {
+        $preview = $this->postJson($url, $payload)->assertOk()->json('preview');
+        $accepted = in_array($case, ['valid', 'singular title'], true);
+        expect($preview['dispatches'][0]['rows'][0]['accepted'])->toBe($accepted)
+            ->and($preview['can_import'])->toBe($case !== 'wrong recipient');
+        if ($accepted) {
+            expect($preview['dispatches'][0]['rows'][0]['student_id'])->toBe($this->student->id);
+            $this->postJson($url, $payload + ['apply' => true, 'hash' => $preview['hash']])->assertOk();
+            expect($work->fresh()->status['dispatch_notifications'])->toHaveCount(1)
+                ->and(Storage::disk('local')->get($work->fresh()->status['dispatch_logs'][0]['file_path']))->toBe($text);
+            $repeat = $this->postJson($url, $payload)->assertOk()->json('preview');
+            expect($repeat['dispatches'][0]['already_imported'])->toBeTrue();
+        }
+    }
+    if (! in_array($case, ['valid', 'singular title'], true)) {
+        expect($work->fresh()->getAttributes())->toBe($before);
+    }
+    Mail::assertNothingSent();
+    Notification::assertNothingSent();
+})->with(['valid', 'singular title', 'wrong work', 'wrong class', 'wrong group', 'wrong purpose', 'wrong provider', 'wrong recipient', 'different subject', 'attachment mismatch', 'missing state', 'Mailpit']);
 
 test('JSON folder Office Schooltool result subjects retain provider purpose and evidence boundaries', function (string $case) {
     $work = prepareWorkDispatchImport($this);
@@ -920,6 +1301,137 @@ beforeEach(function () {
     $this->freezeTime();
 });
 
+test('work completion override persists both directions only for the selected work and preserves evidence', function () {
+    $work = prepareWorkDispatchImport($this);
+    $history = ['automation_enabled' => false, 'manual' => 'Keep',
+        'dispatch_notifications' => [['student_id' => $this->student->id, 'purpose' => 'results', 'sent_at' => '2026-10-02T10:00:00Z']],
+        'assessment_json_imports' => [], 'folder_imported_at' => '2026-10-02T10:00:00Z'];
+    $work->update(['status' => $history]);
+    $otherWork = TeachingCourseWork::factory()->create(['teaching_course_id' => $this->course->id, 'status' => ['manual' => 'Other']]);
+    $url = "/api/admin/teaching/course_works/{$work->id}";
+    $groups = $this->getJson($url)->assertOk()->json('data.groups');
+
+    foreach ([true, false] as $complete) {
+        $this->putJson($url, ['completion_override' => $complete])->assertOk()
+            ->assertJsonPath('data.status.completion_override', $complete)
+            ->assertJsonPath('data.automation_enabled', false)
+            ->assertJsonPath('data.groups', $groups);
+        $this->getJson($url)->assertOk()->assertJsonPath('data.status.completion_override', $complete);
+        expect($work->fresh()->status)->toEqual($history + ['completion_override' => $complete]);
+    }
+
+    $this->putJson($url, ['status' => ['completion_override' => true]])->assertOk()
+        ->assertJsonPath('data.status.completion_override', false);
+    expect($otherWork->fresh()->status)->toBe(['manual' => 'Other']);
+});
+
+test('work completion override rejects invalid input without changing the saved state', function () {
+    $work = prepareWorkDispatchImport($this);
+    $status = $work->status;
+    $this->putJson("/api/admin/teaching/course_works/{$work->id}", ['completion_override' => 'invalid'])
+        ->assertUnprocessable()->assertJsonValidationErrors('completion_override');
+    expect($work->fresh()->status)->toBe($status);
+});
+
+test('manual workflow completion persists reversibly without sending mail or changing evidence', function (string $field) {
+    $work = prepareWorkDispatchImport($this);
+    $history = ['automation_enabled' => true, 'manual' => 'Keep', 'dispatch_notifications' => [],
+        'dispatch_logs' => [], 'submission_checks' => [], 'assessment_json_imports' => [],
+        'assessment_json_packages' => [], 'folder_imported_at' => '2026-10-02T10:00:00Z'];
+    $work->update(['status' => $history]);
+    $otherWork = TeachingCourseWork::factory()->create(['teaching_course_id' => $this->course->id, 'status' => ['manual' => 'Other']]);
+    $url = "/api/admin/teaching/course_works/{$work->id}";
+    $groups = $work->fresh()->groups;
+    Mail::fake();
+    Notification::fake();
+
+    foreach ([true, false] as $complete) {
+        $this->putJson($url, [$field => $complete])->assertOk()
+            ->assertJsonPath("data.status.{$field}", $complete);
+        $this->getJson($url)->assertOk()->assertJsonPath("data.status.{$field}", $complete);
+        expect($work->fresh()->status)->toEqual($history + [$field => $complete]);
+        expect($work->fresh()->groups)->toBe($groups);
+        $this->putJson($url, ['title' => $work->title])->assertOk()->assertJsonPath("data.status.{$field}", $complete);
+    }
+
+    $this->putJson($url, ['status' => [$field => true]])->assertOk()
+        ->assertJsonPath("data.status.{$field}", false);
+    expect($otherWork->fresh()->status)->toBe(['manual' => 'Other']);
+    Mail::assertNothingSent();
+    Notification::assertNothingSent();
+})->with(['email_preparation_completed', 'task_dispatch_completed', 'submission_collection_completed', 'evaluation_completed', 'publication_completed', 'notification_completed']);
+
+test('manual workflow completion rejects invalid input without mutation', function (string $field) {
+    $work = prepareWorkDispatchImport($this);
+    $status = $work->status;
+    $this->putJson("/api/admin/teaching/course_works/{$work->id}", [$field => 'invalid'])
+        ->assertUnprocessable()->assertJsonValidationErrors($field);
+    expect($work->fresh()->status)->toBe($status);
+})->with(['email_preparation_completed', 'task_dispatch_completed', 'submission_collection_completed', 'evaluation_completed', 'publication_completed', 'notification_completed']);
+
+test('manual workflow completion rejects unauthorized actors before mutation', function (string $actor, string $field) {
+    $work = prepareWorkDispatchImport($this);
+    $status = $work->status;
+    $user = User::factory()->create(['school_id' => $actor === 'foreign' ? School::factory()->create()->id : $this->school->id]);
+    $user->assignRole($actor === 'foreign' ? 'teacher' : 'student');
+    $this->actingAs($user, 'sanctum')->putJson("/api/admin/teaching/course_works/{$work->id}", [$field => true])->assertForbidden();
+    expect($work->fresh()->status)->toBe($status);
+})->with(['student', 'foreign'])->with(['email_preparation_completed', 'task_dispatch_completed', 'submission_collection_completed', 'evaluation_completed', 'publication_completed', 'notification_completed']);
+
+test('work completion override rejects unauthorized or foreign school access before mutation', function (string $actor) {
+    $work = prepareWorkDispatchImport($this);
+    $status = $work->status;
+    $user = User::factory()->create(['school_id' => $actor === 'foreign' ? School::factory()->create()->id : $this->school->id]);
+    $user->assignRole($actor === 'foreign' ? 'teacher' : 'student');
+    $this->actingAs($user, 'sanctum')->putJson("/api/admin/teaching/course_works/{$work->id}", ['completion_override' => true])->assertForbidden();
+    expect($work->fresh()->status)->toBe($status);
+})->with(['student', 'foreign']);
+
+test('work automation defaults to enabled and manual mode persists without losing historical evidence or grades', function () {
+    $work = prepareWorkDispatchImport($this);
+    $history = ['dispatch_logs' => [['sha256' => str_repeat('a', 64), 'file_path' => 'history.txt']],
+        'assessment_json_imports' => [], 'folder_imported_at' => '2026-10-02T10:00:00Z'];
+    $work->update(['status' => $history]);
+    $url = "/api/admin/teaching/course_works/{$work->id}";
+    $groups = $this->getJson($url)->assertOk()->assertJsonPath('data.automation_enabled', true)->json('data.groups');
+
+    $this->putJson($url, ['automation_enabled' => false])->assertOk()
+        ->assertJsonPath('data.automation_enabled', false)->assertJsonPath('data.groups', $groups);
+    expect($work->fresh()->status)->toEqual($history + ['automation_enabled' => false]);
+
+    $this->putJson($url, ['title' => 'Manuelle Arbeit', 'status' => ['automation_enabled' => true]])->assertOk()
+        ->assertJsonPath('data.automation_enabled', false);
+    expect($work->fresh()->status['dispatch_logs'])->toBe($history['dispatch_logs']);
+    $this->putJson($url, ['automation_enabled' => true])->assertOk()->assertJsonPath('data.automation_enabled', true);
+    expect($work->fresh()->status['dispatch_logs'])->toBe($history['dispatch_logs'])
+        ->and($work->fresh()->status['folder_imported_at'])->toBe($history['folder_imported_at']);
+});
+
+test('work automation is validated on creation and supports manual work without an assigned folder', function () {
+    prepareWorkDispatchImport($this);
+    $payload = ['teaching_course_id' => $this->course->id, 'type' => 'MA', 'title' => 'Manuelle Arbeit'];
+    $this->postJson('/api/admin/teaching/course_works', $payload + ['automation_enabled' => 'invalid'])
+        ->assertUnprocessable()->assertJsonValidationErrors('automation_enabled');
+    $this->postJson('/api/admin/teaching/course_works', $payload + ['automation_enabled' => false])
+        ->assertCreated()->assertJsonPath('data.automation_enabled', false)->assertJsonPath('data.status.automation_enabled', false);
+    $this->postJson('/api/admin/teaching/course_works', $payload)->assertCreated()->assertJsonPath('data.automation_enabled', true);
+});
+
+test('manual work blocks automation endpoints before importing or contacting Dropbox', function () {
+    $work = prepareWorkDispatchImport($this);
+    $work->update(['status' => [...$work->status, 'automation_enabled' => false]]);
+    $before = $work->fresh()->getAttributes();
+    Http::preventStrayRequests();
+    foreach (['import-json', 'import-folder', 'import-dispatch', 'import-evaluations', 'dropbox/connect', 'dropbox/folder', 'dropbox/import'] as $endpoint) {
+        $this->postJson("/api/admin/teaching/course_works/{$work->id}/{$endpoint}", [])
+            ->assertUnprocessable()->assertJsonPath('message', 'Automatik ist für diese Arbeit ausgeschaltet.');
+    }
+    $this->getJson("/api/admin/teaching/course_works/{$work->id}/ai-export")->assertUnprocessable()
+        ->assertJsonPath('message', 'Automatik ist für diese Arbeit ausgeschaltet.');
+    expect($work->fresh()->getAttributes())->toBe($before);
+    Http::assertNothingSent();
+});
+
 test('folder import records the latest successful import time and protects it from manual edits', function () {
     $work = prepareWorkDispatchImport($this);
     $url = "/api/admin/teaching/course_works/{$work->id}/import-folder";
@@ -985,6 +1497,364 @@ function workFolderPayload(?array $reports = null, ?array $protocols = null, boo
     return ['folder' => $folder, 'documents' => json_encode($documents, JSON_THROW_ON_ERROR),
         'pdf_paths' => json_encode(array_map(fn (UploadedFile $file): string => $folder.'/Beurteilungen/'.$file->getClientOriginalName(), $pdfs), JSON_THROW_ON_ERROR), 'pdfs' => $pdfs];
 }
+
+/** @return array{work: TeachingCourseWork, import: Import116, metadata: array<string, mixed>, text: string} */
+function lateTaskParticipantFixture(object $context): array
+{
+    $work = prepareWorkDispatchImport($context);
+    $work->update(['date_for_all_groups' => '2026-10-13', 'finish_until_date' => '2026-10-13', 'finish_until_time' => '20:15']);
+    $text = TeachingWorkDispatchFixture::nativeOfficeTasksText(13);
+    $metadata = json_decode(substr($text, strpos($text, '{')), true, flags: JSON_THROW_ON_ERROR);
+    $context->openStudent->update(['first_name' => 'Student', 'last_name' => '1', 'email' => 'student1@example.test', 'schoolyear_id' => $context->schoolyear->id]);
+    for ($index = 2; $index < 12; $index++) {
+        $user = User::factory()->create(['school_id' => $context->school->id, 'schoolyear_id' => $context->schoolyear->id,
+            'first_name' => 'Student', 'last_name' => (string) $index, 'schoolclass' => '1A', 'email' => "student{$index}@example.test"]);
+        $user->assignRole('student');
+        $context->course->teachingCourseStudents()->create(['user_id' => $user->id]);
+    }
+    $import = Import116::factory()->create(['school_id' => $context->school->id, 'schoolyear_id' => $context->schoolyear->id,
+        'first_name' => 'Student', 'last_name' => '12', 'class' => '1A', 'email' => 'student12@example.test', 'user_id' => null]);
+    app(TeachingCourseWorkEntrySyncService::class)->syncWork($work);
+    foreach ($metadata['Empfaenger'] as $index => &$recipient) {
+        $recipient['Providerzeit'] = $recipient['Office_Zustand']['SentOn'] = $index === 12 ? '2026-10-13T22:56:52+02:00' : '2026-10-13T08:49:50+02:00';
+    }
+    unset($recipient);
+    $metadata['Empfaenger'][12]['Teilnehmerzugang'] = 'nachträglich';
+    $text = substr($text, 0, strpos($text, '{')).json_encode($metadata, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+
+    return compact('work', 'import', 'metadata', 'text');
+}
+
+test('provision-only folder previews and archives direct release without creating email records or changing grades', function () {
+    $this->travelTo('2026-10-07T11:00:00Z');
+    $work = prepareWorkDispatchImport($this);
+    $package = TeachingWorkJsonFixture::withSubmissionCheck(jsonAssessmentForWork($this, $work));
+    $provision = TeachingWorkJsonFixture::provision($package);
+    $text = json_encode($provision, JSON_THROW_ON_ERROR);
+    $payload = workFolderPayload([], ['Schooltool-Bereitstellung.json' => $text], false);
+    $url = "/api/admin/teaching/course_works/{$work->id}/import-json";
+    $before = $work->fresh()->getAttributes();
+    Mail::fake();
+    Notification::fake();
+    $preview = $this->postJson($url, $payload)->assertOk()->json('preview');
+    expect($preview['can_import'])->toBeTrue();
+    expect($preview['dispatches'])->toBe([]);
+    expect($preview['provisions'][0]['records'])->toHaveCount(2);
+    expect($work->fresh()->getAttributes())->toBe($before);
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $preview['hash']])->assertOk();
+    $work->refresh();
+    expect($work->status['provision_events'])->toHaveCount(2);
+    expect($work->status['dispatch_notifications'] ?? [])->toBe([]);
+    expect($work->status['dispatch_attempts'] ?? [])->toBe([]);
+    expect($work->groups)->toEqual(json_decode($before['groups'], true));
+    expect(Storage::disk('local')->get($work->status['dispatch_logs'][0]['file_path']))->toBe($text);
+    $this->getJson("/api/admin/teaching/course_works/{$work->id}/dispatch/".hash('sha256', $text))->assertOk()->assertHeader('Content-Type', 'application/json; charset=UTF-8');
+    $status = $work->status;
+    $preview = $this->postJson($url, $payload)->assertOk()->json('preview');
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $preview['hash']])->assertOk();
+    expect($work->fresh()->status)->toBe($status);
+    $this->putJson("/api/admin/teaching/course_works/{$work->id}", ['status' => ['provision_events' => [], 'provision_imports' => []]])->assertOk();
+    expect($work->fresh()->status['provision_events'])->toBe($status['provision_events']);
+    Mail::assertNothingSent();
+    Notification::assertNothingSent();
+});
+
+test('assessment v2 uses bound release evidence in the same folder and preserves the teacher deadline', function (string $method) {
+    $this->travelTo('2026-10-07T11:00:00Z');
+    $work = prepareWorkDispatchImport($this);
+    $package = TeachingWorkJsonFixture::withSubmissionCheck(jsonAssessmentForWork($this, $work));
+    $provision = TeachingWorkJsonFixture::provision($package);
+    $provision['events'][0]['method'] = $method;
+    unset($provision['provision_checksum']);
+    $provision['provision_checksum'] = SchooltoolAssessmentJson::digest($provision);
+    $text = json_encode($provision, JSON_THROW_ON_ERROR);
+    $package = TeachingWorkJsonFixture::withAvailabilityCheck($package, hash('sha256', $text), $method);
+    $work->update(['finish_until_date' => '2026-10-06', 'finish_until_time' => '12:00']);
+    $payload = workFolderPayload([], ['Schooltool-Bereitstellung.json' => $text], false) + ['package' => TeachingWorkJsonFixture::upload($package)];
+    $url = "/api/admin/teaching/course_works/{$work->id}/import-json";
+    $preview = $this->postJson($url, $payload)->assertOk()->json('preview');
+    expect($preview['can_import'])->toBeTrue();
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $preview['hash']])->assertOk();
+    expect($work->fresh()->status['submission_checks'][0]['check']['schema_version'])->toBe(2);
+    expect($work->fresh()->finish_until_time)->toBe('12:00');
+    expect($work->fresh()->status['dispatch_notifications'] ?? [])->toBe([]);
+    $this->getJson("/api/admin/teaching/course_works/{$work->id}")->assertOk()->assertJsonPath('data.submission_check_status.complete', true);
+})->with(['download_release', 'direct_issue']);
+
+test('provision blocks ambiguous person class group id and incomplete work rosters without writes', function (string $case) {
+    $work = prepareWorkDispatchImport($this);
+    $package = TeachingWorkJsonFixture::withSubmissionCheck(jsonAssessmentForWork($this, $work));
+    $provision = TeachingWorkJsonFixture::provision($package);
+    if ($case === 'roster') {
+        array_pop($provision['participants']);
+        $ids = array_column($provision['participants'], 'participant_id');
+        $provision['events'][0]['participant_ids'] = $ids;
+        $provision['roster_fingerprint'] = SchooltoolAssessmentJson::digest($ids);
+    } else {
+        $field = ['person' => 'first_name', 'class' => 'class_name', 'group' => 'group_name', 'id' => 'schooltool_person_id'][$case];
+        $provision['participants'][0]['identity'][$field] = 'unrelated';
+    }
+    unset($provision['provision_checksum']);
+    $provision['provision_checksum'] = SchooltoolAssessmentJson::digest($provision);
+    $payload = workFolderPayload([], ['Schooltool-Bereitstellung.json' => json_encode($provision, JSON_THROW_ON_ERROR)], false);
+    $url = "/api/admin/teaching/course_works/{$work->id}/import-json";
+    $before = $work->fresh()->getAttributes();
+    $preview = $this->postJson($url, $payload)->assertOk()->assertJsonPath('preview.can_import', false)->json('preview');
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $preview['hash']])->assertUnprocessable();
+    expect($work->fresh()->getAttributes())->toBe($before);
+    expect(Storage::disk('local')->allFiles())->toBe([]);
+})->with(['person', 'class', 'group', 'id', 'roster']);
+
+test('assessment v2 reuses an archived provision and respects the later individual release and earliest event', function () {
+    $this->travelTo('2026-10-07T11:00:00Z');
+    $work = prepareWorkDispatchImport($this);
+    $package = TeachingWorkJsonFixture::withSubmissionCheck(jsonAssessmentForWork($this, $work));
+    $provision = TeachingWorkJsonFixture::provision($package);
+    $ids = array_column($package['records'], 'participant_id');
+    $provision['events'][0]['participant_ids'] = [$ids[0]];
+    $provision['events'][] = array_replace($provision['events'][0], ['event_id' => 'later-person', 'participant_ids' => [$ids[1]], 'available_at' => '2026-10-05T08:00:00Z']);
+    $provision['events'][] = array_replace($provision['events'][0], ['event_id' => 'second-issue', 'available_at' => '2026-10-05T09:00:00Z']);
+    unset($provision['provision_checksum']);
+    $provision['provision_checksum'] = SchooltoolAssessmentJson::digest($provision);
+    $text = json_encode($provision, JSON_THROW_ON_ERROR);
+    $payload = workFolderPayload([], ['Schooltool-Bereitstellung.json' => $text], false);
+    $url = "/api/admin/teaching/course_works/{$work->id}/import-json";
+    $preview = $this->postJson($url, $payload)->assertOk()->json('preview');
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $preview['hash']])->assertOk();
+    $work->update(['finish_until_date' => '2026-10-06', 'finish_until_time' => '12:00']);
+    $package = TeachingWorkJsonFixture::withAvailabilityCheck($package, hash('sha256', $text));
+    $package['submission_check']['participants'][1]['available_at'] = '2026-10-05T08:00:00Z';
+    unset($package['submission_check']['check_checksum']);
+    $package['submission_check']['check_checksum'] = SchooltoolAssessmentJson::digest($package['submission_check']);
+    $payload = ['package' => TeachingWorkJsonFixture::upload($package)];
+    $preview = $this->postJson($url, $payload)->assertOk()->assertJsonPath('preview.can_import', true)->json('preview');
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $preview['hash']])->assertOk();
+    expect($work->fresh()->status['provision_events'])->toHaveCount(3);
+    $package['submission_check']['participants'][0]['available_at'] = '2026-10-05T09:00:00Z';
+    unset($package['submission_check']['check_checksum']);
+    $package['submission_check']['check_checksum'] = SchooltoolAssessmentJson::digest($package['submission_check']);
+    $this->postJson($url, ['package' => TeachingWorkJsonFixture::upload($package)])->assertUnprocessable();
+});
+
+test('provision apply rejects a stale preview without storing an original', function () {
+    $work = prepareWorkDispatchImport($this);
+    $package = TeachingWorkJsonFixture::withSubmissionCheck(jsonAssessmentForWork($this, $work));
+    $text = json_encode(TeachingWorkJsonFixture::provision($package), JSON_THROW_ON_ERROR);
+    $payload = workFolderPayload([], ['Schooltool-Bereitstellung.json' => $text], false);
+    $url = "/api/admin/teaching/course_works/{$work->id}/import-json";
+    $preview = $this->postJson($url, $payload)->assertOk()->json('preview');
+    $work->update(['finish_until_date' => '2026-10-08']);
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $preview['hash']])->assertConflict();
+    expect($work->fresh()->status['provision_events'] ?? [])->toBe([]);
+    expect(Storage::disk('local')->allFiles())->toBe([]);
+});
+
+test('assessment v2 accepts mixed direct release and actual task mail but rejects local mail tests as availability', function (bool $actualMail) {
+    $this->travelTo('2026-10-07T11:00:00Z');
+    $work = prepareWorkDispatchImport($this);
+    $package = TeachingWorkJsonFixture::withSubmissionCheck(jsonAssessmentForWork($this, $work));
+    $provision = TeachingWorkJsonFixture::provision($package);
+    $provision['events'][0]['participant_ids'] = [$package['records'][1]['participant_id']];
+    unset($provision['provision_checksum']);
+    $provision['provision_checksum'] = SchooltoolAssessmentJson::digest($provision);
+    $text = json_encode($provision, JSON_THROW_ON_ERROR);
+    $mail = TeachingWorkDispatchFixture::tasksText(! $actualMail);
+    $package = TeachingWorkJsonFixture::withAvailabilityCheck($package, hash('sha256', $text));
+    $person = &$package['submission_check']['participants'][0];
+    $person['available_at'] = $actualMail ? '2026-10-01T15:02:40Z' : '2026-10-02T15:02:40Z';
+    $person['availability_method'] = 'email_dispatch';
+    $person['availability_evidence_sha256'] = [hash('sha256', $mail)];
+    $person['evidence_sha256'][] = hash('sha256', $mail);
+    unset($person);
+    foreach ($package['submission_check']['coverage'] as &$coverage) {
+        $coverage['start_at'] = '2026-10-01T15:02:40Z';
+    }
+    unset($coverage, $package['submission_check']['check_checksum']);
+    $package['submission_check']['check_checksum'] = SchooltoolAssessmentJson::digest($package['submission_check']);
+    $work->update(['finish_until_date' => '2026-10-06', 'finish_until_time' => '12:00']);
+    $payload = workFolderPayload([], ['Schooltool-Bereitstellung.json' => $text,
+        'Versand/Aufgaben/Versand_2026-10-02_17-02-40/Versandprotokoll.txt' => $mail], false) + ['package' => TeachingWorkJsonFixture::upload($package)];
+    $url = "/api/admin/teaching/course_works/{$work->id}/import-json";
+    $response = $this->postJson($url, $payload);
+    if (! $actualMail) {
+        $response->assertUnprocessable();
+        expect($work->fresh()->status['provision_events'] ?? [])->toBe([]);
+
+        return;
+    }
+    $preview = $response->assertOk()->assertJsonPath('preview.can_import', true)->json('preview');
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $preview['hash']])->assertOk();
+    expect($work->fresh()->status['provision_events'])->toHaveCount(1);
+    expect($work->fresh()->status['dispatch_notifications'])->toHaveCount(1);
+    expect($work->fresh()->status['dispatch_notifications'][0]['student_id'])->toBe($this->student->id);
+})->with([true, false]);
+
+test('assessment v2 rejects missing inconsistent and unrelated release evidence before writes', function (string $case) {
+    $this->travelTo('2026-10-07T11:00:00Z');
+    $work = prepareWorkDispatchImport($this);
+    $package = TeachingWorkJsonFixture::withSubmissionCheck(jsonAssessmentForWork($this, $work));
+    $provision = TeachingWorkJsonFixture::provision($package);
+    $text = json_encode($provision, JSON_THROW_ON_ERROR);
+    $package = TeachingWorkJsonFixture::withAvailabilityCheck($package, $case === 'unbound hash' ? str_repeat('f', 64) : hash('sha256', $text));
+    if ($case === 'changed time') {
+        $package['submission_check']['participants'][0]['available_at'] = '2026-10-04T08:00:01Z';
+    } elseif ($case === 'different method') {
+        $package['submission_check']['participants'][0]['availability_method'] = 'direct_issue';
+    } elseif ($case === 'other exercise') {
+        $package['exercise_id'] = $package['submission_check']['exercise_id'] = 'another-exercise';
+    }
+    unset($package['submission_check']['check_checksum']);
+    $package['submission_check']['check_checksum'] = SchooltoolAssessmentJson::digest($package['submission_check']);
+    $work->update(['finish_until_date' => '2026-10-06', 'finish_until_time' => '12:00']);
+    $payload = workFolderPayload([], $case === 'missing' ? [] : ['Schooltool-Bereitstellung.json' => $text], false) + ['package' => TeachingWorkJsonFixture::upload($package)];
+    $before = $work->fresh()->getAttributes();
+    $this->postJson("/api/admin/teaching/course_works/{$work->id}/import-json", $payload)->assertUnprocessable();
+    expect($work->fresh()->getAttributes())->toBe($before);
+    expect(Storage::disk('local')->allFiles())->toBe([]);
+})->with(['missing', 'unbound hash', 'changed time', 'different method', 'other exercise']);
+
+test('complete task folder previews thirteen recipients without writes and enrolls one explicit late participant only on apply', function () {
+    $this->travelTo('2026-10-13T21:10:00Z');
+    ['work' => $work, 'import' => $import, 'metadata' => $metadata, 'text' => $text] = lateTaskParticipantFixture($this);
+    $heading = substr($text, 0, strpos($text, '{'));
+    $original = $metadata;
+    $original['Empfaenger'] = array_slice($metadata['Empfaenger'], 0, 12);
+    $late = $metadata;
+    $late['Empfaenger'] = [$metadata['Empfaenger'][12]];
+    $late['Empfaenger'][0]['Datensatzposition'] = 1;
+    unset($late['Empfaenger'][0]['Teilnehmerzugang']);
+    $payload = workFolderPayload([], [
+        'Versand/Aufgaben/Versand_2026-10-13_08-28-16/Versandprotokoll.txt' => $heading.json_encode($original, JSON_THROW_ON_ERROR),
+        'Versand/Aufgaben/Versand_2026-10-13_22-54-59/Versandprotokoll.txt' => $heading.json_encode($late, JSON_THROW_ON_ERROR),
+        'Versand/Aufgaben/Versand_2026-10-13_22-59-39/Versandprotokoll.txt' => $text,
+    ], false);
+    $url = "/api/admin/teaching/course_works/{$work->id}/import-json";
+    $originalPayload = workFolderPayload([], ['Versand/Aufgaben/Versand_2026-10-13_08-28-16/Versandprotokoll.txt' => $heading.json_encode($original, JSON_THROW_ON_ERROR)], false);
+    $originalPreview = $this->postJson($url, $originalPayload)->assertOk()->json('preview');
+    $this->postJson($url, $originalPayload + ['apply' => true, 'hash' => $originalPreview['hash']])->assertOk();
+    $work->refresh();
+    $beforeNotifications = $work->status['dispatch_notifications'];
+    $beforeGroups = $work->fresh()->groups;
+    $users = User::count();
+    $enrollments = $this->course->teachingCourseStudents()->count();
+    Mail::fake();
+    Notification::fake();
+
+    $preview = $this->postJson($url, $payload)->assertOk()->json('preview');
+
+    expect($preview['can_import'])->toBeTrue()->and($preview['assessment_included'])->toBeFalse();
+    expect($preview['dispatches'][2]['rows'])->toHaveCount(13);
+    expect(collect($preview['dispatches'][2]['rows'])->where('accepted', true))->toHaveCount(13);
+    expect($preview['dispatches'][2]['rows'][12]['participant_addition']['create_account'])->toBeTrue();
+    expect(User::count())->toBe($users);
+    expect($this->course->teachingCourseStudents()->count())->toBe($enrollments);
+    expect($work->fresh()->groups)->toBe($beforeGroups);
+    expect($import->fresh()->user_id)->toBeNull();
+
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $preview['hash']])->assertOk();
+
+    $work->refresh();
+    $studentId = $import->fresh()->user_id;
+    expect($studentId)->not->toBeNull();
+    expect(User::count())->toBe($users + 1);
+    expect($this->course->teachingCourseStudents()->where('user_id', $studentId)->whereNull('canceled_at')->count())->toBe(1);
+    expect(array_slice($work->groups, 0, 12))->toBe($beforeGroups);
+    expect($work->groups[12]['student_ids'])->toBe([$studentId]);
+    expect($work->finish_until_time)->toBe('20:15');
+    expect($work->status['dispatch_notifications'])->toHaveCount(13);
+    expect(array_slice($work->status['dispatch_notifications'], 0, 12))->toBe($beforeNotifications);
+    expect(collect($work->status['dispatch_notifications'])->firstWhere('student_id', $studentId)['sent_at'])->toBe('2026-10-13T20:56:52Z');
+    $notifications = $work->status['dispatch_notifications'];
+    $preview = $this->postJson($url, $payload)->assertOk()->json('preview');
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $preview['hash']])->assertOk();
+    expect(User::count())->toBe($users + 1);
+    expect($work->fresh()->status['dispatch_notifications'])->toBe($notifications);
+    Mail::assertNothingSent();
+    Notification::assertNothingSent();
+});
+
+test('dispatch imports accept the same linked student account email without rewriting the different current import address', function () {
+    $work = prepareWorkDispatchImport($this);
+    $import = Import116::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->student->id, 'first_name' => 'Ada', 'last_name' => 'Van Alpha', 'class' => '1A', 'email' => 'current-import@example.test']);
+    $this->student->update(['import116_id' => $import->id]);
+    $this->course->teachingCourseStudents()->where('user_id', $this->student->id)->update(['import116_id' => $import->id]);
+    $payload = workFolderPayload([], ['Versand/Aufgaben/Versand_2026-10-13_22-59-39/Versandprotokoll.txt' => TeachingWorkDispatchFixture::nativeOfficeTasksText(1)], false);
+    $preview = $this->postJson("/api/admin/teaching/course_works/{$work->id}/import-json", $payload)->assertOk()->json('preview');
+    expect($preview['can_import'])->toBeTrue();
+    expect($preview['dispatches'][0]['rows'][0]['student_id'])->toBe($this->student->id);
+    expect($preview['dispatches'][0]['rows'][0]['accepted'])->toBeTrue();
+    expect($import->fresh()->email)->toBe('current-import@example.test');
+});
+
+test('dispatch account aliases remain blocked when another active course person owns that address', function () {
+    $work = prepareWorkDispatchImport($this);
+    $otherImport = Import116::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->openStudent->id, 'first_name' => 'Bea', 'last_name' => 'Beta', 'class' => '1A', 'email' => 'ada@example.test']);
+    $this->openStudent->update(['import116_id' => $otherImport->id]);
+    $this->course->teachingCourseStudents()->where('user_id', $this->openStudent->id)->update(['import116_id' => $otherImport->id]);
+    $import = Import116::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->student->id, 'first_name' => 'Ada', 'last_name' => 'Van Alpha', 'class' => '1A', 'email' => 'current-import@example.test']);
+    $this->student->update(['import116_id' => $import->id]);
+    $this->course->teachingCourseStudents()->where('user_id', $this->student->id)->update(['import116_id' => $import->id]);
+    $payload = workFolderPayload([], ['Versand/Aufgaben/Versand_2026-10-13_22-59-39/Versandprotokoll.txt' => TeachingWorkDispatchFixture::nativeOfficeTasksText(1)], false);
+    $preview = $this->postJson("/api/admin/teaching/course_works/{$work->id}/import-json", $payload)->assertOk()->json('preview');
+    expect($preview['can_import'])->toBeFalse();
+});
+
+test('explicit late task participants reject foreign ambiguous removed and conflicting identities before writes', function (string $case) {
+    ['work' => $work, 'import' => $import, 'metadata' => $metadata, 'text' => $text] = lateTaskParticipantFixture($this);
+    if ($case === 'foreign school') {
+        $import->update(['school_id' => $this->otherSchool->id]);
+    } elseif ($case === 'old year') {
+        $import->update(['schoolyear_id' => $this->otherSchoolyear->id]);
+    } elseif ($case === 'ambiguous') {
+        Import116::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id,
+            'first_name' => 'Student', 'last_name' => '12', 'class' => '1A', 'email' => 'student12@example.test']);
+    } elseif ($case === 'removed') {
+        $enrollment = $this->course->teachingCourseStudents()->create(['import116_id' => $import->id]);
+        $enrollment->delete();
+    } elseif ($case === 'canceled') {
+        $this->course->teachingCourseStudents()->create(['import116_id' => $import->id, 'canceled_at' => now()]);
+    } elseif ($case === 'foreign identity') {
+        User::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id, 'email' => 'student12@example.test',
+            'first_name' => 'Other', 'last_name' => 'Person'])->assignRole('student');
+    } elseif ($case === 'group work') {
+        $work->update(['is_group_work' => true]);
+    } elseif ($case === 'wrong email') {
+        $metadata['Empfaenger'][12]['To'] = $metadata['Empfaenger'][12]['Office_Zustand']['To'] = 'foreign@example.test';
+    } elseif ($case === 'ambiguous course identity') {
+        foreach (['first@example.test', 'second@example.test'] as $email) {
+            $user = User::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id,
+                'first_name' => 'Student', 'last_name' => '12', 'schoolclass' => '1A', 'email' => $email]);
+            $this->course->teachingCourseStudents()->create(['user_id' => $user->id]);
+        }
+    } elseif ($case === 'known wrong email') {
+        $metadata['Empfaenger'][0]['Teilnehmerzugang'] = 'nachträglich';
+        $metadata['Empfaenger'][0]['To'] = $metadata['Empfaenger'][0]['Office_Zustand']['To'] = 'foreign@example.test';
+    }
+    $text = substr($text, 0, strpos($text, '{')).json_encode($metadata, JSON_THROW_ON_ERROR);
+    $payload = workFolderPayload([], ['Versand/Aufgaben/Versand_2026-10-13_22-59-39/Versandprotokoll.txt' => $text], false);
+    $users = User::count();
+    $before = $work->fresh()->getAttributes();
+    $this->postJson("/api/admin/teaching/course_works/{$work->id}/import-json", $payload)->assertUnprocessable();
+    $this->postJson("/api/admin/teaching/course_works/{$work->id}/import-folder", $payload)->assertUnprocessable();
+    expect(User::count())->toBe($users);
+    expect($work->fresh()->getAttributes())->toBe($before);
+    expect(Storage::disk('local')->allFiles())->toBe([]);
+})->with(['foreign school', 'old year', 'ambiguous', 'removed', 'canceled', 'foreign identity', 'group work', 'wrong email', 'ambiguous course identity', 'known wrong email']);
+
+test('changed late participant identity invalidates the preview before enrollment', function () {
+    ['work' => $work, 'import' => $import, 'text' => $text] = lateTaskParticipantFixture($this);
+    $payload = workFolderPayload([], ['Versand/Aufgaben/Versand_2026-10-13_22-59-39/Versandprotokoll.txt' => $text], false);
+    $url = "/api/admin/teaching/course_works/{$work->id}/import-json";
+    $preview = $this->postJson($url, $payload)->assertOk()->json('preview');
+    $import->update(['phone_1' => 'changed']);
+    $users = User::count();
+    $this->postJson($url, $payload + ['apply' => true, 'hash' => $preview['hash']])->assertConflict();
+    expect(User::count())->toBe($users);
+    expect($import->fresh()->user_id)->toBeNull();
+});
 
 test('compact folder evaluations import points and personal PDFs while retaining open grades and comments', function () {
     $work = prepareWorkDispatchImport($this);
@@ -1276,6 +2146,38 @@ test('tasks and results remain separate across previews reimports and normal wor
         ->and($work->fresh()->status['dispatch_notifications'])->toBe($combined['dispatch_notifications']);
 })->with(['historical Mailpit' => true, 'structured live tasks' => false]);
 
+test('confirmed Mailpit sends advance the local workflow without becoming real student dispatches', function (bool $local, bool $confirmed) {
+    $work = prepareWorkDispatchImport($this);
+    $work->update(['date_for_all_groups' => '2026-10-04']);
+    $this->app['env'] = $local ? 'local' : 'production';
+    Mail::fake();
+    Notification::fake();
+    $text = TeachingWorkDispatchFixture::mailpitTasksText();
+    if (! $confirmed) {
+        $text = str_replace('lokaler Eingang in Mailpit bestätigt', 'vorbereitet', $text);
+    }
+    $payload = workFolderPayload([], ['Versand/Aufgaben/Versand_2026-10-04_16-27-31/Versandprotokoll.txt' => $text], false);
+    $payload['folder'] = str_replace('2026-10-02', '2026-10-04', $payload['folder']);
+    $payload['documents'] = str_replace('2026-10-02_IT-Grundlagen_Test', '2026-10-04_IT-Grundlagen_Test', $payload['documents']);
+    $url = "/api/admin/teaching/course_works/{$work->id}/import-folder";
+    $this->postJson($url, $payload)->assertOk();
+    $work->refresh();
+    expect($work->status['dispatch_notifications'] ?? [])->toBe([]);
+    $localRecords = collect($work->status['dispatch_attempts'] ?? [])->where('mode', 'mailpit');
+    expect($localRecords->isNotEmpty())->toBe($local && $confirmed);
+    $sources = app(TeachingWorkFolderImport::class)->availabilitySources($work, [], []);
+    expect(count($sources))->toBe($local && $confirmed ? $localRecords->count() : 0);
+    if ($local && $confirmed) {
+        expect($sources[0]['test_transport'])->toBe('mailpit');
+        $this->postJson($url, $payload)->assertOk();
+        expect($work->fresh()->status['dispatch_attempts'])->toBe($work->status['dispatch_attempts']);
+        $this->app['env'] = 'production';
+        expect(app(TeachingWorkFolderImport::class)->availabilitySources($work, [], []))->toBe([]);
+    }
+    Mail::assertNothingSent();
+    Notification::assertNothingSent();
+})->with([[true, true], [true, false], [false, true]]);
+
 test('JSON folder excludes Mailpit tasks while preserving assessments and confirmed Office dispatches', function (bool $withOffice) {
     $work = prepareWorkDispatchImport($this);
     $package = jsonAssessmentForWork($this, $work);
@@ -1328,7 +2230,7 @@ test('folder import archives stopped Postmark and confirmed Outlook tasks withou
     expect($status['dispatch_logs'])->toHaveCount(2)->and($status['dispatch_notifications'])->toHaveCount(1)
         ->and($status['dispatch_notifications'][0]['student_id'])->toBe($this->student->id)
         ->and($status['dispatch_notifications'][0]['purpose'])->toBe('tasks')
-        ->and($status['dispatch_notifications'][0]['sent_at'])->toBe('2026-10-04T14:59:41Z')
+        ->and($status['dispatch_notifications'][0]['sent_at'])->toBe('2026-10-04T14:59:41.131Z')
         ->and($status['dispatch_attempts'])->toHaveCount(1)->and($work->fresh()->groups)->toEqual($before);
     expect(Storage::disk('local')->get($status['dispatch_logs'][0]['file_path']))->toBe($stopped);
     expect(Storage::disk('local')->get($status['dispatch_logs'][1]['file_path']))->toBe($outlook);
@@ -2422,6 +3324,60 @@ describe('show update destroy', function () {
 
         expect($work->fresh()->finish_until_time)->toBeNull();
     })->with(['groups.0.comment', 'groups.0.comments.0.comment']);
+
+    test('preserves unchanged historical feedback beyond the input limit when saving work details', function (int $length) {
+        $this->actingAs($this->admin, 'sanctum');
+        $this->course->teachingCourseStudents()->create(['user_id' => $this->student->id]);
+        $feedback = str_repeat('R', $length);
+        $groups = [[
+            'student_ids' => [$this->student->id],
+            'date' => '2026-10-06',
+            'comment' => $feedback,
+            'grade' => '2',
+            'comments' => [['student_id' => $this->student->id, 'comment' => $feedback]],
+        ]];
+        $work = TeachingCourseWork::query()->create([
+            'teaching_course_id' => $this->course->id, 'type' => 'MA', 'groups' => $groups,
+            'status' => ['manual' => 'Keep'],
+        ]);
+
+        $this->putJson('/api/admin/teaching/course_works/'.$work->id, [
+            'title' => 'Updated details', 'finish_until_time' => '20:00', 'groups' => $groups,
+        ])->assertOk()
+            ->assertJsonPath('data.title', 'Updated details')
+            ->assertJsonPath('data.finish_until_time', '20:00')
+            ->assertJsonPath('data.groups.0.comments.0.comment', $feedback);
+        expect($work->fresh()->status)->toBe(['manual' => 'Keep']);
+        $this->assertDatabaseHas('teaching_course_student_entries', [
+            'teaching_course_work_id' => $work->id, 'user_id' => $this->student->id,
+            'description' => $feedback, 'grade' => '2',
+        ]);
+    })->with([3493, 4544]);
+
+    test('does not allow historical long feedback to be changed or assigned to another person', function (string $change) {
+        $this->actingAs($this->admin, 'sanctum');
+        $this->course->teachingCourseStudents()->create(['user_id' => $this->student->id]);
+        $feedback = str_repeat('R', 4500);
+        $groups = [['student_ids' => [$this->student->id], 'comment' => $feedback,
+            'comments' => [['student_id' => $this->student->id, 'comment' => $feedback]]]];
+        $work = TeachingCourseWork::query()->create([
+            'teaching_course_id' => $this->course->id, 'type' => 'MA', 'groups' => $groups,
+        ]);
+        if ($change === 'text') {
+            $groups[0]['comment'] .= 'changed';
+            $groups[0]['comments'][0]['comment'] .= 'changed';
+        } else {
+            $other = User::factory()->create(['school_id' => $this->school->id]);
+            $this->course->teachingCourseStudents()->create(['user_id' => $other->id]);
+            $groups[0]['student_ids'] = [$other->id];
+            $groups[0]['comments'][0]['student_id'] = $other->id;
+        }
+        $this->putJson('/api/admin/teaching/course_works/'.$work->id, [
+            'finish_until_time' => '20:00', 'groups' => $groups,
+        ])->assertUnprocessable()->assertJsonValidationErrors(['groups.0.comment', 'groups.0.comments.0.comment']);
+        expect($work->fresh()->finish_until_time)->toBeNull();
+        expect($work->fresh()->groups[0]['comments'][0]['comment'])->toBe($feedback);
+    })->with(['text', 'person']);
 
     test('destroy deletes work and derived entries', function () {
         $this->actingAs($this->admin, 'sanctum');

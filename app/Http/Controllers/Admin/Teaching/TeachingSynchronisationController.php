@@ -4,11 +4,11 @@ namespace App\Http\Controllers\Admin\Teaching;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Services\TeachingSynchronisationBackup;
 use App\Services\TeachingSynchronisationService;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 use RuntimeException;
@@ -48,7 +48,8 @@ class TeachingSynchronisationController extends Controller
         $path = $service->backupPath($actor, $backup);
         $disk = Storage::disk('local');
         abort_unless($disk->exists($path), 404);
-        $metadata = json_decode(Crypt::decryptString($disk->get($path)), true, 512, JSON_THROW_ON_ERROR);
+        $backups = app(TeachingSynchronisationBackup::class);
+        $metadata = $backups->isStreamed($path) ? $backups->metadata($path) : $backups->read($path);
         abort_unless($metadata['school'] === $actor->school_id && $metadata['actor'] === $actor->id, 403);
 
         return response()->streamDownload(function () use ($disk, $path): void {

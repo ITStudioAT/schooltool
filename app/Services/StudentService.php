@@ -31,13 +31,24 @@ class StudentService
         return $student;
     }
 
-    public function createUserFromImport116(Import116 $import116User): User
+    public function createUserFromImport116(Import116 $import116User, bool $preserveExistingProfile = false): User
     {
         $importEmail = trim((string) ($import116User->email ?? ''));
         $resolvedEmail = $importEmail !== '' ? $importEmail : "import116.{$import116User->id}@schooltool.noemail";
 
         $user = $this->existingUserForImport116($import116User);
         app(FeaturePreviewService::class)->assertCanEnter($user);
+
+        if ($user && $preserveExistingProfile) {
+            $user->schoolyear_id = $import116User->schoolyear_id;
+            $user->is_active = 1;
+            $user->save();
+            if (! $user->hasRole('student')) {
+                $user->assignRole('student');
+            }
+
+            return $user;
+        }
 
         if (! $user) {
             $user = new User;

@@ -1,0 +1,91 @@
+{
+  "page": {
+    "width": 595.2755905511812,
+    "height": 841.8897637795277,
+    "left": 38,
+    "right": 38,
+    "top": 38,
+    "bottom": 54
+  },
+  "colors": {
+    "heading": "#173A40",
+    "accent": "#2E6655",
+    "feedback_error": "#B00020",
+    "body": "#263835",
+    "muted": "#57655D",
+    "rule": "#CBD8CF",
+    "card": "#E9F3EC",
+    "steps": "#F7F7F1",
+    "header_text": "#FFFFFF",
+    "header_subtitle": "#F2F7F1",
+    "header_facts": "#E6F4EB"
+  },
+  "type": {
+    "body_size": 11,
+    "body_leading": 15,
+    "title_size": 27,
+    "title_leading": 33,
+    "subtitle_size": 12.2,
+    "subtitle_leading": 16,
+    "facts_size": 10.2,
+    "facts_leading": 14,
+    "h1_size": 18,
+    "h1_leading": 23,
+    "h2_size": 14,
+    "h2_leading": 18,
+    "h3_size": 12,
+    "h3_leading": 16,
+    "table_size": 10,
+    "table_leading": 13.5,
+    "code_size": 9.5,
+    "code_leading": 12,
+    "footer_size": 7.7
+  },
+  "spacing": {
+    "paragraph_after": 8,
+    "card_padding": 12,
+    "card_radius": 10,
+    "card_before": 12,
+    "card_after": 12,
+    "heading_before": 22,
+    "heading_after": 9,
+    "title_after": 23,
+    "highlight_before": 28.346456692913385,
+    "highlight_after": 28.346456692913385
+  },
+  "header": {
+    "minimum_height": 135,
+    "title_baseline_from_top": 57,
+    "subtitle_baseline_from_top": 87,
+    "facts_baseline_from_top": 124
+  },
+  "footer": {
+    "baseline": 34,
+    "rule_y": 50,
+    "label_max_fraction": 0.87
+  },
+  "titlepage": {
+    "title_size": 48,
+    "title_leading": 58,
+    "subtitle_size": 16,
+    "subtitle_leading": 22,
+    "author_size": 14,
+    "author_leading": 20,
+    "date_size": 11,
+    "date_leading": 16,
+    "accent_top": 110,
+    "title_top": 210,
+    "lower_panel_height": 310,
+    "metadata_top": 242,
+    "text_gap": 18
+  },
+  "school_closing": {
+    "size": 9,
+    "leading": 11.5,
+    "ai_html": "<b>KI-Hinweis:</b> Unterstützend erstellt mit ChatGPT (OpenAI), fachlich geprüft und redaktionell bearbeitet.",
+    "license_prefix_html": "<b>Lizenz:</b> Dieses Dokument von Dipl.-Ing. Günther Kron steht unter der Lizenz ",
+    "license_title": "Creative Commons Namensnennung – Nicht kommerziell 4.0 International (CC BY-NC 4.0)",
+    "license_suffix_html": ". Verlinkte Fremdinhalte unterliegen ihren jeweiligen Nutzungsbedingungen.",
+    "license_url": "https://creativecommons.org/licenses/by-nc/4.0/"
+  }
+}

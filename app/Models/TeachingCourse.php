@@ -81,6 +81,24 @@ class TeachingCourse extends Model
         return $this->teachingCourseStudents()->exists();
     }
 
+    public function calculationsEnabled(): bool
+    {
+        $owner = $this->user()->first(['id', 'teaching_grade_columns_by_schoolyear']);
+
+        return data_get($owner?->teaching_grade_columns_by_schoolyear, 'calculations_enabled', true) !== false;
+    }
+
+    public function semesterCount(?array $schema = null): int
+    {
+        $area = $this->teachingEntryArea;
+        if ($area && (int) $area->user_id === (int) $this->user_id
+            && (int) $area->school_id === (int) $this->school_id && (int) $area->schoolyear_id === (int) $this->schoolyear_id) {
+            return (int) $area->semester_count === 1 ? 1 : 2;
+        }
+
+        return (int) ($schema['grading']['semester_count'] ?? 2) === 1 ? 1 : 2;
+    }
+
     public function setStudentsAttribute(mixed $value): void
     {
         $this->pendingStudentsPayload = $value;

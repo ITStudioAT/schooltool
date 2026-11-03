@@ -185,19 +185,23 @@
         </v-dialog>
 
         <!-- Delete confirmation dialog -->
-        <v-dialog v-model="showDeleteDialog" max-width="420" persistent>
+        <v-dialog :model-value="showDeleteDialog" max-width="560" persistent>
             <v-card rounded="xl">
                 <v-card-title class="text-subtitle-1 d-flex align-center ga-2 pt-4 px-4">
                     <v-icon color="error" size="20">mdi-delete-outline</v-icon>
-                    Anmeldesystem löschen
+                    Anmeldetool samt Anmeldungen löschen
                 </v-card-title>
                 <v-card-text class="px-4">
-                    Soll das Anmeldesystem <strong>„{{ selected_register?.name }}"</strong> wirklich gelöscht werden? Diese Aktion kann nicht rückgängig gemacht werden.
+                    <p>Das Anmeldetool <strong>„{{ deleteRegister?.name }}“</strong> wird mit <strong>allen zugehörigen Anmeldungen und Terminen</strong> endgültig gelöscht. Diese Aktion kann nicht rückgängig gemacht werden.</p>
+                    <p class="mt-3">Geben Sie zur Bestätigung den vollständigen Namen des Anmeldetools ein:</p>
+                    <p class="font-weight-bold mt-2">{{ deleteRegister?.name }}</p>
+                    <v-text-field v-model="deleteConfirmation" label="Name des Anmeldetools zur Löschbestätigung"
+                        variant="outlined" class="mt-3" :disabled="isDeleting" autocomplete="off" hide-details />
                 </v-card-text>
                 <v-card-actions class="px-4 pb-4">
-                    <v-btn variant="tonal" @click="abort">Abbrechen</v-btn>
+                    <v-btn variant="tonal" :disabled="isDeleting" @click="abort">Abbrechen</v-btn>
                     <v-spacer />
-                    <v-btn color="error" variant="flat" @click="destroy(selected_register)">Löschen</v-btn>
+                    <v-btn color="error" variant="flat" :loading="isDeleting" :disabled="!canDeleteRegister" @click="destroy">Endgültig löschen</v-btn>
                 </v-card-actions>
             </v-card>
         </v-dialog>
@@ -239,6 +243,9 @@ export default {
             is_valid: false,
             data: {},
             selected_register_array: [],
+            deleteRegister: null,
+            deleteConfirmation: '',
+            isDeleting: false,
         }
     },
 
@@ -250,10 +257,14 @@ export default {
         showDeleteDialog() {
             return this.action === 'remove_register'
         },
+        canDeleteRegister() {
+            return !this.isDeleting && !!this.deleteRegister?.id && this.deleteConfirmation === this.deleteRegister.name
+        },
     },
 
     watch: {
         async selected_schoolyear() {
+            if (this.showDeleteDialog && !this.isDeleting) this.abort()
             if (this.selected_schoolyear) {
                 this.loadRegisters()
             } else {
@@ -287,16 +298,26 @@ export default {
             if (answer) this.action = ''
         },
 
-        async destroy(data) {
-            if (!(await this.registerStore.destroy(data))) return
-            await this.loadRegisters()
-            this.action = ''
-            this.selected_register = null
+        async destroy() {
+            if (!this.canDeleteRegister) return
+            this.isDeleting = true
+            try {
+                if (!(await this.registerStore.destroy(this.deleteRegister, this.deleteConfirmation))) return
+                await this.loadRegisters()
+                this.action = ''
+                this.deleteRegister = null
+                this.deleteConfirmation = ''
+            } finally {
+                this.isDeleting = false
+            }
         },
 
         abort() {
+            if (this.isDeleting) return
             this.action = ''
             this.data = {}
+            this.deleteRegister = null
+            this.deleteConfirmation = ''
         },
 
         edit(selected_register) {
@@ -304,7 +325,9 @@ export default {
             this.action = 'edit_register'
         },
 
-        remove() {
+        remove(register) {
+            this.deleteRegister = { ...register }
+            this.deleteConfirmation = ''
             this.action = 'remove_register'
         },
 

@@ -32,7 +32,7 @@ it('checks saved features and exact preview artifacts asynchronously without hid
 it('runs every expensive gate on main code changes and isolates platform resources', function (): void {
     $workflow = releaseCiWorkflow();
 
-    foreach (['php-quality', 'php-tests', 'infrastructure', 'windows-workflow'] as $name) {
+    foreach (['php-quality', 'php-tests', 'infrastructure', 'windows-workflow-shards'] as $name) {
         expect($workflow['jobs'][$name]['needs'])->toBe('classify')
             ->and($workflow['jobs'][$name]['if'])->toBe("needs.classify.outputs.lane == 'full'");
     }
@@ -41,7 +41,7 @@ it('runs every expensive gate on main code changes and isolates platform resourc
         ->and($workflow['jobs']['frontend']['if'])->toBe("needs.classify.outputs.lane == 'full' || needs.classify.outputs.lane == 'frontend'")
         ->and($workflow['jobs']['php-tests']['services']['mysql']['image'])->toBe('mysql:8.4')
         ->and($workflow['jobs']['infrastructure']['services']['mysql']['image'])->toBe('mysql:8.4')
-        ->and($workflow['jobs']['windows-workflow']['runs-on'])->toBe('windows-latest')
+        ->and($workflow['jobs']['windows-workflow-shards']['runs-on'])->toBe('windows-latest')
         ->and($workflow['permissions'])->toBe(['contents' => 'read', 'actions' => 'read'])
         ->and($workflow['jobs']['documentation']['name'])->toBe('Documentation checks (policy v3; base=${{ needs.classify.outputs.base }})')
         ->and($workflow['jobs']['frontend-proof']['name'])->toBe('Frontend checks (policy v3; base=${{ needs.classify.outputs.base }})');
@@ -98,7 +98,7 @@ it('keeps pull requests scheduled manual and non-main runs on the full lane', fu
 ]);
 
 it('provides the locked Windows dependency extensions without bypassing platform checks', function (): void {
-    $steps = releaseCiWorkflow()['jobs']['windows-workflow']['steps'];
+    $steps = releaseCiWorkflow()['jobs']['windows-workflow-shards']['steps'];
     $setup = array_values(array_filter($steps, fn (array $step): bool => ($step['uses'] ?? '') === 'shivammathur/setup-php@v2'))[0];
     $extensions = array_map('trim', explode(',', $setup['with']['extensions']));
     $install = array_values(array_filter($steps, fn (array $step): bool => ($step['name'] ?? '') === 'Install PHP dependencies'))[0];
@@ -115,7 +115,7 @@ it('provides the locked Windows dependency extensions without bypassing platform
 });
 
 it('boots the Windows dependency setup with an isolated database accepted by the unchanged safety provider', function (): void {
-    $environment = releaseCiWorkflow()['jobs']['windows-workflow']['env'];
+    $environment = releaseCiWorkflow()['jobs']['windows-workflow-shards']['env'];
 
     expect($environment['APP_ENV'])->toBe('testing')
         ->and($environment['DB_CONNECTION'])->toBe('sqlite')
@@ -291,6 +291,53 @@ it('rejects oversized and empty PHP test batches', function (array $batch): void
     expect(fn () => CiPhpTests::executeBatches([$batch], fn (): int => 0))->toThrow(RuntimeException::class);
 })->with([fn () => [], fn () => array_fill(0, 11, 'test.php')]);
 
+it('keeps the named Windows gate successful only after every shard succeeds', function (string $result, bool $success): void {
+    $jobs = releaseCiWorkflow()['jobs'];
+    $shards = $jobs['windows-workflow-shards'];
+    $gate = $jobs['windows-workflow'];
+    expect($shards['strategy'])->toBe(['fail-fast' => false, 'matrix' => ['shard' => range(1, 8)]])
+        ->and($gate['name'])->toBe('Windows PowerShell workflow tests')
+        ->and($gate['needs'])->toBe(['classify', 'windows-workflow-shards'])
+        ->and($gate['if'])->toBe("always() && needs.classify.outputs.lane == 'full'")
+        ->and($gate['steps'][0]['env']['SHARDS_RESULT'])->toBe('${{ needs.windows-workflow-shards.result }}');
+    $testStep = array_values(array_filter($shards['steps'], fn (array $step): bool => str_starts_with($step['run'] ?? '', 'php scripts/ci-php-tests.php')))[0];
+    expect($testStep['run'])->toBe('php scripts/ci-php-tests.php windows ${{ matrix.shard }} 8');
+    $bash = PHP_OS_FAMILY === 'Windows' ? 'C:/Program Files/Git/bin/bash.exe' : 'bash';
+    $process = new Process([$bash, '-c', $gate['steps'][0]['run']], dirname(__DIR__, 2), ['SHARDS_RESULT' => $result]);
+    $process->run();
+    expect($process->isSuccessful())->toBe($success);
+})->with([['success', true], ['failure', false], ['cancelled', false], ['skipped', false]]);
+
+it('assigns every native Windows case including datasets to exactly one nonempty shard', function (): void {
+    $root = dirname(__DIR__, 2);
+    $manifest = tempnam(sys_get_temp_dir(), 'schooltool-windows-tests-');
+    try {
+        $files = array_merge(...CiPhpTests::batches($root, 'windows'));
+        $process = new Process([...CiPhpTests::testCommand(), ...$files, '--list-tests-xml='.$manifest], $root, ['TEST_TOKEN' => 'windows-shard-discovery']);
+        $process->mustRun();
+        $contents = file_get_contents($manifest);
+        $all = array_map(fn (SimpleXMLElement $method): string => (string) $method['id'], simplexml_load_string($contents)->xpath('//*[local-name()="testMethod"]'));
+        $selected = [];
+        foreach (range(1, 8) as $shard) {
+            $filter = CiPhpTests::windowsShardFilter($shard, 8);
+            $process = new Process([...CiPhpTests::testCommand(), ...$files, '--filter='.$filter, '--list-tests-xml='.$manifest], $root, ['TEST_TOKEN' => 'windows-shard-discovery']);
+            $process->mustRun();
+            $cases = array_map(fn (SimpleXMLElement $method): string => (string) $method['id'], simplexml_load_file($manifest)->xpath('//*[local-name()="testMethod"]'));
+            expect($cases)->not->toBeEmpty();
+            $selected = [...$selected, ...$cases];
+        }
+        sort($all, SORT_STRING);
+        sort($selected, SORT_STRING);
+        expect($selected)->toBe($all);
+    } finally {
+        unlink($manifest);
+    }
+});
+
+it('rejects invalid and empty Windows shards instead of running an unfiltered suite', function (int $shard, int $total): void {
+    expect(fn (): string => CiPhpTests::windowsShardFilter($shard, $total))->toThrow(InvalidArgumentException::class);
+})->with([[0, 8], [9, 8], [1, 0]]);
+
 it('displays warning details without changing the CI warning failure policy', function (): void {
     $command = CiPhpTests::testCommand();
 
@@ -319,7 +366,7 @@ it('creates only an empty disposable CI environment and refuses an existing file
     } finally {
         (new Filesystem)->deleteDirectory($directory);
     }
-})->with(['php-tests', 'windows-workflow']);
+})->with(['php-tests', 'windows-workflow-shards']);
 
 it('merges coverage from every batch and rejects missing or invalid reports', function (): void {
     $directory = sys_get_temp_dir().'/schooltool-ci-coverage-'.bin2hex(random_bytes(8));

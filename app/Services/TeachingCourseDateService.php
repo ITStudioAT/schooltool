@@ -10,6 +10,7 @@ use App\Models\TeachingCourseDateMaterial;
 use App\Models\TeachingCourseDateMaterialAttachment;
 use App\Models\TeachingCurriculumDocument;
 use App\Services\Teaching\CurriculumUnitFileService;
+use App\Services\Teaching\TeachingExplanationCatalog;
 use Carbon\Carbon;
 use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Database\Eloquent\Collection;
@@ -22,6 +23,35 @@ use Throwable;
 
 class TeachingCourseDateService
 {
+    /** @return list<string> */
+    public function scheduledWorkDates(TeachingCourse $course): array
+    {
+        $course->loadMissing('teachingCourseWorks:id,teaching_course_id,is_group_work,date_for_all_groups,groups');
+        $dates = [];
+        foreach ($course->teachingCourseWorks as $work) {
+            $fallbackDate = $work->date_for_all_groups?->format('Y-m-d');
+            $hasExplicitGroupDates = false;
+            foreach ($work->groups ?? [] as $group) {
+                $groupDate = substr((string) ($group['date'] ?? ''), 0, 10);
+                if (! preg_match('/\A(\d{4})-(\d{2})-(\d{2})\z/', $groupDate, $parts)
+                    || ! checkdate((int) $parts[2], (int) $parts[3], (int) $parts[1])) {
+                    $groupDate = null;
+                }
+                $hasExplicitGroupDates = $hasExplicitGroupDates || $groupDate !== null;
+                if ($effectiveDate = $groupDate ?? $fallbackDate) {
+                    $dates[$effectiveDate] = true;
+                }
+            }
+            if ($fallbackDate && (! $work->is_group_work || ! $hasExplicitGroupDates)) {
+                $dates[$fallbackDate] = true;
+            }
+        }
+        $scheduledDates = array_keys($dates);
+        sort($scheduledDates);
+
+        return $scheduledDates;
+    }
+
     /**
      * @param  Collection<int, TeachingCourseDate>  $dates
      */
@@ -44,7 +74,7 @@ class TeachingCourseDateService
             ->with([
                 'teachingCurriculum:id,school_id,user_id,topics',
                 'teachingCurriculum.documents' => fn ($query) => $query
-                    ->where('source_type', 'unit_file')
+                    ->whereIn('source_type', ['unit_file', 'explanation'])
                     ->select(['id', 'teaching_curriculum_id', 'topic_id', 'unit_id']),
             ])
             ->get()
@@ -201,6 +231,11 @@ class TeachingCourseDateService
      */
     public function updateCourseDateStatus(TeachingCourseDate $courseDate, array $validated, TeachingCourse $course): void
     {
+        if (array_key_exists('cancelled_hours', $validated)) {
+            $this->setCancelledHours($courseDate, $validated['cancelled_hours']);
+
+            return;
+        }
         $updateData = [];
         $supportsAttendanceColumns = $this->supportsAttendanceColumns();
         $statusProvided = array_key_exists('status', $validated);
@@ -255,6 +290,43 @@ class TeachingCourseDateService
     // ------------------------------------------------------------------
     // Public helper methods (also used by CourseDateResource)
     // ------------------------------------------------------------------
+
+    /** @param list<int> $cancelledHours */
+    private function setCancelledHours(TeachingCourseDate $courseDate, array $cancelledHours): void
+    {
+        DB::transaction(function () use ($courseDate, $cancelledHours): void {
+            $lockedDate = TeachingCourseDate::query()->lockForUpdate()->findOrFail($courseDate->id);
+            $hours = array_values(array_unique(array_map('intval', $lockedDate->hours ?? [])));
+            $cancelledHours = array_values(array_unique(array_map('intval', $cancelledHours)));
+            if (array_diff($cancelledHours, $hours) !== []) {
+                throw ValidationException::withMessages(['cancelled_hours' => 'Die gewählte Stunde gehört nicht zu diesem Unterricht.']);
+            }
+            $status = array_values(array_filter($lockedDate->status ?? [], fn ($value): bool => $value !== 'entfaellt' && (! is_string($value) || ! str_starts_with($value, 'cancelled_hour:'))
+            ));
+            foreach ($cancelledHours as $hour) {
+                $status[] = 'cancelled_hour:'.$hour;
+            }
+            if ($hours !== [] && count($cancelledHours) === count($hours)) {
+                $status[] = 'entfaellt';
+            }
+            $lockedDate->update(['status' => $status]);
+        });
+        $courseDate->refresh();
+    }
+
+    private function statusWithCancelledHours(TeachingCourseDate $courseDate, mixed $requestedStatus): array
+    {
+        $status = $this->normalizePublicStatus($requestedStatus);
+        if (! in_array('entfaellt', $courseDate->status ?? [], true) && ! in_array('entfaellt', $status, true)) {
+            foreach ($courseDate->hours ?? [] as $hour) {
+                if (in_array('cancelled_hour:'.(int) $hour, $courseDate->status ?? [], true)) {
+                    $status[] = 'cancelled_hour:'.(int) $hour;
+                }
+            }
+        }
+
+        return $status;
+    }
 
     public function supportsAttendanceColumns(): bool
     {
@@ -517,7 +589,7 @@ class TeachingCourseDateService
         array $validated
     ): void {
         if ($statusProvided) {
-            $updateData['status'] = $this->normalizePublicStatus($validated['status'] ?? []);
+            $updateData['status'] = $this->statusWithCancelledHours($courseDate, $validated['status'] ?? []);
         } elseif ($attendanceProvided || $attendanceCheckedProvided || $toggleStudentProvided) {
             $currentStatus = is_array($courseDate->status) ? $courseDate->status : [];
             $cleanStatus = $this->stripAttendanceMetaFromStatus($currentStatus);
@@ -550,7 +622,7 @@ class TeachingCourseDateService
     ): void {
         $currentStatus = is_array($courseDate->status) ? $courseDate->status : [];
         $publicStatus = $statusProvided
-            ? $this->normalizePublicStatus($validated['status'] ?? [])
+            ? $this->statusWithCancelledHours($courseDate, $validated['status'] ?? [])
             : $this->stripAttendanceMetaFromStatus($currentStatus);
         $attendance = $attendanceProvided
             ? ($toggleStudentProvided
@@ -619,7 +691,7 @@ class TeachingCourseDateService
             }
             $currentStatus = is_array($courseDate->status) ? $courseDate->status : [];
             $publicStatus = $statusProvided
-                ? $this->normalizePublicStatus($validated['status'] ?? [])
+                ? $this->statusWithCancelledHours($courseDate, $validated['status'] ?? [])
                 : $this->stripAttendanceMetaFromStatus($currentStatus);
             $attendance = $attendanceProvided
                 ? ($validated['attendance'] ?? [])
@@ -739,7 +811,7 @@ class TeachingCourseDateService
                     && (int) $course->teaching_curriculum_id === (int) $curriculum->id
                     && (int) $course->school_id === (int) $curriculum->school_id
                     && (int) $course->user_id === (int) $curriculum->user_id
-                    && $file->source_type === 'unit_file',
+                    && in_array($file->source_type, ['unit_file', 'explanation'], true),
                     404,
                 );
 
@@ -774,6 +846,18 @@ class TeachingCourseDateService
                     return;
                 }
                 if (! $studentVisible) {
+                    return;
+                }
+
+                if ($file->source_type === 'explanation') {
+                    abort_unless(TeachingExplanationCatalog::find($file->explanation_key), 404);
+                    $material->attachments()->create([
+                        'source_teaching_curriculum_document_id' => $file->id,
+                        'explanation_key' => $file->explanation_key,
+                        'name' => $file->name,
+                        'student_visible' => true,
+                    ]);
+
                     return;
                 }
 

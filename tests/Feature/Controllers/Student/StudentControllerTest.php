@@ -7,8 +7,10 @@ use App\Models\SchoolLicence;
 use App\Models\SchoolTool;
 use App\Models\Schoolyear;
 use App\Models\TeachingCourse;
+use App\Models\TeachingCourseStudentEntry;
 use App\Models\User;
 use App\Notifications\StandardEmail;
+use App\Services\TeachingCourseService;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
@@ -73,6 +75,96 @@ beforeEach(function () {
     ]);
     $this->teacher->assignRole('teacher');
 });
+
+test('imported course members receive one reusable account and sign in to their own performances by email code', function (string $case): void {
+    Notification::fake();
+    $email = 'course.member@example.test';
+    $account = null;
+    if (in_array($case, ['placeholder', 'active student', 'blocked student'], true)) {
+        $account = User::factory()->create([
+            'school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id,
+            'email' => $email, 'is_active' => $case === 'active student',
+        ]);
+        if ($case !== 'placeholder') {
+            $account->assignRole('student');
+        }
+    }
+    $import = Import116::factory()->importedBy($this->teacher)->create([
+        'school_id' => $case === 'foreign import' ? School::factory()->create()->id : $this->school->id,
+        'schoolyear_id' => $case === 'old import' ? Schoolyear::factory()->create(['school_id' => $this->school->id])->id : $this->schoolyear->id,
+        'email' => $email, 'user_id' => $account?->id,
+    ]);
+    $account?->update(['import116_id' => $import->id]);
+    $usersBefore = User::query()->count();
+    $course = TeachingCourse::factory()->forSchool($this->school)->forSchoolyear($this->schoolyear)
+        ->forTeacher($this->teacher)->create();
+
+    $service = app(TeachingCourseService::class);
+    $service->syncCourseStudents($course, [['import116_id' => $import->id]]);
+    $service->syncCourseStudents($course, [['import116_id' => $import->id]]);
+
+    if (in_array($case, ['foreign import', 'old import'], true)) {
+        expect($course->teachingCourseStudents()->count())->toBe(0);
+        $this->postJson('/api/homepage/student/login_step_email', [
+            'type' => 'login_without_password', 'school_id' => $this->school->id, 'email' => $email,
+        ])->assertForbidden();
+        expect(User::query()->count())->toBe($usersBefore);
+        Notification::assertNothingSent();
+
+        return;
+    }
+
+    $linkedAccount = User::query()->findOrFail($import->fresh()->user_id);
+    expect(User::query()->count())->toBe($usersBefore + ($case === 'new account' ? 1 : 0));
+    expect($course->teachingCourseStudents()->count())->toBe(1);
+    expect((int) $course->teachingCourseStudents()->firstOrFail()->user_id)->toBe($linkedAccount->id);
+    expect((int) $linkedAccount->import116_id)->toBe($import->id);
+    if ($account) {
+        expect($linkedAccount->id)->toBe($account->id);
+    }
+    $originalPassword = $linkedAccount->password;
+    $entry = TeachingCourseStudentEntry::query()->create([
+        'teaching_course_id' => $course->id, 'user_id' => $linkedAccount->id,
+        'type' => 'MA', 'grade' => '2', 'date' => '2026-10-01',
+    ]);
+    TeachingCourseStudentEntry::query()->create([
+        'teaching_course_id' => $course->id, 'user_id' => $this->student->id,
+        'type' => 'MA', 'grade' => '5', 'date' => '2026-10-01',
+    ]);
+    $response = $this->postJson('/api/homepage/student/login_step_email', [
+        'type' => 'login_without_password', 'school_id' => $this->school->id, 'email' => $email,
+    ]);
+    if ($case === 'blocked student') {
+        $response->assertForbidden();
+        expect((bool) $linkedAccount->fresh()->is_active)->toBeFalse();
+        expect($linkedAccount->fresh()->hasRole('student'))->toBeTrue();
+        Notification::assertNothingSent();
+        $this->assertGuest();
+
+        return;
+    }
+
+    $response->assertOk()->assertJsonPath('status', 'code_sent');
+    Notification::assertSentOnDemand(StandardEmail::class);
+    $this->assertGuest();
+    $code = (string) $linkedAccount->fresh()->token_2fa;
+    $credentials = [
+        'type' => 'login_without_password', 'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id, 'email' => $email,
+    ];
+    $this->postJson('/api/homepage/student/login_step_code', $credentials + ['login_code' => $code === '000000' ? '111111' : '000000'])
+        ->assertOk()->assertJsonPath('status', 'code_not_valid');
+    $this->assertGuest();
+    $this->postJson('/api/homepage/student/login_step_code', $credentials + ['login_code' => $code])
+        ->assertOk()->assertJsonPath('status', 'login_ok');
+    $this->assertAuthenticatedAs($linkedAccount, 'web');
+    expect($linkedAccount->fresh()->password)->toBe($originalPassword);
+    $this->getJson('/api/homepage/student/user')->assertOk()->assertJsonPath('user.id', $linkedAccount->id);
+    $this->getJson('/api/homepage/student/courses/'.$course->id)->assertOk()->assertJsonPath('course.id', $course->id);
+    $this->getJson('/api/homepage/student/courses/'.$course->id.'/entries')->assertOk()
+        ->assertJsonCount(1, 'entries')->assertJsonPath('entries.0.id', $entry->id)->assertJsonPath('entries.0.grade', '2');
+    expect((int) $entry->fresh()->user_id)->toBe($linkedAccount->id);
+})->with(['new account', 'placeholder', 'active student', 'blocked student', 'foreign import', 'old import']);
 
 test('config returns only selectable schools with valid Lehrertool licence', function () {
     $schoolWithoutLicence = School::factory()->create([

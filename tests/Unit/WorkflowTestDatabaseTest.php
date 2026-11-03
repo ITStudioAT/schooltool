@@ -1,10 +1,59 @@
 <?php
 
+use Symfony\Component\Process\Process;
+
 use function SchoolTool\WorkflowTests\createDatabase;
 use function SchoolTool\WorkflowTests\localConnection;
 use function SchoolTool\WorkflowTests\removeDatabase;
 
 require_once dirname(__DIR__, 2).'/scripts/workflow-test-database.php';
+require_once dirname(__DIR__, 2).'/scripts/ci-php-tests.php';
+
+it('refuses CI database provisioning outside the isolated MySQL service before opening a connection', function (array $overrides): void {
+    $environment = array_replace(['GITHUB_ACTIONS' => 'true', 'APP_ENV' => 'testing', 'DB_CONNECTION' => 'mysql',
+        'DB_HOST' => '127.0.0.1', 'DB_PORT' => '3306', 'DB_USERNAME' => 'root', 'DB_PASSWORD' => 'root'], $overrides);
+    $process = new Process([PHP_BINARY, '-r',
+        'require "scripts/workflow-test-database.php"; SchoolTool\\WorkflowTests\\localConnection();'],
+        dirname(__DIR__, 2), $environment);
+    $process->run();
+    expect($process->isSuccessful())->toBeFalse()
+        ->and($process->getErrorOutput().$process->getOutput())->toContain('Owned CI databases require the isolated local GitHub MySQL service.');
+})->with([
+    'normal application' => [['APP_ENV' => 'local']],
+    'remote host' => [['DB_HOST' => 'database.example.test']],
+    'different port' => [['DB_PORT' => '3307']],
+    'different driver' => [['DB_CONNECTION' => 'sqlite']],
+    'different user' => [['DB_USERNAME' => 'application']],
+    'different credentials' => [['DB_PASSWORD' => 'unexpected']],
+]);
+
+it('binds CI children to an owned database accepted by Multiple Choice and cleans up after failure', function (): void {
+    if (PHP_OS_FAMILY !== 'Windows' && getenv('GITHUB_ACTIONS') !== 'true') {
+        $this->markTestSkipped('Requires the local development or isolated GitHub MySQL service.');
+    }
+    $receipt = sys_get_temp_dir().'/schooltool-ci-owned-db-'.bin2hex(random_bytes(12)).'.json';
+    $database = null;
+
+    expect(function () use ($receipt, &$database): void {
+        CiPhpTests::withOwnedDatabase($receipt, function (array $environment) use ($receipt, &$database): void {
+            $database = $environment['DB_DATABASE'];
+            expect($environment['DB_DATABASE_TEST'])->toBe($database)
+                ->and(realpath($environment['SCHOOLTOOL_MC_TEST_RECEIPT']))->toBe(realpath($receipt));
+            $process = new Process([PHP_BINARY, '-r',
+                'require "tests/Support/MultipleChoiceTestDatabase.php"; requireMultipleChoiceTestDatabase(); echo "accepted";'],
+                dirname(__DIR__, 2), $environment);
+            $process->mustRun();
+            expect($process->getOutput())->toBe('accepted');
+
+            throw new RuntimeException('Simulated failing PHP batch');
+        });
+    })->toThrow(RuntimeException::class, 'Simulated failing PHP batch');
+
+    $query = localConnection()->prepare('SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name = ?');
+    $query->execute([$database]);
+    expect((int) $query->fetchColumn())->toBe(0)
+        ->and(is_file($receipt))->toBeFalse();
+})->group('integration');
 
 it('creates and removes only its own fresh local MySQL schema with an ownership receipt', function (): void {
     if (PHP_OS_FAMILY !== 'Windows') {

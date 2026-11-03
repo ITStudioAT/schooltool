@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { useNotificationStore } from '@/stores/spa/NotificationStore'
 import { useAdminStore } from '@/stores/admin/AdminStore'
+import { saveSettings as saveTeachingSettings } from '@/actions/App/Http/Controllers/Admin/Teaching/TeachingController'
 import {
     normalizeTeachingCategoryEvaluationValueItems,
     teachingCategoryEvaluationColorForValue,
@@ -177,13 +178,12 @@ export const useTeachingStore = defineStore('AdminTeachingStore', {
             const notifySuccess = options.notifySuccess !== false
             homepageStore.is_loading++
             try {
-                const response = await axios.post(`/api/admin/teaching/save_settings`, settings)
+                const response = await axios.post(saveTeachingSettings.url(), settings)
                 this.settings = response.data.settings
-                if (homepageStore.config?.user && response?.data?.settings?.teaching_grade_columns) {
-                    homepageStore.config.user.teaching_grade_columns = response.data.settings.teaching_grade_columns
-                }
-                if (homepageStore.config?.user && response?.data?.settings?.teaching_student_grade_columns) {
-                    homepageStore.config.user.teaching_student_grade_columns = response.data.settings.teaching_student_grade_columns
+                for (const preference of ['teaching_curricula_enabled', 'teaching_show_attendance', 'teaching_calculations_enabled']) {
+                    if (homepageStore.config?.user && typeof this.settings?.[preference] === 'boolean') {
+                        homepageStore.config.user[preference] = this.settings[preference]
+                    }
                 }
                 if (notifySuccess) {
                     notification.notify({

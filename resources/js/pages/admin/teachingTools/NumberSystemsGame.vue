@@ -1,0 +1,231 @@
+<template>
+    <div class="ns-game">
+        <header v-if="!sessionId" class="ns-toolbar">
+            <div><h1>Signal Null</h1><p class="ns-muted" style="margin-top:8px">Das Zahlensystem-Abenteuer für deinen Kurs</p></div>
+            <div class="ns-toolbar"><button v-if="localProbeAvailable" class="ns-button ns-button-secondary" @click="probeDialog = true">Lokal ausprobieren</button><button class="ns-button" :disabled="busy || !available || !timingAvailable || (!courses.length && !externalAvailable)" @click="createDialog = true">Neues Abenteuer</button></div>
+        </header>
+        <div v-if="error" class="ns-alert ns-alert-error" role="alert">{{ error }} <button class="ns-button ns-button-quiet" @click="load">Erneut laden</button></div>
+        <p v-if="loading" role="status" style="margin-top:20px">Die Abenteuer werden geladen …</p>
+        <div v-else-if="!available" class="ns-alert">Die Spieltabellen müssen noch lokal aktiviert werden.</div>
+        <template v-else-if="!selected && !sessionId">
+            <p v-if="!timingAvailable" class="ns-alert">Die lokale Datenbank-Erweiterung für neue Runden mit Zeitmessung und Reihung ist vorbereitet und muss noch freigegeben werden. Bestehende Runden und lokale Probeläufe bleiben verfügbar.</p>
+            <section class="ns-briefing">
+                <h2>Ein Rechenzentrum ist verstummt.</h2>
+                <p>Dein Kurs rettet das Rechenzentrum: Binärzahlen mit Schaltern einstellen, Hexzahlen umrechnen, Fehler finden und Nachrichten entziffern. Verständliche Anleitungen und drei Tippstufen helfen dabei. Gelöste Aufgaben lösen einen Signalimpuls aus; für jeden geschafften Bereich gibt es ein Abzeichen.</p>
+                <ol class="ns-path"><li v-for="chapter in chapters" :key="chapter">{{ chapter }}</li></ol>
+                <p class="ns-small">Plane 30, 40, 60 oder 75 Minuten Spielzeit und wähle die Schwierigkeit separat. Die tatsächliche Dauer hängt von Gruppe, Hilfen und Gesprächen ab. Pausen sind jederzeit möglich; es gibt keine Zeitstrafe und keine Benotung.</p>
+            </section>
+            <p v-if="!courses.length" class="ns-alert">Für eine Klassenrunde brauchst du einen eigenen Kurs im ausgewählten Schuljahr mit bestehenden Schülerkonten.</p>
+            <h2>Deine Klassenrunden</h2>
+            <p v-if="!sessions.length" class="ns-muted" style="margin-top:12px">Noch keine Runde vorbereitet. Beginne mit „Neues Abenteuer“.</p>
+            <ul class="ns-session-list">
+                <li v-for="session in sessions" :key="session.id" class="ns-session-row">
+                    <div><h3>{{ session.title }}</h3><p class="ns-small">{{ courseLabel(session) }}</p><p class="ns-small ns-muted">{{ numberSystemSessionDates(session) }}</p><p class="ns-small ns-muted">{{ session.planned_minutes }} Minuten geplant · {{ levels[session.difficulty] }} · {{ states[session.status] }} · {{ audiences[session.audience || 'course'] }}</p><p class="ns-small ns-muted">{{ modes[session.mode || 'solo'] }} · {{ timerLabel(session) }}{{ session.ranking_enabled ? ' · Reihung aktiviert' : '' }}</p></div>
+                    <div class="ns-toolbar"><button class="ns-button ns-button-quiet" :disabled="busy" :aria-label="`Bezeichnung von ${session.title} ändern`" @click="openRename(session)">Bezeichnung ändern</button><button class="ns-button ns-button-secondary" @click="open(session.id)">{{ session.status === 'ended' ? 'Fortschritt ansehen' : 'Runde öffnen / fortsetzen' }}</button><button class="ns-button ns-button-quiet" :disabled="busy || !['waiting', 'ended'].includes(session.status)" :aria-label="`Klassenrunde ${session.title} löschen`" @click="openDelete(session)">Runde löschen</button></div>
+                </li>
+            </ul>
+            <p v-if="sessions.length" class="ns-small ns-muted" style="margin-top:12px">Zum Löschen laufende oder pausierte Runden zuerst beenden.</p>
+        </template>
+        <template v-else-if="selected">
+            <button v-if="!sessionId" class="ns-button ns-button-quiet" style="margin:20px 0" @click="closeMonitor">Zur Rundenübersicht</button>
+            <section class="ns-panel ns-stack">
+                <div class="ns-toolbar"><div><h2>{{ selected.session.title }}</h2><p>{{ courseLabel(selected.session) }}</p><p class="ns-muted">{{ states[selected.session.status] }} · {{ selected.session.planned_minutes }} Minuten geplant · {{ levels[selected.session.difficulty] }}</p><p class="ns-small ns-muted">{{ audiences[selected.session.audience || 'course'] }} · {{ modes[selected.session.mode || 'solo'] }} · {{ timerLabel(selected.session) }}{{ selected.session.ranking_enabled ? ' · Reihung aktiviert' : '' }}</p></div><button class="ns-button ns-button-quiet" :disabled="busy" @click="openRename(selected.session)">Bezeichnung ändern</button></div>
+                <p class="ns-small ns-muted">{{ numberSystemSessionDates(selected.session) }}</p>
+                <NumberSystemClock :clock="selected.clock" />
+                <div v-if="selected.session.status !== 'ended'">
+                    <p class="ns-small ns-muted">Rundencode für den Beitritt</p><p class="ns-code">{{ selected.session.join_code }}</p>
+                    <p class="ns-small" style="margin-top:12px">{{ audiences[selected.session.audience || 'course'] }}. {{ selected.session.audience === 'external' ? 'Externe treten über den Link oder QR-Code mit Anzeigenamen bei.' : 'Im Schülerkonto: Menü → Zahlensysteme → Rundencode eingeben. Oder per QR-Code beitreten.' }}</p>
+                    <p v-if="selected.session.audience === 'mixed'" class="ns-small">Externe öffnen den Link oder QR-Code ohne Schooltool-Anmeldung und geben einen Anzeigenamen ein.</p>
+                    <NumberSystemInvitation v-if="selected.invitation" :invitation="selected.invitation" />
+                    <p class="ns-small ns-muted" style="margin-top:10px">{{ selected.session.mode === 'teams' ? 'Teams bestehen aus 2–4 Personen mit persönlichen Zugängen. Den privaten Teamcode teilen sie innerhalb der Gruppe; Tresorhinweise werden getrennt angezeigt.' : 'Jede Person speichert ihren eigenen Weg. An einem gemeinsamen Gerät kann ein Paar gemeinsam überlegen und erklären.' }}</p>
+                </div>
+                <div class="ns-toolbar">
+                    <button v-if="selected.session.status === 'waiting'" class="ns-button" :disabled="busy" @click="control('start')">Klassenrunde starten</button>
+                    <button v-if="selected.session.status === 'running'" class="ns-button ns-button-secondary" :disabled="busy" @click="control('pause')">Runde pausieren</button>
+                    <button v-if="selected.session.status === 'paused'" class="ns-button" :disabled="busy" @click="control('resume')">Runde fortsetzen</button>
+                    <button v-if="selected.session.status !== 'ended'" class="ns-button ns-button-quiet" :disabled="busy" @click="endDialog = true">Runde beenden</button>
+                    <span class="ns-small ns-muted"><template v-if="selected.session.audience !== 'external'">{{ courseJoinedCount }} / {{ selected.enrolled }} Kurskonten beigetreten · </template>{{ externalJoinedCount }} Externe · {{ joinedCount }} insgesamt</span>
+                </div>
+            </section>
+            <section class="ns-panel" style="margin-top:20px">
+                <div class="ns-toolbar"><h2>Fortschritt im Kurs</h2><span class="ns-small ns-muted">Automatisch aktualisiert</span><button class="ns-button ns-button-secondary" :disabled="downloading" @click="downloadResults">{{ downloading ? 'PDF wird erstellt …' : 'Auswertung herunterladen (PDF)' }}</button></div>
+                <p v-if="!selected.runs.length" class="ns-muted" style="margin-top:15px">Noch niemand beigetreten. Gib den Kurscode weiter und warte, bis die Gruppe bereit ist.</p>
+                <div v-else class="ns-monitor"><table><thead><tr><th>Person / Team</th><th>Bereich</th><th>Bestätigt</th><th>Mit Hilfe</th><th v-if="selected.clock?.mode !== 'none'">Spielzeit</th></tr></thead><tbody>
+                    <tr v-for="run in selected.runs" :key="run.id"><td><strong>{{ run.team_name || run.members[0] }}</strong><NumberSystemPresence :people="run.presence" /></td><td>{{ run.completed ? 'Verbindung wiederhergestellt' : run.chapter }}</td><td>{{ run.solved }} / {{ run.total }}<progress class="ns-progress" :value="run.solved" :max="run.total" :aria-label="`Fortschritt ${run.team_name || run.members[0]}`" /></td><td>{{ run.with_help }}</td><td v-if="selected.clock?.mode !== 'none'"><NumberSystemClock :clock="run.clock" compact /></td></tr>
+                </tbody></table></div>
+                <p class="ns-small ns-muted" style="margin-top:16px">Verbindung: Nach 45 Sekunden ohne Signal erscheint „Signal verzögert“, nach 90 Sekunden „Verbindung unterbrochen“. Der Grund ist nicht sicher erkennbar; auch Hintergrundfenster können verzögert signalisieren. Fortschritt bleibt gespeichert.</p>
+                <p class="ns-small ns-muted" style="margin-top:16px">Zum Abschluss: Lasst verschiedene Lösungswege erklären. „Mit Hilfe“ beschreibt den Lernweg und zieht keine Punkte ab.</p>
+            </section>
+            <NumberSystemRanking :ranking="selected.ranking" />
+        </template>
+        <v-dialog :model-value="Boolean(renameTarget)" persistent max-width="540">
+            <v-card v-if="renameTarget" class="ns-dialog"><form @submit.prevent="rename">
+                <h2>Bezeichnung ändern</h2>
+                <label class="ns-field"><span>Bezeichnung</span><input v-model="renameTitle" required maxlength="120" autofocus /></label>
+                <p v-if="renameError" role="alert">{{ renameError }}</p>
+                <div class="ns-toolbar"><button type="button" class="ns-button ns-button-quiet" :disabled="busy" @click="renameTarget = null">Abbrechen</button><button class="ns-button" :disabled="busy || !renameTitle.trim()">{{ busy ? 'Wird gespeichert …' : 'Bezeichnung speichern' }}</button></div>
+            </form></v-card>
+        </v-dialog>
+        <v-dialog v-model="createDialog" persistent max-width="660">
+            <v-card class="ns-dialog"><form @submit.prevent="create">
+                <h2>Neues Abenteuer vorbereiten</h2>
+                <p>Die Runde beginnt im Warteraum. Beitreten und gemeinsames Starten sind getrennte Schritte.</p>
+                <label class="ns-field"><span>Bezeichnung</span><input v-model="form.title" required maxlength="120" autofocus /></label>
+                <label class="ns-field"><span>Teilnahme</span><select v-model="form.audience"><option value="course">Nur Kurs</option><option v-if="externalAvailable" value="mixed">Kurs und Externe</option><option v-if="externalAvailable && !courseId" value="external">Nur Externe</option></select></label>
+                <p v-if="!externalAvailable" class="ns-small">Die Erweiterung für externe Teilnehmende muss noch aktiviert werden.</p>
+                <p v-if="form.audience !== 'course'" class="ns-small">Externe benötigen kein Konto. Ihr Spielstand bleibt in derselben Browser-Sitzung verfügbar. Jede Person nutzt einen eigenen Browser oder ein eigenes Gerät.</p>
+                <div class="ns-form">
+                    <label v-if="form.audience !== 'external'" class="ns-field"><span>Kurs</span><select v-model="form.course_id" :disabled="Boolean(courseId)" required><option value="">Kurs auswählen</option><option v-for="course in courses" :key="course.id" :value="course.id">{{ course.title }}</option></select></label>
+                    <label class="ns-field"><span>Geplante Spielzeit</span><select v-model.number="form.planned_minutes"><option v-for="minutes in [30,40,60,75]" :key="minutes" :value="minutes">{{ minutes }} Minuten</option></select></label>
+                    <label class="ns-field"><span>Schwierigkeit</span><select v-model.number="form.difficulty"><option v-for="(label, value) in levels" :key="value" :value="Number(value)">{{ label }}</option></select></label>
+                    <label class="ns-field"><span>Zusammenarbeit</span><select v-model="form.mode"><option value="solo">Einzeln / gemeinsames Gerät</option><option value="teams">Teams, getrennte Hinweise (2–4)</option></select></label>
+                </div>
+                <NumberSystemStartOptions :model="form" />
+                <p>Leicht: kleine Zahlen und acht Bits. Mittel: Werte bis 255. Anspruchsvoll: auch bis 4095 und zwölf Bits. Jede Runde enthält alle sechs Umrechnungsrichtungen, Forscheraufträge, ASCII und ein Finale.</p>
+                <p v-if="error" role="alert">{{ error }}</p>
+                <div class="ns-toolbar"><button type="button" class="ns-button ns-button-quiet" :disabled="busy" @click="createDialog = false">Abbrechen</button><button class="ns-button" :disabled="busy || !form.title.trim() || (form.audience !== 'external' && !form.course_id)">{{ busy ? 'Wird vorbereitet …' : 'Abenteuer vorbereiten' }}</button></div>
+            </form></v-card>
+        </v-dialog>
+        <v-dialog v-model="probeDialog" persistent max-width="600"><v-card class="ns-dialog"><form @submit.prevent="createProbe"><h2>Selbst ausprobieren</h2><p>Wähle dein Abenteuer und spiele direkt so, wie es deine Schüler:innen sehen.</p><label class="ns-field"><span>Bezeichnung</span><input v-model="probeForm.title" required maxlength="120" /></label><div class="ns-form">
+            <label class="ns-field"><span>Geplante Spielzeit</span><select v-model.number="probeForm.planned_minutes"><option v-for="minutes in [30,40,60,75]" :key="minutes" :value="minutes">{{ minutes }} Minuten</option></select></label>
+            <label class="ns-field"><span>Schwierigkeit</span><select v-model.number="probeForm.difficulty"><option v-for="(label, value) in levels" :key="value" :value="Number(value)">{{ label }}</option></select></label>
+            <label class="ns-field"><span>Zeitmessung</span><select v-model="probeForm.timer_mode"><option value="none">Ohne Uhr · in Ruhe spielen</option><option value="elapsed">Stoppuhr · verstrichene Zeit</option><option value="countdown">Countdown · verbleibende Zeit</option></select></label>
+            <label v-if="probeForm.timer_mode === 'countdown'" class="ns-field"><span>Countdown in Minuten</span><input :value="probeForm.countdown_minutes ?? probeForm.planned_minutes" type="number" min="1" max="180" required @input="probeForm.countdown_minutes = Number($event.target.value)" /></label>
+        </div><p class="ns-small ns-muted">Du spielst ein vollständiges Abenteuer allein an diesem Computer. Dein Fortschritt wird gespeichert.</p><p v-if="error" role="alert">{{ error }}</p><div class="ns-toolbar"><button type="button" class="ns-button ns-button-quiet" :disabled="busy" @click="probeDialog = false">Abbrechen</button><button class="ns-button" :disabled="busy || !probeForm.title.trim()">{{ busy ? 'Abenteuer startet …' : 'Jetzt selbst spielen' }}</button></div></form></v-card></v-dialog>
+        <v-dialog v-model="endDialog" persistent max-width="500"><v-card class="ns-dialog"><form @submit.prevent="control('end')"><h2>Klassenrunde beenden?</h2><p>Der Fortschritt bleibt sichtbar. Neue Antworten sind danach gesperrt. Für eine Unterbrechung wähle stattdessen Pause.</p><div class="ns-toolbar"><button type="button" class="ns-button ns-button-quiet" @click="endDialog = false">Zurück</button><button class="ns-button" :disabled="busy">Runde beenden</button></div></form></v-card></v-dialog>
+        <v-dialog :model-value="Boolean(deleteTarget)" persistent max-width="540"><v-card v-if="deleteTarget" class="ns-dialog"><form @submit.prevent="remove"><h2>„{{ deleteTarget.title }}“ löschen?</h2><p>Diese Klassenrunde mit {{ deleteTarget.runs_count ?? 0 }} Spielständen wird endgültig entfernt. Antworten, Teamzuordnungen, Zeitdaten und Reihung gehen verloren. Kurs- und Teamcodes funktionieren danach nicht mehr.</p><p>Andere Runden, Kurse und Schülerkonten bleiben erhalten.</p><p v-if="error" role="alert">{{ error }}</p><div class="ns-toolbar"><button type="button" class="ns-button ns-button-quiet" :disabled="busy" @click="deleteTarget = null">Abbrechen</button><button class="ns-button ns-delete-confirm" :disabled="busy">{{ busy ? 'Wird gelöscht …' : 'Klassenrunde endgültig löschen' }}</button></div></form></v-card></v-dialog>
+    </div>
+</template>
+
+<script setup>
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import axios from 'axios'
+import { index, create as createSession, show, resultsPdf, control as controlSession, update as updateSession, remove as removeSession } from '@/actions/App/Http/Controllers/Admin/NumberSystemGameController'
+import NumberSystemInvitation from '@/pages/components/numberSystems/NumberSystemInvitation.vue'
+import NumberSystemStartOptions from '@/pages/components/numberSystems/NumberSystemStartOptions.vue'
+import NumberSystemClock from '@/pages/components/numberSystems/NumberSystemClock.vue'
+import NumberSystemRanking from '@/pages/components/numberSystems/NumberSystemRanking.vue'
+import NumberSystemPresence from '@/pages/components/numberSystems/NumberSystemPresence.vue'
+import { create as createLocalProbe } from '@/actions/App/Http/Controllers/Admin/NumberSystemLocalProbeController'
+import { useRouter } from 'vue-router'
+import '@/pages/components/numberSystems/game.css'
+import { numberSystemSessionDates } from '@/pages/components/numberSystems/sessionDates'
+const props = defineProps({
+    sessionId: { type: Number, default: null },
+    courseId: { type: Number, default: null },
+    courseDateId: { type: Number, default: null },
+})
+const chapters = ['Maschinenraum', 'Fehlerarchiv', 'Tresor', 'Funkzentrale']
+const levels = { 1: 'Leicht', 2: 'Mittel', 3: 'Anspruchsvoll' }
+const states = { waiting: 'Warteraum', running: 'Runde läuft', paused: 'Pausiert', ended: 'Beendet' }
+const audiences = { course: 'Nur Kurs', mixed: 'Kurs und Externe', external: 'Nur Externe' }
+const modes = { solo: 'Einzeln / gemeinsames Gerät', teams: 'Teams (2–4 Personen)' }
+const courses = ref([]), sessions = ref([]), selected = ref(null), available = ref(true), loading = ref(false), busy = ref(false), error = ref('')
+const createDialog = ref(false), endDialog = ref(false)
+const downloading = ref(false)
+const timingAvailable = ref(true)
+const externalAvailable = ref(false)
+const deleteTarget = ref(null)
+const renameTarget = ref(null), renameTitle = ref(''), renameError = ref('')
+const form = reactive({ title: 'Signal Null', audience: 'course', course_id: props.courseId ?? '', planned_minutes: 40, difficulty: 2, mode: 'solo', timer_mode: 'none', countdown_minutes: null, ranking_enabled: false })
+const router = useRouter()
+const localProbeAvailable = ref(false), probeDialog = ref(false)
+const probeForm = reactive({ title: 'Mein Abenteuer', planned_minutes: 30, difficulty: 2, timer_mode: 'none', countdown_minutes: null })
+let poll = null, disposed = false, polling = false, monitorGeneration = 0
+let downloadController = null
+const joinedCount = computed(() => (selected.value?.runs ?? []).reduce((sum, run) => sum + run.members.length, 0))
+const courseJoinedCount = computed(() => (selected.value?.runs ?? []).reduce((sum, run) => sum + (run.course_members ?? run.members.length), 0))
+const externalJoinedCount = computed(() => (selected.value?.runs ?? []).reduce((sum, run) => sum + (run.external_members ?? 0), 0))
+const failureMessage = failure => failure.response?.data?.message || Object.values(failure.response?.data?.errors ?? {}).flat()[0] || 'Die Verbindung ist unterbrochen. Bitte versuche es erneut.'
+function courseLabel(session) {
+    if (session.audience === 'external') { return 'Ohne Kurs · nur externe Teilnehmende' }
+    const course = session.course ?? courses.value.find(course => Number(course.id) === Number(session.teaching_course_id))
+    return course?.title ? `Kurs: ${course.title}` : 'Kurs nicht mehr verfügbar'
+}
+function timerLabel(session) {
+    if (session.timer_mode === 'countdown') { return session.countdown_seconds ? `Countdown: ${session.countdown_seconds / 60} Minuten` : 'Countdown' }
+    return session.timer_mode === 'elapsed' ? 'Stoppuhr' : 'Ohne Zeitmessung'
+}
+function openRename(session) {
+    renameTarget.value = session
+    renameTitle.value = session.title
+    renameError.value = ''
+}
+async function rename() {
+    if (busy.value || !renameTarget.value || !renameTitle.value.trim()) { return }
+    ++monitorGeneration
+    busy.value = true; renameError.value = ''
+    try {
+        const { data } = await axios.patch(updateSession.url(renameTarget.value.id), { title: renameTitle.value.trim() })
+        sessions.value = sessions.value.map(session => session.id === data.id ? { ...session, title: data.title } : session)
+        if (selected.value?.session.id === data.id) { selected.value.session.title = data.title }
+        renameTarget.value = null
+    } catch (failure) { renameError.value = failureMessage(failure) }
+    finally { busy.value = false }
+}
+async function load() {
+    loading.value = true; error.value = ''
+    if (props.sessionId) {
+        try { await open(props.sessionId) } finally { loading.value = false }
+        return
+    }
+    try { const { data } = await axios.get(index.url(props.courseId ? { query: { course_id: props.courseId } } : undefined)); courses.value = data.courses; sessions.value = props.courseDateId ? data.sessions.filter(session => Number(session.teaching_course_date_id) === props.courseDateId) : data.sessions; available.value = data.available; timingAvailable.value = data.timing_available !== false; externalAvailable.value = data.external_available === true; localProbeAvailable.value = data.local_probe_available === true && !props.courseId }
+    catch (failure) { error.value = failureMessage(failure) } finally { loading.value = false }
+}
+function closeMonitor() { ++monitorGeneration; downloadController?.abort(); selected.value = null }
+async function downloadResults() {
+    if (downloading.value || !selected.value) { return }
+    const id = selected.value.session.id
+    const controller = new AbortController()
+    downloadController = controller; downloading.value = true; error.value = ''
+    try {
+        const { data } = await axios.get(resultsPdf.url(id), { responseType: 'blob', signal: controller.signal })
+        if (disposed || controller.signal.aborted || selected.value?.session.id !== id) { return }
+        const url = URL.createObjectURL(data)
+        const link = document.createElement('a')
+        link.href = url; link.download = `Signal_Null_Auswertung_${id}.pdf`
+        document.body.appendChild(link); link.click(); link.remove()
+        setTimeout(() => URL.revokeObjectURL(url), 1000)
+    } catch (failure) {
+        if (!disposed && !controller.signal.aborted) { error.value = 'Die Auswertung konnte nicht heruntergeladen werden. Bitte versuche es erneut.' }
+    } finally {
+        downloading.value = false; downloadController = null
+    }
+}
+async function open(id, background = false) {
+    const ticket = background ? monitorGeneration : ++monitorGeneration
+    try { const { data } = await axios.get(show.url(id)); if (!disposed && ticket === monitorGeneration && (!background || selected.value?.session.id === id)) { selected.value = data; error.value = '' } }
+    catch (failure) { error.value = failureMessage(failure) }
+}
+async function create() {
+    if (busy.value) { return }
+    busy.value = true; error.value = ''
+    try { const { data } = await axios.post(createSession.url(), { ...form, title: form.title.trim(), ...(props.courseId ? { course_id: props.courseId } : {}), ...(props.courseDateId ? { course_date_id: props.courseDateId } : {}) }); createDialog.value = false; await load(); await open(data.session.id) }
+    catch (failure) { error.value = failureMessage(failure) } finally { busy.value = false }
+}
+function openDelete(session) { error.value = ''; deleteTarget.value = session }
+async function remove() {
+    if (busy.value || !deleteTarget.value) { return }
+    busy.value = true; error.value = ''
+    try { await axios.delete(removeSession.url(deleteTarget.value.id), { data: { confirmation: deleteTarget.value.title } }); deleteTarget.value = null; await load() }
+    catch (failure) { error.value = failureMessage(failure) } finally { busy.value = false }
+}
+async function createProbe() {
+    if (busy.value) { return }
+    busy.value = true; error.value = ''
+    try { const { data } = await axios.post(createLocalProbe.url(), { ...probeForm, self_play: true, mode: 'solo', short: false, ranking_enabled: false }); const url = new URL(data.url, window.location.origin); await router.push(url.pathname + url.search) }
+    catch (failure) { error.value = failureMessage(failure) } finally { busy.value = false }
+}
+async function control(action) {
+    if (busy.value || !selected.value) { return }
+    ++monitorGeneration
+    busy.value = true; error.value = ''
+    try { const { data } = await axios.post(controlSession.url(selected.value.session.id), { action }); selected.value = data; endDialog.value = false; await load() }
+    catch (failure) { error.value = failureMessage(failure) } finally { busy.value = false }
+}
+onMounted(() => { void load(); poll = setInterval(async () => { if (selected.value && !busy.value && !polling && !createDialog.value && !endDialog.value && !renameTarget.value && !document.hidden) { polling = true; try { await open(selected.value.session.id, true) } finally { polling = false } } }, 4000) })
+onBeforeUnmount(() => { disposed = true; downloadController?.abort(); clearInterval(poll) })
+</script>
+<style scoped>
+.ns-dialog .ns-delete-confirm { background: #f2b5a7; border-color: #f2b5a7; color: #381c1b; }
+</style>

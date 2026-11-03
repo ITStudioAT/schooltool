@@ -123,7 +123,7 @@ describe('CourseStudent date handling', () => {
 })
 
 describe('CourseStudent next and previous navigation order', () => {
-    it('matches the overview order for class and name sorting', () => {
+    it('uses surname and first name even with a previously selected class sorting', () => {
         const computed = (CourseStudent as any).computed
         const methods = (CourseStudent as any).methods
         const ctx: Record<string, any> = {
@@ -144,8 +144,8 @@ describe('CourseStudent next and previous navigation order', () => {
 
         const sorted = computed.courseStudentsList.call(ctx)
 
-        expect(sorted.map((student: { id: number }) => student.id)).toEqual([3, 2, 1, 4])
-        expect(computed.currentStudentIndex.call({ ...ctx, courseStudentsList: sorted })).toBe(1)
+        expect(sorted.map((student: { id: number }) => student.id)).toEqual([3, 1, 2, 4])
+        expect(computed.currentStudentIndex.call({ ...ctx, courseStudentsList: sorted })).toBe(2)
     })
 
     it('skips canceled students when navigating with the arrow buttons', () => {
@@ -636,6 +636,24 @@ describe('CourseStudent work entry dialog', () => {
 })
 
 describe('CourseStudent auswertung entry title rendering', () => {
+    it.each([
+        { groupDate: '2026-10-11', commonDate: '2026-10-13', color: 'error' },
+        { groupDate: '2026-10-12', commonDate: '2026-10-13', color: 'error' },
+        { groupDate: '2026-10-13', commonDate: '2026-10-11', color: 'orange' },
+        { groupDate: null, commonDate: '2026-10-13', color: 'orange' },
+        { groupDate: null, commonDate: null, color: 'error' },
+    ])('uses the participant group date for the work icon: $groupDate / $commonDate', ({ groupDate, commonDate, color }) => {
+        vi.useFakeTimers()
+        vi.setSystemTime(new Date('2026-10-12T10:00:00Z'))
+        const methods = (CourseStudent as any).methods
+        const ctx = { normalizeDateString: methods.normalizeDateString, toDateString: methods.toDateString }
+        try {
+            expect(methods.workEntryIconColor.call(ctx, { groupIndex: 0, entry: { date: '2026-10-20' },
+                work: { date_for_all_groups: commonDate, groups: [{ date: groupDate }] },
+            })).toBe(color)
+        } finally { vi.useRealTimers() }
+    })
+
     it('renders row title and row work title as text lines in auswertung list', () => {
         const componentPath = resolve(
             process.cwd(),
@@ -899,7 +917,7 @@ describe('CourseStudent auswertung trigger placement', () => {
         )
         const source = readFileSync(componentPath, 'utf8')
         const auswertenButtonIndex = source.indexOf('Auswerten')
-        const auswertungCardIndex = source.indexOf('<v-card v-if="hasAuswertungContent && show_auswertung" variant="outlined">')
+        const auswertungCardIndex = source.indexOf('<v-card v-if="calculationsEnabled && show_auswertung && hasAuswertungContent" variant="outlined">')
         const entriesTitleIndex = source.indexOf('Bewertungen')
 
         expect(source).toContain(":color=\"show_auswertung ? 'success' : 'primary'\"")
@@ -914,8 +932,8 @@ describe('CourseStudent auswertung trigger placement', () => {
         expect(source).toContain('@media (max-width: 600px)')
         expect(source).toContain('flex-direction: column;')
         expect(source).toContain('.course-student-card-title__actions :deep(.v-btn)')
-        expect(source).toContain('<v-card v-if="hasAuswertungContent && show_auswertung" variant="outlined">')
-        expect(source).toContain('<v-card v-if="!show_auswertung" variant="outlined" class="mt-4">')
+        expect(source).toContain('<v-card v-if="calculationsEnabled && show_auswertung && hasAuswertungContent" variant="outlined">')
+        expect(source).toContain('<v-card v-if="!show_auswertung || !calculationsEnabled" variant="outlined" class="mt-4">')
         expect(source).not.toContain('v-card-text v-if="hasAuswertungContent && show_auswertung" class="py-2"')
         expect(source).not.toContain('<div class="text-subtitle-2">Auswertung</div>')
         expect(auswertenButtonIndex).toBeGreaterThan(-1)

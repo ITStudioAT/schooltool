@@ -61,6 +61,7 @@
 </template>
 
 <script>
+import { teachingSemesterCount } from '@/helpers/teachingSemester'
 import { mapWritableState } from 'pinia'
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
@@ -101,7 +102,7 @@ export default {
             return !!this.selected_course?.id && this.grades_semesters.length > 0 && this.studentOptions.length > 0
         },
         semesterCount() {
-            return Number(this.selected_course?.teacher_teaching_schema?.grading?.semester_count) || 2
+            return teachingSemesterCount(this.selected_course, this.selected_course?.teacher_teaching_schema)
         },
         hasTwoSemesters() {
             return this.semesterCount === 2

@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 import Teaching from '@/pages/admin/teaching/Teaching.vue'
 
 function componentSource(relativePath: string) {
-    return readFileSync(resolve(relativePath), 'utf8')
+    return readFileSync(resolve(relativePath), 'utf8').replace(/\r\n/g, '\n')
 }
 
 describe('Teaching handset responsiveness', () => {
