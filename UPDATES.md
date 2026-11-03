@@ -269,6 +269,9 @@
 ### Unterricht
 
 - Import Ergebnisse der Arbeiten
+- Import der Arbeiten erweitert
+- Re-Import mit gleichem Import-Pfad (QuickImport)
+- Verbesserung der Übersicht
 
 ## 3.50.1
 

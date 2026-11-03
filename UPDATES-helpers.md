@@ -1,5 +1,11 @@
 # UPDATES
 
+## 0.4
+
+### System
+
+- Aktuellen Main-Stand in Helpers übernommen
+
 ## 0.3
 
 ### 00-Manager
