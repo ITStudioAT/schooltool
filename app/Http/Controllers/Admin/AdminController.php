@@ -333,7 +333,7 @@ class AdminController extends Controller
             return null;
         }
 
-        return $parts['host'] . (isset($parts['port']) ? ":{$parts['port']}" : '');
+        return $parts['host'].(isset($parts['port']) ? ":{$parts['port']}" : '');
     }
 
     private function viewsAreCached(): bool
@@ -343,7 +343,7 @@ class AdminController extends Controller
             return false;
         }
 
-        return count(glob($compiledViewPath . '/*.php') ?: []) > 0;
+        return count(glob($compiledViewPath.'/*.php') ?: []) > 0;
     }
 
     private function canLoadSchoolInfos(User $user): bool

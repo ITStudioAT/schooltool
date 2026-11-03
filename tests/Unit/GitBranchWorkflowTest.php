@@ -766,7 +766,6 @@ it('brings main hotfixes into development without publishing the feature', funct
         ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'main'))->toBe($hotfix);
 });
 
-
 it('reports gitupdate merge conflicts and retains both branches for recovery', function (string $powershell): void {
     assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitstart "new-function"'));
     file_put_contents($this->workflowPc.'/shared.txt', "Feature replacement\n");

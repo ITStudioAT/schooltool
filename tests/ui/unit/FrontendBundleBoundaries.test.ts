@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
-import { createServer, loadConfigFromFile } from 'vite'
+import { createServer, loadConfigFromFile, resolveConfig } from 'vite'
 import { rollup } from 'rollup'
 
 function readSource(path: string): string {
@@ -11,8 +11,8 @@ function readSource(path: string): string {
 
 describe('frontend bundle boundaries', () => {
     it('watches frontend sources without traversing dependency and runtime directories', async () => {
-        const configuration = await loadConfigFromFile({ command: 'serve', mode: 'development' }, resolve('vite.config.js'))
-        const fixture = mkdtempSync(resolve(tmpdir(), 'schooltool-vite-watch-'))
+        const fixtureDirectory = mkdtempSync(resolve(tmpdir(), 'schooltool-vite-watch-'))
+        const fixture = resolve(fixtureDirectory, 'tmp', 'checkout')
         const runtimeDirectories = ['vendor', 'storage', '.npm-cache', 'tmp', 'undefined']
         let server
 
@@ -22,27 +22,33 @@ describe('frontend bundle boundaries', () => {
                 writeFileSync(resolve(fixture, directory, 'nested', 'entry.js'), 'export default 1')
             }
 
+            const configuration = await resolveConfig({ configFile: resolve('vite.config.js'), root: fixture }, 'serve')
             server = await createServer({
                 configFile: false,
                 root: fixture,
                 publicDir: false,
-                server: { middlewareMode: true, watch: configuration.config.server.watch },
+                server: { middlewareMode: true, watch: configuration.server.watch },
                 optimizeDeps: { noDiscovery: true },
             })
-            server.watcher.add(['resources/js', ...runtimeDirectories].map((directory) => resolve(fixture, directory, 'nested', 'entry.js')))
+            server.watcher.add(
+                ['resources/js', ...runtimeDirectories].map((directory) => resolve(fixture, directory, 'nested', 'entry.js')),
+            )
             const normalizedFixture = fixture.replaceAll('\\', '/')
             await vi.waitFor(() => {
                 const watchedDirectories = Object.keys(server.watcher.getWatched()).map((directory) => directory.replaceAll('\\', '/'))
 
-                expect(watchedDirectories.join('\n')).toContain(`${normalizedFixture}/resources/js/nested`)
+                expect(watchedDirectories).toContain(`${normalizedFixture}/resources/js/nested`)
                 for (const directory of runtimeDirectories) {
-                    expect(watchedDirectories.some((watched) => watched.startsWith(`${normalizedFixture}/${directory}/`))).toBe(false)
+                    const ignoredDirectory = `${normalizedFixture}/${directory}`
+                    expect(
+                        watchedDirectories.some((watched) => watched === ignoredDirectory || watched.startsWith(`${ignoredDirectory}/`)),
+                    ).toBe(false)
                 }
             })
         } finally {
             await server?.close()
-            if (fixture.startsWith(resolve(tmpdir(), 'schooltool-vite-watch-'))) {
-                rmSync(fixture, { recursive: true, force: true })
+            if (fixtureDirectory.startsWith(resolve(tmpdir(), 'schooltool-vite-watch-'))) {
+                rmSync(fixtureDirectory, { recursive: true, force: true })
             }
         }
     })

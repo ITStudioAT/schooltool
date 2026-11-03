@@ -266,10 +266,10 @@ test('index orders teachers by surname and first name across pages', function ()
     config(['schooltool.pagination' => 2]);
 
     $teachers = User::factory()->count(4)->sequence(
-        ['short' => 'AAA', 'last_name' => 'Zimmer', 'first_name' => 'Anna'],
-        ['short' => 'BBB', 'last_name' => 'Mueller', 'first_name' => 'Zoe'],
-        ['short' => 'ZZZ', 'last_name' => 'Mueller', 'first_name' => 'Anna'],
-        ['short' => null, 'last_name' => 'Bauer', 'first_name' => 'Max'],
+        ['short' => 'AAA', 'last_name' => 'Zimmer', 'first_name' => 'Anna', 'email' => 'anna.zimmer@example.test'],
+        ['short' => 'BBB', 'last_name' => 'Mueller', 'first_name' => 'Zoe', 'email' => 'zoe.bbb@example.test'],
+        ['short' => 'ZZZ', 'last_name' => 'Mueller', 'first_name' => 'Anna', 'email' => 'anna.zzz@example.test'],
+        ['short' => null, 'last_name' => 'Bauer', 'first_name' => 'Max', 'email' => 'max.bauer@example.test'],
     )->create([
         'school_id' => $this->school->id,
         'schoolyear_id' => $this->schoolyear->id,
@@ -290,6 +290,7 @@ test('index orders teachers by surname and first name across pages', function ()
 
     $this->getJson('/api/admin/teachers?search_string=Mueller')
         ->assertSuccessful()
+        ->assertJsonPath('meta.total', 2)
         ->assertJsonPath('data.0.id', $teachers[2]->id)
         ->assertJsonPath('data.1.id', $teachers[1]->id);
 });

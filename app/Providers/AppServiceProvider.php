@@ -65,15 +65,15 @@ class AppServiceProvider extends ServiceProvider
             if ($request->attributes->has('multiple_choice_rate_actor')) {
                 return $request->attributes->get('multiple_choice_rate_actor');
             }
-            $actor = 'ip:' . $request->ip();
+            $actor = 'ip:'.$request->ip();
             if ($request->user() !== null) {
-                $actor = 'user:' . $request->user()->getAuthIdentifier();
+                $actor = 'user:'.$request->user()->getAuthIdentifier();
             } else {
                 $token = (string) $request->header('X-MC-Access', '');
                 if (preg_match('/\A[a-f0-9]{64}\z/', $token) === 1 && Schema::hasTable('mc_attempts')) {
                     $attemptId = McAttempt::query()->where('access_token_hash', hash('sha256', $token))->value('id');
                     if ($attemptId !== null) {
-                        $actor = 'attempt:' . $attemptId;
+                        $actor = 'attempt:'.$attemptId;
                     }
                 }
             }
@@ -82,7 +82,7 @@ class AppServiceProvider extends ServiceProvider
             return $actor;
         };
         foreach (['multiple-choice' => 180, 'multiple-choice-access' => 30, 'multiple-choice-activity' => 120] as $name => $maximum) {
-            RateLimiter::for($name, fn(Request $request) => Limit::perMinute($maximum)->by($multipleChoiceActor($request)));
+            RateLimiter::for($name, fn (Request $request) => Limit::perMinute($maximum)->by($multipleChoiceActor($request)));
         }
 
         RateLimiter::for('api', function (Request $request) {
@@ -93,7 +93,7 @@ class AppServiceProvider extends ServiceProvider
             if ($request->is('api/multiple-choice/*')) {
                 $actor = $multipleChoiceActor($request);
 
-                return Limit::perMinute(str_starts_with($actor, 'ip:') ? config('spa.web_throttle', 60) : 180)->by('multiple-choice:' . $actor);
+                return Limit::perMinute(str_starts_with($actor, 'ip:') ? config('spa.web_throttle', 60) : 180)->by('multiple-choice:'.$actor);
             }
 
             return Limit::perMinute(config('spa.web_throttle', 60))->by($request->user()?->id ?: $request->ip());
@@ -101,8 +101,8 @@ class AppServiceProvider extends ServiceProvider
 
         RateLimiter::for('matura', function (Request $request) {
             $actor = $request->user()?->id
-                ? 'user:' . $request->user()->id
-                : 'station:' . ($request->session()->get('matura_access.id') ?? $request->ip());
+                ? 'user:'.$request->user()->id
+                : 'station:'.($request->session()->get('matura_access.id') ?? $request->ip());
 
             return Limit::perMinute(120)->by($actor);
         });
@@ -111,7 +111,7 @@ class AppServiceProvider extends ServiceProvider
             if ($request->is('api/multiple-choice/*')) {
                 $actor = $multipleChoiceActor($request);
                 if (! str_starts_with($actor, 'ip:')) {
-                    return Limit::perMinute(config('spa.global_throttle', 1000))->by('multiple-choice:' . $actor);
+                    return Limit::perMinute(config('spa.global_throttle', 1000))->by('multiple-choice:'.$actor);
                 }
             }
 
@@ -132,7 +132,7 @@ class AppServiceProvider extends ServiceProvider
 
             return [
                 Limit::perMinute(3)->by("health-queue-tests-user:{$userId}"),
-                Limit::perMinute(10)->by('health-queue-tests-ip:' . $request->ip()),
+                Limit::perMinute(10)->by('health-queue-tests-ip:'.$request->ip()),
             ];
         });
 
@@ -156,11 +156,11 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('two-factor-challenge', function (Request $request) {
             $userId = $request->hasSession()
                 ? (string) $request->session()->get('login.id', 'missing')
-                : 'missing:' . $request->ip();
+                : 'missing:'.$request->ip();
 
             return [
                 Limit::perMinute(5)->by("two-factor-challenge-user:{$userId}"),
-                Limit::perMinute(30)->by('two-factor-challenge-ip:' . $request->ip()),
+                Limit::perMinute(30)->by('two-factor-challenge-ip:'.$request->ip()),
             ];
         });
 
@@ -169,7 +169,7 @@ class AppServiceProvider extends ServiceProvider
 
             return [
                 Limit::perMinute(5)->by("two-factor-management-user:{$userId}"),
-                Limit::perMinute(30)->by('two-factor-management-ip:' . $request->ip()),
+                Limit::perMinute(30)->by('two-factor-management-ip:'.$request->ip()),
             ];
         });
 
@@ -178,7 +178,7 @@ class AppServiceProvider extends ServiceProvider
 
             return [
                 Limit::perMinute(5)->by("two-factor-confirmation-user:{$userId}"),
-                Limit::perMinute(30)->by('two-factor-confirmation-ip:' . $request->ip()),
+                Limit::perMinute(30)->by('two-factor-confirmation-ip:'.$request->ip()),
             ];
         });
 
@@ -187,7 +187,7 @@ class AppServiceProvider extends ServiceProvider
 
             return [
                 Limit::perMinute(5)->by("password-confirmation-user:{$userId}"),
-                Limit::perMinute(30)->by('password-confirmation-ip:' . $request->ip()),
+                Limit::perMinute(30)->by('password-confirmation-ip:'.$request->ip()),
             ];
         });
 
@@ -211,9 +211,9 @@ class AppServiceProvider extends ServiceProvider
             }
         });
 
-        Gate::define('viewPulse', fn(User $user): bool => $user->hasRole('super_admin'));
+        Gate::define('viewPulse', fn (User $user): bool => $user->hasRole('super_admin'));
 
-        Pulse::user(fn(User $user): array => [
+        Pulse::user(fn (User $user): array => [
             'name' => "User #{$user->getAuthIdentifier()}",
             'extra' => '',
             'avatar' => '',

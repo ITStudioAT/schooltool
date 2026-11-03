@@ -1,11 +1,11 @@
 <?php
 
 use App\Http\Controllers\Admin\MaturaController;
-use App\Http\Controllers\Homepage\HomepageController;
-use App\Http\Controllers\MaturaStationController;
 use App\Http\Controllers\Admin\Teaching\CourseDateController;
 use App\Http\Controllers\Admin\Teaching\CurriculumUnitFileController;
 use App\Http\Controllers\Admin\Teaching\WorkDropboxController;
+use App\Http\Controllers\Homepage\HomepageController;
+use App\Http\Controllers\MaturaStationController;
 use App\Http\Controllers\MultipleChoiceParticipantController;
 use App\Http\Controllers\NumberSystemPlayerController;
 use App\Http\Controllers\SharedTeachingExplanationController;
