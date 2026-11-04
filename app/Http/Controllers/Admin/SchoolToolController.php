@@ -42,6 +42,10 @@ class SchoolToolController extends Controller
             ->whereKey($validated['id'])
             ->firstOrFail();
         $moduleStatusService = app(SchoolToolModuleStatusService::class);
+        if (array_key_exists('version_four_visible', $validated)) {
+            abort_unless($moduleStatusService->canManageVersionFour($auth_user), 403);
+        }
+
         $updatable = collect($moduleStatusService->existingSchoolToolAttributes(
             collect($validated)
                 ->only($moduleStatusService->moduleVisibilityFields())
@@ -51,6 +55,9 @@ class SchoolToolController extends Controller
             ->all();
 
         $updatable = $this->normalizeModuleVisibilityFlags($updatable);
+        if (array_key_exists('version_four_visible', $validated)) {
+            $updatable['version_four_visible'] = (bool) $validated['version_four_visible'];
+        }
 
         DB::transaction(function () use ($moduleStatusService, $schoolTool, $updatable, $validated): void {
             if ($updatable !== []) {

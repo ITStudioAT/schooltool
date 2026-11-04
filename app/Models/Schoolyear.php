@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Schema;
 
 /**
  * @property int $id
@@ -54,6 +55,10 @@ class Schoolyear extends Model
 
     public function hasDependencies(): bool
     {
+        if (Schema::hasTable('matura_sessions') && MaturaSession::where('schoolyear_id', $this->id)->exists()) {
+            return true;
+        }
+
         // Prüfen, ob es Registers gibt
         if (Register::where('schoolyear_id', $this->id)->exists()) {
             return true;

@@ -1,7 +1,9 @@
 function Invoke-SchooltoolGit {
     $result = & git @args
-    if ($LASTEXITCODE -ne 0) {
-        throw "Git failed: git $($args -join ' '). No changes were discarded."
+    $exitCode = $LASTEXITCODE
+    if ($exitCode -ne 0) {
+        $details = $result -join [Environment]::NewLine
+        throw "Git failed: git $($args -join ' ') (exit code $exitCode). No changes were discarded.$([Environment]::NewLine)$details"
     }
     $result
 }
@@ -255,8 +257,8 @@ function Enter-SchooltoolCandidateEnvironment {
             APP_CONFIG_CACHE = $relativeCachePaths[0]; APP_ROUTES_CACHE = $relativeCachePaths[1]; APP_PACKAGES_CACHE = $relativeCachePaths[2]; APP_SERVICES_CACHE = $relativeCachePaths[3]; APP_EVENTS_CACHE = $relativeCachePaths[4]
         }
         $applicationKeys = @([Environment]::GetEnvironmentVariables('Process').Keys | Where-Object {
-            $_ -match '^(APP_|DB_|DATABASE_|LARAVEL_|CACHE_|SESSION_|QUEUE_|REDIS_|MAIL_|BROADCAST_|REVERB_|PUSHER_|CLOUDWAYS_|AWS_|LOG_|LEGACY_RESTAURANT_|OPENAI_|ANTHROPIC_|GEMINI_|GROQ_|COHERE_|DEEPSEEK_|MISTRAL_|OPENROUTER_|JINA_|XAI_|ELEVENLABS_|SCHOOLTOOL_PREVIEW_(INSTANCE|CONTROL_|DATA_|SNAPSHOT_|MAIL_))'
-        })
+                $_ -match '^(APP_|DB_|DATABASE_|LARAVEL_|CACHE_|SESSION_|QUEUE_|REDIS_|MAIL_|BROADCAST_|REVERB_|PUSHER_|CLOUDWAYS_|AWS_|LOG_|LEGACY_RESTAURANT_|OPENAI_|ANTHROPIC_|GEMINI_|GROQ_|COHERE_|DEEPSEEK_|MISTRAL_|OPENROUTER_|JINA_|XAI_|ELEVENLABS_|SCHOOLTOOL_PREVIEW_(INSTANCE|CONTROL_|DATA_|SNAPSHOT_|MAIL_))'
+            })
         foreach ($name in @($applicationKeys + @($settings.Keys)) | Select-Object -Unique) {
             $previous[$name] = [Environment]::GetEnvironmentVariable($name, 'Process')
             Remove-Item -LiteralPath ('Env:' + $name) -ErrorAction SilentlyContinue
@@ -364,10 +366,16 @@ function Invoke-SchooltoolLocalPreparation {
         }
     }
     Invoke-SchooltoolCommand 'Building the selected branch...' { npm run build }
-    Write-Host 'Local files are ready. No migrations or seeders were run. Restart running development servers/workers.' -ForegroundColor Green
-    Write-Host 'Database schema changes require a separate feature database; Git does not switch databases.' -ForegroundColor Yellow
+    Write-Host 'Local files are ready. Restart running development servers/workers.' -ForegroundColor Green
+    Write-Host 'Git does not switch databases. gitupdate checks additive migrations for the configured local database; use a separate database for experimental schema changes.' -ForegroundColor Yellow
     if (-not (Test-Path -LiteralPath '.env' -PathType Leaf)) {
         Write-Host 'This worktree has no .env. Configure its local environment separately before starting the application; no environment or database was copied.' -ForegroundColor Yellow
+    }
+}
+
+function Invoke-SchooltoolLocalMigrations {
+    Invoke-SchooltoolCommand 'Applying checked local database migrations...' {
+        php artisan schooltool:gitupdate-migrate --no-interaction
     }
 }
 
@@ -732,7 +740,10 @@ function gitupdate {
         Invoke-SchooltoolGit merge --no-edit --no-autostash --no-overwrite-ignore refs/remotes/origin/main
         $updatedHead = Invoke-SchooltoolGit rev-parse HEAD
         $preparationFailure = $null
-        try { Invoke-SchooltoolLocalPreparation }
+        try {
+            Invoke-SchooltoolLocalPreparation
+            Invoke-SchooltoolLocalMigrations
+        }
         catch { $preparationFailure = $_ }
 
         if ($backup) {

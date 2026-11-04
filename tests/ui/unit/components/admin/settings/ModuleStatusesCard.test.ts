@@ -67,6 +67,18 @@ async function clickAndSave(button) {
 }
 
 describe('ModuleStatusesCard', () => {
+    it('saves version four visibility independently of the other modules', async () => {
+        const store = renderPanel({ version_four_visible: false })
+        const button = screen.getByRole('button', { name: 'Version 4 für andere sichtbar' })
+
+        expect(button).toHaveAttribute('aria-pressed', 'false')
+        await clickAndSave(button)
+        expect(store.saveModuleStatuses).toHaveBeenLastCalledWith({ id: 7, version_four_visible: true })
+        expect(button).toHaveAttribute('aria-pressed', 'true')
+        await clickAndSave(button)
+        expect(store.saveModuleStatuses).toHaveBeenLastCalledWith({ id: 7, version_four_visible: false })
+    })
+
     it('disables only unavailable user controls and preserves their stored flags', async () => {
         const store = renderPanel({
             module_rows: [

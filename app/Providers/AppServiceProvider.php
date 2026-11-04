@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Services\EmailAliasResolver;
 use App\Services\FeaturePreviewMailService;
 use App\Services\FeaturePreviewRuntimeService;
+use App\Services\SchoolToolModuleStatusService;
 use App\Services\SchoolUserLicenceAssignmentService;
 use App\Services\SchoolyearService;
 use Illuminate\Auth\Events\Authenticated;
@@ -97,6 +98,14 @@ class AppServiceProvider extends ServiceProvider
             }
 
             return Limit::perMinute(config('spa.web_throttle', 60))->by($request->user()?->id ?: $request->ip());
+        });
+
+        RateLimiter::for('matura', function (Request $request) {
+            $actor = $request->user()?->id
+                ? 'user:'.$request->user()->id
+                : 'station:'.($request->session()->get('matura_access.id') ?? $request->ip());
+
+            return Limit::perMinute(120)->by($actor);
         });
 
         RateLimiter::for('global', function (Request $request) use ($multipleChoiceActor) {
@@ -204,6 +213,7 @@ class AppServiceProvider extends ServiceProvider
         });
 
         Gate::define('viewPulse', fn (User $user): bool => $user->hasRole('super_admin'));
+        Gate::define('use-version-four', fn (?User $user): bool => app(SchoolToolModuleStatusService::class)->canAccessVersionFour($user));
 
         Pulse::user(fn (User $user): array => [
             'name' => "User #{$user->getAuthIdentifier()}",

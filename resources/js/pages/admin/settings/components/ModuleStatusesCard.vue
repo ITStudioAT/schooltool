@@ -15,6 +15,24 @@
         </div>
 
         <div class="module-status-card__grid" :aria-busy="isSaving">
+            <div v-if="typeof schoolToolStore?.data?.version_four_visible === 'boolean'" class="module-status-card__row">
+                <div class="module-status-card__copy">
+                    <div class="module-status-card__module">Version 4</div>
+                    <div class="module-status-card__meta">Helpers für andere freigeben</div>
+                </div>
+                <div class="module-status-card__controls">
+                    <button
+                        type="button"
+                        class="module-status-card__button"
+                        :class="schoolToolStore.data.version_four_visible ? 'module-status-card__button--admin' : 'module-status-card__button--off'"
+                        :disabled="isSaving || !schoolToolStore.data.id"
+                        :aria-pressed="schoolToolStore.data.version_four_visible"
+                        aria-label="Version 4 für andere sichtbar"
+                        @click="save({ version_four_visible: !schoolToolStore.data.version_four_visible })">
+                        <strong class="module-status-card__state">{{ schoolToolStore.data.version_four_visible ? 'Sichtbar' : 'Nicht sichtbar' }}</strong>
+                    </button>
+                </div>
+            </div>
             <div v-for="item in moduleRows" :key="item.key" class="module-status-card__row">
                 <div class="module-status-card__copy">
                     <div class="module-status-card__module">{{ item.label }}</div>
@@ -221,7 +239,7 @@ export default {
             void this.save()
         },
 
-        async save() {
+        async save(data = this.form) {
             const id = this.schoolToolStore?.data?.id
             if (!id || this.isSaving) {
                 return
@@ -231,7 +249,7 @@ export default {
             this.saveError = ''
 
             try {
-                const saved = await this.schoolToolStore.saveModuleStatuses({ id, ...this.form })
+                const saved = await this.schoolToolStore.saveModuleStatuses({ id, ...data })
                 if (!saved) {
                     this.saveError = 'Änderung konnte nicht gespeichert werden. Bitte erneut versuchen.'
                 }

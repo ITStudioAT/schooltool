@@ -264,6 +264,38 @@ describe('loadConfig', function () {
 });
 
 describe('saveModuleStatuses', function () {
+    test('only a super admin can release version four and its routes', function () {
+        $superAdmin = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'is_active' => true,
+        ]);
+        $superAdmin->assignRole('super_admin');
+        $classesUrl = "/api/admin/helpers/classes?schoolyear_id={$this->schoolyear->id}";
+        $saveUrl = '/api/admin/school_tools/save_module_statuses';
+        $payload = ['data' => [
+            'id' => $this->schoolTool->id,
+            'version_four_visible' => true,
+            'register_visible_admin' => false,
+        ]];
+
+        $this->getJson(route('matura.state'))->assertForbidden();
+        $this->actingAs($this->admin)->getJson($classesUrl)->assertForbidden();
+        $this->getJson('/api/admin/school_tools/load_config')->assertJsonMissingPath('version_four_visible');
+        $this->postJson($saveUrl, $payload)->assertForbidden();
+
+        $this->actingAs($superAdmin)->getJson($classesUrl)->assertOk();
+        $this->getJson('/api/admin/school_tools/load_config')->assertJsonPath('version_four_visible', false);
+        $this->postJson($saveUrl, $payload)->assertOk();
+        $this->actingAs($this->admin)->getJson($classesUrl)->assertOk();
+        $this->getJson(route('matura.state'))->assertUnauthorized();
+        $this->assertDatabaseHas('school_tools', ['id' => $this->schoolTool->id, 'register_visible_admin' => true]);
+
+        $payload['data']['version_four_visible'] = false;
+        $this->actingAs($superAdmin)->postJson($saveUrl, $payload)->assertOk();
+        $this->actingAs($this->admin)->getJson($classesUrl)->assertForbidden();
+    });
+
     test('admin can save module statuses', function () {
         $this->actingAs($this->admin);
 

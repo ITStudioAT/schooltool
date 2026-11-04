@@ -1,9 +1,11 @@
 <?php
 
+use App\Http\Controllers\Admin\MaturaController;
 use App\Http\Controllers\Admin\Teaching\CourseDateController;
 use App\Http\Controllers\Admin\Teaching\CurriculumUnitFileController;
 use App\Http\Controllers\Admin\Teaching\WorkDropboxController;
 use App\Http\Controllers\Homepage\HomepageController;
+use App\Http\Controllers\MaturaStationController;
 use App\Http\Controllers\MultipleChoiceParticipantController;
 use App\Http\Controllers\NumberSystemPlayerController;
 use App\Http\Controllers\SharedTeachingExplanationController;
@@ -18,6 +20,27 @@ use Illuminate\Support\Facades\Route;
 // Alles wird gethrottlet
 Route::middleware(['throttle:global', 'throttle:web'])->group(function () {
 
+    Route::middleware('can:use-version-four')->group(function (): void {
+        Route::get('/00-manager', [MaturaStationController::class, 'page'])->name('matura.station');
+        Route::post('/00-manager/login', [MaturaStationController::class, 'login'])->middleware('throttle:60,1')->name('matura.login');
+        Route::post('/00-manager/logout', [MaturaStationController::class, 'logout'])->name('matura.logout');
+        Route::get('/00-manager/state', [MaturaStationController::class, 'state'])->withoutMiddleware('throttle:web')->middleware('throttle:matura')->name('matura.state');
+        Route::post('/00-manager/action', [MaturaStationController::class, 'action'])->withoutMiddleware('throttle:web')->middleware('throttle:matura')->name('matura.action');
+    });
+
+    Route::prefix('/admin/helpers/00-manager')->middleware(['auth:sanctum', 'web-allowed:scope:admin_shell_access', 'can:use-version-four'])->name('admin.matura.')->group(function (): void {
+        Route::get('/', [MaturaController::class, 'index'])->name('index');
+        Route::get('/roster', [MaturaController::class, 'roster'])->name('roster');
+        Route::post('/', [MaturaController::class, 'store'])->name('store');
+        Route::get('/{matura}', [MaturaController::class, 'show'])->name('show');
+        Route::put('/{matura}', [MaturaController::class, 'update'])->name('update');
+        Route::post('/{matura}/action', [MaturaController::class, 'action'])->name('action');
+        Route::put('/{matura}/lifecycle', [MaturaController::class, 'lifecycle'])->name('lifecycle');
+        Route::post('/{matura}/accesses', [MaturaController::class, 'invite'])->name('invite');
+        Route::delete('/{matura}/accesses/{access}', [MaturaController::class, 'revoke'])->name('revoke');
+        Route::get('/{matura}/report', [MaturaController::class, 'report'])->name('report');
+        Route::get('/{matura}/pdf', [MaturaController::class, 'pdf'])->name('pdf');
+    });
     Route::get('/explanations/{token}', [SharedTeachingExplanationController::class, 'entry'])->where('token', '[A-Za-z0-9]{48}')->name('explanations.entry');
     Route::get('/api/explanations/{token}', [SharedTeachingExplanationController::class, 'show'])->where('token', '[A-Za-z0-9]{48}')->name('explanations.show');
 
@@ -223,5 +246,4 @@ Route::middleware(['throttle:global', 'throttle:web'])->group(function () {
     })->where('any', '.*');
 
     Route::get('/homepage/{any?}', [HomepageController::class, 'routing']);
-
 });

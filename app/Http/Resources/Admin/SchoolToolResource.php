@@ -27,6 +27,9 @@ class SchoolToolResource extends JsonResource
             'active_schoolyear_id' => $this->active_schoolyear_id,
             'module_rows' => $moduleStatusService->configurableModuleRows(),
             ...$moduleVisibilityFields,
+            ...($moduleStatusService->canManageVersionFour($request->user()) ? [
+                'version_four_visible' => $moduleStatusService->versionFourVisible(),
+            ] : []),
             'students_timetables_admin_version' => SchoolTool::normalizeStudentsTimetablesAdminVersion(
                 $this->students_timetables_admin_version,
             ),

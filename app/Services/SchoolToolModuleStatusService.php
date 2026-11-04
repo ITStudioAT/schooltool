@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Licence;
 use App\Models\School;
 use App\Models\SchoolTool;
+use App\Models\User;
 
 class SchoolToolModuleStatusService
 {
@@ -58,6 +59,21 @@ class SchoolToolModuleStatusService
     private ?array $defaultAttributesCache = null;
 
     private ?SchoolTool $globalSchoolToolCache = null;
+
+    public function versionFourVisible(): bool
+    {
+        return (bool) $this->globalSchoolTool()?->version_four_visible;
+    }
+
+    public function canManageVersionFour(?User $user): bool
+    {
+        return $user?->is_active && $user->hasRole('super_admin');
+    }
+
+    public function canAccessVersionFour(?User $user): bool
+    {
+        return $this->canManageVersionFour($user) || $this->versionFourVisible();
+    }
 
     public static function moduleEnabledByDefault(string $moduleKey): bool
     {

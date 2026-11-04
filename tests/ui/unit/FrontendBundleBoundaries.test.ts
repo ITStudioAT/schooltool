@@ -1,7 +1,8 @@
-import { readFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
-import { describe, expect, it } from 'vitest'
-import { loadConfigFromFile } from 'vite'
+import { describe, expect, it, vi } from 'vitest'
+import { createServer, loadConfigFromFile, resolveConfig } from 'vite'
 import { rollup } from 'rollup'
 
 function readSource(path: string): string {
@@ -9,6 +10,52 @@ function readSource(path: string): string {
 }
 
 describe('frontend bundle boundaries', () => {
+    it('watches frontend sources without traversing dependency and runtime directories', async () => {
+        const fixtureDirectory = mkdtempSync(resolve(tmpdir(), 'schooltool-vite-watch-'))
+        const fixture = resolve(fixtureDirectory, 'tmp', 'checkout')
+        const runtimeDirectories = ['vendor', 'storage', '.npm-cache', 'tmp', 'undefined']
+        let server
+
+        try {
+            for (const directory of ['resources/js', ...runtimeDirectories]) {
+                mkdirSync(resolve(fixture, directory, 'nested'), { recursive: true })
+                writeFileSync(resolve(fixture, directory, 'nested', 'entry.js'), 'export default 1')
+            }
+
+            // Resolve the real serve options, then restore Laravel's guard before creating the isolated watcher.
+            vi.stubEnv('LARAVEL_BYPASS_ENV_CHECK', '1')
+            const configuration = await resolveConfig({ configFile: resolve('vite.config.js'), root: fixture }, 'serve')
+                .finally(() => vi.unstubAllEnvs())
+            server = await createServer({
+                configFile: false,
+                root: fixture,
+                publicDir: false,
+                server: { middlewareMode: true, watch: configuration.server.watch },
+                optimizeDeps: { noDiscovery: true },
+            })
+            server.watcher.add(
+                ['resources/js', ...runtimeDirectories].map((directory) => resolve(fixture, directory, 'nested', 'entry.js')),
+            )
+            const normalizedFixture = fixture.replaceAll('\\', '/')
+            await vi.waitFor(() => {
+                const watchedDirectories = Object.keys(server.watcher.getWatched()).map((directory) => directory.replaceAll('\\', '/'))
+
+                expect(watchedDirectories).toContain(`${normalizedFixture}/resources/js/nested`)
+                for (const directory of runtimeDirectories) {
+                    const ignoredDirectory = `${normalizedFixture}/${directory}`
+                    expect(
+                        watchedDirectories.some((watched) => watched === ignoredDirectory || watched.startsWith(`${ignoredDirectory}/`)),
+                    ).toBe(false)
+                }
+            })
+        } finally {
+            await server?.close()
+            if (fixtureDirectory.startsWith(resolve(tmpdir(), 'schooltool-vite-watch-'))) {
+                rmSync(fixtureDirectory, { recursive: true, force: true })
+            }
+        }
+    })
+
     it('emits the PDF worker as JavaScript while preserving its module and other asset types', async () => {
         const configuration = await loadConfigFromFile({ command: 'build', mode: 'production' }, resolve('vite.config.js'))
         const workerSource = readSource('node_modules/pdfjs-dist/build/pdf.worker.min.mjs')

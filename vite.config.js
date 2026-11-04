@@ -6,6 +6,7 @@ import vuetify from 'vite-plugin-vuetify';
 import path from 'path';
 
 const shouldGenerateSourceMaps = process.env.VITE_SOURCEMAP === 'true';
+const ignoredWatchDirectories = new Set(['vendor', 'storage', '.npm-cache', 'tmp', 'undefined']);
 
 export default defineConfig({
     server: {
@@ -26,6 +27,25 @@ export default defineConfig({
     },
 
     plugins: [
+        {
+            name: 'schooltool-watch-directories',
+            apply: 'serve',
+            config({ root = process.cwd() }) {
+                const watchRoot = path.resolve(root);
+
+                return {
+                    server: {
+                        watch: {
+                            ignored(filePath) {
+                                const [directory] = path.relative(watchRoot, filePath).split(path.sep);
+
+                                return ignoredWatchDirectories.has(directory);
+                            },
+                        },
+                    },
+                };
+            },
+        },
         wayfinder(),
         laravel({
             input: [
@@ -33,6 +53,7 @@ export default defineConfig({
                 'resources/js/apps/homepage.js',
                 'resources/js/apps/admin.js',
                 'resources/js/apps/application.js',
+                'resources/js/apps/matura.js',
 
             ],
             refresh: true,

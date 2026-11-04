@@ -10,10 +10,14 @@ use App\Http\Requests\Admin\SchoolyearUpdateRequest;
 use App\Http\Requests\Admin\SetActiveSchoolyearRequest;
 use App\Http\Resources\Admin\PaginateResource;
 use App\Http\Resources\Admin\SchoolyearResource;
+use App\Models\ClassRepresentativeElection;
+use App\Models\Import116;
 use App\Models\Schoolyear;
 use App\Models\User;
 use App\Services\SchoolyearService;
 use App\Services\UserService;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
 class SchoolyearController extends Controller
 {
@@ -32,6 +36,59 @@ class SchoolyearController extends Controller
         $schoolyears = Schoolyear::where('school_id', $school_id)->orderBy('name')->get();
 
         return response()->json(SchoolyearResource::collection($schoolyears), 200);
+    }
+
+    public function classes(Request $request): JsonResponse
+    {
+        $authUser = $request->user();
+
+        if (! $authUser instanceof User || ! $authUser->hasAdminShellAccess()) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $validated = $request->validate(['schoolyear_id' => ['required', 'integer']]);
+        $schoolyear = Schoolyear::query()
+            ->where('school_id', $authUser->school_id)
+            ->findOrFail($validated['schoolyear_id']);
+
+        $announcedClasses = ClassRepresentativeElection::query()
+            ->where('school_id', $authUser->school_id)
+            ->where('schoolyear_id', $schoolyear->id)
+            ->whereNotNull('announced_at')
+            ->pluck('class_name')
+            ->flip();
+
+        $classes = Import116::query()
+            ->where('school_id', $authUser->school_id)
+            ->where('schoolyear_id', $schoolyear->id)
+            ->whereNotNull('exists_date')
+            ->whereNotNull('class')
+            ->where('class', '!=', '')
+            ->select('class')
+            ->selectRaw('COUNT(*) as student_count')
+            ->groupBy('class')
+            ->get()
+            ->map(static function (Import116 $class): array {
+                $name = trim($class->class);
+
+                return [
+                    'name' => preg_replace('/^([0-9]+[A-Z][A-Z0-9]*)-[A-Z]+$/i', '$1', $name) ?? $name,
+                    'variant' => $name,
+                    'student_count' => (int) $class->student_count,
+                ];
+            })
+            ->filter(static fn (array $class): bool => $class['name'] !== '')
+            ->groupBy('name')
+            ->map(static fn ($variants, string $name): array => [
+                'name' => $name,
+                'variants' => $variants->pluck('variant')->sort(SORT_NATURAL)->values()->all(),
+                'student_count' => $variants->sum('student_count'),
+                'announced' => $announcedClasses->has($name),
+            ])
+            ->sortKeys(SORT_NATURAL)
+            ->values();
+
+        return response()->json(['data' => $classes]);
     }
 
     public function indexPaginate(SchoolyearIndexPaginateRequest $request)

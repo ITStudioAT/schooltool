@@ -275,10 +275,65 @@ describe('dashboardMenu', function () {
         expect($profileItem)->toBeNull();
     });
 
+    it('shows Helpers to eligible users according to version four visibility', function (string $roleName, bool $visible, bool $allowed) {
+        $user = User::factory()->create(['is_active' => true]);
+        SchoolTool::factory()->create(['school_id' => $user->school_id, 'version_four_visible' => $visible]);
+        $user->assignRole(Role::firstOrCreate(['name' => $roleName, 'guard_name' => 'web']));
+        $this->actingAs($user);
+
+        $menu = $this->service->dashboardMenu();
+        $item = collect($menu)->firstWhere('title', 'Helpers');
+        expect($this->service->routeCapabilities($user, $menu)['helpers'])->toBe($allowed);
+
+        if (! $allowed) {
+            expect($item)->toBeNull();
+
+            return;
+        }
+
+        expect($item)->toMatchArray([
+            'to' => '/admin/helpers',
+            'active_paths' => ['/admin/helpers'],
+            'is_active' => true,
+        ]);
+    })->with([
+        ['super_admin', false, true],
+        ['admin', false, false],
+        ['admin', true, true],
+        ['user', true, false],
+    ]);
+
+    it('places Helpers directly after Materialien and before restaurant', function () {
+        $school = School::factory()->create();
+        SchoolTool::factory()->create([
+            'school_id' => $school->id,
+            'version_four_visible' => true,
+            'materials_visible_admin' => true,
+            'materials_visible_user' => true,
+            'restaurant_visible_admin' => true,
+            'restaurant_visible_user' => true,
+        ]);
+        $user = User::factory()->create(['school_id' => $school->id]);
+        $user->assignRole([
+            Role::firstOrCreate(['name' => 'materials_admin', 'guard_name' => 'web']),
+            Role::firstOrCreate(['name' => 'lunch_admin', 'guard_name' => 'web']),
+        ]);
+        ($this->attachActiveLicences)($user, ['Materialientool', 'Restaurant']);
+        $this->actingAs($user);
+
+        $titles = collect($this->service->dashboardMenu())->pluck('title')->all();
+        $materialsIndex = array_search('Materialien', $titles, true);
+
+        expect($materialsIndex)->not->toBeFalse()
+            ->and(array_slice($titles, $materialsIndex, 4))
+            ->toBe(['Materialien', 'Helpers', 'Materialien 2', 'Restaurant']);
+    });
+
     it('hides module menu items for user with only admin and super_admin roles', function () {
         $user = User::factory()->create([
             'first_name' => 'Multi',
             'last_name' => 'Role',
+            'is_active' => true,
         ]);
         $superAdminRole = Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']);
         $adminRole = Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
@@ -292,12 +347,12 @@ describe('dashboardMenu', function () {
 
         expect($result)
             ->toBeArray()
-            ->toHaveCount(6)
+            ->toHaveCount(7)
             ->and(collect($result)->pluck('title')->toArray())
-            ->toBe(['Home', 'Dokumentation', 'Profil', 'Einstellungen', 'Abmelden', 'Gruppen'])
+            ->toBe(['Home', 'Helpers', 'Dokumentation', 'Profil', 'Einstellungen', 'Abmelden', 'Gruppen'])
             ->not->toContain('Anmeldetool', 'Nachhilfe', 'Unterricht', 'Unterricht Tools', 'Materialien', 'Restaurant', 'ABA');
 
-        expect($result[2])->toMatchArray([
+        expect($result[3])->toMatchArray([
             'to' => '/admin/profile',
             'active_paths' => ['/admin/profile'],
             'is_active' => true,
@@ -392,7 +447,7 @@ describe('dashboardMenu', function () {
     ]);
 
     it('places groups immediately after Hopp while keeping settings below profile', function () {
-        $user = User::factory()->create();
+        $user = User::factory()->create(['is_active' => true]);
         $user->assignRole(Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']));
         $this->actingAs($user);
         $this->mock(UserHopperService::class)
@@ -403,7 +458,7 @@ describe('dashboardMenu', function () {
         $menu = $this->service->dashboardMenu();
         $titles = array_column($menu, 'title');
 
-        expect($titles)->toBe(['Home', 'Dokumentation', 'Profil', 'Einstellungen', 'Abmelden', 'Hopp', 'Gruppen'])
+        expect($titles)->toBe(['Home', 'Helpers', 'Dokumentation', 'Profil', 'Einstellungen', 'Abmelden', 'Hopp', 'Gruppen'])
             ->and(collect($menu)->last()['divider_before'])->toBeTrue();
     });
 
@@ -1220,6 +1275,7 @@ describe('routeCapabilities', function () {
 
         expect($result)->toBe([
             'home' => false,
+            'helpers' => false,
             'settings' => false,
             'profile' => false,
             'users' => false,
