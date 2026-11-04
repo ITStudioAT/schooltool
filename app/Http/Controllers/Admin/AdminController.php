@@ -121,7 +121,7 @@ class AdminController extends Controller
             'company' => 'ITStudio Dipl.-Ing. Günther Kron',
             'version' => config('schooltool.version', 'x.x.x'),
             'home_version' => $user
-                ? ($capabilities['helpers'] ? 'v4.0' : HomeVersionLabel::forProject(base_path(), config('schooltool.version', 'x.x.x')))
+                ? HomeVersionLabel::forProject(base_path(), config('schooltool.version', 'x.x.x'))
                 : null,
             'timeout' => config('spa.timeout', 3000),
             'payment_active' => config('schooltool.payment_active', false),

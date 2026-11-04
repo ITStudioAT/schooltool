@@ -120,6 +120,18 @@ test('config returns user data when authenticated', function () {
         ]);
 });
 
+test('home version follows the configured release even when helpers are available', function () {
+    $this->user->syncRoles(['super_admin']);
+    config(['schooltool.version' => '3.54.4']);
+
+    $this->actingAs($this->user)
+        ->getJson('/api/admin/config')
+        ->assertOk()
+        ->assertJsonPath('capabilities.helpers', true)
+        ->assertJsonPath('version', '3.54.4')
+        ->assertJsonPath('home_version', 'v3.54.4');
+});
+
 test('authenticated config returns the schoolwide active schoolyear separately from the selected schoolyear', function () {
     $schoolwideActiveSchoolyear = Schoolyear::factory()->create([
         'school_id' => $this->school->id,
