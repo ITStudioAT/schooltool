@@ -57,9 +57,6 @@ class AdminNavigationService
         ]);
 
         $menu[] = ['title' => 'Home', 'icon' => 'mdi-home', 'to' => '/admin', 'active_paths' => ['/admin'], 'active_exact' => true, 'is_active' => true];
-        $helpersMenuItem = $user->hasAdminShellAccess() && $moduleStatusService->canAccessVersionFour($user)
-            ? ['title' => 'Helpers', 'icon' => 'mdi-tools', 'to' => '/admin/helpers', 'active_paths' => ['/admin/helpers'], 'is_active' => true]
-            : null;
 
         $registerLicenceStatus = $licenceStatuses['Anmeldetool'] ?? 'missing';
         $teachingLicenceStatus = $licenceStatuses['Lehrertool'] ?? 'missing';
@@ -130,10 +127,6 @@ class AdminNavigationService
                     'active_paths' => ['/admin/materials'],
                     'is_active' => ($materialsLicenceStatus === 'active'),
                 ] + $this->dashboardStatusMeta($materialsLicenceStatus, $materialsModuleStatus, 'Materialien');
-                if ($helpersMenuItem !== null) {
-                    $menu[] = $helpersMenuItem;
-                    $helpersMenuItem = null;
-                }
                 $menu[] = [
                     'title' => 'Materialien 2',
                     'icon' => 'mdi-text-box-search-outline',
@@ -144,8 +137,8 @@ class AdminNavigationService
             }
         }
 
-        if ($helpersMenuItem !== null) {
-            $menu[] = $helpersMenuItem;
+        if ($user->hasAdminShellAccess() && $moduleStatusService->canAccessVersionFour($user)) {
+            $menu[] = ['title' => 'Helpers', 'icon' => 'mdi-tools', 'to' => '/admin/helpers', 'active_paths' => ['/admin/helpers'], 'is_active' => true];
         }
 
         // RESTAURANT

@@ -303,7 +303,7 @@ describe('dashboardMenu', function () {
         ['user', true, false],
     ]);
 
-    it('places Helpers directly after Materialien and before restaurant', function () {
+    it('places Helpers directly after Materialien 2 and before restaurant', function () {
         $school = School::factory()->create();
         SchoolTool::factory()->create([
             'school_id' => $school->id,
@@ -326,7 +326,7 @@ describe('dashboardMenu', function () {
 
         expect($materialsIndex)->not->toBeFalse()
             ->and(array_slice($titles, $materialsIndex, 4))
-            ->toBe(['Materialien', 'Helpers', 'Materialien 2', 'Restaurant']);
+            ->toBe(['Materialien', 'Materialien 2', 'Helpers', 'Restaurant']);
     });
 
     it('hides module menu items for user with only admin and super_admin roles', function () {
