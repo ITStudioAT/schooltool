@@ -18,7 +18,6 @@
             <div v-if="typeof schoolToolStore?.data?.version_four_visible === 'boolean'" class="module-status-card__row">
                 <div class="module-status-card__copy">
                     <div class="module-status-card__module">Version 4</div>
-                    <div class="module-status-card__meta">Helpers für andere freigeben</div>
                 </div>
                 <div class="module-status-card__controls">
                     <button
@@ -31,6 +30,10 @@
                         @click="save({ version_four_visible: !schoolToolStore.data.version_four_visible })">
                         <strong class="module-status-card__state">{{ schoolToolStore.data.version_four_visible ? 'Sichtbar' : 'Nicht sichtbar' }}</strong>
                     </button>
+                    <div class="module-status-card__version-contents">
+                        <div>Helpers – Klassensprecherwahl</div>
+                        <div>Helpers – Matura (00-Manager)</div>
+                    </div>
                 </div>
             </div>
             <div v-for="item in moduleRows" :key="item.key" class="module-status-card__row">
@@ -477,6 +480,14 @@ export default {
 .module-status-card__next {
     color: #d1d9e4;
     font-size: 0.78rem;
+}
+
+.module-status-card__version-contents {
+    align-self: center;
+    padding-inline: 8px;
+    color: #e2e8f0;
+    font-size: 0.85rem;
+    line-height: 1.6;
 }
 
 .module-status-card__feedback {
