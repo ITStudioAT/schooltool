@@ -214,6 +214,8 @@ class AppServiceProvider extends ServiceProvider
 
         Gate::define('viewPulse', fn (User $user): bool => $user->hasRole('super_admin'));
         Gate::define('use-version-four', fn (?User $user): bool => app(SchoolToolModuleStatusService::class)->canAccessVersionFour($user));
+        Gate::define('use-class-speaker-election', fn (?User $user): bool => app(SchoolToolModuleStatusService::class)->canAccessVersionFourFeature($user, 'elections'));
+        Gate::define('use-matura', fn (?User $user): bool => app(SchoolToolModuleStatusService::class)->canAccessVersionFourFeature($user, 'matura'));
 
         Pulse::user(fn (User $user): array => [
             'name' => "User #{$user->getAuthIdentifier()}",

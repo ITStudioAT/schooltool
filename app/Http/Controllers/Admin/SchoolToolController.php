@@ -42,7 +42,7 @@ class SchoolToolController extends Controller
             ->whereKey($validated['id'])
             ->firstOrFail();
         $moduleStatusService = app(SchoolToolModuleStatusService::class);
-        if (array_key_exists('version_four_visible', $validated)) {
+        if (array_key_exists('version_four_visible', $validated) || array_key_exists('version_four_features', $validated)) {
             abort_unless($moduleStatusService->canManageVersionFour($auth_user), 403);
         }
 
@@ -60,6 +60,17 @@ class SchoolToolController extends Controller
         }
 
         DB::transaction(function () use ($moduleStatusService, $schoolTool, $updatable, $validated): void {
+            if (array_key_exists('version_four_features', $validated)) {
+                $globalTool = SchoolTool::query()
+                    ->whereKey(($moduleStatusService->globalSchoolTool() ?? $schoolTool)->id)
+                    ->lockForUpdate()
+                    ->firstOrFail();
+                $globalTool->update([
+                    'version_four_features' => array_replace($globalTool->version_four_features ?? [], $validated['version_four_features']),
+                ]);
+                $moduleStatusService->globalSchoolTool()?->refresh();
+            }
+
             if ($updatable !== []) {
                 ($moduleStatusService->globalSchoolTool() ?? $schoolTool)->update($updatable);
             }

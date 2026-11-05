@@ -1,12 +1,13 @@
 <template>
-    <div class="intro-page">
+    <div class="intro-page" :class="{ 'intro-page--cinematic': showNewHomepage }">
         <!-- Animated Background -->
-        <div class="animated-bg">
+        <div v-if="!showNewHomepage" class="animated-bg">
             <div class="hero-bg-image st-cloudflare-bg-image"></div>
         </div>
 
         <!-- Step: Select School -->
-        <section class="hero-section" v-if="step === 'selectSchool'">
+        <SchoolSelectionPreview v-if="showNewHomepage" :schools="login_schools" @select="selectLoginSchool" />
+        <section class="hero-section" v-if="step === 'selectSchool' && !showNewHomepage">
             <div class="hero-content st-shell-1440">
                 <header class="cloud-header">
                     <div class="cloud-header-left">
@@ -334,13 +335,14 @@ import { useValidationRulesSetup } from '@/helpers/rules'
 import { mapWritableState } from 'pinia'
 import { useHomepageStore } from '@/stores/homepage/HomepageStore'
 import { useNotificationStore } from '@/stores/spa/NotificationStore'
+import SchoolSelectionPreview from './SchoolSelectionPreview.vue'
 
 export default {
     setup() {
         return useValidationRulesSetup()
     },
 
-    components: {},
+    components: { SchoolSelectionPreview },
 
     async beforeMount() {
         this.homepageStore = useHomepageStore()
@@ -376,6 +378,7 @@ export default {
         return {
             homepageStore: null,
             step: null,
+            homepageDesignEnabled: false,
             login_schools: [],
             selected_login_school: null,
             selected_login_school_id: null,
@@ -395,6 +398,9 @@ export default {
     },
 
     computed: {
+        showNewHomepage() {
+            return this.step === 'selectSchool' && this.homepageDesignEnabled
+        },
         ...mapWritableState(useHomepageStore, ['config', 'is_loading', 'schools', 'licence', 'selected_school', 'selected_school_id']),
         toolStatuses() {
             return this.config?.tool_licence_statuses || {}
@@ -502,6 +508,7 @@ export default {
             const result = await this.homepageStore.loadLoginSchools()
             if (result) {
                 this.login_schools = result.schools || []
+                this.homepageDesignEnabled = result.homepage_design_enabled === true
             }
             this.step = 'selectSchool'
         },
@@ -839,6 +846,21 @@ export default {
 }
 
 /* Animated Background */
+.intro-page--cinematic {
+    background: #000d18;
+    min-height: calc(100svh - 64px);
+}
+
+:global(.v-application:has(.intro-page--cinematic) .v-footer) {
+    background: #000d18 !important;
+    color: #e7f0f3 !important;
+    border-top: 1px solid rgba(152, 187, 198, 0.12);
+}
+
+:global(.v-application:has(.intro-page--cinematic)) {
+    background: #000d18;
+}
+
 .animated-bg {
     position: fixed;
     top: 0;

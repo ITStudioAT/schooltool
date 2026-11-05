@@ -15,25 +15,23 @@
         </div>
 
         <div class="module-status-card__grid" :aria-busy="isSaving">
-            <div v-if="typeof schoolToolStore?.data?.version_four_visible === 'boolean'" class="module-status-card__row">
+            <div v-for="feature in versionFourRows" :key="feature.key" class="module-status-card__row module-status-card__row--preview">
                 <div class="module-status-card__copy">
-                    <div class="module-status-card__module">Version 4</div>
+                    <div class="module-status-card__module">{{ feature.label }}</div>
+                    <div class="module-status-card__meta">Version 4 · Sichtbarkeit für Superadmin</div>
                 </div>
                 <div class="module-status-card__controls">
                     <button
                         type="button"
                         class="module-status-card__button"
-                        :class="schoolToolStore.data.version_four_visible ? 'module-status-card__button--admin' : 'module-status-card__button--off'"
+                        :class="schoolToolStore.data.version_four_features[feature.key] ? 'module-status-card__button--admin' : 'module-status-card__button--off'"
                         :disabled="isSaving || !schoolToolStore.data.id"
-                        :aria-pressed="schoolToolStore.data.version_four_visible"
-                        aria-label="Version 4 für andere sichtbar"
-                        @click="save({ version_four_visible: !schoolToolStore.data.version_four_visible })">
-                        <strong class="module-status-card__state">{{ schoolToolStore.data.version_four_visible ? 'Sichtbar' : 'Nicht sichtbar' }}</strong>
+                        :aria-pressed="schoolToolStore.data.version_four_features[feature.key]"
+                        :aria-label="`${feature.label}: für Superadmin sichtbar`"
+                        @click="save({ version_four_features: { [feature.key]: !schoolToolStore.data.version_four_features[feature.key] } })">
+                        <span class="module-status-card__audience">Superadmin</span>
+                        <strong class="module-status-card__state">{{ schoolToolStore.data.version_four_features[feature.key] ? 'Angezeigt' : 'Aus' }}</strong>
                     </button>
-                    <div class="module-status-card__version-contents">
-                        <div>Helpers – Klassensprecherwahl</div>
-                        <div>Helpers – Matura (00-Manager)</div>
-                    </div>
                 </div>
             </div>
             <div v-for="item in moduleRows" :key="item.key" class="module-status-card__row">
@@ -152,6 +150,19 @@ export default {
             isSaving: false,
             saveError: '',
         }
+    },
+
+    computed: {
+        versionFourRows() {
+            const features = this.schoolToolStore?.data?.version_four_features
+            if (!features) return []
+
+            return [
+                { key: 'elections', label: 'Helpers – Klassensprecherwahl' },
+                { key: 'matura', label: 'Helpers – Matura (00-Manager)' },
+                { key: 'homepage', label: 'Homepage – neues Design' },
+            ].filter((feature) => typeof features[feature.key] === 'boolean')
+        },
     },
 
     watch: {
@@ -482,19 +493,66 @@ export default {
     font-size: 0.78rem;
 }
 
-.module-status-card__version-contents {
-    align-self: center;
-    padding-inline: 8px;
-    color: #e2e8f0;
-    font-size: 0.85rem;
-    line-height: 1.6;
-}
 
 .module-status-card__feedback {
     min-height: 24px;
     margin-top: 12px;
     color: #10263a;
     font-size: 0.85rem;
+}
+
+.module-status-card__row.module-status-card__row--preview {
+    grid-template-columns: minmax(0, 1fr) 164px;
+    border-color: #d9e5e1;
+    background: #f7faf9;
+}
+
+.module-status-card__row--preview .module-status-card__controls {
+    display: block;
+    max-width: none;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+}
+
+.module-status-card__row--preview .module-status-card__button {
+    width: 100%;
+    min-height: 58px;
+    padding: 8px 14px;
+    border: 1px solid #a3c6b3;
+    border-radius: 10px;
+    background: #e9f5ee;
+    color: #20563c;
+    box-shadow: none;
+    transform: none;
+}
+
+.module-status-card__row--preview .module-status-card__button--off {
+    border-color: #cbd3da;
+    background: #f0f3f5;
+    color: #57636e;
+}
+
+.module-status-card__row--preview .module-status-card__button::before,
+.module-status-card__row--preview .module-status-card__button::after {
+    display: none;
+}
+
+.module-status-card__row--preview .module-status-card__state {
+    color: inherit;
+    text-shadow: none;
+}
+
+.module-status-card__row--preview .module-status-card__button:focus-visible {
+    outline: 3px solid #20563c;
+}
+
+@media (max-width: 600px) {
+    .module-status-card__row.module-status-card__row--preview {
+        grid-template-columns: minmax(0, 1fr) 130px;
+    }
 }
 
 @media (prefers-reduced-motion: reduce) {

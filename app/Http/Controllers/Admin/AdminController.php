@@ -31,6 +31,7 @@ use App\Services\AdminNavigationService;
 use App\Services\AdminService;
 use App\Services\FeaturePreviewService;
 use App\Services\SchoolService;
+use App\Services\SchoolToolModuleStatusService;
 use App\Services\SchoolyearService;
 use App\Services\TeacherListService;
 use App\Services\TeachingWorkEmailDelivery;
@@ -142,6 +143,10 @@ class AdminController extends Controller
             ])) : null,
             'menu' => $menu,
             'capabilities' => $capabilities,
+            'helpers_features' => [
+                'elections' => app(SchoolToolModuleStatusService::class)->canAccessVersionFourFeature($user, 'elections'),
+                'matura' => app(SchoolToolModuleStatusService::class)->canAccessVersionFourFeature($user, 'matura'),
+            ],
             'roles' => $user ? $user->getRoleNames() : [],
             'impersonation' => [
                 'is_impersonating' => $isImpersonating,

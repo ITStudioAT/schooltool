@@ -60,6 +60,18 @@ class SchoolToolModuleStatusService
 
     private ?SchoolTool $globalSchoolToolCache = null;
 
+    /** @return array{elections: bool, matura: bool, homepage: bool} */
+    public function versionFourFeatures(): array
+    {
+        $stored = $this->globalSchoolTool()?->version_four_features ?? [];
+
+        return [
+            'elections' => (bool) ($stored['elections'] ?? true),
+            'matura' => (bool) ($stored['matura'] ?? true),
+            'homepage' => (bool) ($stored['homepage'] ?? true),
+        ];
+    }
+
     public function versionFourVisible(): bool
     {
         return (bool) $this->globalSchoolTool()?->version_four_visible;
@@ -72,7 +84,22 @@ class SchoolToolModuleStatusService
 
     public function canAccessVersionFour(?User $user): bool
     {
-        return $this->canManageVersionFour($user) || $this->versionFourVisible();
+        return $this->canAccessVersionFourFeature($user, 'elections')
+            || $this->canAccessVersionFourFeature($user, 'matura');
+    }
+
+    public function canAccessVersionFourFeature(?User $user, string $feature): bool
+    {
+        $features = $this->versionFourFeatures();
+        if (! array_key_exists($feature, $features)) {
+            return false;
+        }
+
+        if ($this->canManageVersionFour($user)) {
+            return $features[$feature];
+        }
+
+        return $feature !== 'homepage' && $this->versionFourVisible();
     }
 
     public static function moduleEnabledByDefault(string $moduleKey): bool

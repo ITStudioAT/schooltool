@@ -46,6 +46,7 @@ class SchoolTool extends Model
     protected $fillable = [
         'school_id',
         'version_four_visible',
+        'version_four_features',
         'active_schoolyear_id',
         'register_visible_admin',
         'register_visible_user',
@@ -102,6 +103,7 @@ class SchoolTool extends Model
 
     protected $casts = [
         'version_four_visible' => 'boolean',
+        'version_four_features' => 'array',
         'health_at' => 'datetime',
         'import_166_at' => 'datetime',
         'register_visible_admin' => 'boolean',

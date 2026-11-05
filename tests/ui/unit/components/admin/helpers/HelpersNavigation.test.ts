@@ -6,7 +6,7 @@ import Helpers from '@/pages/admin/helpers/Helpers.vue'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { resolveAdminRouteAccess } from '../../../../../../resources/routes/admin.js'
 
-async function renderPage(path = '/admin/helpers') {
+async function renderPage(path = '/admin/helpers', features = { elections: true, matura: true }) {
     const getClasses = vi.fn(async () => ({ data: { data: [
         { name: '1A', variants: ['1A'], student_count: 23, announced: false },
         { name: '2B', variants: ['2B'], student_count: 19, announced: false },
@@ -23,7 +23,7 @@ async function renderPage(path = '/admin/helpers') {
 
     const pinia = createTestingPinia({
         initialState: {
-            AdminAdminStore: { selected_schoolyear: { id: 1, name: '2030/31' } },
+            AdminAdminStore: { selected_schoolyear: { id: 1, name: '2030/31' }, config: { helpers_features: features } },
         },
     })
 
@@ -60,6 +60,27 @@ async function renderPage(path = '/admin/helpers') {
 }
 
 describe('Helpers navigation', () => {
+    it('hides a disabled election panel and opens Matura without loading classes', async () => {
+        const { getClasses } = await renderPage('/admin/helpers', { elections: false, matura: true })
+        expect(screen.queryByRole('button', { name: /Klassensprecherwahl/ })).not.toBeInTheDocument()
+        expect(screen.getByText('Koordination der Matura')).toBeInTheDocument()
+        expect(getClasses).not.toHaveBeenCalled()
+    })
+
+    it('does not open a disabled Matura panel through a deep link', async () => {
+        await renderPage('/admin/helpers?panel=matura', { elections: true, matura: false })
+        expect(screen.queryByRole('button', { name: 'Matura' })).not.toBeInTheDocument()
+        expect(screen.queryByText('Koordination der Matura')).not.toBeInTheDocument()
+        expect(screen.getByRole('heading', { name: 'Helpers · Klassensprecherwahl' })).toBeInTheDocument()
+    })
+
+    it('does not load hidden areas when both Helpers switches are off', async () => {
+        const { getClasses } = await renderPage('/admin/helpers?panel=matura', { elections: false, matura: false })
+        expect(screen.getByText('Für dieses Konto ist kein Helpers-Bereich eingeblendet.')).toBeInTheDocument()
+        expect(screen.queryByText('Koordination der Matura')).not.toBeInTheDocument()
+        expect(getClasses).not.toHaveBeenCalled()
+    })
+
     it('uses the existing admin shell capability', () => {
         expect(resolveAdminRouteAccess('/admin/helpers')).toEqual({ public: false, capability: 'helpers' })
     })

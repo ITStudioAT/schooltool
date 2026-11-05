@@ -5,6 +5,7 @@
         <v-sheet class="helpers-nav mb-2">
             <div class="helpers-nav__sections" role="group" aria-label="Helpers-Bereiche">
                 <v-btn
+                    v-if="electionsVisible"
                     variant="flat"
                     class="helpers-nav__button"
                     :class="{ 'v-btn--active': activePanel === 'klassensprecherwahl' }"
@@ -18,6 +19,7 @@
                     </span>
                 </v-btn>
                 <v-btn
+                    v-if="maturaVisible"
                     variant="flat"
                     class="helpers-nav__button"
                     :class="{ 'v-btn--active': activePanel === 'matura' }"
@@ -30,7 +32,7 @@
             </div>
         </v-sheet>
 
-        <v-sheet class="helpers-subnav mb-3">
+        <v-sheet v-if="activePanel" class="helpers-subnav mb-3">
             <div class="helpers-subnav__sections" role="group" :aria-label="`${activePanelLabel}-Auswahl`">
                 <v-btn
                     v-for="selection in 2"
@@ -47,6 +49,7 @@
         </v-sheet>
 
         <v-sheet class="helpers-content">
+            <p v-if="!activePanel" class="mb-0">Für dieses Konto ist kein Helpers-Bereich eingeblendet.</p>
             <MaturaManager v-if="activePanel === 'matura' && activeSelection === 1" />
             <template v-if="activePanel === 'klassensprecherwahl' && activeSelection === 1">
                 <h2 class="text-h6 mb-3">Klassen · {{ selectedSchoolyearLabel }}</h2>
@@ -154,10 +157,21 @@ export default {
 
     computed: {
         ...mapState(useAdminStore, ['config', 'selected_schoolyear']),
+        electionsVisible() {
+            return this.config?.helpers_features?.elections === true
+        },
+        maturaVisible() {
+            return this.config?.helpers_features?.matura === true
+        },
         activePanel() {
-            return this.$route.query.panel === 'matura' ? 'matura' : 'klassensprecherwahl'
+            if (this.$route.query.panel === 'matura' && this.maturaVisible) return 'matura'
+            if (this.electionsVisible) return 'klassensprecherwahl'
+
+            return this.maturaVisible ? 'matura' : null
         },
         activePanelLabel() {
+            if (!this.activePanel) return 'Keine Bereiche eingeblendet'
+
             return this.activePanel === 'matura' ? 'Matura' : 'Klassensprecherwahl'
         },
         activeSelection() {

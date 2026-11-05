@@ -20,7 +20,7 @@ use Illuminate\Support\Facades\Route;
 // Alles wird gethrottlet
 Route::middleware(['throttle:global', 'throttle:web'])->group(function () {
 
-    Route::middleware('can:use-version-four')->group(function (): void {
+    Route::middleware('can:use-matura')->group(function (): void {
         Route::get('/00-manager', [MaturaStationController::class, 'page'])->name('matura.station');
         Route::post('/00-manager/login', [MaturaStationController::class, 'login'])->middleware('throttle:60,1')->name('matura.login');
         Route::post('/00-manager/logout', [MaturaStationController::class, 'logout'])->name('matura.logout');
@@ -28,7 +28,7 @@ Route::middleware(['throttle:global', 'throttle:web'])->group(function () {
         Route::post('/00-manager/action', [MaturaStationController::class, 'action'])->withoutMiddleware('throttle:web')->middleware('throttle:matura')->name('matura.action');
     });
 
-    Route::prefix('/admin/helpers/00-manager')->middleware(['auth:sanctum', 'web-allowed:scope:admin_shell_access', 'can:use-version-four'])->name('admin.matura.')->group(function (): void {
+    Route::prefix('/admin/helpers/00-manager')->middleware(['auth:sanctum', 'web-allowed:scope:admin_shell_access', 'can:use-matura'])->name('admin.matura.')->group(function (): void {
         Route::get('/', [MaturaController::class, 'index'])->name('index');
         Route::get('/roster', [MaturaController::class, 'roster'])->name('roster');
         Route::post('/', [MaturaController::class, 'store'])->name('store');

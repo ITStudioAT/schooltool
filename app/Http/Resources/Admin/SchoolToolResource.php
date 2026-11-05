@@ -29,6 +29,7 @@ class SchoolToolResource extends JsonResource
             ...$moduleVisibilityFields,
             ...($moduleStatusService->canManageVersionFour($request->user()) ? [
                 'version_four_visible' => $moduleStatusService->versionFourVisible(),
+                'version_four_features' => $moduleStatusService->versionFourFeatures(),
             ] : []),
             'students_timetables_admin_version' => SchoolTool::normalizeStudentsTimetablesAdminVersion(
                 $this->students_timetables_admin_version,

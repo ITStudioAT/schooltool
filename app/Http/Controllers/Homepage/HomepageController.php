@@ -108,7 +108,7 @@ class HomepageController extends Controller
         return response()->json($data, 200);
     }
 
-    public function loginSchools()
+    public function loginSchools(Request $request)
     {
         $schools = School::selectables()
             ->whereHas('licences')
@@ -116,6 +116,7 @@ class HomepageController extends Controller
 
         return response()->json([
             'schools' => SchoolResource::collection($schools),
+            'homepage_design_enabled' => app(SchoolToolModuleStatusService::class)->canAccessVersionFourFeature($request->user(), 'homepage'),
         ]);
     }
 

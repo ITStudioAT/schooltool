@@ -38,7 +38,11 @@ function renderPanel(attributes = {}) {
     })
     const store = useSchoolToolStore(pinia)
     vi.mocked(store.saveModuleStatuses).mockImplementation(async (payload) => {
-        store.data = { ...store.data, ...payload }
+        store.data = {
+            ...store.data,
+            ...payload,
+            ...(payload.version_four_features ? { version_four_features: { ...store.data.version_four_features, ...payload.version_four_features } } : {}),
+        }
         return true
     })
     render(ModuleStatusesCard, {
@@ -67,16 +71,25 @@ async function clickAndSave(button) {
 }
 
 describe('ModuleStatusesCard', () => {
-    it('saves version four visibility independently of the other modules', async () => {
-        const store = renderPanel({ version_four_visible: false })
-        const button = screen.getByRole('button', { name: 'Version 4 für andere sichtbar' })
+    it.each([
+        ['elections', 'Helpers – Klassensprecherwahl'],
+        ['matura', 'Helpers – Matura (00-Manager)'],
+        ['homepage', 'Homepage – neues Design'],
+    ])('saves the %s superadmin switch independently of other features', async (key, label) => {
+        const store = renderPanel({ version_four_features: { elections: true, matura: true, homepage: true, [key]: false } })
+        const button = screen.getByRole('button', { name: `${label}: für Superadmin sichtbar` })
 
         expect(button).toHaveAttribute('aria-pressed', 'false')
         await clickAndSave(button)
-        expect(store.saveModuleStatuses).toHaveBeenLastCalledWith({ id: 7, version_four_visible: true })
+        expect(store.saveModuleStatuses).toHaveBeenLastCalledWith({ id: 7, version_four_features: { [key]: true } })
         expect(button).toHaveAttribute('aria-pressed', 'true')
         await clickAndSave(button)
-        expect(store.saveModuleStatuses).toHaveBeenLastCalledWith({ id: 7, version_four_visible: false })
+        expect(store.saveModuleStatuses).toHaveBeenLastCalledWith({ id: 7, version_four_features: { [key]: false } })
+    })
+
+    it('does not show version four controls to accounts without superadmin configuration', () => {
+        renderPanel()
+        expect(screen.queryByRole('button', { name: /für Superadmin sichtbar/ })).not.toBeInTheDocument()
     })
 
     it('disables only unavailable user controls and preserves their stored flags', async () => {

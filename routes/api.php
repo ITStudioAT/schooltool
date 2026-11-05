@@ -155,7 +155,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     Route::post('/admin/execute_logout', [AdminController::class, 'executeLogout']);
 
     /***** HOMEPAGE ROUTES *****/
-    Route::get('/homepage/login_schools', [HomepageController::class, 'loginSchools']);
+    Route::get('/homepage/login_schools', [HomepageController::class, 'loginSchools'])->middleware(StartSession::class);
     Route::post('/homepage/login_step_email', [HomepageController::class, 'homepageLoginStepEmail'])->middleware('throttle:authentication');
     Route::post('/homepage/login_step_password', [HomepageController::class, 'homepageLoginStepPassword'])->middleware('throttle:authentication');
     Route::post('/homepage/login_step_2fa', [HomepageController::class, 'homepageLoginStep2fa'])->middleware('throttle:authentication');
@@ -1094,7 +1094,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     /* SANCTUM - admin, register_admin, teaching_admin, materials_admin, materials_moderator, teacher, lunch_admin */
     Route::middleware(['auth:sanctum', 'api-allowed:scope:admin_shell_access'])->group(function () {
         Route::post('/admin/schools/load_school_infos', [SchoolController::class, 'loadSchoolInfos']);
-        Route::get('/admin/helpers/classes', [SchoolyearController::class, 'classes'])->middleware('can:use-version-four')->name('admin.helpers.classes');
+        Route::get('/admin/helpers/classes', [SchoolyearController::class, 'classes'])->middleware('can:use-class-speaker-election')->name('admin.helpers.classes');
     });
 
     /* SANCTUM - admin */
