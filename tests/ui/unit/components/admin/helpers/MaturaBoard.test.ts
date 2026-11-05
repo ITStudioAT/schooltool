@@ -20,8 +20,8 @@ function renderBoard(data, disabled = false) {
         props: { state: data, disabled },
         global: {
             stubs: {
-                VDialog: { props: ['modelValue'], template: '<div v-if="modelValue" role="dialog"><slot /></div>' },
-                VCard: { template: '<div><slot /></div>' },
+                'v-dialog': { props: ['modelValue'], template: '<div v-if="modelValue" role="dialog"><slot /></div>' },
+                'v-card': { template: '<div><slot /></div>' },
             },
         },
     })
@@ -30,6 +30,32 @@ function renderBoard(data, disabled = false) {
 const requested = { id: 9, student_id: 1, student_name: 'Müller Änne', room_id: 1, room_name: 'Raum A', status: 'requested', requested_at: '2026-10-04T09:00:00+02:00' }
 
 describe('00-Manager station actions', () => {
+    it('aborts a correction without sending an action and clears the reason when reopened', async () => {
+        const view = renderBoard(state({ visits: [requested] }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Stornieren' }))
+        await fireEvent.update(screen.getByLabelText('Grund'), 'Verworfen')
+        await fireEvent.click(screen.getByRole('button', { name: 'Abbruch' }))
+
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+        expect(view.emitted().action).toBeUndefined()
+        await fireEvent.click(screen.getByRole('button', { name: 'Stornieren' }))
+        expect(screen.getByLabelText('Grund')).toHaveValue('')
+        expect(screen.getByRole('button', { name: 'Bestätigen' })).toBeDisabled()
+    })
+
+    it('allows the next arrival into a second toilet place and blocks further entry when full', async () => {
+        const occupied = { ...requested, id: 10, status: 'toilet', student_name: 'Gast Eins', entered_at: '2026-10-04T09:01:00+02:00' }
+        const arrived = { ...requested, id: 11, status: 'arrived', arrived_at: '2026-10-04T09:02:00+02:00' }
+        const data = state({ session: { id: 1, status: 'active', toilet_places: 2, waiting_places: 1 }, visits: [occupied, arrived], reserved: 2, capacity: 3 })
+        const view = renderBoard(data)
+        expect(screen.getByText('1 Toilettenplätze frei')).toBeInTheDocument()
+        await fireEvent.click(screen.getByRole('button', { name: 'Toilette betreten' }))
+        expect(view.emitted().action).toEqual([[{ action: 'enter', visit_id: 11, expected_status: 'arrived' }]])
+        await view.rerender({ state: { ...data, visits: [occupied, arrived, { ...occupied, id: 12, student_name: 'Gast Zwei' }] } })
+        expect(screen.getByRole('button', { name: 'Toilette betreten' })).toBeDisabled()
+        expect(screen.getByText('0 Toilettenplätze frei')).toBeInTheDocument()
+    })
+
     it('reserves capacity before allowing departure and blocks a full station', () => {
         renderBoard(state({ visits: [requested], reserved: 1 }))
         expect(screen.getByRole('button', { name: 'Platz freigeben' })).toBeDisabled()

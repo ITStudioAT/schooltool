@@ -118,6 +118,56 @@ test('capacity reserves every released place including zero waiting places', fun
     expect($session->visits()->where('status', 'approved')->count())->toBe($places + 1);
 })->with([0, 1]);
 
+test('selected classes survive saving and reopening without requiring room assignments', function () {
+    [$owner, , $year] = maturaFixture(active: false);
+    Import116::factory()->forSchool(School::findOrFail($owner->school_id))->importedBy($owner)
+        ->create(['schoolyear_id' => $year->id, 'class' => '8A']);
+    Import116::factory()->forSchool(School::findOrFail($owner->school_id))->importedBy($owner)
+        ->create(['schoolyear_id' => $year->id, 'class' => '8B']);
+    $payload = ['name' => 'Deutsch', 'exam_date' => '2027-05-04', 'schoolyear_id' => $year->id,
+        'waiting_places' => 1, 'toilet_places' => 2, 'selected_classes' => ['8A', '8B'],
+        'rooms' => [['name' => 'A', 'student_ids' => [], 'manual_students' => [['name' => 'Gast Eins']]]]];
+
+    $id = $this->actingAs($owner)->postJson(route('admin.matura.store'), $payload)->assertCreated()->json('id');
+    $this->getJson(route('admin.matura.show', $id))->assertJsonPath('session.selected_classes', ['8A', '8B'])
+        ->assertJsonPath('session.toilet_places', 2)->assertJsonPath('capacity', 3);
+    unset($payload['selected_classes'], $payload['toilet_places']);
+    $payload['name'] = 'Deutsch geändert';
+    $this->putJson(route('admin.matura.update', $id), $payload)->assertOk();
+    $this->putJson(route('admin.matura.lifecycle', $id), ['status' => 'active', 'waiting_places' => 1])->assertOk()
+        ->assertJsonPath('session.selected_classes', ['8A', '8B'])->assertJsonPath('session.toilet_places', 2);
+    $payload['selected_classes'] = ['Fremde Klasse'];
+    $this->postJson(route('admin.matura.store'), $payload)->assertUnprocessable();
+    $this->assertDatabaseHas('matura_sessions', ['id' => $id, 'name' => 'Deutsch geändert']);
+});
+
+test('multiple toilet places enforce the configured limit and preserve arrival order', function () {
+    [$owner, $session] = maturaFixture(1);
+    $this->actingAs($owner)->putJson(route('admin.matura.lifecycle', $session), [
+        'status' => 'active', 'waiting_places' => 1, 'toilet_places' => 2,
+    ])->assertOk()->assertJsonPath('capacity', 3);
+    $visits = [];
+    foreach ([0, 1, 2] as $index) {
+        $visit = maturaRequest($this, $session, $index);
+        maturaAction($this, $session, 'approve', $visit)->assertOk();
+        maturaAction($this, $session, 'depart', $visit)->assertOk();
+        maturaAction($this, $session, 'arrive', $visit)->assertOk();
+        $visits[] = $visit;
+    }
+
+    maturaAction($this, $session, 'enter', $visits[1])->assertConflict();
+    maturaAction($this, $session, 'enter', $visits[0])->assertOk();
+    maturaAction($this, $session, 'enter', $visits[1])->assertOk();
+    maturaAction($this, $session, 'enter', $visits[2])->assertConflict();
+    $this->putJson(route('admin.matura.lifecycle', $session), [
+        'status' => 'active', 'waiting_places' => 3, 'toilet_places' => 1,
+    ])->assertConflict();
+    expect($session->setupConfiguration()['toilet_places'])->toBe(2);
+    maturaAction($this, $session, 'exit', $visits[0])->assertOk();
+    maturaAction($this, $session, 'enter', $visits[2])->assertOk();
+    expect($session->visits()->where('status', 'toilet')->count())->toBe(2);
+});
+
 test('requests and transitions are idempotent and reject duplicate or stale actions', function () {
     [$owner, $session] = maturaFixture();
     $this->actingAs($owner);

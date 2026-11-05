@@ -24,6 +24,9 @@
 .zero-button--secondary { background: #edf4f3; color: #214b4d !important; border-color: #d8e5e3; }
 .zero-button--secondary:hover:not(:disabled) { background: #e2edeb; }
 .zero-button:disabled, .zero-link:disabled { opacity: .45; cursor: not-allowed; }
+.zero-cancel { border-color: #b43c3c; background: white; color: #a22d2d !important; }
+.zero-cancel:hover:not(:disabled) { background: #fff1f1; transform: none; }
+.zero-dialog-actions { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
 .zero-link { min-height: 44px; padding: 8px; color: #246661; font-size: .8rem; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 .zero-manager :focus-visible, .zero-field textarea:focus-visible { outline: 3px solid #dc9c40; outline-offset: 3px; }
 .zero-section-title { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 0 0 18px; }

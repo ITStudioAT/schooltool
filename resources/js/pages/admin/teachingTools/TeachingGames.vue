@@ -1,5 +1,5 @@
 <template>
-    <section class="teaching-games">
+    <section class="teaching-games" :class="{ 'teaching-games--selection': selection }">
         <template v-if="['number-systems', 'networks'].includes(game)">
             <RouterLink to="/admin/teaching-tools/games" class="teaching-games__back">
                 <v-icon icon="mdi-arrow-left" size="18" aria-hidden="true" />
@@ -81,6 +81,9 @@ const emit = defineEmits(['select'])
 }
 
 .teaching-games__grid li { min-width: 0; }
+.teaching-games--selection .teaching-games__grid { grid-auto-rows: 1fr; }
+.teaching-games--selection .game-tile { width: 100%; height: 100%; min-width: 0; min-height: 8rem; aspect-ratio: auto; box-sizing: border-box; }
+.teaching-games--selection .game-tile__caption { min-height: 3rem; }
 .game-tile {
     display: flex;
     flex-direction: column;

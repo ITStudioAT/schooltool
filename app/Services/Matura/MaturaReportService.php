@@ -31,6 +31,7 @@ class MaturaReportService
     public function state(MaturaSession $session, array $actor): array
     {
         $session->load(['rooms', 'students', 'accesses']);
+        $configuration = $session->setupConfiguration();
         $visits = $session->visits()->with(['student', 'room'])->whereIn('status', MaturaVisit::Active)->orderBy('id')->get();
         $accesses = $session->accesses->keyBy('id');
         $supervisor = function (?int $id) use ($accesses): ?array {
@@ -42,7 +43,7 @@ class MaturaReportService
         $currentId = $roomId === null ? $session->station_access_id : $session->rooms->firstWhere('id', $roomId)?->supervisor_access_id;
 
         return [
-            'session' => $session->only(['id', 'name', 'schoolyear_id', 'waiting_places', 'status']) + ['exam_date' => $session->exam_date->format('Y-m-d')],
+            'session' => $session->only(['id', 'name', 'schoolyear_id', 'waiting_places', 'status']) + ['exam_date' => $session->exam_date->format('Y-m-d')] + $configuration,
             'actor' => $actor + ['owns_station' => $actor['manager'] || (int) $currentId === $actor['access_id'], 'current_supervisor' => $supervisor($currentId), 'current_access_id' => $currentId],
             'rooms' => $session->rooms->map(fn ($room): array => [
                 'id' => $room->id, 'name' => $room->name,
@@ -64,7 +65,7 @@ class MaturaReportService
                 return $data;
             }),
             'reserved' => $visits->whereIn('status', MaturaVisit::Reserved)->count(),
-            'capacity' => 1 + $session->waiting_places,
+            'capacity' => $configuration['toilet_places'] + $session->waiting_places,
             'server_time' => now()->toIso8601String(),
             'accesses' => $actor['manager'] ? $session->accesses->map(fn ($access): array => $access->toArray() + ['valid' => $access->isValid()]) : [],
         ];

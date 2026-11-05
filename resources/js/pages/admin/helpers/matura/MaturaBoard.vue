@@ -13,16 +13,16 @@
             <span v-else class="zero-badge zero-badge--green">✓ Aufsicht aktiv</span>
         </div>
         <div class="zero-metrics">
-            <section class="zero-metric" :class="toilet ? 'zero-metric--occupied' : 'zero-metric--free'">
-                <span class="zero-eyebrow">TOILETTE</span><strong>{{ toilet ? 'Belegt' : 'Frei' }}</strong>
-                <span>{{ toilet ? toilet.student_name : 'Ein Platz · gemeinsam koordiniert' }}</span>
-                <small v-if="toilet">{{ toilet.room_name }} · seit {{ time(toilet.entered_at) }}</small>
+            <section class="zero-metric" :class="toilets.length >= toiletPlaces ? 'zero-metric--occupied' : 'zero-metric--free'">
+                <span class="zero-eyebrow">AUF DER TOILETTE</span><strong>{{ toilets.length }} <small>/ {{ toiletPlaces }}</small></strong>
+                <span>{{ toiletPlaces - toilets.length }} Toilettenplätze frei</span>
+                <small v-for="visit in toilets" :key="visit.id">{{ visit.student_name }} · {{ visit.room_name }} · seit {{ time(visit.entered_at) }}</small>
             </section>
             <section class="zero-metric">
                 <span class="zero-eyebrow">RESERVIERT & BELEGT</span><strong>{{ state.reserved }} <small>/ {{ state.capacity }}</small></strong>
                 <span>{{ Math.max(0, state.capacity - state.reserved) }} Plätze verfügbar</span>
                 <div class="zero-slots" aria-hidden="true"><i v-for="slot in state.capacity" :key="slot" :class="{ filled: slot <= state.reserved }"></i></div>
-                <small>1 Toilette + {{ state.session.waiting_places }} Warteplätze</small>
+                <small>{{ toiletPlaces }} Toilettenplätze + {{ state.session.waiting_places }} Warteplätze</small>
             </section>
             <section class="zero-metric">
                 <span class="zero-eyebrow">ANFRAGEN IM RAUM</span><strong>{{ requested.length }}</strong>
@@ -30,6 +30,7 @@
                 <small>Freigaben in der Reihenfolge der Anfrage</small>
             </section>
         </div>
+        <p class="zero-help mb-4">Anmelden → Freigeben → Losschicken → Ankunft bestätigen → Toilette betreten / verlassen → Zurück im Raum. Jede Karte zeigt den nächsten möglichen Schritt.</p>
 
         <section v-if="state.actor.manager" class="zero-room-strip" aria-label="Räume und Aufsichten">
             <div v-for="room in state.rooms" :key="room.id" class="zero-room-pill">
@@ -73,10 +74,10 @@
                 <p class="my-3">{{ correctionVisit?.student_name }} · {{ correctionVisit?.room_name }}</p>
                 <p v-if="correctionAction === 'void'" class="mb-3">Der Eintrag bleibt nachvollziehbar erhalten und wird aus den tatsächlichen Toilettengängen ausgeschlossen. Erst bestätigen, wenn die Person wieder sicher im Raum ist.</p>
                 <label class="zero-field">Grund<textarea v-model="reason" rows="3" maxlength="1000" /></label>
-                <div class="zero-actions mt-4"><button class="zero-button zero-button--secondary" @click="correctionOpen = false">Abbrechen</button><button class="zero-button" :disabled="reason.trim().length < 3 || disabled" @click="submitCorrection">Bestätigen</button></div>
+                <div class="zero-dialog-actions mt-4"><button class="zero-button zero-cancel" @click="correctionOpen = false; reason = ''">Abbruch</button><button class="zero-button" :disabled="reason.trim().length < 3 || disabled" @click="submitCorrection">Bestätigen</button></div>
             </v-card>
         </v-dialog>
-        <v-dialog v-model="claimOpen" max-width="480"><v-card class="pa-5"><h2>Aufsicht übernehmen</h2><p class="my-4">Sie lösen {{ state.actor.current_supervisor?.name }} an dieser Station ab. Die bisherige Aufsicht kann danach keine Schritte mehr bestätigen.</p><div class="zero-actions"><button class="zero-button zero-button--secondary" @click="claimOpen = false">Abbrechen</button><button class="zero-button" @click="confirmClaim">Jetzt übernehmen</button></div></v-card></v-dialog>
+        <v-dialog v-model="claimOpen" max-width="480"><v-card class="pa-5"><h2>Aufsicht übernehmen</h2><p class="my-4">Sie lösen {{ state.actor.current_supervisor?.name }} an dieser Station ab. Die bisherige Aufsicht kann danach keine Schritte mehr bestätigen.</p><div class="zero-dialog-actions"><button class="zero-button zero-cancel" @click="claimOpen = false">Abbruch</button><button class="zero-button" @click="confirmClaim">Jetzt übernehmen</button></div></v-card></v-dialog>
     </div>
 </template>
 
@@ -92,7 +93,8 @@ const correctionAction = ref('')
 const correctionVisit = ref(null)
 const reason = ref('')
 const claimOpen = ref(false)
-const toilet = computed(() => props.state.visits.find((visit) => visit.status === 'toilet'))
+const toilets = computed(() => props.state.visits.filter((visit) => visit.status === 'toilet'))
+const toiletPlaces = computed(() => props.state.session.toilet_places ?? 1)
 const requested = computed(() => props.state.visits.filter((visit) => visit.status === 'requested'))
 const cannotAct = computed(() => props.disabled || !props.state.actor.owns_station || props.state.session.status !== 'active')
 const isStation = computed(() => !props.state.actor.manager && props.state.actor.room_id === null)
@@ -117,7 +119,7 @@ function actionsFor(visit) {
     }
     if (props.state.actor.manager || props.state.actor.room_id === null) {
         if (visit.status === 'departed') actions.push({ action: 'arrive', label: 'Ankunft bestätigen' })
-        if (visit.status === 'arrived') actions.push({ action: 'enter', label: 'Toilette betreten', disabled: !!toilet.value || props.state.visits.filter((row) => row.status === 'arrived').sort((a, b) => a.arrived_at.localeCompare(b.arrived_at) || a.id - b.id)[0]?.id !== visit.id })
+        if (visit.status === 'arrived') actions.push({ action: 'enter', label: 'Toilette betreten', disabled: toilets.value.length >= toiletPlaces.value || props.state.visits.filter((row) => row.status === 'arrived').sort((a, b) => a.arrived_at.localeCompare(b.arrived_at) || a.id - b.id)[0]?.id !== visit.id })
         if (visit.status === 'toilet') actions.push({ action: 'exit', label: 'Toilette verlassen' })
     }
     return actions

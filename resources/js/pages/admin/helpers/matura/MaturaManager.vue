@@ -8,29 +8,45 @@
         <div v-if="!ready" class="zero-empty"><h2>Der 00-Manager ist vorbereitet.</h2><p>Die einmalige Freischaltung durch die Administration steht noch aus.</p></div>
         <template v-else>
             <div v-if="!setupOpen" class="zero-toolbar">
-                <label class="zero-grow">Matura auswählen<select v-model="selectedId"><option :value="null">Alle Maturen</option><option v-for="session in sessions" :key="session.id" :value="session.id">{{ session.name }} · {{ date(session.exam_date) }} · {{ lifecycleLabels[session.status] }}</option></select></label>
-                <button class="zero-button" :disabled="!schoolyearId || busy" @click="newSession">+ Neue Matura</button>
+                <label v-if="!state" class="zero-grow">Matura auswählen<select v-model="selectedId"><option :value="null">Alle Maturen</option><option v-for="session in sessions" :key="session.id" :value="session.id">{{ session.name }} · {{ date(session.exam_date) }} · {{ lifecycleLabels[session.status] }}</option></select></label>
+                <button v-if="!state" class="zero-button" :disabled="!schoolyearId || busy" @click="newSession">+ Neue Matura</button>
                 <button v-if="state" class="zero-button zero-button--secondary" @click="selectedId = null">Übersicht</button>
             </div>
             <p v-if="loading && !state" class="zero-loading" role="status">Koordination wird geladen …</p>
-            <p v-if="setupOpen" class="zero-help mb-3" role="status">{{ editingRoomId ? 'Mit Übernehmen speicherst du diesen Raum. Abbrechen lässt die gespeicherten Angaben unverändert.' : draftWarning || 'Deine Eingaben bleiben in diesem Browser gespeichert. Abbrechen behält den Entwurf.' }}</p>
-            <MaturaSetup v-if="setupOpen" :key="setupKey || setupYear" :roster="roster.students" :schoolyear-id="setupYear" :existing="editing ? state : null" :busy="busy" :draft="editingRoomId ? null : setupDraft" :initial-step="editing ? editingSetupStep : null" :room-only="Boolean(editingRoomId)" :initial-room-index="editingRoomIndex" @draft="persistDraft" @save="saveSetup" @cancel="cancelSetup" />
-            <MaturaSetup v-else-if="state && state.actor.manager" :key="state.session.id" :existing="state" :busy="busy" :initial-step="selectedSetupStep" view-only @step="selectedSetupStep = $event">
-                <template #edit><button v-if="state.session.status === 'draft' && !state.accesses.length" class="zero-button mt-4" :disabled="busy || stale" @click="editSetup(selectedSetupStep)">Matura bearbeiten</button></template>
-                <template #room-actions="{ room }"><div v-if="canEditRooms" class="zero-actions mt-3"><button class="zero-button zero-button--secondary" :disabled="busy || stale" @click="editRoom(room.id)">Bearbeiten</button><button class="zero-link" :disabled="busy || stale || state.rooms.length <= 1" :title="state.rooms.length <= 1 ? 'Mindestens ein Raum muss erhalten bleiben.' : undefined" @click="confirmRoomDeletion(room.id)">Löschen</button></div></template>
+            <p v-if="setupOpen && !classesOnly && !roomsOnly" class="zero-help mb-3" role="status">{{ editingRoomId ? 'Änderungen speichern gilt nur für diesen Raum. Abbruch lässt die gespeicherten Angaben unverändert.' : draftWarning || 'Deine Eingaben bleiben als Entwurf in diesem Browser erhalten, bis du speicherst.' }}</p>
+            <MaturaSetup v-if="setupOpen" :key="setupKey || setupYear" :roster="roster.students" :schoolyear-id="setupYear" :existing="editing ? state : null" :busy="busy" :draft="editingRoomId || classesOnly || roomsOnly ? null : setupDraft" :classes-only="classesOnly" :rooms-only="roomsOnly" :initial-step="editing ? editingSetupStep : null" :room-only="Boolean(editingRoomId)" :initial-room-index="editingRoomIndex" @draft="persistDraft" @save="saveSetup" @cancel="cancelSetup" />
+            <template v-else-if="state && state.actor.manager">
+                <nav class="zero-tabs" aria-label="00-Manager Ansichten"><button :class="{ active: tab === 'setup' }" :aria-pressed="tab === 'setup'" @click="tab = 'setup'">Vorbereitung</button><button :class="{ active: tab === 'access' }" :aria-pressed="tab === 'access'" @click="openAccess">Aufsichten & Start</button><button :class="{ active: tab === 'live' }" :aria-pressed="tab === 'live'" @click="tab = 'live'">Live-Übersicht</button><button :class="{ active: tab === 'report' }" :aria-pressed="tab === 'report'" @click="tab = 'report'">Protokoll & PDF</button></nav>
+                <MaturaSetup v-if="tab === 'setup'" :key="state.session.id" :existing="state" :busy="busy" :initial-step="selectedSetupStep" view-only @step="selectedSetupStep = $event">
+                <template #heading><div class="zero-matura-heading"><h2>{{ state.session.name }}</h2><span>{{ date(state.session.exam_date, true) }}</span><button v-if="canEditRooms" type="button" class="zero-heading-edit" aria-label="Name und Datum bearbeiten" title="Name und Datum bearbeiten" :disabled="busy || stale" @click="editMetadata"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m16 3 5 5-12 12-6 1 1-6L16 3Z M13 6l5 5" /></svg></button></div></template>
+                <template #header-editor>
+                    <form v-if="metadataOpen" ref="metadataForm" class="zero-panel zero-metadata-editor" aria-label="Name und Datum bearbeiten" @submit.prevent="saveMetadata">
+                        <p v-if="metadataError" class="zero-error" role="alert">{{ metadataError }}</p>
+                        <div class="zero-form-grid"><label>Name der Matura<input ref="metadataNameInput" v-model="metadata.name" required maxlength="160" :disabled="busy"></label><label>Prüfungsdatum<input v-model="metadata.exam_date" type="date" required :disabled="busy"></label></div>
+                        <div class="zero-dialog-actions mt-3"><button type="button" class="zero-button zero-cancel" :disabled="busy" @click="metadataOpen = false">Abbruch</button><button type="submit" class="zero-button" :disabled="busy || stale || !canEditRooms">Speichern</button></div>
+                    </form>
+                </template>
+                <template #edit><button v-if="canEditRooms" class="zero-button mt-4" :disabled="busy || stale" @click="editSetup(selectedSetupStep)">Matura bearbeiten</button><p v-else class="zero-help mt-3">Die Vorbereitung ist nach Vergabe von Zugängen oder dem Start geschützt.</p></template>
+                <template #room-actions="{ room }"><div v-if="canEditRooms" class="zero-actions mt-3"><button class="zero-button zero-button--secondary" :disabled="busy || stale" @click="editRoom(room.id)">Bearbeiten</button></div></template>
+                <template #rooms-edit><button v-if="canEditRooms" class="zero-button my-4" :disabled="busy || stale" @click="editSetup(1)">Räume bearbeiten</button><p v-else class="zero-help my-3">Räume und Zuordnungen sind nach Vergabe von Zugängen oder dem Start geschützt.</p></template>
                 <template #flow>
-                <div class="zero-section-title"><p class="zero-help">{{ date(state.session.exam_date) }} · {{ lifecycleLabels[state.session.status] }}</p><span class="zero-badge">Leitung</span></div>
-                <nav class="zero-tabs" aria-label="00-Manager Ansichten"><button :class="{ active: tab === 'live' }" @click="tab = 'live'">Koordination</button><button v-if="state.actor.manager" :class="{ active: tab === 'access' }" @click="openAccess">Aufsichten & Einrichtung</button><button v-if="state.actor.manager" :class="{ active: tab === 'report' }" @click="tab = 'report'">Protokoll & PDF</button></nav>
+                    <h3>Kapazität und Ablauf</h3><p class="zero-confirmed-value my-3">{{ state.session.toilet_places ?? 1 }} gleichzeitig auf der Toilette · {{ state.session.waiting_places }} Warteplätze an der Zwischenstation</p>
+                    <p class="zero-help mb-4">Anmelden → Platz freigeben → Losschicken → Ankunft → Toilette → Rückkehr. Freigegebene Personen reservieren bereits einen Platz.</p>
+                    <button class="zero-button" :disabled="busy || stale" @click="openAccess">{{ state.session.status === 'draft' ? 'Aufsichten zuordnen und Matura starten' : 'Aufsichten und Kapazität anzeigen' }}</button>
+                </template>
+                </MaturaSetup>
                 <MaturaBoard v-if="tab === 'live'" :key="state.session.id" :state="state" :disabled="busy || stale" @action="runAction" />
                 <MaturaReport v-if="tab === 'report'" :key="state.session.id" :state="state" :busy="busy" @action="runAction" />
                 <section v-if="tab === 'access'" class="zero-panel">
-                    <div class="zero-section-title"><div><span class="zero-eyebrow">PRÜFUNGSLEITUNG</span><h2>Einrichtung & Betrieb</h2></div><button v-if="state.session.status === 'draft' && !state.accesses.length" class="zero-link" @click="editSetup(1)">Räume und Schüler bearbeiten</button></div>
-                    <p class="zero-help mb-4">Nach Vergabe der Zugänge bleiben die Räume fest zugeordnet. Zugänge sind persönlich, auf eine Station begrenzt und jederzeit widerrufbar.</p>
+                    <div class="zero-section-title"><div><span class="zero-eyebrow">PRÜFUNGSLEITUNG</span><h2>Einrichtung & Betrieb</h2></div><button v-if="state.session.status === 'draft' && !state.accesses.length" class="zero-link" @click="editSetup(1)">Räume bearbeiten</button></div>
+                    <p class="zero-help mb-4">Prüfe die Kapazität, ordne Aufsichten den Räumen und der Zwischenstation zu und starte anschließend die Matura. Die Leitung kann alle Stationen bedienen.</p>
                     <div class="zero-actions">
-                        <label>Warteplätze<input v-model.number="waitingPlaces" type="number" min="0" max="10"></label>
-                        <button v-if="state.session.status !== 'closed'" class="zero-button" :disabled="busy" @click="changeLifecycle('active')">{{ state.session.status === 'draft' ? 'Matura starten' : 'Kapazität speichern' }}</button>
+                        <label>Gleichzeitig auf der Toilette<input v-model.number="toiletPlaces" type="number" min="1" max="10" :disabled="state.session.status === 'closed'"></label>
+                        <label>Warteplätze an der Zwischenstation<input v-model.number="waitingPlaces" type="number" min="0" max="10" :disabled="state.session.status === 'closed'"></label>
+                        <button v-if="state.session.status !== 'closed'" class="zero-button" :disabled="busy || stale" @click="changeLifecycle('active')">{{ state.session.status === 'draft' ? 'Matura starten' : 'Kapazität speichern' }}</button>
                         <button v-if="state.session.status === 'active'" class="zero-button zero-button--secondary" :disabled="busy || state.visits.length > 0" @click="closeDialog = true">Matura abschließen</button>
                     </div>
+                    <p class="zero-help mt-3">{{ toiletPlaces + waitingPlaces }} Plätze insgesamt. Anfragen warten im Prüfungsraum, sobald alle Plätze reserviert sind. Aufsichten können auch nach dem Start ergänzt werden.</p>
                     <p v-if="state.visits.length" class="zero-help mt-2">Abschluss möglich, sobald alle offenen Gänge beendet sind.</p>
                     <template v-if="state.session.status !== 'closed'">
                         <hr class="zero-divider"><h2>Aufsicht zuordnen</h2>
@@ -47,8 +63,7 @@
                     <div v-if="!state.accesses.length" class="zero-help">Noch keine Aufsichten zugeordnet.</div>
                     <article v-for="access in state.accesses" :key="access.id" class="zero-access-row"><div><strong>{{ access.name }}</strong><small>{{ roomName(access.matura_room_id) }} · {{ access.user_id ? 'Schulkonto' : 'Gastzugang' }} · gültig bis {{ time(access.expires_at, true) }}</small></div><span class="zero-badge">{{ access.valid ? 'Gültig' : 'Abgelaufen / widerrufen' }}</span><button v-if="access.valid" class="zero-link" :disabled="busy" @click="revokeAccess(access.id)">Widerrufen</button></article>
                 </section>
-                </template>
-            </MaturaSetup>
+            </template>
             <template v-else-if="state">
                 <div class="zero-section-title"><div><h2>{{ state.session.name }}</h2><p class="zero-help">{{ date(state.session.exam_date) }} · {{ lifecycleLabels[state.session.status] }}</p></div><span class="zero-badge">{{ state.actor.name }}</span></div>
                 <MaturaBoard :key="state.session.id" :state="state" :disabled="busy || stale" @action="runAction" />
@@ -58,8 +73,7 @@
                 <div v-if="!sessions.length" class="zero-empty"><span class="zero-empty-symbol">00</span><h2>Die nächste Matura kann kommen.</h2><p>Räume, Schüler und Aufsichten einmal einrichten — danach gemeinsam koordinieren.</p><button class="zero-button mt-4" :disabled="!schoolyearId" @click="newSession">Erste Matura einrichten</button><p v-if="!schoolyearId" class="zero-help mt-3">Bitte zuerst ein Schuljahr auswählen.</p></div>
             </div>
         </template>
-        <v-dialog v-model="closeDialog" max-width="480"><v-card class="pa-5"><h2>Matura abschließen?</h2><p class="my-4">Alle Stationszugänge werden beendet. Das Protokoll und die PDF-Auswertung bleiben für die Leitung verfügbar.</p><div class="zero-actions"><button class="zero-button zero-button--secondary" @click="closeDialog = false">Abbrechen</button><button class="zero-button" :disabled="busy" @click="changeLifecycle('closed')">Abschließen</button></div></v-card></v-dialog>
-        <v-dialog v-model="deleteRoomDialog" max-width="480"><v-card class="pa-5"><h2>Raum {{ roomToDelete?.name }} löschen?</h2><p class="my-4">Der Raum und seine Schülerzuordnungen werden aus dieser Matura entfernt. Die Schüler im Import bleiben erhalten.</p><div class="zero-actions"><button class="zero-button zero-button--secondary" :disabled="busy" @click="deleteRoomDialog = false">Abbrechen</button><button class="zero-button" :disabled="busy || stale || !canEditRooms || state.rooms.length <= 1 || !roomToDelete" @click="deleteRoom">Raum löschen</button></div></v-card></v-dialog>
+        <v-dialog v-model="closeDialog" max-width="480"><v-card class="pa-5"><h2>Matura abschließen?</h2><p class="my-4">Alle Stationszugänge werden beendet. Das Protokoll und die PDF-Auswertung bleiben für die Leitung verfügbar.</p><div class="zero-dialog-actions"><button class="zero-button zero-cancel" @click="closeDialog = false">Abbruch</button><button class="zero-button" :disabled="busy" @click="changeLifecycle('closed')">Abschließen</button></div></v-card></v-dialog>
     </div>
 </template>
 <script setup>
@@ -91,45 +105,50 @@ const error = ref('')
 const lastUpdated = ref(null)
 const tab = ref('live')
 const setupOpen = ref(false)
-const selectedSetupStep = ref(2)
+const selectedSetupStep = ref(0)
 const editingSetupStep = ref(null)
 const editingRoomId = ref(null)
 const editingRoomIndex = ref(0)
-const deleteRoomDialog = ref(false)
-const deleteRoomId = ref(null)
 const canEditRooms = computed(() => Boolean(state.value?.actor.manager && state.value.session.status === 'draft' && !state.value.accesses.length))
-const roomToDelete = computed(() => state.value?.rooms.find((room) => room.id === deleteRoomId.value))
 const editing = ref(false)
+const classesOnly = computed(() => editing.value && editingSetupStep.value === 0 && !editingRoomId.value)
+const roomsOnly = computed(() => editing.value && editingSetupStep.value === 1 && !editingRoomId.value)
 const setupYear = ref(null)
 const setupKey = ref(null)
 const setupDraft = ref(null)
 const draftWarning = ref('')
 const waitingPlaces = ref(1)
+const toiletPlaces = ref(1)
 const invitation = reactive({ room_id: null, user_id: null, name: '', hours: 24 })
 const invitationUrl = ref('')
 const copied = ref(false)
 const closeDialog = ref(false)
+const metadataOpen = ref(false)
+const metadata = reactive({ name: '', exam_date: '' })
+const metadataForm = ref(null)
+const metadataNameInput = ref(null)
+const metadataError = ref('')
 const lifecycleLabels = { draft: 'Vorbereitung', active: 'Läuft', closed: 'Abgeschlossen' }
 let timer
 let destroyed = false
 let loadingState = null
 let contextVersion = 0
 let listedYear = null
-function date(value) { return new Intl.DateTimeFormat('de-AT', { timeZone: 'Europe/Vienna', day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(value)) }
+function date(value, weekday = false) { return new Intl.DateTimeFormat('de-AT', { timeZone: 'Europe/Vienna', ...(weekday ? { weekday: 'long' } : {}), day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(value)) }
 function roomName(id) { return id === null ? 'Zwischenstation' : state.value.rooms.find((room) => room.id === id)?.name }
 function isCurrent(version) { return version === contextVersion && !destroyed }
 function isListed(id) { return schoolyearId.value && listedYear === schoolyearId.value && sessions.value.some((session) => Number(session.id) === Number(id)) }
 function resetDetails() {
+    metadataOpen.value = false
+    metadataError.value = ''
     state.value = null
     roster.value = { students: [], supervisors: [] }
     tab.value = 'live'
     setupOpen.value = false
-    selectedSetupStep.value = 2
+    selectedSetupStep.value = 0
     editingSetupStep.value = null
     editingRoomId.value = null
     editingRoomIndex.value = 0
-    deleteRoomDialog.value = false
-    deleteRoomId.value = null
     editing.value = false
     setupYear.value = null
     setupKey.value = null
@@ -137,6 +156,7 @@ function resetDetails() {
     draftWarning.value = ''
     closeDialog.value = false
     waitingPlaces.value = 1
+    toiletPlaces.value = 1
     Object.assign(invitation, { room_id: null, user_id: null, name: '', hours: 24 })
     invitationUrl.value = ''
     copied.value = false
@@ -164,7 +184,7 @@ async function loadState() {
     loadingState = request
     try {
         const response = await axios.get(show.url(id), { timeout: 12000 })
-        if (id === selectedId.value && isCurrent(version)) { if (stale.value) error.value = ''; state.value = response.data; stale.value = false; lastUpdated.value = response.data.server_time }
+        if (id === selectedId.value && isCurrent(version)) { if (stale.value) error.value = ''; if (!state.value) tab.value = response.data.session.status === 'draft' ? 'setup' : 'live'; state.value = response.data; stale.value = false; lastUpdated.value = response.data.server_time }
     } catch (failure) { if (id === selectedId.value && isCurrent(version)) { stale.value = true; error.value = errorMessage(failure); if ([401, 403, 404].includes(failure.response?.status)) state.value = null } }
     finally { if (loadingState === request) loadingState = null }
 }
@@ -192,7 +212,7 @@ function openSetup(isEditing) {
     setupOpen.value = true
 }
 function persistDraft(data) {
-    if (!setupOpen.value || editingRoomId.value) return
+    if (!setupOpen.value || editingRoomId.value || classesOnly.value || roomsOnly.value) return
     const key = setupDraftKey(draftScope.value, editing.value ? selectedId.value : null)
     if (key !== setupKey.value) return
     const draftStored = writeSetupDraft(key, data)
@@ -201,7 +221,8 @@ function persistDraft(data) {
     draftWarning.value = stored ? '' : 'Der Browser kann den Entwurf nicht sichern. Bitte vor dem Neuladen speichern.'
 }
 function cancelSetup() {
-    if (!editingRoomId.value) removeSetupDraft(draftScope.value ? `${draftScope.value}:active` : null)
+    if (!editingRoomId.value && !classesOnly.value && !roomsOnly.value) removeSetupDraft(setupKey.value)
+    if (!editingRoomId.value && !classesOnly.value && !roomsOnly.value) removeSetupDraft(draftScope.value ? `${draftScope.value}:active` : null)
     setupOpen.value = false
     editingRoomId.value = null
 }
@@ -265,6 +286,8 @@ function savedSetupData(rooms = state.value.rooms) {
     return {
         schoolyear_id: detail.session.schoolyear_id, name: detail.session.name,
         exam_date: detail.session.exam_date.slice(0, 10), waiting_places: detail.session.waiting_places,
+        ...(detail.session.selected_classes ? { selected_classes: [...detail.session.selected_classes] } : {}),
+        ...(detail.session.toilet_places ? { toilet_places: detail.session.toilet_places } : {}),
         rooms: rooms.map((room) => {
             const students = detail.students.filter((student) => student.matura_room_id === room.id)
             return { name: room.name, student_ids: students.filter((student) => student.import116_id).map((student) => student.import116_id),
@@ -272,19 +295,25 @@ function savedSetupData(rooms = state.value.rooms) {
         }),
     }
 }
-function confirmRoomDeletion(id) {
-    if (!canEditRooms.value || busy.value || stale.value || state.value.rooms.length <= 1 || !state.value.rooms.some((room) => room.id === id)) return
-    deleteRoomId.value = id
-    deleteRoomDialog.value = true
+async function editMetadata() {
+    if (!canEditRooms.value || busy.value || stale.value) return
+    Object.assign(metadata, { name: state.value.session.name, exam_date: state.value.session.exam_date.slice(0, 10) })
+    metadataError.value = ''
+    metadataOpen.value = true
+    await nextTick()
+    metadataNameInput.value?.focus()
 }
-async function deleteRoom() {
-    if (!canEditRooms.value || stale.value || state.value.rooms.length <= 1 || !roomToDelete.value) return
-    const data = savedSetupData(state.value.rooms.filter((room) => room.id !== deleteRoomId.value))
+async function saveMetadata() {
+    if (!canEditRooms.value || busy.value || stale.value) return
+    metadataError.value = ''
+    if (!metadata.name.trim()) { metadataError.value = 'Bitte gib der Matura einen Namen.'; return }
+    if (!metadataForm.value.reportValidity()) return
+    const sessionId = selectedId.value
+    const data = { ...savedSetupData(), name: metadata.name.trim(), exam_date: metadata.exam_date }
     await mutate(async (current) => {
-        await axios.put(update.url(selectedId.value), data)
-        if (!current()) return
-        deleteRoomDialog.value = false
-        deleteRoomId.value = null
+        await axios.put(update.url(sessionId), data)
+        if (!current() || selectedId.value !== sessionId) return
+        metadataOpen.value = false
         await list()
     })
 }
@@ -298,6 +327,26 @@ async function mutate(callback) {
 }
 async function saveSetup(data) {
     const roomId = editingRoomId.value
+    const savingClasses = classesOnly.value
+    const savingRooms = roomsOnly.value
+    if (savingRooms) {
+        if (!canEditRooms.value || data.rooms.some((room) => room.room_id !== null && !state.value.rooms.some((savedRoom) => savedRoom.id === room.room_id))) return
+        const editedRooms = data.rooms
+        data = savedSetupData()
+        data.rooms = editedRooms.map((room) => {
+            const savedRoom = state.value.rooms.find((item) => item.id === room.room_id)
+            return savedRoom ? { ...savedSetupData([savedRoom]).rooms[0], name: room.name } : { name: room.name, student_ids: [], manual_students: [] }
+        })
+    }
+    if (savingClasses) {
+        if (!canEditRooms.value) return
+        const selectedClasses = data.selected_classes
+        data = savedSetupData()
+        data.selected_classes = selectedClasses
+        for (const room of data.rooms) {
+            room.student_ids = room.student_ids.filter((id) => state.value.students.some((student) => student.import116_id === id && selectedClasses.includes(student.class_name)))
+        }
+    }
     if (roomId) {
         if (!canEditRooms.value || !state.value.rooms.some((room) => room.id === roomId)) {
             error.value = 'Dieser Raum kann nicht mehr bearbeitet werden. Bitte die Matura neu öffnen.'
@@ -318,7 +367,7 @@ async function saveSetup(data) {
     const savedDraft = JSON.stringify(readSetupDraft(key))
     await mutate(async (current) => {
         const response = sessionId ? await axios.put(update.url(sessionId), data) : await axios.post(store.url(), data)
-        if (!roomId && JSON.stringify(readSetupDraft(key)) === savedDraft) {
+        if (!roomId && !savingClasses && !savingRooms && JSON.stringify(readSetupDraft(key)) === savedDraft) {
             if (readActiveSetup(scope)?.sessionId === sessionId) removeSetupDraft(`${scope}:active`)
             removeSetupDraft(key)
         }
@@ -330,8 +379,11 @@ async function saveSetup(data) {
     })
 }
 async function runAction(data) { await mutate(async () => { await axios.post(action.url(selectedId.value), { ...data, operation_key: operationKey() }) }) }
-async function changeLifecycle(status) { await mutate(async (current) => { await axios.put(lifecycle.url(selectedId.value), { status, waiting_places: waitingPlaces.value }); if (!current()) return; closeDialog.value = false; await list() }) }
-async function openAccess() { const version = contextVersion; tab.value = 'access'; waitingPlaces.value = state.value.session.waiting_places; try { await loadRoster(schoolyearId.value) } catch (failure) { if (isCurrent(version)) error.value = errorMessage(failure) } }
+async function changeLifecycle(status) {
+    if (!Number.isInteger(toiletPlaces.value) || toiletPlaces.value < 1 || toiletPlaces.value > 10 || !Number.isInteger(waitingPlaces.value) || waitingPlaces.value < 0 || waitingPlaces.value > 10) { error.value = 'Bitte 1 bis 10 Toilettenplätze und 0 bis 10 Warteplätze angeben.'; return }
+    await mutate(async (current) => { await axios.put(lifecycle.url(selectedId.value), { status, waiting_places: waitingPlaces.value, toilet_places: toiletPlaces.value }); if (!current()) return; closeDialog.value = false; await list(); if (current() && status === 'active') tab.value = 'live' })
+}
+async function openAccess() { const version = contextVersion; tab.value = 'access'; waitingPlaces.value = state.value.session.waiting_places; toiletPlaces.value = state.value.session.toilet_places ?? 1; try { await loadRoster(schoolyearId.value) } catch (failure) { if (isCurrent(version)) error.value = errorMessage(failure) } }
 async function inviteAccess() { await mutate(async (current) => { const response = await axios.post(invite.url(selectedId.value), { ...invitation }); if (!current()) return; invitationUrl.value = response.data.url || ''; copied.value = false; invitation.name = '' }) }
 async function revokeAccess(id) { await mutate(async () => { await axios.delete(revoke.url({ matura: selectedId.value, access: id })) }) }
 async function copyLink() { const version = contextVersion; try { await navigator.clipboard.writeText(invitationUrl.value); if (isCurrent(version)) copied.value = true } catch { if (isCurrent(version)) error.value = 'Bitte den Link im Feld markieren und kopieren.' } }
@@ -355,3 +407,11 @@ async function poll() { if (destroyed) return; if (!document.hidden && !busy.val
 onMounted(async () => { await refresh(); poll() })
 onBeforeUnmount(() => { destroyed = true; clearTimeout(timer) })
 </script>
+<style scoped>
+.zero-matura-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.zero-matura-heading > span { font-size: 1rem; color: #516770; }
+.zero-heading-edit { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 6px; color: var(--zero-teal); }
+.zero-heading-edit:hover:not(:disabled) { background: #edf7f3; }
+.zero-heading-edit:disabled { opacity: .45; }
+.zero-metadata-editor { max-width: 600px; padding: 18px; }
+</style>

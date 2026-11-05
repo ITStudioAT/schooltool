@@ -61,6 +61,7 @@ function isSetupDraft(data) {
     if (!form || typeof form.name !== 'string' || form.name.length > 160
         || typeof form.exam_date !== 'string' || form.exam_date.length > 32
         || !['number', 'string'].includes(typeof form.waiting_places)
+        || (form.toilet_places !== undefined && !['number', 'string'].includes(typeof form.toilet_places))
         || (form.selected_classes !== undefined && (!Array.isArray(form.selected_classes) || form.selected_classes.length > 500 || !form.selected_classes.every((item) => typeof item === 'string' && item.length <= 100)))
         || !Array.isArray(form.rooms) || form.rooms.length < 1 || form.rooms.length > 40
         || !Array.isArray(data.completed) || data.completed.length !== 3 || !data.completed.every((value) => typeof value === 'boolean')
@@ -76,15 +77,15 @@ function isSetupDraft(data) {
     return true
 }
 
-export function selectedSetupClasses(form, roster) {
-    const availableClasses = new Set(roster.map((student) => student.class).filter(Boolean))
+export function selectedSetupClasses(form, roster, retainedClasses = []) {
+    const availableClasses = new Set([...roster.map((student) => student.class).filter(Boolean), ...retainedClasses])
     if (form.selected_classes) return [...new Set(form.selected_classes)].filter((item) => availableClasses.has(item))
     const ids = new Set(form.rooms.flatMap((room) => room.student_ids))
     return [...new Set(roster.filter((student) => ids.has(student.id)).map((student) => student.class).filter(Boolean))]
 }
 
-export function restoreSetupDraft(data, roster) {
-    const selectedClasses = selectedSetupClasses(data.form, roster)
+export function restoreSetupDraft(data, roster, retainedClasses = []) {
+    const selectedClasses = selectedSetupClasses(data.form, roster, retainedClasses)
     const availableIds = new Set(roster.filter((student) => selectedClasses.includes(student.class)).map((student) => student.id))
     const assignedIds = new Set()
     let removedStudents = false
@@ -102,7 +103,9 @@ export function restoreSetupDraft(data, roster) {
         return room.name.trim() && room.student_ids.length <= 500 && rooms.filter((other) => other.name.trim() === room.name.trim()).length === 1
             && names.length <= 200 && names.every((name) => name.length <= 180)
     })
+    const toiletPlaces = data.form.toilet_places ?? 1
     const waitingValid = Number.isInteger(data.form.waiting_places) && data.form.waiting_places >= 0 && data.form.waiting_places <= 10
+        && Number.isInteger(toiletPlaces) && toiletPlaces >= 1 && toiletPlaces <= 10
     const completed = [data.completed[0] && basicsValid, false, false]
     completed[1] = completed[0] && data.completed[1] && roomsValid
     completed[2] = completed[1] && data.completed[2] && waitingValid

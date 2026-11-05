@@ -1,5 +1,15 @@
 # UPDATES
 
+## 3.54.5
+
+### System
+
+- Future Version 4 in Main implementiert und schaltbar
+
+### Version 4
+
+- 00-Manager: UI-Design vereinfacht
+
 ## 3.54.4
 
 ### Spiele

@@ -88,12 +88,12 @@ class MaturaWorkflowService
                 abort_unless($from === $expected, 409, 'Dieser Schritt ist für den aktuellen Status nicht möglich.');
                 if ($action === 'approve') {
                     $reserved = $session->visits()->whereIn('status', MaturaVisit::Reserved)->count();
-                    abort_if($reserved >= 1 + $session->waiting_places, 409, 'Alle Plätze sind belegt oder reserviert. Bitte im Raum warten.');
+                    abort_if($reserved >= $session->setupConfiguration()['toilet_places'] + $session->waiting_places, 409, 'Alle Plätze sind belegt oder reserviert. Bitte im Raum warten.');
                     $first = $session->visits()->where('status', 'requested')->orderBy('id')->value('id');
                     abort_unless((int) $first === $visit->id, 409, 'Bitte zuerst die älteste Anfrage freigeben.');
                 }
                 if ($action === 'enter') {
-                    abort_if($session->visits()->where('status', 'toilet')->exists(), 409, 'Die Toilette ist noch belegt.');
+                    abort_if($session->visits()->where('status', 'toilet')->count() >= $session->setupConfiguration()['toilet_places'], 409, 'Alle Toilettenplätze sind belegt.');
                     $first = $session->visits()->where('status', 'arrived')->orderBy('arrived_at')->orderBy('id')->value('id');
                     abort_unless((int) $first === $visit->id, 409, 'Bitte die Reihenfolge an der Zwischenstation beachten.');
                 }
@@ -126,7 +126,7 @@ class MaturaWorkflowService
         $session->events()->create([
             'matura_visit_id' => $visit?->id, 'operation_key' => $data['operation_key'] ?? null,
             'actor' => $actor, 'action' => $action,
-            'details' => collect($data)->only(['reason', 'from', 'to', 'room_id', 'previous_access_id', 'access_id', 'name'])->all(),
+            'details' => collect($data)->only(['reason', 'from', 'to', 'room_id', 'previous_access_id', 'access_id', 'name', 'selected_classes', 'toilet_places'])->all(),
             'occurred_at' => now(),
         ]);
     }

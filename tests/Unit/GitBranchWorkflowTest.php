@@ -266,7 +266,12 @@ beforeEach(function (): void {
     file_put_contents($this->workflowPc.'/artisan', <<<'PHP'
 <?php
 
-if (array_slice($argv, 1) === ['cache:forget', 'admin.environment_versions.v13', '--no-interaction']) {
+$arguments = array_slice($argv, 1);
+
+if (in_array($arguments, [
+    ['cache:forget', 'admin.environment_versions.v13', '--no-interaction'],
+    ['schooltool:gitupdate-migrate', '--no-interaction'],
+], true)) {
     exit(0);
 }
 

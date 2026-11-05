@@ -38,4 +38,21 @@ class MaturaSession extends Model
     {
         return $this->hasMany(MaturaEvent::class);
     }
+
+    /**
+     * Configuration snapshots use the existing audit log, including on installations without a schema update.
+     *
+     * @return array{selected_classes: list<string>, toilet_places: int}
+     */
+    public function setupConfiguration(): array
+    {
+        $details = $this->events()->whereIn('action', ['configured', 'configuration_changed'])
+            ->latest('id')->first()?->details ?? [];
+
+        return [
+            'selected_classes' => $details['selected_classes'] ?? $this->students()
+                ->whereNotNull('import116_id')->whereNotNull('class_name')->distinct()->pluck('class_name')->all(),
+            'toilet_places' => (int) ($details['toilet_places'] ?? 1),
+        ];
+    }
 }

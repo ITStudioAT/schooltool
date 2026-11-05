@@ -22,12 +22,14 @@ class MaturaSetupService
             Schoolyear::query()->where('school_id', $user->school_id)->findOrFail($data['schoolyear_id']);
             if ($existing) {
                 $session = MaturaSession::query()->lockForUpdate()->findOrFail($existing->id);
+                $configuration = $session->setupConfiguration();
                 abort_unless($session->status === 'draft', 409, 'Räume und Schüler können nur vor dem Start geändert werden.');
                 abort_if($session->accesses()->exists(), 409, 'Vor einer Raumänderung bitte einen neuen Entwurf anlegen; vergebene Zugänge müssen ihrer Station zugeordnet bleiben.');
                 $session->students()->delete();
                 $session->rooms()->delete();
                 $session->update(collect($data)->only(['schoolyear_id', 'name', 'exam_date', 'waiting_places'])->all());
             } else {
+                $configuration = ['selected_classes' => [], 'toilet_places' => 1];
                 $session = MaturaSession::query()->create(collect($data)->only(['schoolyear_id', 'name', 'exam_date', 'waiting_places'])->all() + [
                     'school_id' => $user->school_id, 'created_by' => $user->id,
                 ]);
@@ -37,6 +39,14 @@ class MaturaSetupService
             $students = Import116::query()->where('school_id', $user->school_id)->where('schoolyear_id', $data['schoolyear_id'])
                 ->whereNotNull('exists_date')->whereIn('id', $ids)->get()->keyBy('id');
             abort_unless($students->count() === $ids->count(), 422, 'Mindestens ein Schüler gehört nicht zum gewählten Schuljahr.');
+            $selectedClasses = $data['selected_classes'] ?? array_values(array_unique([
+                ...$configuration['selected_classes'], ...$students->pluck('class')->filter()->all(),
+            ]));
+            $availableClasses = Import116::query()->where('school_id', $user->school_id)
+                ->where('schoolyear_id', $data['schoolyear_id'])->whereNotNull('exists_date')
+                ->whereNotNull('class')->distinct()->pluck('class')->all();
+            abort_unless(array_diff($selectedClasses, [...$availableClasses, ...$configuration['selected_classes']]) === [], 422, 'Bitte Klassen aus dem gewählten Schuljahr auswählen.');
+            abort_unless($students->every(fn (Import116 $student): bool => in_array($student->class, $selectedClasses, true)), 422, 'Die zugeordneten Schüler müssen zu den ausgewählten Klassen gehören.');
             foreach ($data['rooms'] as $roomData) {
                 $room = $session->rooms()->create(['name' => trim($roomData['name'])]);
                 foreach ($roomData['student_ids'] as $id) {
@@ -53,7 +63,10 @@ class MaturaSetupService
                     ]);
                 }
             }
-            $this->workflow->record($session, trim($user->first_name.' '.$user->last_name), 'configured');
+            $this->workflow->record($session, trim($user->first_name.' '.$user->last_name), 'configured', [
+                'selected_classes' => array_values($selectedClasses),
+                'toilet_places' => $data['toilet_places'] ?? $configuration['toilet_places'],
+            ]);
 
             return $session;
         }, 3);
@@ -90,12 +103,15 @@ class MaturaSetupService
         }, 3);
     }
 
-    public function lifecycle(MaturaSession $existing, User $user, string $status, int $places): void
+    public function lifecycle(MaturaSession $existing, User $user, string $status, int $places, ?int $toiletPlaces = null): void
     {
-        DB::transaction(function () use ($existing, $user, $status, $places): void {
+        DB::transaction(function () use ($existing, $user, $status, $places, $toiletPlaces): void {
             $session = MaturaSession::query()->lockForUpdate()->findOrFail($existing->id);
+            $configuration = $session->setupConfiguration();
+            $toiletPlaces ??= $configuration['toilet_places'];
             abort_if($session->status === 'closed', 409, 'Diese Matura ist abgeschlossen.');
-            abort_if($places + 1 < $session->visits()->whereIn('status', MaturaVisit::Reserved)->count(), 409, 'Die neue Kapazität ist kleiner als die bereits reservierten Plätze.');
+            abort_if($places + $toiletPlaces < $session->visits()->whereIn('status', MaturaVisit::Reserved)->count(), 409, 'Die neue Kapazität ist kleiner als die bereits reservierten Plätze.');
+            abort_if($toiletPlaces < $session->visits()->where('status', 'toilet')->count(), 409, 'Es sind noch mehr Personen auf der Toilette als die neue Kapazität erlaubt.');
             if ($status === 'closed') {
                 abort_if($session->visits()->whereIn('status', MaturaVisit::Active)->exists(), 409, 'Bitte zuerst alle offenen Gänge abschließen oder korrigieren.');
                 $session->accesses()->whereNull('revoked_at')->update(['revoked_at' => now()]);
@@ -104,7 +120,9 @@ class MaturaSetupService
                 abort_unless($session->students()->exists(), 422, 'Bitte zuerst Schüler zuordnen.');
             }
             $session->update(['status' => $status, 'waiting_places' => $places]);
-            $this->workflow->record($session, trim($user->first_name.' '.$user->last_name), 'configuration_changed', ['to' => $status]);
+            $this->workflow->record($session, trim($user->first_name.' '.$user->last_name), 'configuration_changed', [
+                'to' => $status, 'selected_classes' => $configuration['selected_classes'], 'toilet_places' => $toiletPlaces,
+            ]);
         }, 3);
     }
 

@@ -99,8 +99,9 @@ class MaturaController extends Controller
         $data = $request->validate([
             'status' => ['required', Rule::in(['active', 'closed'])],
             'waiting_places' => ['required', 'integer', 'between:0,10'],
+            'toilet_places' => ['sometimes', 'integer', 'between:1,10'],
         ]);
-        $this->setup->lifecycle($matura, $user, $data['status'], $data['waiting_places']);
+        $this->setup->lifecycle($matura, $user, $data['status'], $data['waiting_places'], $data['toilet_places'] ?? null);
 
         return $this->show($request, $matura->fresh());
     }

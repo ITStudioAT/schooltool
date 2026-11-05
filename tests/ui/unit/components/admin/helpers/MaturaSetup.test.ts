@@ -9,7 +9,7 @@ const roster = [
 ]
 
 function task(title) { return screen.getByRole('button', { name: new RegExp(`^[1-3✓] ${title} `) }) }
-async function done() { await fireEvent.click(screen.getByRole('button', { name: 'Übernehmen' })) }
+async function done() { await fireEvent.click(screen.getByRole('button', { name: /^(Weiter:|Zusammenfassung anzeigen|Änderungen speichern)/ })) }
 function classButton(name) { return screen.getByRole('button', { name: new RegExp(`^${name} `) }) }
 async function basics() {
     await fireEvent.click(task('Matura & Klassen'))
@@ -28,11 +28,44 @@ function mountSetup(props = {}) { return render(MaturaSetup, { props: { schoolye
 afterEach(cleanup)
 
 describe('00-Manager setup tasks', () => {
+    it('scopes class actions to visible students and respects assignments in other rooms', async () => {
+        const view = mountSetup({ roomOnly: true, initialStep: 1, existing: {
+            session: { name: 'Deutsch', exam_date: '2027-05-04', selected_classes: ['8A', '8B'], waiting_places: 1 },
+            rooms: [{ id: 1, name: 'Raum A' }, { id: 2, name: 'Raum B' }], students: [
+                { id: 11, matura_room_id: 2, import116_id: 1, name: 'Müller Änne', class_name: '8A' },
+                { id: 12, matura_room_id: 1, import116_id: 3, name: 'Groß Zoë', class_name: '8B' },
+            ],
+        } })
+        await fireEvent.update(screen.getByLabelText('Klasse filtern'), '8A')
+        expect(screen.queryByRole('group', { name: 'Klasse 8B' })).not.toBeInTheDocument()
+        expect(screen.getByRole('checkbox', { name: /Müller Änne/ })).toBeDisabled()
+        expect(screen.getByRole('checkbox', { name: /Müller Änne/ })).toHaveAccessibleName(/Bereits „Raum B“ zugeordnet/)
+        const classActions = within(screen.getByRole('group', { name: 'Klasse 8A' }))
+
+        await fireEvent.click(classActions.getByRole('button', { name: 'Alle angezeigten zuordnen' }))
+        expect(screen.getByRole('checkbox', { name: /Öztürk Emil/ })).toBeChecked()
+        expect(screen.getByRole('checkbox', { name: /Müller Änne/ })).not.toBeChecked()
+        expect(classActions.getByRole('button', { name: 'Alle angezeigten zuordnen' })).toBeDisabled()
+        expect(view.emitted().save).toBeUndefined()
+        await fireEvent.click(classActions.getByRole('button', { name: 'Auswahl leeren' }))
+        expect(screen.getByRole('checkbox', { name: /Öztürk Emil/ })).not.toBeChecked()
+        await fireEvent.update(screen.getByLabelText('Klasse filtern'), '')
+        expect(screen.getByRole('checkbox', { name: /Groß Zoë/ })).toBeChecked()
+        expect(screen.getByRole('checkbox', { name: /Groß Zoë/ })).toBeEnabled()
+        expect(screen.getByRole('checkbox', { name: /Groß Zoë/ })).not.toHaveAccessibleName(/zugeordnet/)
+        await done()
+
+        expect(view.emitted().save[0][0].rooms).toEqual([
+            { name: 'Raum A', student_ids: [3], manual_students: [] },
+            { name: 'Raum B', student_ids: [1], manual_students: [] },
+        ])
+    })
+
     it('unlocks validated tasks in order and saves only from the final summary', async () => {
         const view = mountSetup()
         expect(task('Räume & Schüler')).toBeDisabled()
         expect(task('Ablauf')).toBeDisabled()
-        expect(screen.queryByLabelText('Name der Matura')).not.toBeInTheDocument()
+        expect(screen.getByLabelText('Name der Matura')).toBeInTheDocument()
         await fireEvent.click(task('Matura & Klassen'))
         await done()
         expect(screen.getByRole('alert')).toHaveTextContent('Bitte gib der Matura einen Namen.')
@@ -52,16 +85,16 @@ describe('00-Manager setup tasks', () => {
         await fireEvent.click(task('Ablauf'))
         expect(screen.queryByLabelText('Name der Matura')).not.toBeInTheDocument()
         expect(screen.queryByPlaceholderText('z. B. 3.12')).not.toBeInTheDocument()
-        await fireEvent.update(screen.getByRole('spinbutton'), '11')
+        await fireEvent.update(screen.getByRole('spinbutton', { name: /Warteplätze an der Zwischenstation/ }), '11')
         await done()
         expect(screen.getByRole('alert')).toHaveTextContent('0 bis 10')
-        await fireEvent.update(screen.getByRole('spinbutton'), '0')
+        await fireEvent.update(screen.getByRole('spinbutton', { name: /Warteplätze an der Zwischenstation/ }), '0')
         await done()
         expect(screen.getByRole('heading', { name: 'Alles bereit?' })).toBeInTheDocument()
         expect(screen.getByText(/0 Warteplätze/)).toBeInTheDocument()
         expect(view.emitted().save).toBeUndefined()
         await fireEvent.click(screen.getByRole('button', { name: 'Matura speichern' }))
-        expect(view.emitted().save[0][0]).toEqual({ schoolyear_id: 10, name: 'Deutsch', exam_date: '2026-10-04', waiting_places: 0, rooms: [{ name: 'Raum A', student_ids: [], manual_students: [] }] })
+        expect(view.emitted().save[0][0]).toEqual({ schoolyear_id: 10, name: 'Deutsch', exam_date: '2026-10-04', waiting_places: 0, toilet_places: 1, selected_classes: [], rooms: [{ name: 'Raum A', student_ids: [], manual_students: [] }] })
     })
 
     it('focuses one room, preserves filters and students, and prevents duplicate assignments', async () => {
@@ -119,7 +152,7 @@ describe('00-Manager setup tasks', () => {
         await basics()
         await firstRoom()
         await fireEvent.click(task('Ablauf'))
-        await fireEvent.update(screen.getByRole('spinbutton'), '4')
+        await fireEvent.update(screen.getByRole('spinbutton', { name: /Warteplätze an der Zwischenstation/ }), '4')
         await done()
         await fireEvent.click(task('Räume & Schüler'))
         expect(task('Räume & Schüler')).toHaveTextContent('✓')
@@ -138,7 +171,7 @@ describe('00-Manager setup tasks', () => {
         expect(screen.getByPlaceholderText('z. B. 3.12')).toHaveValue('Raum C')
         await done()
         await fireEvent.click(task('Ablauf'))
-        expect(screen.getByRole('spinbutton')).toHaveValue(4)
+        expect(screen.getByRole('spinbutton', { name: /Warteplätze an der Zwischenstation/ })).toHaveValue(4)
         await done()
         expect(screen.getByText('Mathematik')).toBeInTheDocument()
     })
@@ -147,8 +180,8 @@ describe('00-Manager setup tasks', () => {
         const rooms = Array.from({ length: 40 }, (_, index) => ({ id: index + 1, name: `Raum ${index + 1}` }))
         mountSetup({ existing: { session: { name: 'Bestehende Matura', exam_date: '2026-10-04T00:00:00Z', waiting_places: 3 }, rooms, students: [{ matura_room_id: 1, import116_id: 1, name: 'Müller Änne' }, { matura_room_id: 1, import116_id: null, name: 'Gast Eins' }] } })
         await fireEvent.click(task('Matura & Klassen'))
-        expect(screen.getByLabelText('Name der Matura')).toHaveValue('Bestehende Matura')
-        expect(screen.getByLabelText('Prüfungsdatum')).toHaveValue('2026-10-04')
+        expect(screen.queryByLabelText('Name der Matura')).not.toBeInTheDocument()
+        expect(screen.queryByLabelText('Prüfungsdatum')).not.toBeInTheDocument()
         expect(classButton('8A')).toHaveAttribute('aria-pressed', 'true')
         await done()
         await fireEvent.click(task('Räume & Schüler'))
@@ -157,7 +190,7 @@ describe('00-Manager setup tasks', () => {
         expect(screen.getByPlaceholderText('Nachname Vorname')).toHaveValue('Gast Eins')
         await done()
         await fireEvent.click(task('Ablauf'))
-        expect(screen.getByRole('spinbutton')).toHaveValue(3)
+        expect(screen.getByRole('spinbutton', { name: /Warteplätze an der Zwischenstation/ })).toHaveValue(3)
     })
 
     it('rejects too many manual students and overlong names before completing the room task', async () => {
@@ -298,53 +331,71 @@ describe('00-Manager setup tasks', () => {
         expect(screen.queryByRole('heading', { name: '2A' })).not.toBeInTheDocument()
     })
 
-    it('shows confirmed results immediately and hides invalidated results until they are confirmed again', async () => {
-        mountSetup()
+    it('advances directly through preparation and reviews the saved class choices and assignments', async () => {
+        const view = mountSetup()
         await basics()
-        const basicsSummary = within(screen.getByRole('region', { name: 'Bestätigte Matura und Klassen' }))
-        expect(basicsSummary.getByText('Deutsch')).toBeInTheDocument()
-        expect(basicsSummary.getByText('04.10.2026')).toBeInTheDocument()
-        expect(basicsSummary.getByText('8A, 8B')).toBeInTheDocument()
-        expect(screen.queryByRole('region', { name: 'Bestätigte Räume und Schüler' })).not.toBeInTheDocument()
-        await fireEvent.click(task('Räume & Schüler'))
+        expect(screen.getByPlaceholderText('z. B. 3.12')).toBeInTheDocument()
         await fireEvent.update(screen.getByPlaceholderText('z. B. 3.12'), 'Raum A')
-        await fireEvent.click(screen.getByRole('checkbox', { name: /Öztürk Emil/ }))
-        await fireEvent.click(screen.getByRole('checkbox', { name: /Müller Änne/ }))
-        await fireEvent.click(screen.getByText('Weitere Schüler ohne Import hinzufügen'))
+        await fireEvent.click(within(screen.getByRole('group', { name: 'Raumauswahl' })).getByRole('button', { name: 'Alle angezeigten zuordnen' }))
         await fireEvent.update(screen.getByPlaceholderText('Nachname Vorname'), 'Gast Eins')
-        await fireEvent.update(screen.getByPlaceholderText('Nachname oder Vorname'), 'Müller')
         await done()
-        const roomSummary = within(screen.getByRole('region', { name: 'Bestätigte Räume und Schüler' }))
-        expect(roomSummary.getByRole('heading', { name: 'Raum A' })).toBeInTheDocument()
-        expect(roomSummary.getByText('3 Schüler')).toBeInTheDocument()
-        await fireEvent.click(roomSummary.getByText('Schüler anzeigen'))
-        expect(roomSummary.getAllByRole('listitem').map((item) => item.textContent)).toEqual(['Müller Änne', 'Öztürk Emil', 'Gast Eins'])
-        expect(roomSummary.getByRole('heading', { name: '8A' })).toBeInTheDocument()
-        expect(roomSummary.getByRole('heading', { name: 'Manuell hinzugefügt' })).toBeInTheDocument()
-        await fireEvent.click(task('Ablauf'))
-        await fireEvent.update(screen.getByRole('spinbutton'), '4')
+        expect(screen.getByLabelText(/Gleichzeitig auf der Toilette/)).toBeInTheDocument()
+        await fireEvent.update(screen.getByLabelText(/Gleichzeitig auf der Toilette/), '2')
+        await fireEvent.update(screen.getByLabelText(/Warteplätze an der Zwischenstation/), '4')
         await done()
-        expect(screen.getByRole('region', { name: 'Bestätigter Ablauf' })).toHaveTextContent('4 Warteplätze + 1 Toilettenplatz')
-        expect(screen.getByRole('button', { name: 'Matura speichern' })).toBeInTheDocument()
+        const confirmedClasses = within(screen.getByRole('region', { name: 'Bestätigte Matura und Klassen' }))
+        expect(confirmedClasses.getAllByRole('listitem').map((item) => item.textContent)).toEqual(['8A', '8B'])
+        expect(screen.getByRole('region', { name: 'Bestätigte Räume und Schüler' })).toHaveTextContent('4 Schüler')
+        expect(screen.getByRole('region', { name: 'Bestätigter Ablauf' })).toHaveTextContent('4 Warteplätze + 2 Toilettenplätze')
         await fireEvent.click(task('Räume & Schüler'))
         await fireEvent.update(screen.getByPlaceholderText('z. B. 3.12'), 'Raum B')
-        await fireEvent.click(screen.getByRole('button', { name: 'Zur Aufgabenübersicht' }))
-        expect(screen.getByRole('region', { name: 'Bestätigte Matura und Klassen' })).toBeInTheDocument()
-        expect(screen.queryByRole('region', { name: 'Bestätigte Räume und Schüler' })).not.toBeInTheDocument()
-        expect(screen.queryByRole('region', { name: 'Bestätigter Ablauf' })).not.toBeInTheDocument()
-        expect(screen.queryByText('Raum A')).not.toBeInTheDocument()
+        expect(task('Ablauf')).toBeDisabled()
         expect(screen.queryByRole('button', { name: 'Matura speichern' })).not.toBeInTheDocument()
-        await fireEvent.click(task('Räume & Schüler'))
         await done()
-        expect(screen.getByRole('region', { name: 'Bestätigte Räume und Schüler' })).toHaveTextContent('Raum B')
-        await fireEvent.click(task('Matura & Klassen'))
-        await fireEvent.update(screen.getByLabelText('Name der Matura'), 'Mathematik')
-        await fireEvent.click(screen.getByRole('button', { name: 'Zur Aufgabenübersicht' }))
-        expect(screen.queryByRole('heading', { name: 'Übernommene Angaben' })).not.toBeInTheDocument()
-        expect(screen.queryByText('Deutsch')).not.toBeInTheDocument()
-        await fireEvent.click(task('Matura & Klassen'))
         await done()
-        expect(screen.getByRole('region', { name: 'Bestätigte Matura und Klassen' })).toHaveTextContent('Mathematik')
-        expect(screen.queryByRole('region', { name: 'Bestätigte Räume und Schüler' })).not.toBeInTheDocument()
+        await fireEvent.click(screen.getByRole('button', { name: 'Matura speichern' }))
+        expect(view.emitted().save[0][0]).toMatchObject({
+            selected_classes: ['8A', '8B'], toilet_places: 2, waiting_places: 4,
+            rooms: [{ name: 'Raum B', student_ids: [1, 2, 3], manual_students: [{ name: 'Gast Eins' }] }],
+        })
+    })
+
+    it('shows saved classes as selected even if no students from one class have a room', async () => {
+        mountSetup({ existing: { session: { name: 'Deutsch', exam_date: '2026-10-04', selected_classes: ['8A', '8B'], toilet_places: 2, waiting_places: 1 }, rooms: [{ id: 1, name: 'A' }], students: [{ id: 11, matura_room_id: 1, import116_id: 1, name: 'Müller Änne', class_name: '8A' }] } })
+        expect(classButton('8A')).toHaveAttribute('aria-pressed', 'true')
+        expect(classButton('8B')).toHaveAttribute('aria-pressed', 'true')
+        expect(screen.getByText('8A, 8B')).toBeInTheDocument()
+    })
+
+    it.each([
+        { selectedClasses: ['8A', '8B'], students: [{ id: 1, matura_room_id: 1, import116_id: 1, name: 'Müller Änne', class_name: '8A' }], classCount: 2, studentCount: 1, roomCount: 2 },
+        { selectedClasses: [], students: [], classCount: 0, studentCount: 0, roomCount: 3 },
+        { selectedClasses: undefined, students: [{ id: 1, matura_room_id: 1, import116_id: 1, name: 'Müller Änne', class_name: '8A' }, { id: 2, matura_room_id: 1, import116_id: null, name: 'Gast Eins' }], classCount: 1, studentCount: 2, roomCount: 1 },
+    ])('summarizes saved class, student and room counts ($classCount/$studentCount/$roomCount)', ({ selectedClasses, students, classCount, studentCount, roomCount }) => {
+        mountSetup({ viewOnly: true, existing: {
+            session: { name: 'Deutsch', exam_date: '2026-10-04', selected_classes: selectedClasses }, students,
+            rooms: Array.from({ length: roomCount }, (_, index) => ({ id: index + 1, name: `Raum ${index + 1}` })),
+        } })
+
+        expect(screen.getByText('Teilnehmende Klassen:').parentElement).toHaveTextContent(`Teilnehmende Klassen: ${classCount}`)
+        expect(screen.getByText('Schülerinnen:').parentElement).toHaveTextContent(`Schülerinnen: ${studentCount}`)
+        expect(screen.getByText('Räume:').parentElement).toHaveTextContent(`Räume: ${roomCount}`)
+        expect(screen.queryByText('Die gespeicherte Vorbereitung im Überblick.')).not.toBeInTheDocument()
+    })
+
+    it('preserves current name and date when saving classes from an older edit draft', async () => {
+        const view = mountSetup({ existing: {
+            session: { name: 'Deutsch-HT', exam_date: '2027-05-04', selected_classes: ['8A'], waiting_places: 1 },
+            rooms: [{ id: 1, name: 'Raum A' }], students: [],
+        }, draft: {
+            form: { name: 'Veralteter Name', exam_date: '2026-10-04', waiting_places: 1, selected_classes: ['8A'], rooms: [{ name: 'Raum A', student_ids: [], manualText: '', classFilter: '', search: '' }] },
+            completed: [true, true, true], activeStep: 0, roomIndex: 0,
+        } })
+        expect(screen.queryByLabelText('Name der Matura')).not.toBeInTheDocument()
+        expect(screen.queryByLabelText('Prüfungsdatum')).not.toBeInTheDocument()
+
+        await done()
+
+        expect(view.emitted().save[0][0]).toMatchObject({ name: 'Deutsch-HT', exam_date: '2027-05-04', selected_classes: ['8A'] })
     })
 })
