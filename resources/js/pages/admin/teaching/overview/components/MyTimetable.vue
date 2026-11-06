@@ -137,18 +137,19 @@
                                         <th
                                             v-for="day in tableWeekDays"
                                             :key="normalizeDateToString(day)"
-                                            :class="['timetable-day-header-cell', { 'day-today': isDayToday(day), 'day-highlighted': isHighlightedTeachingDay(day), 'day-free': isFreeTeachingDay(day), 'day-holiday': isSchoolHoliday(day) }]"
+                                            :class="['timetable-day-header-cell', { 'day-today': isDayToday(day), 'day-highlighted': isHighlightedTeachingDay(day), 'day-free': isFreeTeachingDay(day), 'day-holiday': isRecordedHoliday(day) }]"
                                             :title="isSchoolHoliday(day) ? `Ferien/Feiertag: ${formatDayDate(day)}` : isFreeTeachingDay(day) ? `Freier Tag: ${formatDayDate(day)}` : undefined"
                                             :aria-label="isHighlightedTeachingDay(day) ? `${isDayToday(day) ? 'Heutiger Unterrichtstag' : 'Nächster Unterrichtstag'}: ${formatDayDate(day)}` : undefined">
                                             <div>{{ formatDayOfWeek(day) }}</div>
                                             <div class="timetable-day-date">{{ formatDayDate(day) }}</div>
+                                            <div v-if="holidayReason(day)" class="timetable-day-reason text-caption font-weight-regular text-wrap text-break">{{ holidayReason(day) }}</div>
                                         </th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     <tr v-if="outsideAppointmentPlacements.length">
                                         <td class="timetable-hour-cell"><span class="text-caption">Vor Unterricht</span></td>
-                                        <td v-for="day in tableWeekDays" :key="normalizeDateToString(day)" class="timetable-grid-cell timetable-gap-cell" :class="{ 'day-highlighted': isHighlightedTeachingDay(day), 'day-free': isFreeTeachingDay(day), 'day-holiday': isSchoolHoliday(day) }">
+                                        <td v-for="day in tableWeekDays" :key="normalizeDateToString(day)" class="timetable-grid-cell timetable-gap-cell" :class="{ 'day-highlighted': isHighlightedTeachingDay(day), 'day-free': isFreeTeachingDay(day), 'day-holiday': isRecordedHoliday(day) }">
                                             <div class="personal-appointment-cell">
                                                 <PersonalAppointmentCard v-for="placement in outsideAppointmentsOnDay(day)" :key="`${placement.appointment.id}-${placement.segments[0].starts_at}`"
                                                     class="timetable-duration-card" :data-duration="personalAppointmentDuration(placement.segments)" :data-gap-minutes="placement.gapMinutes"
@@ -167,7 +168,7 @@
                                         <template v-for="day in tableWeekDays" :key="normalizeDateToString(day)">
                                         <td v-if="!isTableCellContinuation(day, hour)" v-fill-cell :rowspan="tableRowSpan(day, hour)"
                                             :data-date="normalizeDateToString(day)" :data-hour="hour"
-                                            :class="['timetable-grid-cell', { 'day-highlighted': isHighlightedTeachingDay(day), 'day-free': isFreeTeachingDay(day), 'day-holiday': isSchoolHoliday(day) }]">
+                                            :class="['timetable-grid-cell', { 'day-highlighted': isHighlightedTeachingDay(day), 'day-free': isFreeTeachingDay(day), 'day-holiday': isRecordedHoliday(day) }]">
                                             <div class="timetable-cell-content">
                                             <div v-if="getTableCellItems(day, hour).length" class="timetable-cell-courses">
                                             <div
@@ -230,7 +231,7 @@
                                     <tr v-if="hasAppointmentGapAfter(hour)" class="timetable-gap-row" :data-gap-after="hour">
                                         <td class="timetable-hour-cell"><span class="text-caption">{{ school_hours.some((entry) => Number(entry.hour) > Number(hour)) ? 'Pause' : '' }}</span></td>
                                         <template v-for="day in tableWeekDays" :key="normalizeDateToString(day)">
-                                            <td v-if="!tableCellsConnect(day, hour, Number(hour) + 1)" class="timetable-grid-cell timetable-gap-cell" :class="{ 'day-highlighted': isHighlightedTeachingDay(day), 'day-free': isFreeTeachingDay(day), 'day-holiday': isSchoolHoliday(day) }" :data-date="normalizeDateToString(day)">
+                                            <td v-if="!tableCellsConnect(day, hour, Number(hour) + 1)" class="timetable-grid-cell timetable-gap-cell" :class="{ 'day-highlighted': isHighlightedTeachingDay(day), 'day-free': isFreeTeachingDay(day), 'day-holiday': isRecordedHoliday(day) }" :data-date="normalizeDateToString(day)">
                                                 <div class="personal-appointment-cell">
                                                     <PersonalAppointmentCard v-for="placement in gapAppointmentsOnDay(day, hour)" :key="`${placement.appointment.id}-${placement.segments[0].starts_at}`"
                                                         class="timetable-duration-card" :data-duration="personalAppointmentDuration(placement.segments)" :data-gap-minutes="placement.gapMinutes"
@@ -545,6 +546,22 @@ export default {
         schoolHolidayDates() {
             return new Set((this.my_holidays || []).filter((holiday) => holiday.scope === 'school')
                 .map((holiday) => String(holiday.date || '').slice(0, 10)))
+        },
+        recordedHolidayDates() {
+            return new Set((this.my_holidays || []).filter((holiday) => ['school', 'teacher'].includes(holiday.scope))
+                .map((holiday) => String(holiday.date || '').slice(0, 10)))
+        },
+        holidayReasonsByDate() {
+            const reasons = {}
+            for (const scope of ['school', 'teacher']) {
+                for (const holiday of this.my_holidays || []) {
+                    const reason = String(holiday.reason || '').trim()
+                    if (holiday.scope === scope && reason) {
+                        reasons[String(holiday.date || '').slice(0, 10)] = reason
+                    }
+                }
+            }
+            return reasons
         },
         occupiedTeachingDates() {
             return new Set([
@@ -989,7 +1006,13 @@ export default {
             return this.normalizeDateToString(day) === this.highlightedTeachingDate
         },
         isFreeTeachingDay(day) {
-            return this.isSchoolHoliday(day) || !this.occupiedTeachingDates.has(this.normalizeDateToString(day))
+            return this.isRecordedHoliday(day) || !this.occupiedTeachingDates.has(this.normalizeDateToString(day))
+        },
+        isRecordedHoliday(day) {
+            return this.recordedHolidayDates.has(this.normalizeDateToString(day))
+        },
+        holidayReason(day) {
+            return this.holidayReasonsByDate[this.normalizeDateToString(day)] || ''
         },
         isSchoolHoliday(day) {
             return this.schoolHolidayDates.has(this.normalizeDateToString(day))
@@ -1067,6 +1090,7 @@ export default {
             return statusStr.includes('pruefung') || statusStr.includes('prüfung')
         },
         hasFreeStatus(item, hour) {
+            if (this.recordedHolidayDates?.has(item?.date)) return true
             if (hour !== undefined && isCourseDateHourCancelled(item, hour)) return true
             if (item?.hours?.length && activeCourseDateHours(item).length === 0) return true
             const status = Array.isArray(item?.status) ? item.status : []

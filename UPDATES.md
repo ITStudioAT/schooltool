@@ -2,6 +2,10 @@
 
 # 3.54.6 !!!
 
+### Unterricht
+
+- Im Stundenplan: Eigene freie Tage anzeigen
+
 ### System
 
 - Anmeldezeitpunkt User gefixt

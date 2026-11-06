@@ -137,6 +137,112 @@ describe('MyTimetable automatic week selection', () => {
         }
     })
 
+    it.each(['table', 'list'])('cancels lessons on one or several own free days and updates them reactively in %s view', async (viewMode) => {
+        const { courseStore, mountTimetable } = prepareTimetable('2026-03-04T12:00:00Z')
+        courseStore.timetable_view_mode = viewMode
+        const dates = [
+            { id: 1, date: '2026-03-02', hours: [5, 6], status: [] },
+            { id: 2, date: '2026-03-03', hours: [5, 6], status: ['pruefung'], cancelled_hours: [5] },
+            { id: 3, date: '2026-03-04', hours: [5, 6], status: ['entfaellt'] },
+            { id: 4, date: '2026-03-05', hours: [5, 6], status: [] },
+            { id: 5, date: '2026-03-06', hours: [5, 6], status: [] },
+        ]
+        const originalDates = structuredClone(dates)
+        ;(courseStore.courses[0] as any).course_dates = dates
+        const holidayStore = useHolidayStore()
+        const wrapper = mountTimetable()
+        try {
+            await flushPromises()
+            await wrapper.setData({ range: 'week', offset: 0, appointmentDefinitions: [
+                { id: 8, kind: 'supplier_standby', title: 'Bereitschaft', date: '2026-03-02', starts_at: '12:00', ends_at: '13:00', repeat_until: null },
+                { id: 9, kind: 'break_supervision', title: 'Aufsicht', date: '2026-03-03', starts_at: '12:20', ends_at: '12:25', repeat_until: null },
+            ] })
+            const cancelledDates = () => (wrapper.vm as any).filteredItems
+                .filter((item) => (wrapper.vm as any).hasFreeStatus(item)).map((item) => item.date)
+            const expectGreenDay = (date: string) => {
+                const day = new Date(`${date}T12:00:00`)
+                const vm = wrapper.vm as any
+                const header = wrapper.findAll('th.timetable-day-header-cell')[vm.tableWeekDays.findIndex((value) => vm.normalizeDateToString(value) === date)]
+                expect(header.classes()).toContain('day-holiday')
+                expect(header.classes()).toContain('day-free')
+                expect(wrapper.findAll(`td[data-date="${date}"]`).length).toBeGreaterThan(0)
+                wrapper.findAll(`td[data-date="${date}"]`).forEach((cell) => expect(cell.classes()).toContain('day-holiday'))
+                expect(vm.isFreeTeachingDay(day)).toBe(true)
+            }
+
+            expect(cancelledDates()).toEqual(['2026-03-04'])
+            holidayStore.my_holidays = [{ date: '2026-03-02', scope: 'teacher' }] as any
+            await nextTick()
+            expect(cancelledDates()).toEqual(['2026-03-02', '2026-03-04'])
+            if (viewMode === 'table') expectGreenDay('2026-03-02')
+
+            holidayStore.my_holidays.push(
+                { date: '2026-03-03', scope: 'teacher' },
+                { date: '2026-03-05', scope: 'school' },
+                { date: '2026-03-05', scope: 'teacher' },
+            )
+            await nextTick()
+            expect(cancelledDates()).toEqual(['2026-03-02', '2026-03-03', '2026-03-04', '2026-03-05'])
+            expect(wrapper.findAll('.timetable-cancelled-label')).toHaveLength(4)
+            expect(wrapper.text()).toContain('Bereitschaft')
+            expect(wrapper.text()).toContain('Aufsicht')
+            if (viewMode === 'table') {
+                ;['2026-03-02', '2026-03-03', '2026-03-05'].forEach(expectGreenDay)
+                expect(wrapper.findAll('th[title^="Ferien/Feiertag:"]')).toHaveLength(1)
+                expect(wrapper.findAll('th[title^="Freier Tag:"]')).toHaveLength(3)
+            }
+
+            holidayStore.my_holidays = holidayStore.my_holidays.filter((holiday) => holiday.scope === 'school')
+            await nextTick()
+            expect(cancelledDates()).toEqual(['2026-03-04', '2026-03-05'])
+            expect(wrapper.findAll('.timetable-cancelled-label')).toHaveLength(viewMode === 'table' ? 3 : 2)
+            if (viewMode === 'table') expectGreenDay('2026-03-05')
+            expect((courseStore.courses[0] as any).course_dates).toEqual(originalDates)
+        } finally {
+            wrapper.unmount()
+            sessionStorage.clear()
+        }
+    })
+
+    it('shows existing holiday reasons under the date, preferring own reasons with a school reason fallback', async () => {
+        const { mountTimetable } = prepareTimetable('2026-03-04T12:00:00Z')
+        const holidayStore = useHolidayStore()
+        const wrapper = mountTimetable()
+        try {
+            await flushPromises()
+            await wrapper.setData({ range: 'week', offset: 0 })
+            holidayStore.my_holidays = [
+                { date: '2026-03-02', scope: 'teacher', reason: '  Fortbildung  ' },
+                { date: '2026-03-02', scope: 'school', reason: 'Schulautonom' },
+                { date: '2026-03-03', scope: 'teacher', reason: '   ' },
+                { date: '2026-03-03', scope: 'school', reason: 'Ferien' },
+                { date: '2026-03-04', scope: 'school', reason: null },
+                { date: '2026-03-05', scope: 'teacher' },
+                { date: '2026-03-06', scope: 'school', reason: '<b>Schulautonomer Tag</b>' },
+            ] as any
+            await nextTick()
+
+            const headers = wrapper.findAll('th.timetable-day-header-cell')
+            expect(headers.map((header) => header.find('.timetable-day-reason').exists()
+                ? header.get('.timetable-day-reason').text() : null))
+                .toEqual(['Fortbildung', 'Ferien', null, null, '<b>Schulautonomer Tag</b>'])
+            expect(headers[0].get('.timetable-day-date').element.nextElementSibling?.textContent).toBe('Fortbildung')
+            expect(headers[4].find('b').exists()).toBe(false)
+            expect(headers.every((header) => header.classes().includes('day-holiday'))).toBe(true)
+            expect(wrapper.find('.timetable-cancelled-label').text()).toBe('Entfallen')
+
+            holidayStore.my_holidays = holidayStore.my_holidays.filter((holiday) => holiday.scope === 'school')
+            await nextTick()
+            expect(headers[0].get('.timetable-day-reason').text()).toBe('Schulautonom')
+            holidayStore.my_holidays = []
+            await nextTick()
+            expect(wrapper.find('.timetable-day-reason').exists()).toBe(false)
+        } finally {
+            wrapper.unmount()
+            sessionStorage.clear()
+        }
+    })
+
     it('marks a completely free non-holiday day without treating partly cancelled lessons or standby as free', async () => {
         const { courseStore, mountTimetable } = prepareTimetable('2026-03-04T12:00:00Z')
         ;(courseStore.courses[0] as any).course_dates = [
