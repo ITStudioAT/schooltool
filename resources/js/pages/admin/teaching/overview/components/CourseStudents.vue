@@ -240,9 +240,10 @@
                                             </div>
                                             <div
                                                 v-if="selected_course?.teaching_show_student_last_login && studentLastLoginText(student)"
-                                                class="student-meta-line text-caption text-medium-emphasis d-flex align-center ga-1">
+                                                class="student-meta-line text-caption text-medium-emphasis d-flex align-center ga-1"
+                                                title="Letzte Anmeldung mit Passwort, Code oder über „angemeldet bleiben“ (Wiener Ortszeit). Laufende Sitzungen ändern diesen Zeitpunkt nicht.">
                                                 <v-icon size="13">mdi-login-variant</v-icon>
-                                                Last Login: {{ studentLastLoginText(student) }}
+                                                Letzte Anmeldung: {{ studentLastLoginText(student) }}
                                             </div>
                                         </div>
                                         <v-chip v-if="isStudentCanceled(student)" size="x-small" variant="tonal" color="warning">

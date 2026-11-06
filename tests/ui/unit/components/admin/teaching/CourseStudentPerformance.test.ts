@@ -93,8 +93,9 @@ describe('Compact course student performance', () => {
                     points_adjustment: { status: 'complete', source: 'Mitarbeit', original: 19, change: 1, requested_change: 5, adjusted: 20 } } }],
             }] }] },
         } })
-        expect(wrapper.get('.grading-part-card').text()).toContain('20,00 / 20,00 Punkte')
-        expect(wrapper.get('.grading-part-card').text()).toContain('Vorher 19,00 · Mitarbeit: +1,00 Punkte (berechnet +5,00, begrenzt)')
+        expect(wrapper.get('.grading-part-card').text()).toContain('20,00 / 20,00')
+        expect(wrapper.get('.grading-part-card .text-caption').text()).toBe('19,00 + 1,00 Mitarbeit')
+        expect(wrapper.get('.grading-part-card').attributes('title')).toBe('Leistungen: Vorher 19,00 · Mitarbeit: +1,00 Punkte (berechnet +5,00, begrenzt)')
         expect(wrapper.get('.assignment-progress').text()).toContain('100 %')
     })
 
@@ -105,7 +106,7 @@ describe('Compact course student performance', () => {
                     points_adjustment: { status: 'complete', source: 'Mitarbeit', original: 5.85, change: 0, requested_change: requestedChange, adjusted: 5.85 } } }],
             }] }] },
         } })
-        expect(wrapper.get('.grading-part-card').text()).toBe('Leistungen:5,85 / 10,00 Punkte')
+        expect(wrapper.get('.grading-part-card').text()).toBe('Leistungen:5,85 / 10,00')
         expect(wrapper.get('.grading-part-card').find('.text-caption').exists()).toBe(false)
     })
 
@@ -137,8 +138,8 @@ describe('Compact course student performance', () => {
             ] },
         } })
         const summaries = () => wrapper.findAll('.grading-part-card').map((card) => `${card.get('.grading-part-card-title').text()} ${card.get('.grading-part-card-value').text()}`).join(' ')
-        expect(summaries()).toContain('Aufträge: 18,00 / 25,00 Punkte')
-        expect(summaries()).toContain('Tests: 6,25 / 10,00 Punkte')
+        expect(summaries()).toContain('Aufträge: 18,00 / 25,00')
+        expect(summaries()).toContain('Tests: 6,25 / 10,00')
         expect(summaries()).toContain('Mitarbeit: Bewertung 2,5')
         expect(summaries()).toContain('Referat: Keine Bewertung')
         expect(summaries()).toContain('Offen: Nicht vollständig berechenbar')
@@ -147,11 +148,11 @@ describe('Compact course student performance', () => {
         expect(wrapper.get('.assignment-progress').text()).toBe('Aufträge72 %')
         expect(wrapper.get('v-progress-linear').attributes('model-value')).toBe('72')
         await wrapper.setProps({ activeSemester: 2 })
-        expect(summaries()).toBe('Aufträge: 7,00 / 20,00 Punkte')
+        expect(summaries()).toBe('Aufträge: 7,00 / 20,00')
         expect(wrapper.get('.assignment-progress').text()).toBe('Aufträge35 %')
         await wrapper.setProps({ activeSemester: 3 })
-        expect(summaries()).toContain('Aufträge · Sem 1: 18,00 / 25,00 Punkte')
-        expect(summaries()).toContain('Aufträge · Sem 2: 7,00 / 20,00 Punkte')
+        expect(summaries()).toContain('Aufträge · Sem 1: 18,00 / 25,00')
+        expect(summaries()).toContain('Aufträge · Sem 2: 7,00 / 20,00')
         expect(wrapper.get('.assignment-progress').text()).toBe('Aufträge55,56 %')
         await wrapper.setProps({ student: { ...student, user_id: 99, course_student_id: 99 } })
         expect(summaries()).toContain('Fremd')
@@ -298,19 +299,20 @@ describe('Compact course student performance', () => {
         ] }
         const wrapper = mountPerformance({ props: { student: { ...student, sem_grade: 5 }, course, activeSemester: 1, gradingReport: report } })
         const cards = () => wrapper.findAll('.grading-part-card').map((card) => card.text())
-        expect(cards()).toEqual(['Leistungsfeststellungen:4,00 / 5,00 Punkte'])
+        expect(cards()).toEqual(['LF:4,00 / 5,00'])
+        expect(wrapper.get('.grading-part-card').attributes('title')).toBe('Leistungsfeststellungen')
         await wrapper.setProps({ showCalculatedGrade: true })
-        expect(cards()).toEqual(['Leistungsfeststellungen:4,00 / 5,00 Punkte', 'Note:21,68'])
+        expect(cards()).toEqual(['LF:4,00 / 5,00', 'Note:21,68'])
         await wrapper.setProps({ activeSemester: 2 })
-        expect(cards()).toEqual(['Leistungsfeststellungen:4,00 / 5,00 Punkte', 'Note:4'])
+        expect(cards()).toEqual(['LF:4,00 / 5,00', 'Note:4'])
         await wrapper.setProps({ activeSemester: 3 })
-        expect(cards()).toEqual(['Leistungsfeststellungen · Sem 1:4,00 / 5,00 Punkte', 'Note · Sem 1:21,68',
-            'Leistungsfeststellungen · Sem 2:4,00 / 5,00 Punkte', 'Note · Sem 2:4', 'Gesamtnote:32,80'])
+        expect(cards()).toEqual(['LF · Sem 1:4,00 / 5,00', 'Note · Sem 1:21,68',
+            'LF · Sem 2:4,00 / 5,00', 'Note · Sem 2:4', 'Gesamtnote:32,80'])
         await wrapper.setProps({ student: { ...student, user_id: 13 }, activeSemester: 1 })
         expect(cards()).toContain('Note:Nicht berechenbar')
         expect(wrapper.findAll('.grading-part-card').at(-1).attributes('title')).toBe('Verpflichtende Prüfung fehlt.')
         await wrapper.setProps({ showCalculatedGrade: false })
-        expect(cards()).toEqual(['Leistungsfeststellungen:4,00 / 5,00 Punkte'])
+        expect(cards()).toEqual(['LF:4,00 / 5,00'])
         await wrapper.setProps({ showCalculatedGrade: true, course: { ...course, id: 99 } })
         expect(cards()).toEqual([])
     })

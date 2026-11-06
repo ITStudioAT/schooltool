@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Resources\Admin\Teaching\StudentResource;
 use App\Models\Import116;
 use App\Models\Licence;
 use App\Models\School;
@@ -13,6 +14,7 @@ use App\Notifications\StandardEmail;
 use App\Services\TeachingCourseService;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
 use Spatie\Permission\Models\Role;
@@ -463,6 +465,67 @@ test('student password login scopes school super admin overrides', function (str
     'other-school super admin' => ['foreign-school', false],
     'same-school teacher' => ['teacher', false],
 ]);
+
+test('remembered student sign-in records the login once in Vienna time', function (string $utcTime, string $storedTime, string $displayTime, string $loginIp): void {
+    config(['sanctum.stateful' => ['localhost']]);
+    $this->travelTo(Carbon::parse($utcTime, 'UTC')->setTimezone('Europe/Vienna'));
+    $this->student->forceFill([
+        'login_at' => '2026-01-01 08:00:00',
+        'login_ip' => '192.0.2.10',
+        'remember_token' => 'student-remember-token',
+    ])->save();
+    $guard = Auth::guard('web');
+    $sessionKey = $guard->getName();
+    $cookieName = $guard->getRecallerName();
+    $cookie = $this->student->id.'|student-remember-token|'.$this->student->password;
+    $url = '/api/homepage/student/user?school_id='.$this->school->id;
+
+    $this->withHeader('Origin', 'http://localhost')
+        ->withCredentials()
+        ->withCookie($cookieName, $cookie)
+        ->withServerVariables(['REMOTE_ADDR' => $loginIp])
+        ->getJson($url)
+        ->assertOk()
+        ->assertJsonPath('user.id', $this->student->id);
+
+    expect($this->student->refresh()->login_at)->toBe($storedTime)
+        ->and($this->student->login_ip)->toBe($loginIp)
+        ->and((new StudentResource($this->student))->toArray(request())['login_at'])->toBe($displayTime);
+
+    $this->travelTo(now()->addHour());
+    Auth::forgetGuards();
+    $this->withSession([$sessionKey => $this->student->id])
+        ->withServerVariables(['REMOTE_ADDR' => '203.0.113.99'])
+        ->getJson($url)
+        ->assertOk()
+        ->assertJsonPath('user.id', $this->student->id);
+
+    expect($this->student->refresh()->login_at)->toBe($storedTime)
+        ->and($this->student->login_ip)->toBe($loginIp);
+})->with([
+    'winter time' => ['2026-11-06 08:15:00', '2026-11-06 09:15:00', '06.11.2026  09:15', '203.0.113.42'],
+    'summer time' => ['2026-07-06 08:15:00', '2026-07-06 10:15:00', '06.07.2026  10:15', '2001:db8::42'],
+]);
+
+test('an invalid remember cookie does not change the student login timestamp', function (): void {
+    config(['sanctum.stateful' => ['localhost']]);
+    $this->student->forceFill([
+        'login_at' => '2026-01-01 08:00:00',
+        'login_ip' => '192.0.2.10',
+        'remember_token' => 'student-remember-token',
+    ])->save();
+
+    $this->withHeader('Origin', 'http://localhost')
+        ->withCredentials()
+        ->withCookie(Auth::guard('web')->getRecallerName(), $this->student->id.'|invalid-token|'.$this->student->password)
+        ->withServerVariables(['REMOTE_ADDR' => '203.0.113.99'])
+        ->getJson('/api/homepage/student/user?school_id='.$this->school->id)
+        ->assertOk()
+        ->assertJsonPath('user', null);
+
+    expect($this->student->refresh()->login_at)->toBe('2026-01-01 08:00:00')
+        ->and($this->student->login_ip)->toBe('192.0.2.10');
+});
 
 test('user endpoint returns user only for authenticated students', function () {
     $url = '/api/homepage/student/user?school_id='.$this->school->id;

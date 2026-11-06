@@ -1,5 +1,11 @@
 # UPDATES
 
+# 3.54.6 !!!
+
+### System
+
+- Anmeldezeitpunkt User gefixt
+
 ## 3.54.5
 
 ### System

@@ -13,11 +13,13 @@ use App\Services\SchoolToolModuleStatusService;
 use App\Services\SchoolUserLicenceAssignmentService;
 use App\Services\SchoolyearService;
 use Illuminate\Auth\Events\Authenticated;
+use Illuminate\Auth\Events\Login;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Mail\Events\MessageSending;
 use Illuminate\Notifications\Events\NotificationSending;
 use Illuminate\Session\Middleware\StartSession;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
@@ -205,6 +207,16 @@ class AppServiceProvider extends ServiceProvider
 
         Event::subscribe(TwoFactorSecuritySubscriber::class);
         Event::subscribe(StudentTimetableV3SessionSubscriber::class);
+        Event::listen(Login::class, function (Login $event): void {
+            if ($event->guard !== 'web' || ! $event->user instanceof User || ! Auth::guard('web')->viaRemember()) {
+                return;
+            }
+
+            $event->user->forceFill([
+                'login_at' => now(),
+                'login_ip' => request()->ip(),
+            ])->save();
+        });
         Event::listen([Authenticated::class, TokenAuthenticated::class], function (Authenticated|TokenAuthenticated $event): void {
             $user = $event instanceof Authenticated ? $event->user : $event->token->tokenable;
             if ($user instanceof User && ! $user->schoolyear_id) {

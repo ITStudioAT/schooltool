@@ -155,10 +155,11 @@ const gradingPartSummaries = computed(() => {
                 && types.every((type) => type.config?.calculation_mode === 'grades' && Array.isArray(type.entries) && type.entries.length === 0)
             return !emptyOptionalStandardGrade
         }).map((part) => {
-            const label = props.activeSemester === 3 && Number(report.semester_count) > 1 ? `${part.name} · Sem ${semester.semester}` : part.name
+            const shortName = part.name === 'Leistungsfeststellungen' ? 'LF' : part.name
+            const label = props.activeSemester === 3 && Number(report.semester_count) > 1 ? `${shortName} · Sem ${semester.semester}` : shortName
             let value = 'Keine Bewertung'
             let detail = ''
-            let hint = ''
+            let hint = shortName !== part.name ? part.name : ''
             const gradeMethodPending = ['grade_each', 'grade_mean'].includes(part.trace?.method)
             const pending = (part.trace?.method === 'plus_minus' && !part.trace?.thresholds) || gradeMethodPending
             const appliedAdjustment = ['adjust_grade', 'adjust_points'].includes(part.trace?.purpose) && part.status === 'complete'
@@ -223,11 +224,12 @@ const gradingPartSummaries = computed(() => {
                 } else if (['sum_percent', 'overall_points'].includes(trace.method) && Number.isFinite(trace.sum) && Number.isFinite(trace.maximum) && trace.maximum > 0) {
                     const adjustment = trace.points_adjustment
                     const corrected = adjustment?.status === 'complete' && Number.isFinite(adjustment.adjusted)
-                    value = `${formatPoints(corrected ? adjustment.adjusted : trace.sum)} / ${formatPoints(trace.maximum)} Punkte`
+                    value = `${formatPoints(corrected ? adjustment.adjusted : trace.sum)} / ${formatPoints(trace.maximum)}`
                     if (corrected && adjustment.change !== 0) {
                         const sign = adjustment.change > 0 ? '+' : ''
-                        detail = `Vorher ${formatPoints(adjustment.original)} · ${adjustment.source}: ${sign}${formatPoints(adjustment.change)} Punkte`
-                        if (adjustment.requested_change !== adjustment.change) detail += ` (berechnet ${adjustment.requested_change > 0 ? '+' : ''}${formatPoints(adjustment.requested_change)}, begrenzt)`
+                        detail = `${formatPoints(adjustment.original)} ${adjustment.change < 0 ? '−' : '+'} ${formatPoints(Math.abs(adjustment.change))} ${adjustment.source}`
+                        hint = `${part.name}: Vorher ${formatPoints(adjustment.original)} · ${adjustment.source}: ${sign}${formatPoints(adjustment.change)} Punkte`
+                        if (adjustment.requested_change !== adjustment.change) hint += ` (berechnet ${adjustment.requested_change > 0 ? '+' : ''}${formatPoints(adjustment.requested_change)}, begrenzt)`
                     }
                 } else if (Number.isFinite(part.result)) {
                     value = `Bewertung ${formatResult(part.result)}`
