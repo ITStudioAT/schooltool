@@ -4,9 +4,9 @@ import { flushPromises, mount } from '@vue/test-utils'
 import axios from 'axios'
 import CourseGamesRow from '@/pages/admin/teaching/overview/components/CourseGamesRow.vue'
 
-vi.mock('axios', () => ({ default: { get: vi.fn(), post: vi.fn() } }))
+vi.mock('axios', () => ({ default: { get: vi.fn(), post: vi.fn(), delete: vi.fn() } }))
 vi.mock('@/pages/admin/teachingTools/NumberSystemsGame.vue', () => ({ __esModule: true, default: {
-    props: ['sessionId', 'courseId', 'courseDateId'], template: '<div data-test="game-result">Ergebnis {{ sessionId }}<span v-if="courseId">Kurs {{ courseId }} Termin {{ courseDateId }}</span></div>',
+    props: ['sessionId', 'courseId', 'courseDateId'], template: '<div data-test="game-result">Ergebnis {{ sessionId }}<span v-if="courseId">Kurs {{ courseId }} Termin {{ courseDateId }}</span><button v-if="sessionId" @click="$emit(\'deleted\', sessionId)">Gelöscht</button></div>',
 } }))
 const wrappers = []
 afterEach(() => { wrappers.splice(0).forEach(wrapper => wrapper.unmount()); vi.resetAllMocks() })
@@ -33,7 +33,7 @@ it('places course rounds on their Vienna start date once and opens the existing 
     expect(cells[2].findAll('.course-game-card')).toHaveLength(0)
     expect(wrapper.text()).not.toContain('Fremder Kurs')
     await wrapper.get('[aria-label="Ergebnisse von Abendrunde ansehen"]').trigger('click'); await flushPromises()
-    expect(wrapper.get('[data-test="game-result"]').text()).toBe('Ergebnis 4')
+    expect(wrapper.get('[data-test="game-result"]').text()).toContain('Ergebnis 4')
 })
 
 it('keeps rounds outside course dates and unstarted rounds accessible without inventing play dates', async () => {
@@ -76,7 +76,7 @@ it('replaces the game card with the named adventure and keeps the game accessibl
     expect(cells[1].find('[aria-label="Zahlensysteme für 02.07.2026 öffnen"]').exists()).toBe(false)
     await cells[1].get('[aria-label="Ergebnisse von Signal Null xxx ansehen"]').trigger('click')
     await flushPromises()
-    expect(wrapper.get('[data-test="game-result"]').text()).toBe('Ergebnis 8')
+    expect(wrapper.get('[data-test="game-result"]').text()).toContain('Ergebnis 8')
 
     await wrapper.findAll('[role="dialog"] button').find(button => button.text() === 'Schließen').trigger('click')
     await flushPromises()
@@ -85,6 +85,70 @@ it('replaces the game card with the named adventure and keeps the game accessibl
     await flushPromises()
     expect(wrapper.get('[data-test="game-result"]').text()).toContain('Kurs 18 Termin 2')
     expect(axios.post).toHaveBeenCalledTimes(1)
+})
+
+it('closes the opened round and refreshes the course after deletion', async () => {
+    vi.mocked(axios.get).mockResolvedValueOnce({ data: { sessions: [
+        { id: 8, title: 'Gelöschte Runde', teaching_course_id: 18, teaching_course_date_id: 2, status: 'ended' },
+    ] } }).mockResolvedValue({ data: { sessions: [] } })
+    const wrapper = render(); await flushPromises()
+    await wrapper.get('[aria-label="Ergebnisse von Gelöschte Runde ansehen"]').trigger('click'); await flushPromises()
+
+    await wrapper.get('[data-test="game-result"] button').trigger('click'); await flushPromises()
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Gelöschte Runde')
+    expect(wrapper.text()).toContain('Alle Runden (0)')
+})
+
+it('removes the selected game assignment after confirmation while preserving other dates and games', async () => {
+    vi.mocked(axios.get).mockResolvedValue({ data: { sessions: [] } })
+    vi.mocked(axios.delete).mockRejectedValueOnce(new Error('offline')).mockResolvedValue({ data: { id: 1, games: ['number-systems'] } })
+    const wrapper = render()
+    await wrapper.setProps({ dates: [{ id: 1, date: '2026-07-02', games: ['networks', 'number-systems'] }, { id: 2, date: '2026-07-02', games: ['networks'] }] })
+    await flushPromises()
+    await wrapper.findAll('td')[0].get('[aria-label="Netzwerke für 02.07.2026 öffnen"]').trigger('click'); await flushPromises()
+    await wrapper.findAll('button').find(button => button.text() === 'Spiel vom Termin entfernen').trigger('click')
+    expect(wrapper.findAll('[role="dialog"]').at(-1).text()).toContain('Spielstände bleiben erhalten')
+    await wrapper.findAll('[role="dialog"]').at(-1).findAll('button').find(button => button.text() === 'Abbrechen').trigger('click')
+    expect(axios.delete).not.toHaveBeenCalled()
+    await wrapper.findAll('button').find(button => button.text() === 'Spiel vom Termin entfernen').trigger('click')
+    await wrapper.findAll('[role="dialog"]').at(-1).findAll('button').find(button => button.text() === 'Entfernen').trigger('click'); await flushPromises()
+    expect(wrapper.get('[role="alert"]').text()).toContain('nicht entfernt')
+    expect(wrapper.findAll('td')[0].text()).toContain('Netzwerke')
+    await wrapper.findAll('button').find(button => button.text() === 'Spiel vom Termin entfernen').trigger('click')
+    await wrapper.findAll('[role="dialog"]').at(-1).findAll('button').find(button => button.text() === 'Entfernen').trigger('click'); await flushPromises()
+    expect(axios.delete).toHaveBeenLastCalledWith('/api/admin/teaching/course_dates/1/games', { data: { game: 'networks' } })
+    expect(wrapper.findAll('td')[0].text()).not.toContain('Netzwerke')
+    expect(wrapper.findAll('td')[0].text()).toContain('Zahlensysteme')
+    expect(wrapper.findAll('td')[1].text()).toContain('Netzwerke')
+    expect(wrapper.emitted('games-updated').at(-1)).toEqual([{ id: 1, games: ['number-systems'] }])
+})
+
+it('offers assignment removal from an opened round without deleting the round', async () => {
+    const session = { id: 8, title: 'Runde', teaching_course_id: 18, teaching_course_date_id: 1, status: 'ended' }
+    vi.mocked(axios.get).mockResolvedValue({ data: { sessions: [session] } })
+    vi.mocked(axios.delete).mockResolvedValue({ data: { id: 1, games: [] } })
+    const wrapper = render(); await wrapper.setProps({ dates: [{ id: 1, date: '2026-07-02', games: ['number-systems'] }] }); await flushPromises()
+    await wrapper.get('[aria-label="Ergebnisse von Runde ansehen"]').trigger('click'); await flushPromises()
+    await wrapper.findAll('button').find(button => button.text() === 'Spiel vom Termin entfernen').trigger('click')
+    await wrapper.findAll('[role="dialog"]').at(-1).findAll('button').find(button => button.text() === 'Entfernen').trigger('click'); await flushPromises()
+    expect(wrapper.get('[aria-label="Ergebnisse von Runde ansehen"]').exists()).toBe(true)
+    expect(axios.delete).toHaveBeenCalledExactlyOnceWith('/api/admin/teaching/course_dates/1/games', { data: { game: 'number-systems' } })
+})
+
+it('allows the remaining game entry to be removed after deleting the last round', async () => {
+    vi.mocked(axios.get).mockResolvedValueOnce({ data: { sessions: [
+        { id: 8, title: 'Letzte Runde', teaching_course_id: 18, teaching_course_date_id: 1, status: 'ended' },
+    ] } }).mockResolvedValue({ data: { sessions: [] } })
+    vi.mocked(axios.delete).mockResolvedValue({ data: { id: 1, games: [] } })
+    const wrapper = render(); await wrapper.setProps({ dates: [{ id: 1, date: '2026-07-02', games: ['number-systems'] }] }); await flushPromises()
+    await wrapper.get('[aria-label="Ergebnisse von Letzte Runde ansehen"]').trigger('click'); await flushPromises()
+    await wrapper.get('[data-test="game-result"] button').trigger('click'); await flushPromises()
+    expect(wrapper.get('[aria-label="Zahlensysteme für 02.07.2026 öffnen"]').exists()).toBe(true)
+    await wrapper.get('[aria-label="Zahlensysteme für 02.07.2026 öffnen"]').trigger('click'); await flushPromises()
+    await wrapper.findAll('button').find(button => button.text() === 'Spiel vom Termin entfernen').trigger('click')
+    await wrapper.findAll('[role="dialog"]').at(-1).findAll('button').find(button => button.text() === 'Entfernen').trigger('click'); await flushPromises()
+    expect(wrapper.find('[aria-label="Zahlensysteme für 02.07.2026 öffnen"]').exists()).toBe(false)
 })
 
 it('keeps a failed selection open for retry and disables duplicate assignments', async () => {

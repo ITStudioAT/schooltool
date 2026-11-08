@@ -45,6 +45,26 @@ class CourseDateController extends Controller
         return response()->json(['id' => $course_date->id, 'games' => $games]);
     }
 
+    public function removeGame(Request $request, TeachingCourseDate $course_date): JsonResponse
+    {
+        $user = $this->userHasRole(['admin', 'teaching_admin', 'teacher']);
+        abort_unless($user && $course_date->teachingCourse, 403, 'Sie haben keine Berechtigung');
+        $this->authorizeTeachingCourseAccess($course_date->teachingCourse, $user);
+        $data = $request->validate(['game' => ['required', Rule::in(['number-systems', 'networks'])]]);
+        abort_unless(Schema::hasColumn('teaching_course_dates', 'games'), 503, 'Die Erweiterung für Spiele am Kurstermin muss noch aktiviert werden.');
+
+        $games = DB::transaction(function () use ($course_date, $data): array {
+            $date = TeachingCourseDate::query()->lockForUpdate()->findOrFail($course_date->id);
+            $games = array_values(array_filter($date->games ?? [], fn (string $game): bool => $game !== $data['game']));
+            $date->games = $games;
+            $date->save();
+
+            return $games;
+        }, 3);
+
+        return response()->json(['id' => $course_date->id, 'games' => $games]);
+    }
+
     public function index(Request $request)
     {
         if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {

@@ -351,6 +351,35 @@ it('names the round and consequences before deletion and preserves the list when
     expect(wrapper.text()).not.toContain('Eigene Proberunde')
 })
 
+it('deletes an opened course round only after confirmation and reports success to the parent', async () => {
+    const session = { id: 4, title: 'Kursrunde', status: 'ended' }
+    vi.mocked(axios.get).mockResolvedValue({ data: { session, runs: [{ id: 1, members: [], presence: [] }], enrolled: 0 } })
+    vi.mocked(axios.delete).mockRejectedValueOnce({ response: { data: { message: 'Löschen fehlgeschlagen' } } }).mockResolvedValue({ data: { deleted: true } })
+    const dialog = defineComponent({ props: ['modelValue'], setup(props, { slots }) { return () => props.modelValue ? h('div', { role: 'dialog' }, slots.default?.()) : null } })
+    const wrapper = mount(NumberSystemsGame, { props: { sessionId: 4 }, global: { stubs: { 'v-dialog': dialog } } }); wrappers.push(wrapper)
+    await flushPromises()
+
+    await wrapper.findAll('button').find(button => button.text() === 'Runde löschen').trigger('click')
+    expect(wrapper.get('[role="dialog"]').text()).toContain('1 Spielständen')
+    await wrapper.get('[role="dialog"] form').trigger('submit'); await flushPromises()
+    expect(wrapper.get('[role="dialog"] [role="alert"]').text()).toBe('Löschen fehlgeschlagen')
+    expect(wrapper.emitted('deleted')).toBeUndefined()
+    await wrapper.get('[role="dialog"] form').trigger('submit'); await flushPromises()
+    expect(axios.delete).toHaveBeenLastCalledWith('/api/admin/number-systems/sessions/4', { data: { confirmation: 'Kursrunde' } })
+    expect(wrapper.emitted('deleted')).toEqual([[4]])
+    expect(wrapper.text()).not.toContain('Kursrunde')
+})
+
+it.each(['running', 'paused'])('requires a %s opened round to be ended before deletion', async status => {
+    vi.mocked(axios.get).mockResolvedValue({ data: { session: { id: 4, title: 'Kursrunde', status }, runs: [], enrolled: 0 } })
+    const wrapper = mount(NumberSystemsGame, { props: { sessionId: 4 }, global: { stubs: { 'v-dialog': true } } }); wrappers.push(wrapper)
+    await flushPromises()
+
+    expect(wrapper.findAll('button').find(button => button.text() === 'Runde löschen').attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).toContain('zuerst beenden')
+    expect(axios.delete).not.toHaveBeenCalled()
+})
+
 it('lets a teacher prepare a separate new round and start pause resume and end it', async () => {
     const session = { id: 2, title: 'Signal Null', planned_minutes: 30, difficulty: 3, mode: 'teams', status: 'waiting', join_code: 'ABC1234567' }
     const monitor = () => ({ session: { ...session }, enrolled: 20, runs: [] })

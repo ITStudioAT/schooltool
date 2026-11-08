@@ -771,6 +771,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::apiResource('/admin/teaching/course_dates', CourseDateController::class);
         Route::patch('/admin/teaching/course_dates/{course_date}/status', [CourseDateController::class, 'updateStatus']);
         Route::post('/admin/teaching/course_dates/{course_date}/games', [CourseDateController::class, 'addGame']);
+        Route::delete('/admin/teaching/course_dates/{course_date}/games', [CourseDateController::class, 'removeGame']);
         Route::middleware(EnsureTeachingCurriculaEnabled::class)->group(function (): void {
             Route::post('/admin/teaching/course_dates/{course_date}/adopt-curriculum-content', [CourseDateController::class, 'adoptCurriculumContent']);
             Route::put('/admin/teaching/course_dates/{course_date}/curriculum-files/{file}/visibility', [CourseDateController::class, 'setCurriculumFileVisibility']);

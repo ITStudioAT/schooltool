@@ -10,7 +10,7 @@
                     <v-card-title>Spiele · {{ course.title }}<template v-if="selectedDate"> · {{ dateLabel(selectedDate) }}</template></v-card-title>
                     <v-card-text>
                         <p v-if="assignmentError" role="alert" class="text-error">{{ assignmentError }}</p>
-                        <p v-if="saving" role="status">Spiel wird hinzugefügt …</p>
+                        <p v-if="saving" role="status">Änderung wird gespeichert …</p>
                         <TeachingGames v-if="selecting" selection :busy="saving" :assigned="gamesForDate(selectedDate)" @select="selectGame" />
                         <NetworksGame v-else-if="selectedGame === 'networks'" />
                         <NumberSystemsGame v-else-if="selectedGame === 'number-systems'" :key="selectedDate.id" :course-id="Number(course.id)" :course-date-id="selectedDate.id" />
@@ -18,7 +18,7 @@
                             <p v-if="!sessions.length">Für diesen Kurs sind noch keine Spielrunden vorhanden.</p>
                             <ul v-else class="course-game-list">
                                 <li v-for="session in orderedSessions" :key="session.id">
-                                    <button type="button" class="course-game-card" @click="selectedSessionId = session.id">
+                                    <button type="button" class="course-game-card" @click="showSession(session)">
                                         <span class="course-game-type">Zahlensysteme</span>
                                         <span class="course-game-title">{{ session.title }}</span>
                                         <span class="course-game-time">{{ numberSystemSessionDates(session) }}</span>
@@ -27,13 +27,21 @@
                                 </li>
                             </ul>
                         </template>
-                        <NumberSystemsGame v-else-if="dialogOpen" :key="selectedSessionId" :session-id="selectedSessionId" />
+                        <NumberSystemsGame v-else-if="dialogOpen" :key="selectedSessionId" :session-id="selectedSessionId" @deleted="dialogOpen = false" />
                     </v-card-text>
                     <v-card-actions>
                         <v-btn v-if="selectedSessionId" variant="text" @click="selectedSessionId = null">Alle Runden</v-btn>
+                        <v-btn v-if="assignmentToRemove" variant="text" color="error" :disabled="saving" @click="confirmRemoval = true">Spiel vom Termin entfernen</v-btn>
                         <v-spacer />
                         <v-btn variant="text" :disabled="saving" @click="dialogOpen = false">{{ selecting ? 'Abbrechen' : 'Schließen' }}</v-btn>
                     </v-card-actions>
+                </v-card>
+            </v-dialog>
+            <v-dialog v-model="confirmRemoval" :persistent="saving" max-width="520">
+                <v-card>
+                    <v-card-title>Spiel vom Termin entfernen?</v-card-title>
+                    <v-card-text>{{ gameTitles[assignmentToRemove] }} wird vom Termin {{ dateLabel(selectedDate) }} entfernt. Bereits angelegte Spielrunden und Spielstände bleiben erhalten und werden weiterhin angezeigt.</v-card-text>
+                    <v-card-actions><v-spacer /><v-btn :disabled="saving" @click="confirmRemoval = false">Abbrechen</v-btn><v-btn color="error" :disabled="saving" @click="removeAssignment">Entfernen</v-btn></v-card-actions>
                 </v-card>
             </v-dialog>
         </th>
@@ -43,7 +51,7 @@
                 <span class="course-game-type">{{ gameTitles[game] }}</span>
                 <span class="course-game-title">Spiel öffnen</span>
             </button>
-            <button v-for="session in rounds" :key="session.id" type="button" class="course-game-card" :aria-label="`Ergebnisse von ${session.title} ansehen`" @click="showSession(session)">
+            <button v-for="session in rounds" :key="session.id" type="button" class="course-game-card" :aria-label="`Ergebnisse von ${session.title} ansehen`" @click="showSession(session, courseDate)">
                 <span class="course-game-type">Zahlensysteme</span>
                 <span class="course-game-title">{{ session.title }}</span>
                 <span class="course-game-time">{{ numberSystemSessionDates(session) }}</span>
@@ -58,7 +66,7 @@
 import { computed, defineAsyncComponent, onBeforeUnmount, ref, watch } from 'vue'
 import axios from 'axios'
 import { index } from '@/actions/App/Http/Controllers/Admin/NumberSystemGameController'
-import { addGame as assignGame } from '@/actions/App/Http/Controllers/Admin/Teaching/CourseDateController'
+import { addGame as assignGame, removeGame } from '@/actions/App/Http/Controllers/Admin/Teaching/CourseDateController'
 import { applicationDate } from '@/helpers/date'
 import { numberSystemSessionDates } from '@/pages/components/numberSystems/sessionDates'
 
@@ -70,6 +78,7 @@ const emit = defineEmits(['games-updated'])
 const gameTitles = { 'number-systems': 'Zahlensysteme', networks: 'Netzwerke' }
 const selecting = ref(false), selectedDate = ref(null), selectedGame = ref(null), saving = ref(false), assignmentError = ref('')
 const savedGames = ref({})
+const confirmRemoval = ref(false)
 const states = { waiting: 'Vorbereitet', running: 'Läuft', paused: 'Pausiert', ended: 'Beendet' }
 const sessions = ref([]), loading = ref(false), error = ref(false), dialogOpen = ref(false), selectedSessionId = ref(null)
 let request = null
@@ -81,6 +90,10 @@ const dateEntries = computed(() => props.dates.map((courseDate, dateIndex) => {
 
     return { courseDate, games, rounds }
 }))
+const assignmentToRemove = computed(() => {
+    const game = selectedGame.value || (selectedSessionId.value ? 'number-systems' : null)
+    return game && gamesForDate(selectedDate.value).includes(game) ? game : null
+})
 
 async function load() {
     request?.abort()
@@ -105,9 +118,9 @@ function sessionsForDate(courseDate, dateIndex) {
 }
 function gamesForDate(courseDate) { return (savedGames.value[courseDate?.id] ?? courseDate?.games ?? []).filter(game => gameTitles[game]) }
 function dateLabel(courseDate) { return courseDate?.date?.slice(0, 10).split('-').reverse().join('.') ?? '' }
-function resetSelection() { selecting.value = false; selectedDate.value = null; selectedGame.value = null; selectedSessionId.value = null; assignmentError.value = '' }
+function resetSelection() { selecting.value = false; selectedDate.value = null; selectedGame.value = null; selectedSessionId.value = null; confirmRemoval.value = false; assignmentError.value = '' }
 function showAll() { resetSelection(); dialogOpen.value = true }
-function showSession(session) { resetSelection(); selectedSessionId.value = session.id; dialogOpen.value = true }
+function showSession(session, courseDate = null) { resetSelection(); selectedSessionId.value = session.id; selectedDate.value = courseDate ?? dateEntries.value.find(entry => entry.rounds.some(round => round.id === session.id))?.courseDate ?? null; dialogOpen.value = true }
 function showSelection(courseDate) { resetSelection(); selectedDate.value = courseDate; selecting.value = true; dialogOpen.value = true }
 function showGame(game, courseDate) { resetSelection(); selectedDate.value = courseDate; selectedGame.value = game; dialogOpen.value = true }
 function selectGame(game) {
@@ -131,6 +144,20 @@ async function addGame(game) {
         dialogOpen.value = false
     } catch (failure) {
         if (props.course.id === courseId) { assignmentError.value = failure.response?.data?.message || 'Das Spiel konnte nicht hinzugefügt werden. Bitte versuche es erneut.' }
+    } finally { saving.value = false }
+}
+async function removeAssignment() {
+    if (saving.value || !selectedDate.value || !assignmentToRemove.value) { return }
+    const courseId = props.course.id, dateId = selectedDate.value.id, game = assignmentToRemove.value
+    saving.value = true; assignmentError.value = ''
+    try {
+        const { data } = await axios.delete(removeGame.url(dateId), { data: { game } })
+        if (props.course.id !== courseId) { return }
+        savedGames.value = { ...savedGames.value, [dateId]: data.games }
+        emit('games-updated', { id: dateId, games: data.games })
+        confirmRemoval.value = false; dialogOpen.value = false
+    } catch (failure) {
+        if (props.course.id === courseId) { assignmentError.value = failure.response?.data?.message || 'Das Spiel konnte nicht entfernt werden. Bitte versuche es erneut.'; confirmRemoval.value = false }
     } finally { saving.value = false }
 }
 watch(() => props.course.id, () => { dialogOpen.value = false; resetSelection(); savedGames.value = {}; void load() }, { immediate: true })

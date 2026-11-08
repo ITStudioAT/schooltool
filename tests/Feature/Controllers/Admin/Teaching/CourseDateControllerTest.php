@@ -48,6 +48,38 @@ it('rejects unknown games and users without access to the course date', function
     expect($date->fresh()->games)->toBeNull();
 });
 
+it('removes only the selected game assignment from one date', function (): void {
+    $date = TeachingCourseDate::create(['teaching_course_id' => $this->course->id, 'date' => '2026-11-02', 'hours' => [3], 'content' => 'Erhalten']);
+    $date->games = ['networks', 'number-systems'];
+    $date->save();
+    $other = TeachingCourseDate::create(['teaching_course_id' => $this->course->id, 'date' => '2026-11-03', 'hours' => [4]]);
+    $other->games = ['networks'];
+    $other->save();
+    $before = $date->fresh()->getAttributes();
+    $url = "/api/admin/teaching/course_dates/{$date->id}/games";
+
+    $this->actingAs($this->admin, 'sanctum')->deleteJson($url, ['game' => 'networks'])->assertOk()->assertJsonPath('games', ['number-systems']);
+
+    expect($date->fresh()->games)->toBe(['number-systems']);
+    expect($date->fresh()->getAttributes())->toMatchArray(collect($before)->except(['updated_at', 'games'])->all());
+    expect($other->fresh()->games)->toBe(['networks']);
+});
+
+it('refuses invalid or unauthorized game assignment removal', function (): void {
+    $date = TeachingCourseDate::create(['teaching_course_id' => $this->course->id, 'date' => '2026-11-02', 'hours' => [3]]);
+    $date->games = ['networks'];
+    $date->save();
+    $url = "/api/admin/teaching/course_dates/{$date->id}/games";
+
+    $this->deleteJson($url, ['game' => 'networks'])->assertUnauthorized();
+    $this->actingAs($this->admin, 'sanctum')->deleteJson($url, ['game' => 'unknown'])->assertUnprocessable();
+    $this->actingAs($this->regularUser, 'sanctum')->deleteJson($url, ['game' => 'networks'])->assertForbidden();
+    $this->actingAs($this->teacher, 'sanctum')->deleteJson($url, ['game' => 'networks'])->assertForbidden();
+    $this->admin->update(['school_id' => $this->otherSchool->id]);
+    $this->actingAs($this->admin->fresh(), 'sanctum')->deleteJson($url, ['game' => 'networks'])->assertForbidden();
+    expect($date->fresh()->games)->toBe(['networks']);
+});
+
 function curriculumVisibilityFixture(object $test): array
 {
     Storage::fake('local');

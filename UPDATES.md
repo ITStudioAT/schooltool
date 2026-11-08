@@ -1,6 +1,10 @@
 # UPDATES
 
-# 3.54.6 !!!
+## 3.54.6
+
+### Spiele
+
+- Aus einem Kurs entfrenen
 
 ### Unterricht
 

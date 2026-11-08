@@ -29,7 +29,8 @@
         <template v-else-if="selected">
             <button v-if="!sessionId" class="ns-button ns-button-quiet" style="margin:20px 0" @click="closeMonitor">Zur Rundenübersicht</button>
             <section class="ns-panel ns-stack">
-                <div class="ns-toolbar"><div><h2>{{ selected.session.title }}</h2><p>{{ courseLabel(selected.session) }}</p><p class="ns-muted">{{ states[selected.session.status] }} · {{ selected.session.planned_minutes }} Minuten geplant · {{ levels[selected.session.difficulty] }}</p><p class="ns-small ns-muted">{{ audiences[selected.session.audience || 'course'] }} · {{ modes[selected.session.mode || 'solo'] }} · {{ timerLabel(selected.session) }}{{ selected.session.ranking_enabled ? ' · Reihung aktiviert' : '' }}</p></div><button class="ns-button ns-button-quiet" :disabled="busy" @click="openRename(selected.session)">Bezeichnung ändern</button></div>
+                <div class="ns-toolbar"><div><h2>{{ selected.session.title }}</h2><p>{{ courseLabel(selected.session) }}</p><p class="ns-muted">{{ states[selected.session.status] }} · {{ selected.session.planned_minutes }} Minuten geplant · {{ levels[selected.session.difficulty] }}</p><p class="ns-small ns-muted">{{ audiences[selected.session.audience || 'course'] }} · {{ modes[selected.session.mode || 'solo'] }} · {{ timerLabel(selected.session) }}{{ selected.session.ranking_enabled ? ' · Reihung aktiviert' : '' }}</p></div><div class="ns-toolbar"><button class="ns-button ns-button-quiet" :disabled="busy" @click="openRename(selected.session)">Bezeichnung ändern</button><button class="ns-button ns-button-quiet" :disabled="busy || !['waiting', 'ended'].includes(selected.session.status)" @click="openDelete({ ...selected.session, runs_count: selected.runs.length })">Runde löschen</button></div></div>
+                <p v-if="!['waiting', 'ended'].includes(selected.session.status)" class="ns-small ns-muted">Zum Löschen die laufende oder pausierte Runde zuerst beenden.</p>
                 <p class="ns-small ns-muted">{{ numberSystemSessionDates(selected.session) }}</p>
                 <NumberSystemClock :clock="selected.clock" />
                 <div v-if="selected.session.status !== 'ended'">
@@ -115,6 +116,7 @@ const props = defineProps({
     courseId: { type: Number, default: null },
     courseDateId: { type: Number, default: null },
 })
+const emit = defineEmits(['deleted'])
 const chapters = ['Maschinenraum', 'Fehlerarchiv', 'Tresor', 'Funkzentrale']
 const levels = { 1: 'Leicht', 2: 'Mittel', 3: 'Anspruchsvoll' }
 const states = { waiting: 'Warteraum', running: 'Runde läuft', paused: 'Pausiert', ended: 'Beendet' }
@@ -207,7 +209,13 @@ function openDelete(session) { error.value = ''; deleteTarget.value = session }
 async function remove() {
     if (busy.value || !deleteTarget.value) { return }
     busy.value = true; error.value = ''
-    try { await axios.delete(removeSession.url(deleteTarget.value.id), { data: { confirmation: deleteTarget.value.title } }); deleteTarget.value = null; await load() }
+    try {
+        const id = deleteTarget.value.id
+        await axios.delete(removeSession.url(id), { data: { confirmation: deleteTarget.value.title } })
+        deleteTarget.value = null
+        if (selected.value?.session.id === id) { closeMonitor() }
+        if (props.sessionId) { emit('deleted', id) } else { await load() }
+    }
     catch (failure) { error.value = failureMessage(failure) } finally { busy.value = false }
 }
 async function createProbe() {
@@ -223,7 +231,7 @@ async function control(action) {
     try { const { data } = await axios.post(controlSession.url(selected.value.session.id), { action }); selected.value = data; endDialog.value = false; await load() }
     catch (failure) { error.value = failureMessage(failure) } finally { busy.value = false }
 }
-onMounted(() => { void load(); poll = setInterval(async () => { if (selected.value && !busy.value && !polling && !createDialog.value && !endDialog.value && !renameTarget.value && !document.hidden) { polling = true; try { await open(selected.value.session.id, true) } finally { polling = false } } }, 4000) })
+onMounted(() => { void load(); poll = setInterval(async () => { if (selected.value && !busy.value && !polling && !createDialog.value && !endDialog.value && !renameTarget.value && !deleteTarget.value && !document.hidden) { polling = true; try { await open(selected.value.session.id, true) } finally { polling = false } } }, 4000) })
 onBeforeUnmount(() => { disposed = true; downloadController?.abort(); clearInterval(poll) })
 </script>
 <style scoped>
