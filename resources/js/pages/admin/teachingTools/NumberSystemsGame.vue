@@ -52,7 +52,7 @@
                 <div class="ns-toolbar"><h2>Fortschritt im Kurs</h2><span class="ns-small ns-muted">Automatisch aktualisiert</span><button class="ns-button ns-button-secondary" :disabled="downloading" @click="downloadResults">{{ downloading ? 'PDF wird erstellt …' : 'Auswertung herunterladen (PDF)' }}</button></div>
                 <p v-if="!selected.runs.length" class="ns-muted" style="margin-top:15px">Noch niemand beigetreten. Gib den Kurscode weiter und warte, bis die Gruppe bereit ist.</p>
                 <div v-else class="ns-monitor"><table><thead><tr><th>Person / Team</th><th>Bereich</th><th>Bestätigt</th><th>Mit Hilfe</th><th v-if="selected.clock?.mode !== 'none'">Spielzeit</th></tr></thead><tbody>
-                    <tr v-for="run in selected.runs" :key="run.id"><td><strong>{{ run.team_name || run.members[0] }}</strong><NumberSystemPresence :people="run.presence" /></td><td>{{ run.completed ? 'Verbindung wiederhergestellt' : run.chapter }}</td><td>{{ run.solved }} / {{ run.total }}<progress class="ns-progress" :value="run.solved" :max="run.total" :aria-label="`Fortschritt ${run.team_name || run.members[0]}`" /></td><td>{{ run.with_help }}</td><td v-if="selected.clock?.mode !== 'none'"><NumberSystemClock :clock="run.clock" compact /></td></tr>
+                    <tr v-for="run in selected.runs" :key="run.id"><td><strong>{{ monitorRunName(run) }}</strong><NumberSystemPresence :people="monitorPeople(run.presence)" /></td><td>{{ run.completed ? 'Verbindung wiederhergestellt' : run.chapter }}</td><td>{{ run.solved }} / {{ run.total }}<progress class="ns-progress" :value="run.solved" :max="run.total" :aria-label="`Fortschritt ${monitorRunName(run)}`" /></td><td>{{ run.with_help }}</td><td v-if="selected.clock?.mode !== 'none'"><NumberSystemClock :clock="run.clock" compact /></td></tr>
                 </tbody></table></div>
                 <p class="ns-small ns-muted" style="margin-top:16px">Verbindung: Nach 45 Sekunden ohne Signal erscheint „Signal verzögert“, nach 90 Sekunden „Verbindung unterbrochen“. Der Grund ist nicht sicher erkennbar; auch Hintergrundfenster können verzögert signalisieren. Fortschritt bleibt gespeichert.</p>
                 <p class="ns-small ns-muted" style="margin-top:16px">Zum Abschluss: Lasst verschiedene Lösungswege erklären. „Mit Hilfe“ beschreibt den Lernweg und zieht keine Punkte ab.</p>
@@ -138,6 +138,8 @@ let downloadController = null
 const joinedCount = computed(() => (selected.value?.runs ?? []).reduce((sum, run) => sum + run.members.length, 0))
 const courseJoinedCount = computed(() => (selected.value?.runs ?? []).reduce((sum, run) => sum + (run.course_members ?? run.members.length), 0))
 const externalJoinedCount = computed(() => (selected.value?.runs ?? []).reduce((sum, run) => sum + (run.external_members ?? 0), 0))
+const monitorRunName = run => run.team_name || run.presence?.[0]?.monitor_name || run.members[0]
+const monitorPeople = people => (people ?? []).map(person => ({ ...person, name: person.monitor_name || person.name }))
 const failureMessage = failure => failure.response?.data?.message || Object.values(failure.response?.data?.errors ?? {}).flat()[0] || 'Die Verbindung ist unterbrochen. Bitte versuche es erneut.'
 function courseLabel(session) {
     if (session.audience === 'external') { return 'Ohne Kurs · nur externe Teilnehmende' }

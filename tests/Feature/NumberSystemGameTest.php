@@ -364,6 +364,23 @@ test('teacher final rankings identify course students and external guests by nam
     expect(app(NumberSystemGameResults::class)->ranking($this->session, $run->id)['entries'][0]['label'])->toBe('Spielweg 1');
 });
 
+test('course monitor receives surname-first names without changing guest names or participant order', function () {
+    $this->students[0]->update(['first_name' => 'Anna Maria', 'last_name' => 'von Muster']);
+    $this->session->update(['audience' => 'mixed', 'mode' => 'teams']);
+    $run = app(NumberSystemGameService::class)->join($this->students[0], $this->session->join_code, 'Team A', null);
+    $this->postJson('/api/number-systems/join', [
+        'code' => $this->session->join_code, 'display_name' => 'Gast Černý', 'team_code' => $run->team_code,
+    ])->assertOk();
+
+    $view = nsGameAs($this, $this->teacher)->getJson('/api/admin/number-systems/sessions/'.$this->session->id)
+        ->assertOk()->json('runs.0');
+
+    expect($view['members'])->toBe(['Gast Černý', 'Anna Maria von Muster']);
+    expect(array_column($view['presence'], 'name'))->toBe($view['members']);
+    expect($view['presence'][0])->not->toHaveKey('monitor_name');
+    expect($view['presence'][1]['monitor_name'])->toBe('von Muster, Anna Maria');
+});
+
 test('connection signals identify each team member and recover without altering the saved run', function () {
     $this->freezeTime();
     $this->session->update(['mode' => 'teams']);

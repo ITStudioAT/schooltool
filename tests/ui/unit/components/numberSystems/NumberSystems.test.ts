@@ -273,6 +273,27 @@ it('opens a course result directly and shows its dates without loading all round
     expect(wrapper.text()).not.toContain('Neues Abenteuer')
 })
 
+it('shows surname-first course names in the progress table while preserving team and guest names', async () => {
+    vi.mocked(axios.get).mockResolvedValue({ data: {
+        session: { id: 4, title: 'Kursrunde', status: 'ended' }, enrolled: 2,
+        runs: [
+            { id: 1, members: ['Anna Maria von Muster'], presence: [{ name: 'Anna Maria von Muster', monitor_name: 'von Muster, Anna Maria', status: 'unknown' }], solved: 0, total: 10 },
+            { id: 2, team_name: 'Team A', members: ['Gast Černý', 'Ben Beispiel'], presence: [
+                { name: 'Gast Černý', external: true, status: 'unknown' },
+                { name: 'Ben Beispiel', monitor_name: 'Beispiel, Ben', status: 'unknown' },
+            ], solved: 0, total: 10 },
+        ],
+    } })
+    const wrapper = mount(NumberSystemsGame, { props: { sessionId: 4 }, global: { stubs: { 'v-dialog': true } } }); wrappers.push(wrapper)
+    await flushPromises()
+
+    const rows = wrapper.findAll('.ns-monitor tbody tr')
+    expect(rows.map(row => row.get('td > strong').text())).toEqual(['von Muster, Anna Maria', 'Team A'])
+    expect(rows[0].get('.ns-presence').text()).toContain('von Muster, Anna Maria')
+    expect(rows[1].get('.ns-presence').text()).toContain('Gast Černý (extern)').toContain('Beispiel, Ben')
+    expect(rows[0].get('progress').attributes('aria-label')).toBe('Fortschritt von Muster, Anna Maria')
+})
+
 it.each(['running', 'ended'])('renames a %s round while keeping its course and settings visible', async status => {
     const session = { id: 4, title: 'Alte Bezeichnung', status, planned_minutes: 40, difficulty: 2, course: { id: 8, title: 'DGB 3B Gruppe 2' }, mode: 'teams', timer_mode: 'countdown', countdown_seconds: 2400, audience: 'mixed' }
     vi.mocked(axios.get).mockResolvedValue({ data: { available: true, courses: [], sessions: [session] } })

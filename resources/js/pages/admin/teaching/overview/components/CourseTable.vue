@@ -1454,6 +1454,9 @@
                                                 {{ unassignedWorkGroupStudents.length }} offen
                                             </v-chip>
                                         </div>
+                                        <div v-if="workDialogGroups.length && !workSaving" class="text-body-2 mb-2">
+                                            Ziehe einen Namen auf die gewünschte Gruppe.
+                                        </div>
                                         <div class="d-flex flex-wrap ga-1">
                                             <v-chip
                                                 v-for="student in unassignedWorkGroupStudents"
@@ -1685,6 +1688,17 @@
                 </v-card-title>
                 <v-divider />
                 <v-card-text class="d-flex flex-column ga-4">
+                    <v-autocomplete
+                        data-testid="work-group-add-student"
+                        :model-value="null"
+                        :items="unassignedWorkGroupStudents"
+                        label="Schüler:in zur Gruppe hinzufügen"
+                        no-data-text="Keine nicht zugeordneten Schüler:innen verfügbar."
+                        hint="Änderungen anschließend bei der Arbeit speichern."
+                        persistent-hint
+                        variant="outlined"
+                        :disabled="workSaving"
+                        @update:model-value="assignUnassignedWorkGroupStudent(workDialogGroupDetails.groupIndex, $event)" />
                     <v-textarea
                         v-model="workDialogGroupDetailsGroup.comment"
                         label="Beschreibung"

@@ -88,11 +88,20 @@ class NumberSystemGameController extends Controller
         $seen = $presence->snapshot($session);
         $runs = $session->runs->map(function ($run) use ($results, $session, $presence, $seen): array {
             $history = $run->history ?? [];
+            $participants = $run->participants();
+            $people = $presence->members($run, $seen);
+            foreach ($participants as $index => $member) {
+                if ($member instanceof User) {
+                    $people[$index]['monitor_name'] = implode(', ', array_filter([
+                        trim((string) $member->last_name), trim((string) $member->first_name),
+                    ], fn (string $name): bool => $name !== ''));
+                }
+            }
 
             return ['id' => $run->id, 'team_name' => $run->team_name, 'team_code' => $run->team_code,
-                'members' => $run->participants()->map(fn (User|NumberSystemGameGuest $member): string => trim($member->first_name.' '.$member->last_name))->values()->all(),
-                'course_members' => $run->members->count(), 'external_members' => $run->participants()->count() - $run->members->count(),
-                'presence' => $presence->members($run, $seen),
+                'members' => $participants->map(fn (User|NumberSystemGameGuest $member): string => trim($member->first_name.' '.$member->last_name))->values()->all(),
+                'course_members' => $run->members->count(), 'external_members' => $participants->count() - $run->members->count(),
+                'presence' => $people,
                 'solved' => count($history), 'total' => count($run->puzzles), 'completed' => $run->completed_at !== null, 'clock' => $results->clock($session, $run),
                 'chapter' => $run->puzzles[$run->position]['chapter_title'], 'updated_at' => $run->updated_at->toIso8601String(),
                 'with_help' => count(array_filter($history, fn (array $item): bool => $item['hints'] > 0))];

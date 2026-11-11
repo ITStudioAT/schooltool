@@ -4198,6 +4198,65 @@ describe('CourseTable', () => {
         expect(workDialogGroups[0].student_ids).toEqual([1488, 1489])
     })
 
+    it('adds an unassigned student in group details and saves without changing existing assessments', async () => {
+        const pinia = createTestingPinia({ createSpy: vi.fn })
+        useCourseStore(pinia).selected_course = { id: 18, course_dates: [], students_info: [
+            { id: 12, user_id: 12, first_name: 'Ada', last_name: 'Alpha' },
+            { id: 13, user_id: 13, first_name: 'Ben', last_name: 'Beta' },
+            { id: 14, user_id: 14, first_name: 'Cora', last_name: 'Gamma' },
+        ] } as never
+        const wrapper = mount(CourseTable, { props: { view: 'entries' }, global: {
+            plugins: [pinia], stubs: {
+                'v-dialog': { props: ['modelValue'], template: '<div v-if="modelValue"><slot /></div>' },
+                'v-autocomplete': { props: ['items', 'modelValue', 'disabled'], template: '<div />' },
+                WorkEvaluationImport: true, ItsGridBox: { template: '<div><slot /></div>' },
+                CourseStudentNotes: true, CourseStudentIndicators: true, CurriculumPdfPreview: true,
+                ItsRichTextEditor: true, 'v-tab': true, 'v-tabs': true, 'v-textarea': true, 'v-date-input': true,
+                'v-list-subheader': true, 'v-divider': true, 'v-checkbox': true,
+            },
+        } })
+        const work = { id: 65, teaching_course_id: 18, type: 'A5', is_group_work: true, groups: [
+            { id: 1, name: 'Recherche', student_ids: [12], comment: 'Gruppenkommentar', grade: '',
+                use_individual_grades: true, grades: [{ student_id: 12, grade: '2' }],
+                comments: [{ student_id: 12, comment: 'Gut' }], points: [] },
+            { id: 2, name: 'Präsentation', student_ids: [14], comment: 'Erhalten', grade: '1',
+                grades: [], comments: [], points: [] },
+        ] }
+        const original = structuredClone(work)
+        try {
+            const vm = wrapper.vm as any
+            vm.workDialog.open = true
+            vm.startEditingDateWork(work)
+            vm.workDialogTab = 'groups'
+            await flushPromises()
+            expect(wrapper.text()).toContain('Ziehe einen Namen auf die gewünschte Gruppe.')
+            await wrapper.get('[data-testid="course-table-work-group-card-0"]').trigger('click')
+
+            const selection = wrapper.getComponent('[data-testid="work-group-add-student"]')
+            expect(selection.props('items')).toEqual([{ title: 'Beta, Ben', value: 13 }])
+            selection.vm.$emit('update:modelValue', 13)
+            await flushPromises()
+
+            expect(selection.props('items')).toEqual([])
+            expect(wrapper.text()).not.toContain('Ziehe einen Namen auf die gewünschte Gruppe.')
+            expect(work).toEqual(original)
+            const update = vi.fn().mockResolvedValue({ data: { id: 65 } })
+            const methods = (CourseTable as any).methods
+            const context = {
+                ...methods, canSaveDateWork: true, selected_course: { id: 18 },
+                courseWorkGradeInputModeForType: () => 'free', courseWorkStore: { update },
+                applySavedCourseWork: vi.fn(), loadCourseTableData: vi.fn(), cancelDateWorkForm: vi.fn(),
+                workDialog: { courseDate: null }, workDialogForm: vm.workDialogForm, workSaving: false,
+            }
+            await context.saveDateWork()
+
+            expect(update).toHaveBeenCalledWith(expect.objectContaining({ groups: [
+                expect.objectContaining({ ...original.groups[0], student_ids: [12, 13] }),
+                expect.objectContaining(original.groups[1]),
+            ] }))
+        } finally { wrapper.unmount() }
+    })
+
     it('removes a student and their individual values from a work group', () => {
         const removeWorkGroupStudent = (CourseTable as any).methods.removeWorkGroupStudent
         const workDialogGroups = [{
