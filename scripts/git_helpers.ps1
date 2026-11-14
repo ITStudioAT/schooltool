@@ -535,6 +535,7 @@ function Invoke-SchooltoolPublish {
 }
 
 . (Join-Path $PSScriptRoot 'git_branch_helpers.ps1')
+. (Join-Path $PSScriptRoot 'git_ssh_helpers.ps1')
 
 function gitpush {
     [CmdletBinding()]

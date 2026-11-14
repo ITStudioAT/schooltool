@@ -129,6 +129,7 @@ test('synchronisation rejects production and nonlocal databases', function () {
     $this->postJson('/api/admin/restaurant/synchronisation/preview')->assertForbidden();
     $this->postJson('/api/admin/restaurant/synchronisation/apply', ['token' => str_repeat('a', 64), 'confirmed' => true])->assertForbidden();
     $this->app['env'] = 'local';
+    $default = config('database.default');
     $configuration = DB::connection()->getConfig();
     $configuration['host'] = 'cloudways.invalid';
     config(['database.connections.restaurant_guard_fixture' => $configuration,
@@ -208,7 +209,7 @@ test('live reader preserves the native Windows environment needed for SSH startu
         $_ENV = ['APP_ENV' => getenv('APP_ENV')];
         $environment = (new ReflectionMethod(RestaurantLiveSource::class, 'processEnvironment'))->invoke(null);
         $command = PHP_OS_FAMILY === 'Windows' ? ['powershell.exe', '-NoProfile', '-NonInteractive', '-Command',
-            '. ./scripts/git_ssh_helpers.ps1; $ssh = Get-SchooltoolPreviewExecutable ssh; & $ssh -G -F none -o BatchMode=yes -- fixture@example.invalid; exit $LASTEXITCODE']
+            '. ./scripts/git_ssh_helpers.ps1; $ssh = Get-SchooltoolSshExecutable ssh; & $ssh -G -F none -o BatchMode=yes -- fixture@example.invalid; exit $LASTEXITCODE']
             : [PHP_BINARY, '-r', 'exit(getenv("PATH") === false ? 1 : 0);'];
         $process = new Process($command, base_path(), $environment, null, 10);
         // -G only evaluates local SSH configuration; no network connection or authentication occurs.

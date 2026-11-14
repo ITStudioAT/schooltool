@@ -361,7 +361,9 @@ describe('search functionality', function () {
             'email' => 'felix@student.test',
             'class' => '5A',
             'mother_name' => null,
+            'mother_email' => null,
             'father_name' => null,
+            'father_email' => null,
         ]);
     });
 
