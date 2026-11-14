@@ -219,7 +219,7 @@ it('validates the published frontend release with the complete background CI pol
         ->toContain('Release approval (policy v3)')
         ->toContain('php scripts/ci-php-tests.php coverage')
         ->toContain('php scripts/frontend-release.php verify "$(git rev-parse HEAD^)"')
-        ->toContain("if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/preview/'))")
+        ->toContain("if: github.event_name == 'push' && github.ref == 'refs/heads/main'")
         ->toMatch('/php-quality:.*?if: needs\.classify\.outputs\.lane == \'full\'/s')
         ->toMatch('/frontend:.*?if: needs\.classify\.outputs\.lane == \'full\'/s')
         ->toMatch('/php-tests:.*?if: needs\.classify\.outputs\.lane == \'full\'/s')
