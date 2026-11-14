@@ -30,6 +30,7 @@ test('editable HTML reads bytes from the validated storage disk', function (stri
 })->with(['local', 'public']);
 
 test('editable HTML resolution retains attachment type and format validation', function (string $type, string $name, string $mime, string $message): void {
+    Storage::fake('s3');
     Storage::disk('public')->put('materials/invalid', 'must not be returned');
     $attachment = new MaterialCardAttachment([
         'attachment_type' => $type,
