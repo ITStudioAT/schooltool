@@ -468,12 +468,11 @@ function gitdeploy {
     Write-Host "GitHub main: $mainCommit. The application update includes its planned live database migrations." -ForegroundColor Yellow
     Write-Host 'Package integrity verified. GitHub tests run in the background; deployment does not wait for their result.' -ForegroundColor Cyan
     Assert-SchooltoolCiMain -Commit $mainCommit
-    if ((Read-Host 'Deploy main to the live application? Type LIVE') -cne 'LIVE') { throw 'Live deployment cancelled.' }
     Update-SchooltoolRemote
-    if ((Invoke-SchooltoolGit rev-parse refs/remotes/origin/main) -ne $mainCommit) { throw 'main changed during confirmation. Review the new version and rerun gitdeploy.' }
+    if ((Invoke-SchooltoolGit rev-parse refs/remotes/origin/main) -ne $mainCommit) { throw 'main changed during deployment checks. Review the new version and rerun gitdeploy.' }
     Assert-SchooltoolRepository
     Assert-SchooltoolClean
-    if ((Invoke-SchooltoolGit branch --show-current) -cne $originalBranch -or (Invoke-SchooltoolGit rev-parse HEAD) -cne $originalHead) { throw 'The local checkout changed during confirmation. Rerun gitdeploy.' }
+    if ((Invoke-SchooltoolGit branch --show-current) -cne $originalBranch -or (Invoke-SchooltoolGit rev-parse HEAD) -cne $originalHead) { throw 'The local checkout changed during deployment checks. Rerun gitdeploy.' }
     Send-SchooltoolLiveRelease -Target $target -Commit $mainCommit -SourceCommit $sourceCommit -ArchiveHash $archiveHash -ManifestBlob $manifestBlob
-    Write-Host "Live deployment completed for the confirmed main $mainCommit." -ForegroundColor Green
+    Write-Host "Live deployment completed for GitHub main $mainCommit." -ForegroundColor Green
 }

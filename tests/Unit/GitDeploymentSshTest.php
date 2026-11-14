@@ -295,13 +295,13 @@ POWERSHELL;
     'shell syntax in run ID' => '$script:proofResponse.run_id = "123;echo"',
 ]);
 
-it('deploys only a smoke-checked unchanged release without waiting for CI', function (string $scenario, bool $allowed, string $shell): void {
+it('deploys only a smoke-checked unchanged release without prompting or waiting for CI', function (string $scenario, bool $allowed, string $shell): void {
     $command = '$script:scenario = '.var_export($scenario, true)."\n".<<<'POWERSHELL'
-$script:confirmation = $false
+$script:remoteUpdates = 0
 $script:smokePassed = $false
 function Assert-SchooltoolRepository {}
 function Assert-SchooltoolClean {}
-function Update-SchooltoolRemote {}
+function Update-SchooltoolRemote { $script:remoteUpdates++ }
 function Invoke-SchooltoolGit {
     $arguments = $args -join ' '
     if ($arguments -like '*:deployment/*') {
@@ -310,8 +310,8 @@ function Invoke-SchooltoolGit {
     }
     switch ($arguments) {
         'branch --show-current' { 'main'; return }
-        'rev-parse HEAD' { if ($script:confirmation -and $script:scenario -eq 'checkout changed') { 'e'*40 } else { 'a'*40 }; return }
-        'rev-parse refs/remotes/origin/main' { if ($script:confirmation -and $script:scenario -eq 'main changed') { 'f'*40 } else { 'a'*40 }; return }
+        'rev-parse HEAD' { if ($script:remoteUpdates -gt 1 -and $script:scenario -eq 'checkout changed') { 'e'*40 } else { 'a'*40 }; return }
+        'rev-parse refs/remotes/origin/main' { if ($script:remoteUpdates -gt 1 -and $script:scenario -eq 'main changed') { 'f'*40 } else { 'a'*40 }; return }
         'ls-remote --refs origin refs/heads/main' { ('a'*40) + [char]9 + 'refs/heads/main'; return }
     }
     if ($arguments -like 'show *:deployment/source-commit') { 'b'*40; return }
@@ -326,18 +326,18 @@ function Assert-SchooltoolReleasePackage {
 }
 function Invoke-SchooltoolReleaseSmoke {
     param([string]$Commit)
-    if ($Commit -cne ('a'*40) -or $script:confirmation) { throw 'Unpinned or late smoke.' }
+    if ($Commit -cne ('a'*40) -or $script:remoteUpdates -ne 1) { throw 'Unpinned or late smoke.' }
     if ($script:scenario -eq 'smoke failed') { throw 'Smoke failed.' }
     $script:smokePassed = $true
 }
 function Assert-SchooltoolCiRelease { throw 'CI_MUST_NOT_BLOCK' }
 function Wait-SchooltoolCiRelease { throw 'CI_MUST_NOT_BLOCK' }
 function Get-SchooltoolCiStatus { throw 'CI_MUST_NOT_BLOCK' }
-function Read-Host { $script:confirmation=$true; if ($script:scenario -eq 'cancelled') { '' } else { 'LIVE' } }
+function Read-Host { Write-Output 'UNEXPECTED_DEPLOY_PROMPT'; throw 'Deployment must be non-interactive.' }
 function Invoke-SchooltoolRemote { Write-Output 'READ_ONLY_PREFLIGHT' }
 function Send-SchooltoolLiveRelease {
     param($Target, $Commit, $SourceCommit, $ArchiveHash, $ManifestBlob)
-    if (-not $script:confirmation -or -not $script:smokePassed -or $Commit -cne ('a'*40) -or $SourceCommit -cne ('b'*40) -or $ArchiveHash -cne ('c'*64) -or $ManifestBlob -cne ('d'*40)) { throw 'Deployment lost its confirmed identity.' }
+    if ($script:remoteUpdates -ne 2 -or -not $script:smokePassed -or $Commit -cne ('a'*40) -or $SourceCommit -cne ('b'*40) -or $ArchiveHash -cne ('c'*64) -or $ManifestBlob -cne ('d'*40)) { throw 'Deployment lost its pinned identity.' }
     Write-Output 'PINNED_LIVE_DEPLOYMENT'
 }
 try { gitdeploy }
@@ -345,7 +345,7 @@ catch { Write-Output ('DEPLOYMENT_BLOCKED: ' + $_.Exception.Message) }
 POWERSHELL;
     $process = deploymentSshProcess($command, $shell);
     expect($process->isSuccessful())->toBeTrue($process->getOutput().$process->getErrorOutput())
-        ->and($process->getOutput())->not->toContain('CI_MUST_NOT_BLOCK');
+        ->and($process->getOutput())->not->toContain('CI_MUST_NOT_BLOCK', 'UNEXPECTED_DEPLOY_PROMPT');
     if ($allowed) {
         expect($process->getOutput())->toContain('PINNED_LIVE_DEPLOYMENT')->not->toContain('DEPLOYMENT_BLOCKED');
     } else {
@@ -360,7 +360,6 @@ POWERSHELL;
     'smoke failed' => ['smoke failed', false],
     'remote main advanced' => ['main changed', false],
     'local checkout changed' => ['checkout changed', false],
-    'operator cancelled' => ['cancelled', false],
 ])->with(['powershell', 'pwsh']);
 it('rejects backend changes hidden among release artifacts including renamed source files', function (bool $changed): void {
     $code = '$script:changed = '.($changed ? '$true' : '$false')."\n".<<<'POWERSHELL'

@@ -223,7 +223,7 @@ it('rejects a bare manual pull before locks preflight maintenance or deployment'
         $process = runTerminalPullFixture($directory, withHandoff: false);
 
         expect($process->isSuccessful())->toBeFalse()
-            ->and($process->getErrorOutput())->toContain('Use gitdeploy after its package checks and LIVE confirmation.')
+            ->and($process->getErrorOutput())->toContain('Use gitdeploy after its package checks.')
             ->and(glob($directory.'/storage/framework/*'))->toBe([]);
     } finally {
         (new Filesystem)->deleteDirectory($directory);

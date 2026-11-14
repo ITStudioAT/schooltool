@@ -521,7 +521,7 @@ function Invoke-SchooltoolPublish {
         Write-Host ''
         Write-Host 'SAVED ON GITHUB.' -ForegroundColor Green
         Write-Host 'Windows PCs may pull main and run: composer deploy' -ForegroundColor Green
-        Write-Host 'Use gitdeploy for live publication after package and target checks and LIVE confirmation.' -ForegroundColor Cyan
+        Write-Host 'Use gitdeploy for live publication after package and target checks.' -ForegroundColor Cyan
 
         if (-not $WaitForCI) {
             Write-Host 'GitHub checks run in the background. Publication does not wait for CI; inspect failures and fix them afterwards.' -ForegroundColor Yellow

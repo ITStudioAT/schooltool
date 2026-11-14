@@ -1,5 +1,11 @@
 # UPDATES
 
+## 3.54.7
+
+### System
+
+- Deployment ohne LIVE-Eingabe
+
 ## 3.54.6
 
 ### Spiele

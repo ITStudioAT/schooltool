@@ -15,7 +15,7 @@ expected_source="${SCHOOLTOOL_EXPECTED_SOURCE_COMMIT:-}"
 expected_frontend="${SCHOOLTOOL_EXPECTED_FRONTEND_SHA256:-}"
 expected_manifest="${SCHOOLTOOL_EXPECTED_SOURCE_MANIFEST_BLOB:-}"
 if [[ ! "$expected_main" =~ ^([a-f0-9]{40}|[a-f0-9]{64})$ ]] || [[ ! "$expected_source" =~ ^([a-f0-9]{40}|[a-f0-9]{64})$ ]] || [[ ! "$expected_frontend" =~ ^[a-f0-9]{64}$ ]] || [[ ! "$expected_manifest" =~ ^([a-f0-9]{40}|[a-f0-9]{64})$ ]]; then
-    echo "Deployment requires pinned main, source, frontend and source manifest identities. Use gitdeploy after its package checks and LIVE confirmation." >&2
+    echo "Deployment requires pinned main, source, frontend and source manifest identities. Use gitdeploy after its package checks." >&2
     exit 1
 fi
 

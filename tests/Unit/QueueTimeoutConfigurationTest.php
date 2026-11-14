@@ -256,7 +256,7 @@ it('validates the published frontend release with the complete background CI pol
         ->toContain('$pushArguments += \':\' + $Feature.ReservationRef')
         ->not->toContain(':refs/heads/codex/active-feature')
         ->toContain('$pushArguments += @(\'origin\', "${releaseCommit}:refs/heads/main")')
-        ->toContain('Use gitdeploy for live publication after package and target checks and LIVE confirmation.');
+        ->toContain('Use gitdeploy for live publication after package and target checks.');
 });
 
 it('runs isolated infrastructure and Horizon smoke coverage in CI', function (): void {

@@ -123,8 +123,8 @@ Do not force-push, rewrite published history or change dependencies without scop
 - Main gitsave builds a source-bound release and starts nonblocking background CI;
   do not add optional `-Full` unless requested or justified by a concrete issue.
 - Preview/feature-release require build and package preflight, not full local suites.
-- Production deployment requires explicit intent, the bounded isolated runtime smoke,
-  pinned source/frontend identity and the existing LIVE confirmation. Full CI is
+- Running gitdeploy explicitly requests production deployment. The command requires the
+  bounded isolated runtime smoke and pinned source/frontend identity. Full CI is
   asynchronous and must not block save, preview, release or live deployment.
 - Never bypass a gate with bare deployment scripts or reuse unrelated test logs.
 - Destructive release migrations require the authorized target and a validated backup.
