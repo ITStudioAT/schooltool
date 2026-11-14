@@ -87,7 +87,11 @@ BASH);
 set -e
 
 if [ "${1:-}" = -r ]; then exec "$SCHOOLTOOL_TEST_PHP_BINARY" "$@"; fi
-if [ "${1:-}" = scripts/frontend-release.php ]; then touch storage/framework/artifact-verified; exit 0; fi
+if [ "${1:-}" = scripts/frontend-release.php ]; then
+    test ! -f app/Services/RetiredService.php
+    touch storage/framework/artifact-verified
+    exit 0
+fi
 
 if [ "${1:-}" = artisan ] && [ "${2:-}" = cloudways:pull ] && [ "${3:-}" = --check ]; then
     if [ -f storage/framework/fail-cloudways-preflight ]; then
@@ -132,6 +136,9 @@ if [ "${2:-}" = --prepare ]; then
     printf 'prepared\n' > storage/framework/cloudways-deploy-maintenance
     exit 0
 fi
+
+rm -f app/Services/RetiredService.php
+php scripts/frontend-release.php verify
 
 if [ -f storage/framework/spawn-lock-inheritor ]; then
     nohup sh -c 'cd / && exec sleep 30' </dev/null >/dev/null 2>&1 &
@@ -320,6 +327,25 @@ it('pins the complete backend manifest before a platform API deployment', functi
     'changed frontend verifier with unchanged manifest and artifacts' => ['scripts/frontend-release.php', false],
     'changed manifest verifier with unchanged manifest and artifacts' => ['scripts/source-manifest.php', false],
 ]);
+
+it('prunes stale Cloudways source before strict release verification', function (): void {
+    $directory = createTerminalPullFixture();
+    $filesystem = new Filesystem;
+    $filesystem->ensureDirectoryExists($directory.'/app/Services');
+    $stale = $directory.'/app/Services/RetiredService.php';
+    file_put_contents($stale, '<?php // file preserved by Cloudways Pull');
+
+    try {
+        $process = runTerminalPullFixture($directory);
+
+        expect($process->isSuccessful())->toBeTrue($process->getErrorOutput())
+            ->and(is_file($stale))->toBeFalse()
+            ->and(is_file($directory.'/storage/framework/artifact-verified'))->toBeTrue()
+            ->and(is_file($directory.'/storage/framework/full-deployment-ran'))->toBeTrue();
+    } finally {
+        $filesystem->deleteDirectory($directory);
+    }
+});
 
 it('stops a pinned Git deployment before maintenance when main advances', function (): void {
     $directory = createTerminalPullFixture();

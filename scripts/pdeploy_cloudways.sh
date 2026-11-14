@@ -69,7 +69,9 @@ verify_confirmed_release() {
             if (! isset($verified[$required])) { fwrite(STDERR, "Pinned source manifest omits a required deployment file.\n"); exit(1); }
         }
     '
-    php scripts/frontend-release.php verify "$expected_source"
+    if [ "${1:-}" != "--verify-during-deploy" ]; then
+        php scripts/frontend-release.php verify "$expected_source"
+    fi
 }
 
 for command_name in bash php flock; do
@@ -147,7 +149,8 @@ pull_with_cloudways_api() {
     fi
 
     deployment_handed_off=true
-    verify_confirmed_release
+    # Cloudways can retain deleted files. The locked deploy prunes them before its strict verification.
+    verify_confirmed_release --verify-during-deploy
     bash scripts/deploy_cloudways.sh
 
     maintenance_prepared=false
