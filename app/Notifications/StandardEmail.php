@@ -2,7 +2,6 @@
 
 namespace App\Notifications;
 
-use App\Models\User;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeEncrypted;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -13,9 +12,6 @@ class StandardEmail extends Notification implements ShouldBeEncrypted, ShouldQue
 {
     use Queueable;
 
-    /** @var array{purpose: string, user_id: int, school_id: int, recipient: string, recipient_kind: string, schoolyear_id: ?int, login_path: string}|null */
-    public ?array $previewAuthentication = null;
-
     /**
      * Create a new notification instance.
      */
@@ -23,30 +19,6 @@ class StandardEmail extends Notification implements ShouldBeEncrypted, ShouldQue
         public array $data,
         public array|string|null $attachments = null
     ) {}
-
-    public function forPreviewAuthentication(
-        User $user,
-        string $recipient,
-        string $purpose = 'login',
-        string $recipientKind = 'account',
-        ?int $schoolyearId = null,
-    ): static {
-        if (! config('schooltool.preview.instance', false)) {
-            return $this;
-        }
-
-        $this->previewAuthentication = [
-            'purpose' => $purpose,
-            'user_id' => (int) $user->getKey(),
-            'school_id' => (int) $user->school_id,
-            'recipient' => $recipient,
-            'recipient_kind' => $recipientKind,
-            'schoolyear_id' => $schoolyearId,
-            'login_path' => $user->hasAdminShellAccess() ? '/admin' : '/',
-        ];
-
-        return $this;
-    }
 
     /**
      * Get the notification's delivery channels.
@@ -95,7 +67,6 @@ class StandardEmail extends Notification implements ShouldBeEncrypted, ShouldQue
                 'notifiable' => $notifiable,
                 'data' => $this->data,
                 'logo' => $this->data['logo'] ?? null,
-                '__schooltool_preview_auth' => $this->previewAuthentication,
             ]);
 
         // ✅ Optional attachments support

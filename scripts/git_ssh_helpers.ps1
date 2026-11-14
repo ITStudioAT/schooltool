@@ -1,4 +1,4 @@
-function Get-SchooltoolPreviewExecutable {
+function Get-SchooltoolSshExecutable {
     param([ValidateSet('ssh', 'scp')][string]$Name)
 
     $windowsDirectory = [Environment]::GetEnvironmentVariable('WINDIR')
@@ -18,9 +18,7 @@ function Get-SchooltoolPreviewExecutable {
 }
 
 function Get-SchooltoolDeploymentDefaults {
-    param([ValidateSet('MAIN', 'PREVIEW')][string]$Site)
-
-    if ($Site -ne 'MAIN') { return @{} }
+    param([ValidateSet('MAIN')][string]$Site)
 
     $sshDirectory = Join-Path $env:USERPROFILE '.ssh'
     @{
@@ -58,7 +56,7 @@ function Start-SchooltoolSshAgent {
 }
 
 function Get-SchooltoolDeploymentTarget {
-    param([ValidateSet('MAIN', 'PREVIEW')][string]$Site)
+    param([ValidateSet('MAIN')][string]$Site)
 
     $prefix = "SCHOOLTOOL_${Site}"
     $defaults = Get-SchooltoolDeploymentDefaults $Site
@@ -74,8 +72,8 @@ function Get-SchooltoolDeploymentTarget {
         throw "Set ${prefix}_SSH to the verified application account in user@host form."
     }
     $account = $Matches.user
-    if (($Site -eq 'PREVIEW' -and $account -ne 'schooltool-feature') -or ($Site -eq 'MAIN' -and $account -eq 'schooltool-feature')) {
-        throw 'Production and preview must use separate application SSH accounts; preview requires schooltool-feature.'
+    if ($account -eq 'schooltool-feature' -or $unixUser -eq 'eytpcswgsw' -or $path -match '(?:^|/)eytpcswgsw(?:/|$)') {
+        throw 'The retired SchoolTool-Feature application cannot be a deployment target.'
     }
     if (-not $unixUser) { $unixUser = $account }
     if ($unixUser -cnotmatch '^[a-z_][a-z0-9_-]*$') {
@@ -132,7 +130,7 @@ function Invoke-SchooltoolRemote {
     param([object]$Target, [string]$Command)
 
     Start-SchooltoolSshAgent
-    $executable = Get-SchooltoolPreviewExecutable 'ssh'
+    $executable = Get-SchooltoolSshExecutable 'ssh'
     $options = @($Target.Options)
     & $executable @options -T -- $Target.Ssh ((Get-SchooltoolRemoteGuard $Target) + $Command)
     if ($LASTEXITCODE -ne 0) {
@@ -220,7 +218,7 @@ exit($complete ? 0 : 25);
         }
         $command = (Get-SchooltoolRemoteGuard $Target) + "php -d display_errors=0 -d log_errors=0 -r 'eval(base64_decode(`"$encodedProgram`"));' -- '$RemotePath' '$mode' '$length' '$checksum'"
         $arguments = @($Target.Options) + @('-T', '--', $Target.Ssh, $command)
-        $process.StartInfo.FileName = Get-SchooltoolPreviewExecutable 'ssh'
+        $process.StartInfo.FileName = Get-SchooltoolSshExecutable 'ssh'
         # ProcessStartInfo.ArgumentList is unavailable in Windows PowerShell 5.1.
         $process.StartInfo.Arguments = ($arguments | ForEach-Object {
             '"' + [regex]::Replace([regex]::Replace([string]$_, '(\\*)"', '$1$1\"'), '(\\+)$', '$1$1') + '"'

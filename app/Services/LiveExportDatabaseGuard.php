@@ -3,102 +3,13 @@
 namespace App\Services;
 
 use Illuminate\Database\Connection;
-use Illuminate\Support\Facades\DB;
 use PDO;
 use Pdo\Mysql;
 use RuntimeException;
 use Throwable;
 
-class FeaturePreviewDatabaseGuard
+class LiveExportDatabaseGuard
 {
-    /** @return array{database: string, server_fingerprint: string, app_key_fingerprint: string} */
-    public function sourceIdentity(): array
-    {
-        $response = app(FeaturePreviewControlClient::class)->request('status');
-        $source = $response['source'] ?? null;
-        if (! is_array($source) || ! is_string($source['database'] ?? null)
-            || preg_match('/\A[a-zA-Z0-9_]+\z/', $source['database']) !== 1
-            || ! is_string($source['server_fingerprint'] ?? null) || preg_match('/\A[a-f0-9]{64}\z/', $source['server_fingerprint']) !== 1
-            || ! is_string($source['app_key_fingerprint'] ?? null) || preg_match('/\A[a-f0-9]{64}\z/', $source['app_key_fingerprint']) !== 1) {
-            throw new RuntimeException('The authenticated main database identity is unavailable or invalid.');
-        }
-
-        return [
-            'database' => $source['database'],
-            'server_fingerprint' => $source['server_fingerprint'],
-            'app_key_fingerprint' => $source['app_key_fingerprint'],
-        ];
-    }
-
-    public function target(): Connection
-    {
-        $target = DB::connection();
-        $this->assertTargetConnection($target);
-
-        return $target;
-    }
-
-    private function assertTargetConnection(Connection $target): void
-    {
-        if (! config('schooltool.preview.instance')) {
-            throw new RuntimeException('Snapshot target operations require the preview instance.');
-        }
-
-        $source = $this->sourceIdentity();
-        $this->assertConnection($target, false);
-        if (strcasecmp($source['database'], $target->getDatabaseName()) === 0) {
-            throw new RuntimeException('Preview and live database names must be different, including when their hosts differ.');
-        }
-        if (hash_equals($source['app_key_fingerprint'], hash('sha256', app('encrypter')->getKey()))
-            || config('app.previous_keys', []) !== []) {
-            throw new RuntimeException('Preview requires a separate application encryption key without previous live keys.');
-        }
-    }
-
-    /**
-     * @template T
-     *
-     * @param  callable(Connection): T  $callback
-     * @return T
-     */
-    public function withSnapshotTargetConnection(callable $callback): mixed
-    {
-        if (! config('schooltool.preview.instance')) {
-            throw new RuntimeException('Snapshot target operations require the preview instance.');
-        }
-        $connection = $this->snapshotConnection('preview_snapshot_target');
-        try {
-            $pdo = $connection->getPdo();
-            $this->extendSnapshotIdleTimeout($pdo);
-            $this->assertTargetConnection($connection);
-            $connectionId = (string) $pdo->query('SELECT CONNECTION_ID()')->fetchColumn();
-            $result = $callback($connection);
-            if ((string) $pdo->query('SELECT CONNECTION_ID()')->fetchColumn() !== $connectionId) {
-                throw new RuntimeException('The preview snapshot target connection changed during the operation.');
-            }
-
-            return $result;
-        } finally {
-            $connection->disconnect();
-        }
-    }
-
-    /** @return array{database: string, server_fingerprint: string, app_key_fingerprint: string} */
-    public function mainIdentity(): array
-    {
-        return $this->withMainReadOnlyConnection(fn (Connection $connection): array => $this->connectionIdentity($connection));
-    }
-
-    /** @return array{database: string, server_fingerprint: string, app_key_fingerprint: string} */
-    public function connectionIdentity(Connection $connection): array
-    {
-        return [
-            'database' => $connection->getDatabaseName(),
-            'server_fingerprint' => hash('sha256', $this->serverIdentity($connection)),
-            'app_key_fingerprint' => hash('sha256', app('encrypter')->getKey()),
-        ];
-    }
-
     /**
      * @template T
      *
@@ -107,10 +18,10 @@ class FeaturePreviewDatabaseGuard
      */
     public function withMainReadOnlyConnection(callable $callback): mixed
     {
-        if (config('schooltool.preview.instance')) {
-            throw new RuntimeException('The main read-only connection is unavailable in preview.');
+        if (filter_var(env('SCHOOLTOOL_PREVIEW_INSTANCE', false), FILTER_VALIDATE_BOOLEAN)) {
+            throw new RuntimeException('The main read-only connection is unavailable on the retired deployment target.');
         }
-        $connection = $this->snapshotConnection('preview_snapshot_source');
+        $connection = $this->snapshotConnection('live_export_source');
         $pdo = $connection->getPdo();
         try {
             $this->extendSnapshotIdleTimeout($pdo);
@@ -230,7 +141,7 @@ class FeaturePreviewDatabaseGuard
             || ! empty($configuration['url']) || ! empty($configuration['read']) || ! empty($configuration['write'])
             || ! empty($configuration['prefix']) || ! empty($configuration['unix_socket'])
             || ! is_string($configuration['host'] ?? null) || empty($configuration['username'])) {
-            throw new RuntimeException('Preview snapshots require explicit, unprefixed MySQL connections without URL, socket or read/write overrides.');
+            throw new RuntimeException('Live exports require explicit, unprefixed MySQL connections without URL, socket or read/write overrides.');
         }
 
     }
@@ -255,7 +166,7 @@ class FeaturePreviewDatabaseGuard
             $privileges = array_map('trim', explode(',', strtoupper($matches[1])));
             $allowed = $readOnly ? ['SELECT'] : ['ALL PRIVILEGES', 'SELECT', 'INSERT', 'UPDATE', 'DELETE', 'CREATE', 'DROP', 'INDEX', 'ALTER', 'REFERENCES', 'CREATE TEMPORARY TABLES', 'LOCK TABLES'];
             if (array_diff($privileges, $allowed) !== []) {
-                throw new RuntimeException($readOnly ? 'The live snapshot account must have SELECT privileges only.' : 'The preview database account has unsupported privileges.');
+                throw new RuntimeException($readOnly ? 'The live snapshot account must have SELECT privileges only.' : 'The database account has unsupported privileges.');
             }
             $databaseAccess = $databaseAccess || in_array('SELECT', $privileges, true) || in_array('ALL PRIVILEGES', $privileges, true);
         }
@@ -301,16 +212,5 @@ class FeaturePreviewDatabaseGuard
             || preg_match('/;|\/\*|\b(?:DATA DIRECTORY|INDEX DIRECTORY|TABLESPACE|(?:(?<!`)CONNECTION|CONNECTION(?!`)))\b|REFERENCES\s+`[^`]+`\s*\./i', $statement) === 1) {
             throw new RuntimeException('The snapshot contains an unsupported table definition.');
         }
-    }
-
-    private function serverIdentity(Connection $connection): string
-    {
-        $server = (array) $connection->selectOne('SELECT @@hostname AS hostname, @@port AS port, @@server_id AS server_id');
-
-        return json_encode([
-            'hostname' => (string) $server['hostname'],
-            'port' => (int) $server['port'],
-            'server_id' => (int) $server['server_id'],
-        ], JSON_THROW_ON_ERROR);
     }
 }

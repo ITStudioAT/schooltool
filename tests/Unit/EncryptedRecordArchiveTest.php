@@ -1,14 +1,14 @@
 <?php
 
-use App\Services\FeaturePreviewSnapshotArchive;
+use App\Services\EncryptedRecordArchive;
 
 beforeEach(function (): void {
     $this->directory = sys_get_temp_dir().'/schooltool-snapshot-'.bin2hex(random_bytes(8));
     mkdir($this->directory, 0700);
     $this->path = $this->directory.'/snapshot.bin';
-    $this->archive = new FeaturePreviewSnapshotArchive;
-    $this->keyPair = FeaturePreviewSnapshotArchive::generateKeyPair();
-    $this->publicKey = FeaturePreviewSnapshotArchive::publicKey($this->keyPair);
+    $this->archive = new EncryptedRecordArchive;
+    $this->keyPair = EncryptedRecordArchive::generateKeyPair();
+    $this->publicKey = EncryptedRecordArchive::publicKey($this->keyPair);
 });
 
 afterEach(function (): void {
@@ -103,7 +103,7 @@ test('snapshot refuses corruption truncation appending and hostile frame lengths
         iterator_to_array($this->archive->read($this->path, $this->keyPair));
         $this->fail('Invalid snapshot was accepted.');
     } catch (RuntimeException $exception) {
-        expect($exception->getMessage())->toBe('The encrypted preview snapshot could not be processed safely.')
+        expect($exception->getMessage())->toBe('The encrypted archive could not be processed safely.')
             ->and($exception->getPrevious())->toBeNull();
     }
 })->with([
@@ -143,9 +143,9 @@ test('authenticated but invalid record envelopes are rejected', function (string
 test('wrong recipient and malformed key pairs fail without exposing secrets', function (): void {
     $this->archive->write($this->path, $this->publicKey, [['secret' => 'never disclosed']]);
 
-    foreach ([FeaturePreviewSnapshotArchive::generateKeyPair(), '', str_repeat('x', 64)] as $keyPair) {
+    foreach ([EncryptedRecordArchive::generateKeyPair(), '', str_repeat('x', 64)] as $keyPair) {
         expect(fn () => iterator_to_array($this->archive->read($this->path, $keyPair)))
-            ->toThrow(RuntimeException::class, 'The encrypted preview snapshot could not be processed safely.');
+            ->toThrow(RuntimeException::class, 'The encrypted archive could not be processed safely.');
     }
 });
 
@@ -196,7 +196,7 @@ test('invalid source records delete incomplete snapshots', function (mixed $reco
 ]);
 
 test('oversized source records delete incomplete snapshots', function (): void {
-    expect(fn () => $this->archive->write($this->path, $this->publicKey, [['payload' => str_repeat('x', FeaturePreviewSnapshotArchive::MAX_RECORD_BYTES)]]))
+    expect(fn () => $this->archive->write($this->path, $this->publicKey, [['payload' => str_repeat('x', EncryptedRecordArchive::MAX_RECORD_BYTES)]]))
         ->toThrow(RuntimeException::class)
         ->and(file_exists($this->path))->toBeFalse();
 });

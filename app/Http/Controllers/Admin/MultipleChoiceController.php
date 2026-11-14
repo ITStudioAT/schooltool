@@ -11,7 +11,6 @@ use App\Models\McTest;
 use App\Models\Schoolyear;
 use App\Models\User;
 use App\Services\DropboxWorkImport;
-use App\Services\FeaturePreviewService;
 use App\Services\MultipleChoice\McAttemptActivityService;
 use App\Services\MultipleChoice\McCatalogTemplateSync;
 use App\Services\MultipleChoice\McImportService;
@@ -696,7 +695,7 @@ class MultipleChoiceController extends Controller
             'source' => [
                 'base_url' => url('/'),
                 'environment' => app()->environment(),
-                'is_preview' => app(FeaturePreviewService::class)->isPreview(),
+                'is_preview' => false,
                 'school_id' => (int) $test->school_id,
                 'schoolyear_id' => (int) $test->schoolyear_id,
                 'teacher_id' => (int) $test->owner_id,
@@ -753,9 +752,6 @@ class MultipleChoiceController extends Controller
     public function sendInvitations(Request $request, McTest $test): JsonResponse
     {
         $this->authorizeOwned($test);
-        if (app(FeaturePreviewService::class)->isPreview()) {
-            throw ValidationException::withMessages(['mail' => ['In dieser geschützten Vorschau ist der Versand von Testeinladungen gesperrt. Die Empfängervorschau bleibt verfügbar.']]);
-        }
         $data = $request->validate([
             'address_form' => ['sometimes', 'required', 'in:sie,du'],
             'attempt_ids' => ['required', 'array', 'min:1'],

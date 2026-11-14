@@ -10,7 +10,6 @@ use App\Http\Controllers\Admin\AdminController;
 use App\Http\Controllers\Admin\AdminShellColorPreferenceController;
 use App\Http\Controllers\Admin\CloudwaysSchoolSynchronizationController;
 use App\Http\Controllers\Admin\ConnectionStatusController;
-use App\Http\Controllers\Admin\FeaturePreviewController;
 use App\Http\Controllers\Admin\GroupController;
 use App\Http\Controllers\Admin\HealthController;
 use App\Http\Controllers\Admin\ImpersonationController;
@@ -119,7 +118,6 @@ use App\Http\Controllers\Admin\TwoFactorChallengeController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Admin\UserHopperAccountController;
 use App\Http\Controllers\Admin\UserWithRoleController;
-use App\Http\Controllers\FeaturePreviewControlController;
 use App\Http\Controllers\Homepage\HomepageController;
 use App\Http\Controllers\Homepage\NoteController;
 use App\Http\Controllers\Homepage\RegisterController;
@@ -131,18 +129,11 @@ use App\Http\Controllers\Student\CourseController;
 use App\Http\Controllers\Student\CourseStudentEntryController;
 use App\Http\Controllers\Student\CourseWorkTaskController;
 use App\Http\Controllers\Student\StudentController;
-use App\Http\Middleware\AuthenticateFeaturePreviewControl;
 use App\Http\Middleware\EnsureTeachingCurriculaEnabled;
 use Illuminate\Foundation\Http\Middleware\HandlePrecognitiveRequests;
 use Illuminate\Http\Request;
 use Illuminate\Session\Middleware\StartSession;
 use Illuminate\Support\Facades\Route;
-use Laravel\Sanctum\Http\Middleware\EnsureFrontendRequestsAreStateful;
-
-Route::post('/feature-preview/control', FeaturePreviewControlController::class)
-    ->withoutMiddleware(EnsureFrontendRequestsAreStateful::class)
-    ->middleware(AuthenticateFeaturePreviewControl::class)
-    ->name('featurePreview.control');
 
 // Globales Throttle
 Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function () {
@@ -489,9 +480,6 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
 
     /* SANCTUM */
     Route::middleware(['auth:sanctum'])->group(function () {
-        Route::get('/admin/feature-preview', [FeaturePreviewController::class, 'index']);
-        Route::put('/admin/feature-preview/settings', [FeaturePreviewController::class, 'updateSettings']);
-        Route::put('/admin/feature-preview/users/{user}', [FeaturePreviewController::class, 'updateUser']);
 
         // navigation, menus
         Route::get('/admin/navigation/profile_menu', [NavigationController::class, 'profileMenu']);

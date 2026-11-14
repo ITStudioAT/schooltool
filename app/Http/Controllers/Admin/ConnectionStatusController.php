@@ -95,7 +95,7 @@ class ConnectionStatusController extends Controller
     private function testMail(User $actor, string $token): array
     {
         if (! $actor->email_verified_at || ! filter_var($actor->email, FILTER_VALIDATE_EMAIL)
-            || ! filter_var(config('mail.from.address'), FILTER_VALIDATE_EMAIL) || config('schooltool.preview.instance')) {
+            || ! filter_var(config('mail.from.address'), FILTER_VALIDATE_EMAIL)) {
             return ['accepted' => false, 'message' => 'Keine Testmail gesendet: Eigene bestätigte E-Mail-Adresse, Absender oder zulässiger Versandkontext fehlen.'];
         }
         $payload = ['From' => config('mail.from.address'), 'To' => $actor->email, 'Subject' => 'Schooltool · Postmark-Verbindungsprüfung',

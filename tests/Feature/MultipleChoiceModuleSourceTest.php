@@ -19,7 +19,7 @@ uses(RefreshDatabase::class);
 beforeEach(function (): void {
     Http::preventStrayRequests();
     config(['app.url' => 'http://localhost:8000', 'services.dropbox.client_id' => 'test-client', 'services.dropbox.client_secret' => 'test-secret',
-        'services.dropbox.redirect_uri' => 'http://localhost:8000/admin/teaching/dropbox/callback', 'schooltool.preview.instance' => false]);
+        'services.dropbox.redirect_uri' => 'http://localhost:8000/admin/teaching/dropbox/callback']);
     Role::findOrCreate('teacher', 'web');
     $school = School::factory()->create();
     $year = Schoolyear::factory()->create(['school_id' => $school->id]);

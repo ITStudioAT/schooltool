@@ -42,7 +42,7 @@ afterEach(function () {
 
 describe('StandardEmail Notification', function () {
     it('skips serialized retired module mail jobs before rendering missing templates or models', function (string $template) {
-        config(['mail.default' => 'array', 'schooltool.preview.instance' => false]);
+        config(['mail.default' => 'array']);
         Mail::purge('array');
         $retiredModels = [];
 
@@ -77,7 +77,7 @@ describe('StandardEmail Notification', function () {
     ]);
 
     it('still delivers serialized shared login code mail jobs', function () {
-        config(['mail.default' => 'array', 'schooltool.preview.instance' => false]);
+        config(['mail.default' => 'array']);
         Mail::purge('array');
 
         $notification = new StandardEmail([

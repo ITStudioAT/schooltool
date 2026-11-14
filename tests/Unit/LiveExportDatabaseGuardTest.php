@@ -1,9 +1,9 @@
 <?php
 
-use App\Services\FeaturePreviewDatabaseGuard;
+use App\Services\LiveExportDatabaseGuard;
 
 it('accepts only the intended schema privileges', function (array $grants, bool $readOnly): void {
-    (new FeaturePreviewDatabaseGuard)->assertGrants($grants, 'schooltool', $readOnly);
+    (new LiveExportDatabaseGuard)->assertGrants($grants, 'schooltool', $readOnly);
     expect(true)->toBeTrue();
 })->with([
     'read only' => [['GRANT USAGE ON *.* TO `reader`@`localhost`', 'GRANT SELECT ON `schooltool`.* TO `reader`@`localhost`'], true],
@@ -11,7 +11,7 @@ it('accepts only the intended schema privileges', function (array $grants, bool 
 ]);
 
 it('rejects unsafe or unrecognized database grants', function (array $grants, bool $readOnly): void {
-    expect(fn () => (new FeaturePreviewDatabaseGuard)->assertGrants($grants, 'schooltool', $readOnly))->toThrow(RuntimeException::class);
+    expect(fn () => (new LiveExportDatabaseGuard)->assertGrants($grants, 'schooltool', $readOnly))->toThrow(RuntimeException::class);
 })->with([
     'empty' => [[], true],
     'source writes' => [['GRANT SELECT, INSERT ON `schooltool`.* TO `reader`@`localhost`'], true],
@@ -27,13 +27,13 @@ it('rejects unsafe or unrecognized database grants', function (array $grants, bo
 ]);
 
 it('handles literal escaped schema underscores without accepting wildcard underscores', function (): void {
-    $guard = new FeaturePreviewDatabaseGuard;
+    $guard = new LiveExportDatabaseGuard;
     $guard->assertGrants(['GRANT SELECT ON `schooltool\\_preview`.* TO `reader`@`localhost`'], 'schooltool_preview', true);
     expect(fn () => $guard->assertGrants(['GRANT SELECT ON `schooltool_preview`.* TO `reader`@`localhost`'], 'schooltool_preview', true))->toThrow(RuntimeException::class);
 });
 
 it('rejects unsafe table definitions before any import', function (string $definition): void {
-    expect(fn () => (new FeaturePreviewDatabaseGuard)->assertCreateStatement('users', $definition))->toThrow(RuntimeException::class);
+    expect(fn () => (new LiveExportDatabaseGuard)->assertCreateStatement('users', $definition))->toThrow(RuntimeException::class);
 })->with([
     'another table' => 'CREATE TABLE `other` (`id` bigint) ENGINE=InnoDB',
     'nontransactional' => 'CREATE TABLE `users` (`id` bigint) ENGINE=MyISAM',
@@ -67,11 +67,11 @@ CREATE TABLE `failed_jobs` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 SQL;
 
-    (new FeaturePreviewDatabaseGuard)->assertCreateStatement('failed_jobs', $definition);
+    (new LiveExportDatabaseGuard)->assertCreateStatement('failed_jobs', $definition);
     expect(true)->toBeTrue();
 });
 
 it('accepts a regular transactional table definition', function (): void {
-    (new FeaturePreviewDatabaseGuard)->assertCreateStatement('users', 'CREATE TABLE `users` (`id` bigint NOT NULL, PRIMARY KEY (`id`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4');
+    (new LiveExportDatabaseGuard)->assertCreateStatement('users', 'CREATE TABLE `users` (`id` bigint NOT NULL, PRIMARY KEY (`id`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4');
     expect(true)->toBeTrue();
 });

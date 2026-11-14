@@ -27,7 +27,7 @@ requireMultipleChoiceTestDatabase();
 uses(RefreshDatabase::class);
 
 beforeEach(function () {
-    config(['app.key' => 'base64:'.base64_encode(str_repeat('m', 32)), 'schooltool.preview.instance' => false]);
+    config(['app.key' => 'base64:'.base64_encode(str_repeat('m', 32))]);
 });
 
 /** @return array{school: School, teacher: User, student: User} */

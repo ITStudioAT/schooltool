@@ -69,7 +69,7 @@ beforeEach(function (): void {
     Storage::fake('local');
     config(['app.url' => 'http://localhost:8000', 'services.dropbox.client_id' => 'test-client',
         'services.dropbox.client_secret' => 'test-secret', 'services.dropbox.redirect_uri' => 'http://localhost:8000/admin/teaching/dropbox/callback',
-        'schooltool.preview.instance' => false]);
+    ]);
     Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
     Role::firstOrCreate(['name' => 'teacher', 'guard_name' => 'web']);
     Role::firstOrCreate(['name' => 'student', 'guard_name' => 'web']);
@@ -701,12 +701,10 @@ test('OAuth stores encrypted refresh credentials and reconnecting a different ac
     $this->get($callback)->assertForbidden();
 });
 
-test('redirect misconfiguration preview installations and cancelled OAuth cannot connect', function (): void {
+test('redirect misconfiguration and cancelled OAuth cannot connect', function (): void {
     config(['services.dropbox.redirect_uri' => 'https://unrelated.example/callback']);
     $this->postJson($this->url.'/connect')->assertUnprocessable();
-    config(['services.dropbox.redirect_uri' => 'http://localhost:8000/admin/teaching/dropbox/callback', 'schooltool.preview.instance' => true]);
-    $this->postJson($this->url.'/connect')->assertNotFound();
-    config(['schooltool.preview.instance' => false]);
+    config(['services.dropbox.redirect_uri' => 'http://localhost:8000/admin/teaching/dropbox/callback']);
     $url = $this->postJson($this->url.'/connect')->assertOk()->json('url');
     parse_str(parse_url($url, PHP_URL_QUERY), $parameters);
     $this->get('/admin/teaching/dropbox/callback?'.http_build_query(['state' => $parameters['state'], 'error' => 'access_denied']))->assertRedirectContains('dropbox=cancelled');

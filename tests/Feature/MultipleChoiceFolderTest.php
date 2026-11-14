@@ -25,7 +25,7 @@ beforeEach(function (): void {
     Storage::fake('local');
     config(['app.url' => 'http://localhost:8000', 'services.dropbox.client_id' => 'fixture-client',
         'services.dropbox.client_secret' => 'fixture-secret', 'services.dropbox.redirect_uri' => 'http://localhost:8000/admin/teaching/dropbox/callback',
-        'services.postmark.token' => '', 'mail.from.address' => 'schooltool@example.test', 'schooltool.preview.instance' => false]);
+        'services.postmark.token' => '', 'mail.from.address' => 'schooltool@example.test']);
 });
 
 function mcFolderContext(): array

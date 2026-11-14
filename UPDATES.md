@@ -5,6 +5,7 @@
 ### System
 
 - Deployment ohne LIVE-Eingabe
+- Feature-App entfernt
 
 ## 3.54.6
 

@@ -72,11 +72,6 @@ class MaterialV2Attachment extends Model
     {
         $disk = trim((string) $this->disk);
 
-        // Snapshot exports copy S3 objects into the preview's private local storage.
-        if (config('schooltool.preview.instance', false) && $disk === 's3') {
-            return 'local';
-        }
-
         return $disk;
     }
 

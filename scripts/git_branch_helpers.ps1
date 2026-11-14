@@ -159,7 +159,7 @@ function Assert-SchooltoolFeatureSnapshot {
 }
 
 function New-SchooltoolCandidateWorktree {
-    param([ValidateSet('preview', 'release')][string]$Kind, [string]$SourceCommit)
+    param([ValidateSet('release')][string]$Kind, [string]$SourceCommit)
     $id = [guid]::NewGuid().ToString('N')
     $recoveryRef = "refs/schooltool/candidates/$Kind/$id"
     $commit = Invoke-SchooltoolGit rev-parse "$SourceCommit^{commit}"
@@ -177,11 +177,10 @@ function New-SchooltoolCandidateWorktree {
 
 function Assert-SchooltoolCandidate {
     param([object]$Candidate, [switch]$AllowAdvancedHead)
-    if ($Candidate.Id -cnotmatch '^[a-f0-9]{32}$' -or $Candidate.Kind -cnotin @('preview', 'release') -or
+    if ($Candidate.Id -cnotmatch '^[a-f0-9]{32}$' -or $Candidate.Kind -cne 'release' -or
         $Candidate.Commit -cnotmatch '^[a-f0-9]{40}$') { throw 'Invalid detached candidate identity.' }
     $expectedRef = "refs/schooltool/candidates/$($Candidate.Kind)/$($Candidate.Id)"
-    $archivedRef = '^refs/schooltool/archived-heads/[0-9]{8}-[a-f0-9]{32}/codex/preview-' + $Candidate.Id + '$'
-    if ($Candidate.RecoveryRef -cne $expectedRef -and -not ($Candidate.Kind -ceq 'preview' -and $Candidate.RecoveryRef -cmatch $archivedRef)) {
+    if ($Candidate.RecoveryRef -cne $expectedRef) {
         throw 'Invalid candidate recovery reference.'
     }
     if ([System.IO.Path]::GetFullPath($Candidate.Path) -cne (Get-Location).Path -or
@@ -789,7 +788,7 @@ function gitcheck {
     $branch = Invoke-SchooltoolGit branch --show-current
     Write-Host "Branch: $branch" -ForegroundColor Cyan
     $features = @(Invoke-SchooltoolGit for-each-ref '--format=%(refname:strip=3)' refs/remotes/origin/feature/)
-    Write-Host "Open features: $($features -join ', '). Select with gitwork NAME; preview with gitpreview -Feature NAME." -ForegroundColor Cyan
+    Write-Host "Open features: $($features -join ', '). Select with gitwork NAME." -ForegroundColor Cyan
     Invoke-SchooltoolGit status --short
     if (Test-SchooltoolRef "refs/remotes/origin/$branch") {
         $counts = (Invoke-SchooltoolGit rev-list --left-right --count "HEAD...refs/remotes/origin/$branch") -split '\s+'
@@ -808,7 +807,7 @@ function gitcheck {
             $schemaChanges
         }
     }
-    Write-Host 'Live deploys main; the isolated preview deploys the feature. gitcheck does not inspect either server.' -ForegroundColor Cyan
+    Write-Host 'Live deploys main. gitcheck only inspects Git.' -ForegroundColor Cyan
 }
 
 function Assert-SchooltoolVersion {
@@ -829,11 +828,18 @@ function Assert-SchooltoolVersion {
     }
 }
 
+function Get-SchooltoolFeatureOrigin {
+    param([switch]$Push)
+    $urls = @(if ($Push) { Invoke-SchooltoolGit remote get-url --push --all origin } else { Invoke-SchooltoolGit remote get-url --all origin })
+    if ($urls.Count -ne 1) { throw 'Feature operations requires exactly one origin fetch URL and one push URL.' }
+    $urls[0]
+}
+
 function Lock-SchooltoolFeatureOperation {
     param($Feature)
     if ($Feature.Id -cnotmatch '^[a-f0-9]{32}$') { throw 'Invalid feature lifecycle for operation lock.' }
-    $origin = Get-SchooltoolPreviewOrigin
-    if ($origin -cne (Get-SchooltoolPreviewOrigin -Push)) { throw 'Feature operations require the same single fetch and push origin.' }
+    $origin = Get-SchooltoolFeatureOrigin
+    if ($origin -cne (Get-SchooltoolFeatureOrigin -Push)) { throw 'Feature operations require the same single fetch and push origin.' }
     $ref = "refs/heads/codex/operations/$($Feature.Id)"
     $tree = Invoke-SchooltoolGit rev-parse 'HEAD^{tree}'
     $commit = Invoke-SchooltoolGit commit-tree $tree -m "Feature operation $([guid]::NewGuid().ToString('N'))"
@@ -851,22 +857,6 @@ function Unlock-SchooltoolFeatureOperation {
         if (Test-SchooltoolRef $tracking) { Invoke-SchooltoolGit update-ref --no-deref -d $tracking $Lock.Commit }
     }
     catch { Write-Warning "Feature operation cleanup could not be verified for $($Lock.Ref) ($($Lock.Commit)); inspect the interrupted operation before removing any retained lock." }
-}
-
-function Get-SchooltoolDiscardPreviewState {
-    param($Feature)
-    $target = Get-SchooltoolPreviewTarget
-    $status = Invoke-SchooltoolRemoteJson -Target $target -Command "php artisan preview:snapshot status --feature='$($Feature.Id)' --no-interaction"
-    if ($status.state_token -cnotmatch '^[a-f0-9]{64}$' -or 'feature_id' -cnotin @($status.PSObject.Properties.Name) -or
-        ($null -ne $status.feature_id -and $status.feature_id -cnotmatch '^[a-f0-9]{32}$')) {
-        throw 'Cannot verify the shared preview. No feature was discarded.'
-    }
-    if ($status.feature_id -ceq $Feature.Id) {
-        throw 'This feature is active in the shared preview. From saved main run gitpreview -Main (REFRESH and PREVIEW), wait for successful completion, then retry gitdiscard. Preview test data will be replaced with fresh live data.'
-    }
-    if ('deployment_ready' -cin @($status.PSObject.Properties.Name) -and $status.deployment_ready -isnot [bool]) { throw 'Cannot verify preview readiness. No feature was discarded.' }
-    if ('deployment_ready' -cin @($status.PSObject.Properties.Name) -and -not $status.deployment_ready) { throw 'The preview deployment is not ready. Inspect recovery before discarding a feature.' }
-    $status.state_token
 }
 
 function Assert-SchooltoolDiscardCheckout {
@@ -904,8 +894,8 @@ function gitdiscard {
     Assert-SchooltoolRepository
     Assert-SchooltoolClean
     if ((Invoke-SchooltoolGit branch --show-current) -cne 'main') { throw 'Run gitdiscard from clean main. Use gitmain first.' }
-    $origin = Get-SchooltoolPreviewOrigin
-    if ($origin -cne (Get-SchooltoolPreviewOrigin -Push)) { throw 'Feature operations require the same single fetch and push origin.' }
+    $origin = Get-SchooltoolFeatureOrigin
+    if ($origin -cne (Get-SchooltoolFeatureOrigin -Push)) { throw 'Feature operations require the same single fetch and push origin.' }
     Update-SchooltoolRemote
     $main = Invoke-SchooltoolGit rev-parse HEAD
     if ($main -cne (Invoke-SchooltoolGit rev-parse refs/remotes/origin/main)) { throw 'Local main must match origin/main. Run gitmain first.' }
@@ -917,16 +907,14 @@ function gitdiscard {
         throw 'Feature and main do not share verified history.'
     }
     Assert-SchooltoolDiscardCheckout $branch $remote $local $main
-    $previewState = Get-SchooltoolDiscardPreviewState $feature
     Write-Host "Discard $branch at $remote; lifecycle $($feature.Id). main will not receive these commits." -ForegroundColor Yellow
-    Write-Host 'The matching remote reservation will close. Local recovery refs, preview bundles and other features remain.' -ForegroundColor Yellow
+    Write-Host 'The matching remote reservation will close. Local recovery refs and other features remain.' -ForegroundColor Yellow
     if ((Read-Host "Type DISCARD $branch to continue") -cne "DISCARD $branch") { Write-Host 'Discard cancelled. No feature was removed.'; return }
-    if ($origin -cne (Get-SchooltoolPreviewOrigin) -or $origin -cne (Get-SchooltoolPreviewOrigin -Push)) { throw 'Origin changed during confirmation. Nothing was discarded.' }
+    if ($origin -cne (Get-SchooltoolFeatureOrigin) -or $origin -cne (Get-SchooltoolFeatureOrigin -Push)) { throw 'Origin changed during confirmation. Nothing was discarded.' }
     $operation = Lock-SchooltoolFeatureOperation $feature
     try {
         Assert-SchooltoolFeatureSnapshot -Feature $feature -FeatureCommit $remote -MainCommit $main
         Assert-SchooltoolDiscardCheckout $branch $remote $local $main
-        if ((Get-SchooltoolDiscardPreviewState $feature) -cne $previewState) { throw 'The shared preview changed. Nothing was discarded.' }
         $recovery = "refs/schooltool/discarded/$($feature.Id)/$([guid]::NewGuid().ToString('N'))"
         Invoke-SchooltoolGit update-ref --no-deref "$recovery/feature" $remote ('0' * 40)
         Invoke-SchooltoolGit update-ref --no-deref "$recovery/reservation" $feature.ReservationCommit ('0' * 40)
@@ -948,7 +936,7 @@ function gitdiscard {
             Write-Warning "The remote feature and reservation are already closed; local cleanup stopped and recovery refs remain: $($_.Exception.Message)"
             return
         }
-        Write-Host "Discarded $branch locally and on origin without merging. main, databases and preview files are unchanged." -ForegroundColor Green
+        Write-Host "Discarded $branch locally and on origin without merging. main and databases are unchanged." -ForegroundColor Green
     }
     finally { Unlock-SchooltoolFeatureOperation $operation }
 }

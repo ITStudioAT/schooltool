@@ -41,7 +41,7 @@ test('new course rounds retain their selected lesson without changing existing r
 });
 
 beforeEach(function () {
-    config(['app.key' => 'base64:'.base64_encode(str_repeat('n', 32)), 'schooltool.preview.instance' => false]);
+    config(['app.key' => 'base64:'.base64_encode(str_repeat('n', 32))]);
     foreach (['teacher', 'student', 'user', 'parent'] as $role) {
         Role::findOrCreate($role, 'web');
     }

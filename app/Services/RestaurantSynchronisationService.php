@@ -65,7 +65,7 @@ class RestaurantSynchronisationService
 
     public static function available(): bool
     {
-        if (static::operatingSystemFamily() !== 'Windows' || ! app()->environment('local') || config('schooltool.preview.instance')) {
+        if (static::operatingSystemFamily() !== 'Windows' || ! app()->environment('local')) {
             return false;
         }
         $connection = DB::connection();

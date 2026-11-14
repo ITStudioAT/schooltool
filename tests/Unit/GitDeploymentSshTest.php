@@ -8,16 +8,11 @@ function deploymentSshProcess(string $code, string $shell = 'powershell'): Proce
     $setup = <<<'POWERSHELL'
 $ErrorActionPreference = 'Stop'
 . $env:SCHOOLTOOL_SSH_TEST_HELPER
-$env:SCHOOLTOOL_MAIN_SSH = 'schooltool-main@example.test'
-$env:SCHOOLTOOL_MAIN_PATH = '/home/applications/main/public_html'
-$env:SCHOOLTOOL_PREVIEW_SSH = 'schooltool-feature@example.test'
+$env:SCHOOLTOOL_MAIN_SSH = 'sftp_schooltool_at@example.test'
 $env:SCHOOLTOOL_MAIN_UNIX_USER = ''
-$env:SCHOOLTOOL_PREVIEW_UNIX_USER = ''
-$env:SCHOOLTOOL_PREVIEW_PATH = '/home/applications/preview/public_html'
+$env:SCHOOLTOOL_MAIN_PATH = '/home/applications/main/public_html'
 $env:SCHOOLTOOL_MAIN_KEY = Join-Path $env:SCHOOLTOOL_SSH_TEST_DIRECTORY 'id_test'
-$env:SCHOOLTOOL_PREVIEW_KEY = $env:SCHOOLTOOL_MAIN_KEY
 $env:SCHOOLTOOL_MAIN_KNOWN_HOSTS = Join-Path $env:SCHOOLTOOL_SSH_TEST_DIRECTORY 'known_hosts'
-$env:SCHOOLTOOL_PREVIEW_KNOWN_HOSTS = $env:SCHOOLTOOL_MAIN_KNOWN_HOSTS
 POWERSHELL;
 
     $directory = sys_get_temp_dir().'/schooltool-ssh-test-'.bin2hex(random_bytes(8));
@@ -47,16 +42,14 @@ beforeEach(function (): void {
     }
 });
 
-it('requires isolated SSH accounts and strict noninteractive key authentication', function (): void {
+it('requires strict noninteractive key authentication and a canonical application path', function (): void {
     $process = deploymentSshProcess(<<<'POWERSHELL'
 $target = Get-SchooltoolDeploymentTarget 'MAIN'
 foreach ($required in @('BatchMode=yes', 'PasswordAuthentication=no', 'KbdInteractiveAuthentication=no', 'PreferredAuthentications=publickey', 'IdentitiesOnly=yes', 'StrictHostKeyChecking=yes', 'UpdateHostKeys=no', 'ForwardAgent=no', 'ClearAllForwardings=yes', 'GlobalKnownHostsFile=none')) {
     if ($target.Options -notcontains $required) { throw "Missing $required" }
 }
-$preview = Get-SchooltoolDeploymentTarget 'PREVIEW'
-if ($target.Options[0] -cne '-F' -or $target.Options[1] -cne 'none' -or $preview.Options[0] -cne '-F' -or $preview.Options[1] -cne 'none') { throw 'Inherited SSH configuration is not disabled.' }
-if ($target.User -eq $preview.User) { throw 'Same account used.' }
-if ((Get-SchooltoolRemoteGuard $preview) -notmatch 'pwd -P') { throw 'Canonical directory guard missing.' }
+if ($target.Options[0] -cne '-F' -or $target.Options[1] -cne 'none') { throw 'Inherited SSH configuration is not disabled.' }
+if ((Get-SchooltoolRemoteGuard $target) -notmatch 'pwd -P') { throw 'Canonical directory guard missing.' }
 Write-Output 'STRICT_AUTHENTICATION'
 POWERSHELL);
     expect($process->isSuccessful())->toBeTrue($process->getErrorOutput())
@@ -90,7 +83,7 @@ it('starts the Windows SSH agent before opening a remote connection', function (
 $script:started = $false
 function Get-Service { [pscustomobject]@{ Status = 'Stopped' } }
 function Start-Service { $script:started = $true }
-function Get-SchooltoolPreviewExecutable { 'Mock-Ssh' }
+function Get-SchooltoolSshExecutable { 'Mock-Ssh' }
 function Mock-Ssh { $global:LASTEXITCODE = 0 }
 Invoke-SchooltoolRemote (Get-SchooltoolDeploymentTarget 'MAIN') 'true'
 if (-not $script:started) { throw 'SSH agent was not started.' }
@@ -106,7 +99,7 @@ $env:WINDIR = 'C:\Windows'
 function Test-Path { param($LiteralPath, $PathType); return $LiteralPath -like '*Sysnative*OpenSSH*' }
 function Get-Command { throw 'PATH_CLIENT_MUST_NOT_WIN' }
 foreach ($name in @('ssh', 'scp')) {
-    $executable = Get-SchooltoolPreviewExecutable $name
+    $executable = Get-SchooltoolSshExecutable $name
     if ($executable -notlike "*Sysnative*OpenSSH*$name.exe") { throw 'Native OpenSSH not selected.' }
 }
 Write-Output 'NATIVE_OPENSSH'
@@ -117,32 +110,32 @@ POWERSHELL);
 
 it('rejects unsafe or incomplete deployment configuration before connecting', function (string $assignment): void {
     $process = deploymentSshProcess($assignment."\n".<<<'POWERSHELL'
-try { Get-SchooltoolDeploymentTarget 'PREVIEW'; throw 'UNSAFE_CONFIGURATION_ACCEPTED' }
+try { Get-SchooltoolDeploymentTarget 'MAIN'; throw 'UNSAFE_CONFIGURATION_ACCEPTED' }
 catch { if ($_.Exception.Message -eq 'UNSAFE_CONFIGURATION_ACCEPTED') { throw }; Write-Output 'REJECTED' }
 POWERSHELL);
     expect($process->isSuccessful())->toBeTrue($process->getErrorOutput())
         ->and($process->getOutput())->toContain('REJECTED');
 })->with([
-    'missing key' => '$env:SCHOOLTOOL_PREVIEW_KEY = ""',
-    'missing host trust' => '$env:SCHOOLTOOL_PREVIEW_KNOWN_HOSTS = "C:/missing/known_hosts"',
-    'relative key' => '$env:SCHOOLTOOL_PREVIEW_KEY = "id_test"',
-    'wrong account' => '$env:SCHOOLTOOL_PREVIEW_SSH = "schooltool-main@example.test"',
-    'unsafe unix owner' => '$env:SCHOOLTOOL_PREVIEW_UNIX_USER = "preview;whoami"',
-    'shell injection' => '$env:SCHOOLTOOL_PREVIEW_SSH = "schooltool-feature@example.test;whoami"',
-    'unsafe path' => '$env:SCHOOLTOOL_PREVIEW_PATH = "/home/applications/../main/public_html"',
-    'noncanonical path' => '$env:SCHOOLTOOL_PREVIEW_PATH = "/home//applications/preview/public_html"',
-    'wrong root' => '$env:SCHOOLTOOL_PREVIEW_PATH = "/home/applications/preview"',
+    'missing key' => '$env:SCHOOLTOOL_MAIN_KEY = "C:/missing/schooltool-key"',
+    'missing host trust' => '$env:SCHOOLTOOL_MAIN_KNOWN_HOSTS = "C:/missing/known_hosts"',
+    'relative key' => '$env:SCHOOLTOOL_MAIN_KEY = "id_test"',
+    'wrong account' => '$env:SCHOOLTOOL_MAIN_SSH = "schooltool-feature@example.test"',
+    'unsafe unix owner' => '$env:SCHOOLTOOL_MAIN_UNIX_USER = "preview;whoami"',
+    'shell injection' => '$env:SCHOOLTOOL_MAIN_SSH = "sftp_schooltool_at@example.test;whoami"',
+    'unsafe path' => '$env:SCHOOLTOOL_MAIN_PATH = "/home/applications/../main/public_html"',
+    'noncanonical path' => '$env:SCHOOLTOOL_MAIN_PATH = "/home//applications/preview/public_html"',
+    'wrong root' => '$env:SCHOOLTOOL_MAIN_PATH = "/home/applications/preview"',
 ]);
 
 it('accepts canonical Cloudways domain directories while rejecting traversal segments', function (): void {
     $process = deploymentSshProcess(<<<'POWERSHELL'
-$env:SCHOOLTOOL_PREVIEW_PATH = '/home/example.cloudwaysapps.com/preview/public_html'
-$env:SCHOOLTOOL_PREVIEW_UNIX_USER = 'previewapp'
-$target = Get-SchooltoolDeploymentTarget 'PREVIEW'
-if ($target.Path -ne $env:SCHOOLTOOL_PREVIEW_PATH) { throw 'Canonical path changed.' }
-if ($target.LoginUser -ne 'schooltool-feature' -or $target.User -ne 'previewapp') { throw 'Login and Unix identities were conflated.' }
-if ((Get-SchooltoolRemoteGuard $target) -notmatch "= 'previewapp'") { throw 'Verified Unix owner not enforced.' }
-function Get-SchooltoolPreviewExecutable { throw 'SCP_MUST_NOT_RUN' }
+$env:SCHOOLTOOL_MAIN_PATH = '/home/example.cloudwaysapps.com/preview/public_html'
+$env:SCHOOLTOOL_MAIN_UNIX_USER = 'mainapp'
+$target = Get-SchooltoolDeploymentTarget 'MAIN'
+if ($target.Path -ne $env:SCHOOLTOOL_MAIN_PATH) { throw 'Canonical path changed.' }
+if ($target.LoginUser -ne 'sftp_schooltool_at' -or $target.User -ne 'mainapp') { throw 'Login and Unix identities were conflated.' }
+if ((Get-SchooltoolRemoteGuard $target) -notmatch "= 'mainapp'") { throw 'Verified Unix owner not enforced.' }
+function Get-SchooltoolSshExecutable { throw 'SCP_MUST_NOT_RUN' }
 foreach ($path in @('/tmp/..', '/tmp/.', '/home/example.cloudwaysapps.com/../archive.stpreview', '/tmp//archive.stpreview')) {
     try { Copy-SchooltoolRemoteFile $target 'local' $path; throw 'UNSAFE_PATH_ACCEPTED' }
     catch { if ($_.Exception.Message -in @('SCP_MUST_NOT_RUN','UNSAFE_PATH_ACCEPTED')) { throw } }
@@ -156,9 +149,9 @@ POWERSHELL);
 it('propagates SSH errors without treating them as deployment success', function (): void {
     $process = deploymentSshProcess(<<<'POWERSHELL'
 function Get-Service { [pscustomobject]@{ Status = 'Running' } }
-function Get-SchooltoolPreviewExecutable { 'Mock-Ssh' }
+function Get-SchooltoolSshExecutable { 'Mock-Ssh' }
 function Mock-Ssh { $global:LASTEXITCODE = 23 }
-try { Invoke-SchooltoolRemote (Get-SchooltoolDeploymentTarget 'PREVIEW') 'true'; throw 'FAILED_SSH_ACCEPTED' }
+try { Invoke-SchooltoolRemote (Get-SchooltoolDeploymentTarget 'MAIN') 'true'; throw 'FAILED_SSH_ACCEPTED' }
 catch { if ($_.Exception.Message -eq 'FAILED_SSH_ACCEPTED') { throw }; Write-Output $_.Exception.Message }
 POWERSHELL);
     expect($process->isSuccessful())->toBeTrue($process->getErrorOutput())
@@ -167,8 +160,8 @@ POWERSHELL);
 
 it('forbids remote path injection before invoking a transfer process', function (): void {
     $process = deploymentSshProcess(<<<'POWERSHELL'
-function Get-SchooltoolPreviewExecutable { throw 'SCP_MUST_NOT_RUN' }
-try { Copy-SchooltoolRemoteFile (Get-SchooltoolDeploymentTarget 'PREVIEW') 'local' '/tmp/file;whoami'; throw 'UNSAFE_PATH_ACCEPTED' }
+function Get-SchooltoolSshExecutable { throw 'SCP_MUST_NOT_RUN' }
+try { Copy-SchooltoolRemoteFile (Get-SchooltoolDeploymentTarget 'MAIN') 'local' '/tmp/file;whoami'; throw 'UNSAFE_PATH_ACCEPTED' }
 catch { if ($_.Exception.Message -in @('SCP_MUST_NOT_RUN','UNSAFE_PATH_ACCEPTED')) { throw }; Write-Output 'TRANSFER_REJECTED' }
 POWERSHELL);
     expect($process->isSuccessful())->toBeTrue($process->getErrorOutput())
@@ -197,8 +190,8 @@ if (in_array($mode, ['upload', 'failure-upload'], true)) {
 exit(in_array($mode, ['failure', 'failure-upload'], true) ? 23 : 0);
 '@
 [System.IO.File]::WriteAllText($mock, $child, (New-Object System.Text.UTF8Encoding($false)))
-function Get-SchooltoolPreviewExecutable { param($Name); if ($Name -ne 'ssh') { throw 'SFTP_MUST_NOT_RUN' }; $env:SCHOOLTOOL_SSH_TEST_PHP }
-$target = Get-SchooltoolDeploymentTarget 'PREVIEW'
+function Get-SchooltoolSshExecutable { param($Name); if ($Name -ne 'ssh') { throw 'SFTP_MUST_NOT_RUN' }; $env:SCHOOLTOOL_SSH_TEST_PHP }
+$target = Get-SchooltoolDeploymentTarget 'MAIN'
 $target.Options = @($mock) + @($target.Options)
 $bytes = New-Object byte[] (2 * 1024 * 1024 + 31)
 for ($i = 0; $i -lt $bytes.Length; $i++) { $bytes[$i] = $i % 256 }
@@ -214,7 +207,7 @@ $env:SCHOOLTOOL_TRANSFER_TEST_MODE = 'upload'
 if (@(Copy-SchooltoolRemoteFile $target $source '/tmp/private-transfer/release.tar.gz').Count -ne 0) { throw 'UPLOAD_POLLUTED_PIPELINE' }
 if ((Get-SchooltoolFileChecksum (Join-Path $env:SCHOOLTOOL_SSH_TEST_DIRECTORY 'uploaded.bin')) -ne $expected) { throw 'UPLOAD_BYTES_CHANGED' }
 $arguments = Get-Content -LiteralPath (Join-Path $env:SCHOOLTOOL_SSH_TEST_DIRECTORY 'arguments.json') -Raw -Encoding UTF8 | ConvertFrom-Json
-foreach ($required in @('BatchMode=yes', 'StrictHostKeyChecking=yes', 'ForwardAgent=no', '-T', '--', 'schooltool-feature@example.test')) {
+foreach ($required in @('BatchMode=yes', 'StrictHostKeyChecking=yes', 'ForwardAgent=no', '-T', '--', 'sftp_schooltool_at@example.test')) {
     if ($arguments -notcontains $required) { throw "Missing transfer option $required" }
 }
 $command = $arguments[-1]
@@ -260,7 +253,7 @@ POWERSHELL, $shell);
 it('refuses malformed remote JSON instead of assuming a snapshot is ready', function (): void {
     $process = deploymentSshProcess(<<<'POWERSHELL'
 function Invoke-SchooltoolRemote { 'not-json' }
-try { Invoke-SchooltoolRemoteJson (Get-SchooltoolDeploymentTarget 'PREVIEW') 'true'; throw 'BAD_METADATA_ACCEPTED' }
+try { Invoke-SchooltoolRemoteJson (Get-SchooltoolDeploymentTarget 'MAIN') 'true'; throw 'BAD_METADATA_ACCEPTED' }
 catch { if ($_.Exception.Message -eq 'BAD_METADATA_ACCEPTED') { throw }; Write-Output $_.Exception.Message }
 POWERSHELL);
     expect($process->isSuccessful())->toBeTrue($process->getErrorOutput())

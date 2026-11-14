@@ -17,10 +17,10 @@ function releaseCiWorkflow(): array
     return Yaml::parseFile(dirname(__DIR__, 2).'/.github/workflows/ci.yml');
 }
 
-it('checks saved features and exact preview artifacts asynchronously without hiding failures', function (): void {
+it('checks saved features and main release artifacts asynchronously without hiding failures', function (): void {
     $workflow = releaseCiWorkflow();
-    expect($workflow['on']['push']['branches'])->toBe(['main', 'feature/**', 'preview/**'])
-        ->and($workflow['jobs']['release-integrity']['if'])->toBe("github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/preview/'))");
+    expect($workflow['on']['push']['branches'])->toBe(['main', 'feature/**'])
+        ->and($workflow['jobs']['release-integrity']['if'])->toBe("github.event_name == 'push' && github.ref == 'refs/heads/main'");
     foreach ($workflow['jobs'] as $job) {
         expect($job['continue-on-error'] ?? false)->toBeFalse();
         foreach ($job['steps'] as $step) {
@@ -94,7 +94,6 @@ it('keeps pull requests scheduled manual and non-main runs on the full lane', fu
     ['schedule', 'refs/heads/main'],
     ['workflow_dispatch', 'refs/heads/main'],
     ['push', 'refs/heads/feature/example'],
-    ['push', 'refs/heads/preview/0123456789abcdef0123456789abcdef'],
 ]);
 
 it('provides the locked Windows dependency extensions without bypassing platform checks', function (): void {
@@ -279,12 +278,12 @@ it('assigns the real MySQL snapshot and SQLite-only backup tests to dedicated co
     $last = array_slice($batches, -2);
 
     expect($last)->toBe([
-        ['tests/Feature/FeaturePreviewReadOnlySourceTest.php', 'tests/Feature/FeaturePreviewSnapshotTest.php'],
+        ['tests/Feature/LiveExportReadOnlySourceTest.php'],
         ['tests/Feature/TeachingBackupCurriculumAttachmentsTest.php', 'tests/Feature/TeachingBackupEntryAreasTest.php'],
     ])->and(array_unique($all))->toHaveCount(count($all));
 
     $windows = array_merge(...CiPhpTests::batches($root, 'windows'));
-    expect($windows)->toContain('tests/Unit/GitBranchWorkflowTest.php', 'tests/Unit/GitDeploymentSshTest.php', 'tests/Unit/DeploymentLauncherTest.php', 'tests/Unit/PreviewDeploymentTest.php');
+    expect($windows)->toContain('tests/Unit/GitBranchWorkflowTest.php', 'tests/Unit/GitDeploymentSshTest.php', 'tests/Unit/DeploymentLauncherTest.php');
 });
 
 it('rejects oversized and empty PHP test batches', function (array $batch): void {

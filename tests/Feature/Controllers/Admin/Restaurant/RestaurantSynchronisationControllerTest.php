@@ -80,7 +80,7 @@ function restaurantSyncFixtureSnapshot(School $school): array
 beforeEach(function () {
     app()->bind(RestaurantSynchronisationService::class, RestaurantSynchronisationWindowsTestService::class);
     $this->app['env'] = 'local';
-    config(['app.env' => 'local', 'schooltool.preview.instance' => false]);
+    config(['app.env' => 'local']);
     foreach (['super_admin', 'admin', 'lunch_admin', 'lunch_user', 'lunch_candidate', 'teacher'] as $role) {
         Role::findOrCreate($role, 'web');
     }
@@ -123,19 +123,15 @@ test('synchronisation rejects unauthenticated users and ordinary restaurant admi
     }
 });
 
-test('synchronisation rejects production preview instances and nonlocal databases', function () {
+test('synchronisation rejects production and nonlocal databases', function () {
     $this->actingAs($this->actor, 'sanctum');
     $this->app['env'] = 'production';
     $this->postJson('/api/admin/restaurant/synchronisation/preview')->assertForbidden();
     $this->postJson('/api/admin/restaurant/synchronisation/apply', ['token' => str_repeat('a', 64), 'confirmed' => true])->assertForbidden();
     $this->app['env'] = 'local';
-    config(['schooltool.preview.instance' => true]);
-    expect(app(RestaurantSynchronisationService::class)::available())->toBeFalse();
-    $this->postJson('/api/admin/restaurant/synchronisation/preview')->assertNotFound();
-    $default = config('database.default');
     $configuration = DB::connection()->getConfig();
     $configuration['host'] = 'cloudways.invalid';
-    config(['schooltool.preview.instance' => false, 'database.connections.restaurant_guard_fixture' => $configuration,
+    config(['database.connections.restaurant_guard_fixture' => $configuration,
         'database.default' => 'restaurant_guard_fixture']);
     expect(app(RestaurantSynchronisationService::class)::available())->toBeFalse();
     config(['database.default' => $default]);

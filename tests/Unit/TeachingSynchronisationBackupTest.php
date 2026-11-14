@@ -1,6 +1,6 @@
 <?php
 
-use App\Services\FeaturePreviewSnapshotArchive;
+use App\Services\EncryptedRecordArchive;
 use App\Services\TeachingSynchronisationBackup;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Storage;
@@ -54,7 +54,7 @@ test('backup metadata rejects damaged ciphertext and missing endings before down
 
 test('a failed verification removes partial archives and never publishes a recovery copy', function (): void {
     Storage::fake('local');
-    $backups = Mockery::mock(TeachingSynchronisationBackup::class, [app(FeaturePreviewSnapshotArchive::class)])
+    $backups = Mockery::mock(TeachingSynchronisationBackup::class, [app(EncryptedRecordArchive::class)])
         ->makePartial();
     $backups->shouldReceive('metadata')->once()->andThrow(new RuntimeException('Fixture verification failure.'));
 

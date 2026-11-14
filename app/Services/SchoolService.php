@@ -772,8 +772,6 @@ class SchoolService
             abort(403, 'Wechsel zu der Schule nicht möglich.');
         }
 
-        app(FeaturePreviewService::class)->assertCanEnter($targetUser);
-
         if ($targetUser->hasEnabledTwoFactorAuthentication()) {
             abort(423, 'Dieses Konto ist mit Zwei-Faktor-Authentifizierung geschützt. Bitte melden Sie sich direkt bei der Zielschule an.');
         }

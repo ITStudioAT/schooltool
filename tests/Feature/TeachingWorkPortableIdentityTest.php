@@ -29,7 +29,7 @@ uses(RefreshDatabase::class);
 beforeEach(function (): void {
     Http::preventStrayRequests();
     Storage::fake('local');
-    config(['app.url' => 'http://localhost:8000', 'schooltool.preview.instance' => false,
+    config(['app.url' => 'http://localhost:8000',
         'services.dropbox.client_id' => 'test-client', 'services.dropbox.client_secret' => 'test-secret',
         'services.dropbox.redirect_uri' => 'http://localhost:8000/admin/teaching/dropbox/callback']);
 });

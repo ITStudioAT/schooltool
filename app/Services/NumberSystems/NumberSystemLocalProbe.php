@@ -21,7 +21,7 @@ class NumberSystemLocalProbe
 
     public function available(Request $request): bool
     {
-        return app()->environment('local') && ! config('schooltool.preview.instance')
+        return app()->environment('local')
             && in_array($request->server('REMOTE_ADDR'), ['127.0.0.1', '::1'], true);
     }
 

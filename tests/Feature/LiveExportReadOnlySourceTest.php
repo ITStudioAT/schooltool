@@ -1,22 +1,8 @@
 <?php
 
-use App\Services\FeaturePreviewControlClient;
-use App\Services\FeaturePreviewDatabaseGuard;
+use App\Services\LiveExportDatabaseGuard;
 use Illuminate\Database\Connection;
-use Illuminate\Encryption\Encrypter;
 use Illuminate\Support\Facades\DB;
-
-test('preview cannot open the main snapshot connection or retrieve its identity', function (): void {
-    config(['schooltool.preview.instance' => true, 'database.default' => 'missing_snapshot_connection']);
-    $called = false;
-    $guard = app(FeaturePreviewDatabaseGuard::class);
-
-    expect(fn () => $guard->withMainReadOnlyConnection(function () use (&$called): void {
-        $called = true;
-    }))->toThrow(RuntimeException::class)
-        ->and(fn () => $guard->mainIdentity())->toThrow(RuntimeException::class)
-        ->and($called)->toBeFalse();
-});
 
 describe('real MySQL main snapshot connection', function (): void {
     beforeEach(function (): void {
@@ -52,7 +38,6 @@ describe('real MySQL main snapshot connection', function (): void {
         ]);
         unset($configuration['read'], $configuration['write']);
         config([
-            'schooltool.preview.instance' => false,
             'database.default' => 'snapshot_readonly_main',
             'database.connections.snapshot_readonly_main' => $configuration,
             'database.connections.snapshot_readonly_writer' => $configuration,
@@ -87,7 +72,7 @@ describe('real MySQL main snapshot connection', function (): void {
         $captured = null;
         $snapshotPdo = null;
 
-        $result = app(FeaturePreviewDatabaseGuard::class)->withMainReadOnlyConnection(function (Connection $connection) use ($writer, $defaultPdo, &$captured, &$snapshotPdo): string {
+        $result = app(LiveExportDatabaseGuard::class)->withMainReadOnlyConnection(function (Connection $connection) use ($writer, $defaultPdo, &$captured, &$snapshotPdo): string {
             $captured = $connection;
             $snapshotPdo = $connection->getPdo();
             expect($snapshotPdo)->not->toBe($defaultPdo)
@@ -126,7 +111,7 @@ describe('real MySQL main snapshot connection', function (): void {
         });
         app()->instance('db.factory', $testFactory);
 
-        $result = app(FeaturePreviewDatabaseGuard::class)->withMainReadOnlyConnection(function (Connection $connection) use ($initialTimeout): string {
+        $result = app(LiveExportDatabaseGuard::class)->withMainReadOnlyConnection(function (Connection $connection) use ($initialTimeout): string {
             $pdo = $connection->getPdo();
             expect((int) $pdo->query('SELECT @@SESSION.wait_timeout')->fetchColumn())->toBe(max(3600, $initialTimeout));
             if ($initialTimeout === 1) {
@@ -143,43 +128,8 @@ describe('real MySQL main snapshot connection', function (): void {
             ->and((int) $default->query('SELECT @@GLOBAL.wait_timeout')->fetchColumn())->toBe($globalTimeout);
     })->with(['short server timeout' => 1, 'existing longer timeout' => 7200]);
 
-    test('keeps a validated isolated preview target alive and never reconnects it', function (): void {
-        config(['schooltool.preview.instance' => true]);
-        $client = Mockery::mock(FeaturePreviewControlClient::class);
-        $client->shouldReceive('request')->with('status')->andReturn(['source' => [
-            'database' => 'separate_live_schema',
-            'server_fingerprint' => str_repeat('a', 64),
-            'app_key_fingerprint' => str_repeat('b', 64),
-        ]]);
-        app()->instance(FeaturePreviewControlClient::class, $client);
-        $default = DB::connection()->getPdo();
-        $defaultTimeout = (int) $default->query('SELECT @@SESSION.wait_timeout')->fetchColumn();
-        $factory = app('db.factory');
-        $testFactory = Mockery::mock($factory);
-        $testFactory->shouldReceive('make')->once()->andReturnUsing(function (array $configuration, string $name) use ($factory): Connection {
-            $connection = $factory->make($configuration, $name);
-            $connection->getPdo()->exec('SET SESSION wait_timeout = 1');
-
-            return $connection;
-        });
-        app()->instance('db.factory', $testFactory);
-        $captured = null;
-        app(FeaturePreviewDatabaseGuard::class)->withSnapshotTargetConnection(function (Connection $connection) use ($default, &$captured): void {
-            $captured = $connection;
-            expect($connection->getPdo())->not->toBe($default);
-            sleep(2);
-            expect($connection->table('records')->where('id', 1)->update(['content' => 'preview only']))->toBe(1);
-            $connection->disconnect();
-            expect(fn () => $connection->reconnect())->toThrow(RuntimeException::class)
-                ->and(fn () => $connection->select('SELECT 1'))->toThrow(RuntimeException::class);
-        });
-        expect($captured->getRawPdo())->toBeNull()
-            ->and((int) $default->query('SELECT @@SESSION.wait_timeout')->fetchColumn())->toBe($defaultTimeout)
-            ->and(DB::connection()->table('records')->value('content'))->toBe('preview only');
-    });
-
     test('MySQL itself rejects mutations even when bypassing the query builder', function (string $statement): void {
-        app(FeaturePreviewDatabaseGuard::class)->withMainReadOnlyConnection(function (Connection $connection) use ($statement): void {
+        app(LiveExportDatabaseGuard::class)->withMainReadOnlyConnection(function (Connection $connection) use ($statement): void {
             try {
                 $connection->getPdo()->exec($statement);
                 $this->fail('MySQL accepted a mutation on the read-only snapshot connection.');
@@ -199,7 +149,7 @@ describe('real MySQL main snapshot connection', function (): void {
     ]);
 
     test('rejects writes and transaction changes before they reach the source database', function (): void {
-        app(FeaturePreviewDatabaseGuard::class)->withMainReadOnlyConnection(function (Connection $connection): void {
+        app(LiveExportDatabaseGuard::class)->withMainReadOnlyConnection(function (Connection $connection): void {
             foreach ([
                 "UPDATE records SET content = 'forbidden'",
                 'DROP TABLE records',
@@ -220,7 +170,7 @@ describe('real MySQL main snapshot connection', function (): void {
     test('rejects reconnects after the dedicated connection is disconnected', function (): void {
         $captured = null;
 
-        app(FeaturePreviewDatabaseGuard::class)->withMainReadOnlyConnection(function (Connection $connection) use (&$captured): void {
+        app(LiveExportDatabaseGuard::class)->withMainReadOnlyConnection(function (Connection $connection) use (&$captured): void {
             $captured = $connection;
             $connection->disconnect();
             expect(fn () => $connection->reconnect())->toThrow(RuntimeException::class)
@@ -237,7 +187,7 @@ describe('real MySQL main snapshot connection', function (): void {
         $failure = new RuntimeException('The export callback failed.');
 
         try {
-            app(FeaturePreviewDatabaseGuard::class)->withMainReadOnlyConnection(function (Connection $connection) use (&$captured, &$snapshotPdo, $failure): never {
+            app(LiveExportDatabaseGuard::class)->withMainReadOnlyConnection(function (Connection $connection) use (&$captured, &$snapshotPdo, $failure): never {
                 $captured = $connection;
                 $snapshotPdo = $connection->getPdo();
                 expect($snapshotPdo->inTransaction())->toBeTrue();
@@ -254,7 +204,7 @@ describe('real MySQL main snapshot connection', function (): void {
     });
 
     test('rejects further queries and callback success after the snapshot transaction ends or becomes writable', function (string $statement): void {
-        expect(fn () => app(FeaturePreviewDatabaseGuard::class)->withMainReadOnlyConnection(function (Connection $connection) use ($statement): void {
+        expect(fn () => app(LiveExportDatabaseGuard::class)->withMainReadOnlyConnection(function (Connection $connection) use ($statement): void {
             $connection->getPdo()->exec($statement);
             expect(fn () => $connection->table('records')->get())->toThrow(RuntimeException::class);
         }))->toThrow(RuntimeException::class);
@@ -264,32 +214,6 @@ describe('real MySQL main snapshot connection', function (): void {
         'writable session' => ['SET SESSION TRANSACTION READ WRITE'],
     ]);
 
-    test('returns stable source fingerprints without database credentials or the application key', function (): void {
-        $guard = app(FeaturePreviewDatabaseGuard::class);
-        $encrypter = app('encrypter');
-        $identity = $guard->mainIdentity();
-        $serialized = json_encode($identity, JSON_THROW_ON_ERROR);
-
-        expect(array_keys($identity))->toBe(['database', 'server_fingerprint', 'app_key_fingerprint'])
-            ->and($identity['database'])->toBe($this->snapshotCreatedDatabase)
-            ->and($identity['server_fingerprint'])->toMatch('/\A[a-f0-9]{64}\z/')
-            ->and($identity['app_key_fingerprint'])->toMatch('/\A[a-f0-9]{64}\z/')
-            ->and($guard->mainIdentity())->toBe($identity)
-            ->and($serialized)->not->toContain($this->snapshotCreatedUser)
-            ->and($serialized)->not->toContain(config('database.connections.snapshot_readonly_main.password'))
-            ->and($serialized)->not->toContain(base64_encode($encrypter->getKey()));
-
-        app()->instance('encrypter', new Encrypter(random_bytes(32), 'AES-256-CBC'));
-        try {
-            $changed = $guard->mainIdentity();
-            expect($changed['app_key_fingerprint'])->not->toBe($identity['app_key_fingerprint'])
-                ->and($changed['server_fingerprint'])->toBe($identity['server_fingerprint'])
-                ->and($changed['database'])->toBe($identity['database']);
-        } finally {
-            app()->instance('encrypter', $encrypter);
-        }
-    });
-
     test('refuses a source account that cannot inspect every schema object', function (): void {
         $admin = $this->snapshotAdmin;
         $account = $admin->quote($this->snapshotCreatedUser).'@'.$admin->quote($this->snapshotAccountHost);
@@ -298,7 +222,7 @@ describe('real MySQL main snapshot connection', function (): void {
         $admin->exec('GRANT SELECT ON '.$schema.' TO '.$account);
         $called = false;
 
-        expect(fn () => app(FeaturePreviewDatabaseGuard::class)->withMainReadOnlyConnection(function () use (&$called): void {
+        expect(fn () => app(LiveExportDatabaseGuard::class)->withMainReadOnlyConnection(function () use (&$called): void {
             $called = true;
         }))->toThrow(RuntimeException::class, 'hidden triggers')
             ->and($called)->toBeFalse();

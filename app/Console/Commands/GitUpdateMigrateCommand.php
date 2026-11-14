@@ -21,7 +21,7 @@ class GitUpdateMigrateCommand extends Command
 
         if (PHP_OS_FAMILY !== 'Windows' || ! LocalMigrationSafety::allowsTarget(
             (string) config('app.env'),
-            (bool) config('schooltool.preview.instance'),
+            filter_var(env('SCHOOLTOOL_PREVIEW_INSTANCE', false), FILTER_VALIDATE_BOOLEAN),
             $connectionName,
             is_array($connection) ? $connection : [],
         )) {

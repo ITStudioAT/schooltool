@@ -7,8 +7,6 @@ use App\Listeners\TwoFactorSecuritySubscriber;
 use App\Models\McAttempt;
 use App\Models\User;
 use App\Services\EmailAliasResolver;
-use App\Services\FeaturePreviewMailService;
-use App\Services\FeaturePreviewRuntimeService;
 use App\Services\SchoolToolModuleStatusService;
 use App\Services\SchoolUserLicenceAssignmentService;
 use App\Services\SchoolyearService;
@@ -49,18 +47,11 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        app(FeaturePreviewRuntimeService::class)->install();
-
         View::addNamespace('spa', resource_path('views/vendor/spa'));
         Route::model('user', User::class);
         $this->app['router']->pushMiddlewareToGroup('web', StartSession::class);
 
         if (config('app.env') === 'production') {
-            URL::forceScheme('https');
-        }
-
-        if (config('schooltool.preview.instance') && app(FeaturePreviewMailService::class)->configurationIsSafe()) {
-            URL::forceRootUrl(rtrim((string) config('app.url'), '/'));
             URL::forceScheme('https');
         }
 
@@ -235,18 +226,14 @@ class AppServiceProvider extends ServiceProvider
             'avatar' => '',
         ]);
 
-        Event::listen(MessageSending::class, function (MessageSending $event): ?bool {
+        Event::listen(MessageSending::class, function (MessageSending $event): void {
             app(EmailAliasResolver::class)->rewriteMessageRecipients($event->message);
-
-            return app(FeaturePreviewMailService::class)->filterMessage($event);
         });
 
-        Event::listen(NotificationSending::class, function (NotificationSending $event): ?bool {
+        Event::listen(NotificationSending::class, function (NotificationSending $event): void {
             if ($event->channel === 'mail') {
                 app(EmailAliasResolver::class)->rewriteNotificationMailRoute($event->notifiable);
             }
-
-            return app(FeaturePreviewMailService::class)->filterNotification($event);
         });
     }
 }

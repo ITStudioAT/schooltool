@@ -568,7 +568,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') !== __FILE__) {
 $arguments = array_slice($argv, 1);
 if (filter_var(getenv('SCHOOLTOOL_PREVIEW_INSTANCE') ?: false, FILTER_VALIDATE_BOOLEAN)
     || filter_var(dotEnvValue('SCHOOLTOOL_PREVIEW_INSTANCE') ?: false, FILTER_VALIDATE_BOOLEAN)) {
-    fwrite(STDERR, "Production/local deployment is disabled on the preview instance. Use gitpreview from a development workstation.\n");
+    fwrite(STDERR, "Production/local deployment is disabled on the preview instance. This deployment target has been retired.\n");
     exit(1);
 }
 $target = requestedUpdateTarget($arguments);

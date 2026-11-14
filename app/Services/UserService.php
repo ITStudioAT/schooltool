@@ -345,19 +345,19 @@ class UserService
                 session()->regenerate();
                 $data['status'] = 'OK';
             } else {
-                $this->sendCode($user, 'Code für neues Kennwort', $user->email, 'password_reset');
+                $this->sendCode($user, 'Code für neues Kennwort', $user->email);
                 unset($data['token_2fa']);
                 $data['status'] = 'RE_CONFIRM_PASSWORD';
             }
         } else {
-            $this->sendCode($user, 'Code für neues Kennwort', $user->email, 'password_reset');
+            $this->sendCode($user, 'Code für neues Kennwort', $user->email);
             $data['status'] = 'CONFIRM_PASSWORD';
         }
 
         return $data;
     }
 
-    public function sendCode($user, string $subject, string $email, ?string $previewPurpose = null): void
+    public function sendCode($user, string $subject, string $email): void
     {
         $token2fa = random_int(100000, 999999);
         $user->token_2fa = $token2fa;
@@ -377,9 +377,6 @@ class UserService
         ];
 
         $notification = new StandardEmail($mail);
-        if ($previewPurpose !== null) {
-            $notification->forPreviewAuthentication($user, $email, $previewPurpose);
-        }
 
         Notification::route('mail', EmailAliasResolver::resolveConfigured($email))->notify($notification);
     }

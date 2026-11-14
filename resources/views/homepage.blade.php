@@ -53,9 +53,7 @@
 
 <body class="antialiased">
 
-    <div id="app"
-        data-feature-preview="{{ app(\App\Services\FeaturePreviewService::class)->isPreview() ? 'true' : 'false' }}"
-        data-preview-live-url="{{ app(\App\Services\FeaturePreviewService::class)->isPreview() ? app(\App\Services\FeaturePreviewService::class)->homepageUrl('live_url') : '' }}">
+    <div id="app">
 
     </div>
 

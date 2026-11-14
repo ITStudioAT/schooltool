@@ -56,7 +56,6 @@ class TeachingSynchronisationLinuxTargetTestService extends RestaurantSynchronis
 beforeEach(function () {
     app()->bind(RestaurantSynchronisationService::class, TeachingSynchronisationWindowsTargetTestService::class);
     $this->app['env'] = 'local';
-    config(['schooltool.preview.instance' => false]);
     Storage::fake('local');
     Storage::fake('public');
     config(['filesystems.disks.local.root' => Storage::disk('local')->path(''),

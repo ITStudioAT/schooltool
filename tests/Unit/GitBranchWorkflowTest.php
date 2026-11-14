@@ -214,28 +214,6 @@ $logPrefix = Join-Path $env:TEMP 'batch-check'
 POWERSHELL;
 }
 
-function branchWorkflowPreviewMocks(): string
-{
-    return branchWorkflowReleaseMocks()."\n".<<<'POWERSHELL'
-function Read-Host { 'PREVIEW' }
-function Get-SchooltoolPreviewTarget { [pscustomobject]@{ Ssh = 'schooltool-feature@example.test'; Path = '/home/example/applications/preview/public_html' } }
-function Get-SchooltoolDeploymentTarget { [pscustomobject]@{ Ssh = 'schooltool-main@example.test'; Path = '/home/example/applications/main/public_html' } }
-function Invoke-SchooltoolRemoteJson { [pscustomobject]@{ public_key = ('a' * 64); needs_snapshot = $false; state_token = ('b' * 64); feature_id = $null } }
-function Send-SchooltoolPreview { Write-Host 'PREVIEW_UPLOAD_REQUESTED' }
-function ConvertTo-LegacyPreviewTestReceipt {
-    param($Receipt)
-    $old = $Receipt.Candidate
-    $branch = 'codex/preview-' + $old.Id
-    $archive = 'refs/schooltool/archived-heads/20260921-' + ('a' * 32) + '/' + $branch
-    Invoke-SchooltoolGit update-ref --no-deref $archive $Receipt.ArtifactCommit ('0' * 40)
-    $Receipt.Format = 'schooltool-preview-v1'
-    $Receipt.EvidenceKind = 'inline-full-checks'
-    $Receipt.Checks = 'full-success'
-    $Receipt.Candidate = [pscustomobject]@{ Branch = $branch; Path = $old.Path }
-}
-POWERSHELL;
-}
-
 beforeEach(function (): void {
     if (PHP_OS_FAMILY !== 'Windows') {
         $this->markTestSkipped('Windows PowerShell branch workflow verification.');
@@ -262,7 +240,6 @@ beforeEach(function (): void {
 
     mkdir($this->workflowPc.'/scripts');
     copy(dirname(__DIR__, 2).'/scripts/check-encoding.php', $this->workflowPc.'/scripts/check-encoding.php');
-    copy(dirname(__DIR__, 2).'/scripts/deploy_preview_cloudways.sh', $this->workflowPc.'/scripts/deploy_preview_cloudways.sh');
     file_put_contents($this->workflowPc.'/artisan', <<<'PHP'
 <?php
 
@@ -304,8 +281,6 @@ afterEach(function (): void {
 function branchWorkflowDiscardMocks(): string
 {
     return <<<'POWERSHELL'
-function Get-SchooltoolPreviewTarget { [pscustomobject]@{ Site = 'PREVIEW' } }
-function Invoke-SchooltoolRemoteJson { [pscustomobject]@{ state_token = ('b' * 64); feature_id = $null } }
 function Read-Host { 'DISCARD feature/discard-me' }
 POWERSHELL;
 }
@@ -343,96 +318,6 @@ it('discards only the selected feature atomically and retains exact recovery his
         ->and(runBranchWorkflowGit($this->workflowPc, 'status', '--porcelain'))->toBe('');
 })->with(['powershell', 'pwsh'])->with([false, true]);
 
-it('returns the shared preview to main before safely discarding its last legacy feature', function (string $scenario, string $shell): void {
-    $commit = prepareBranchWorkflowDiscard($this);
-    $reservation = runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'codex/features/discard-me');
-    runBranchWorkflowGit($this->workflowRemote, 'update-ref', 'refs/heads/codex/active-feature', $reservation);
-    runBranchWorkflowGit($this->workflowRemote, 'update-ref', '-d', 'refs/heads/codex/features/discard-me', $reservation);
-    $command = branchWorkflowPreviewMocks()."\n".'$scenario = "'.$scenario.'"; '.<<<'POWERSHELL'
-Update-SchooltoolRemote
-$legacy = Get-SchooltoolActiveFeature -Branch feature/discard-me
-$script:mainActive = $false
-$script:planChanged = $false
-$script:sent = 0
-function Invoke-SchooltoolRemoteJson {
-    # The old running server returns this contract without mode/deployment_ready fields.
-    [pscustomobject]@{ public_key = ('a' * 64); needs_snapshot = (-not $script:mainActive); state_token = $(if ($script:planChanged) { 'c' * 64 } else { 'b' * 64 }); feature_id = $(if ($script:mainActive) { '0' * 32 } else { $legacy.Id }) }
-}
-function Read-Host {
-    param([string]$Prompt)
-    if ($Prompt -match 'Type REFRESH$') {
-        if ($scenario -ceq 'cancel refresh') { return '' }
-        Write-Host 'REFRESH_CONFIRMED'
-        return 'REFRESH'
-    }
-    if ($Prompt -match 'Type PREVIEW$') {
-        if ($scenario -ceq 'cancel preview') { return '' }
-        if ($scenario -ceq 'changed main') {
-            $changed = Invoke-SchooltoolGit commit-tree 'HEAD^{tree}' -p refs/remotes/origin/main -m 'Concurrent main'
-            Invoke-SchooltoolGit push origin "${changed}:refs/heads/main" | Out-Host
-        }
-        if ($scenario -ceq 'changed preview') { $script:planChanged = $true }
-        return 'PREVIEW'
-    }
-    if ($Prompt -ceq 'Type DISCARD feature/discard-me to continue') { return 'DISCARD feature/discard-me' }
-    throw 'Unexpected confirmation.'
-}
-function Send-SchooltoolPreview {
-    param([string]$SourceBranch, [string]$FeatureId, $SnapshotStatus)
-    if ($SourceBranch -cne 'main' -or $FeatureId -cne ('0' * 32) -or -not $SnapshotStatus.needs_snapshot) { throw 'Invalid main snapshot plan.' }
-    $script:sent++
-    if ($scenario -ceq 'transfer failure') { throw 'EXPECTED_TRANSFER_FAILURE' }
-    $script:mainActive = $true
-}
-$existingLock = $null
-if ($scenario -ceq 'lock') { $existingLock = Lock-SchooltoolFeatureOperation $legacy }
-try {
-    if ($scenario -ceq 'resume') {
-        gitpreview prepare -Main
-        $id = (Get-ChildItem -LiteralPath (Get-SchooltoolPreviewDirectory) -Filter '*.receipt').BaseName
-        gitpreview resume $id -Main
-    }
-    else { gitpreview -Main }
-    if ($scenario -cin @('changed main', 'changed preview', 'lock', 'transfer failure')) { throw 'Expected protection did not stop publication.' }
-    if ($scenario -cin @('success', 'resume')) { gitdiscard feature/discard-me }
-}
-catch {
-    $expected = switch ($scenario) {
-        'changed main' { 'main changed since preview preparation' }
-        'changed preview' { 'shared preview changed during preparation' }
-        'lock' { 'Git failed: git push' }
-        'transfer failure' { 'EXPECTED_TRANSFER_FAILURE' }
-        default { throw }
-    }
-    if ($_.Exception.Message -notmatch [regex]::Escape($expected)) { throw }
-}
-finally { Unlock-SchooltoolFeatureOperation $existingLock }
-Write-Output "MAIN_ACTIVE=$script:mainActive SENT=$script:sent"
-POWERSHELL;
-    $result = runBranchWorkflowCommand($this->workflowPc, $command, $shell);
-    assertBranchWorkflowSucceeded($result);
-    expect(runBranchWorkflowGit($this->workflowRemote, 'for-each-ref', '--format=%(refname)', 'refs/heads/codex/operations/'))->toBe('')
-        ->and(runBranchWorkflowGit($this->workflowPc, 'branch', '--show-current'))->toBe('main')
-        ->and(runBranchWorkflowGit($this->workflowPc, 'rev-parse', 'HEAD'))->toBe($this->workflowMain);
-    if ($scenario !== 'changed main') {
-        expect(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'main'))->toBe($this->workflowMain);
-    }
-    if (in_array($scenario, ['success', 'resume'], true)) {
-        expect($result->getOutput())->toContain('MAIN_ACTIVE=True SENT=1', 'REFRESH_CONFIRMED')
-            ->and(runBranchWorkflowGit($this->workflowRemote, 'for-each-ref', '--format=%(refname)', 'refs/heads/feature/', 'refs/heads/codex/features/', 'refs/heads/codex/active-feature'))->toBe('')
-            ->and(runBranchWorkflowGit($this->workflowPc, 'for-each-ref', '--format=%(objectname)', 'refs/schooltool/discarded/'))->toContain($commit, $reservation);
-    } else {
-        expect($result->getOutput())->toContain('MAIN_ACTIVE=False SENT='.($scenario === 'transfer failure' ? '1' : '0'))
-            ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'feature/discard-me'))->toBe($commit)
-            ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'codex/active-feature'))->toBe($reservation);
-        if ($scenario !== 'transfer failure') {
-            expect(runBranchWorkflowGit($this->workflowRemote, 'for-each-ref', '--format=%(refname)', 'refs/heads/preview/'))->toBe('');
-        } else {
-            expect(glob(branchWorkflowCommonDirectory($this->workflowPc).'/schooltool-preview/*.started'))->toHaveCount(1);
-        }
-    }
-})->with(['success', 'resume', 'cancel refresh', 'cancel preview', 'changed main', 'changed preview', 'lock', 'transfer failure'])->with(['powershell', 'pwsh']);
-
 it('refuses unsafe feature discard without deleting feature or reservation', function (string $condition): void {
     $commit = prepareBranchWorkflowDiscard($this);
     $reservation = runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'codex/features/discard-me');
@@ -447,20 +332,12 @@ it('refuses unsafe feature discard without deleting feature or reservation', fun
     } elseif ($condition === 'local ahead') {
         $featureWorkspace = $this->workflowPc.'-features/discard-me';
         commitBranchWorkflowFile($featureWorkspace, 'local.txt', 'unpublished');
-    } elseif ($condition === 'preview active') {
-        $code .= "\n".'function Invoke-SchooltoolRemoteJson { [pscustomobject]@{ state_token = ("b" * 64); feature_id = (Get-SchooltoolActiveFeature -Branch feature/discard-me).Id } }';
-    } elseif ($condition === 'preview unavailable') {
-        $code .= "\nfunction Invoke-SchooltoolRemoteJson { throw 'Preview unavailable' }";
-    } elseif ($condition === 'main preview incomplete') {
-        $code .= "\nfunction Invoke-SchooltoolRemoteJson { [pscustomobject]@{ state_token = ('b' * 64); feature_id = \$null; mode = 'main'; deployment_ready = \$false } }";
     } elseif ($condition === 'cancel') {
         $code .= "\nfunction Read-Host { 'CANCEL' }";
     } elseif ($condition === 'preview operation in progress') {
         assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'Lock-SchooltoolFeatureOperation (Get-SchooltoolActiveFeature -Branch feature/discard-me) | Out-Null'));
     } elseif ($condition === 'changed after consent') {
         $code .= "\n".'function Read-Host { [IO.File]::WriteAllText((Join-Path (Get-Location) "unsaved.txt"), "keep"); "DISCARD feature/discard-me" }';
-    } elseif ($condition === 'preview changed after consent') {
-        $code .= "\n".'$script:checks = 0; function Invoke-SchooltoolRemoteJson { $script:checks++; [pscustomobject]@{ state_token = (($script:checks.ToString()) * 64); feature_id = $null } }';
     } elseif ($condition === 'different push origin') {
         runBranchWorkflowGit($this->workflowPc, 'remote', 'set-url', '--push', 'origin', $this->workflowDirectory.'/wrong-origin.git');
     }
@@ -470,7 +347,7 @@ it('refuses unsafe feature discard without deleting feature or reservation', fun
         ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'feature/discard-me'))->toBe($commit)
         ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'codex/features/discard-me'))->toBe($reservation)
         ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'main'))->toBe($this->workflowMain);
-})->with(['dirty', 'feature checkout', 'worktree', 'local ahead', 'preview active', 'preview unavailable', 'main preview incomplete', 'cancel', 'preview operation in progress', 'changed after consent', 'preview changed after consent', 'different push origin']);
+})->with(['dirty', 'feature checkout', 'worktree', 'local ahead', 'cancel', 'preview operation in progress', 'changed after consent', 'different push origin']);
 
 it('keeps the reservation when an exact discard lease loses a concurrent feature update', function (): void {
     $commit = prepareBranchWorkflowDiscard($this);
@@ -1294,8 +1171,6 @@ gitrelease 'Release with spaces'
 gitrelease 'Versioned release' '3.48.0'
 gitdiscard 'unused-feature'
 gitcheck
-gitpreview -RefreshData
-gitpreview resume '0123456789abcdef0123456789abcdef' -RefreshData
 gitdeploy
 git remote set-url origin https://github.com/ITStudioAT/stocks.git
 gitwork
@@ -1354,8 +1229,6 @@ POWERSHELL, $shell);
             ['command' => 'gitrelease', 'arguments' => ['Versioned release', '3.48.0']],
             ['command' => 'gitdiscard', 'arguments' => ['unused-feature']],
             ['command' => 'gitcheck', 'arguments' => []],
-            ['command' => 'gitpreview', 'arguments' => ['-RefreshData']],
-            ['command' => 'gitpreview', 'arguments' => ['resume', '0123456789abcdef0123456789abcdef', '-RefreshData']],
             ['command' => 'gitdeploy', 'arguments' => []],
             ['command' => 'gitwork', 'arguments' => []],
             ['command' => 'gitmain', 'arguments' => []],
@@ -1513,87 +1386,6 @@ POWERSHELL);
         ->and(runBranchWorkflowGit($this->workflowLaptop, 'branch', '--show-current'))->toBe('main');
 });
 
-it('requires an explicit matching feature selection for a shared preview and preserves unrelated receipts', function (): void {
-    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitstart first-feature'));
-    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowLaptop, 'gitstart second-feature'));
-    foreach (['gitpreview prepare', 'gitpreview prepare -Feature second-feature'] as $command) {
-        $result = runBranchWorkflowCommand($this->workflowPc, branchWorkflowPreviewMocks()."\n".$command);
-        expect($result->isSuccessful())->toBeFalse()
-            ->and($result->getOutput())->not->toContain('FULL_CHECKS_REQUESTED', 'PREVIEW_UPLOAD_REQUESTED');
-    }
-
-    $command = branchWorkflowPreviewMocks()."\n".<<<'POWERSHELL'
-gitpreview prepare -Feature first-feature
-$id = (Get-ChildItem -LiteralPath (Get-SchooltoolPreviewDirectory) -Filter '*.receipt').BaseName
-$receipt = Read-SchooltoolPreviewReceipt $id
-if ($receipt.Feature.Branch -ne 'feature/first-feature') { throw 'Receipt is bound to the wrong branch.' }
-$other = New-SchooltoolFeatureReservation 'feature/second-feature'
-$previous = Invoke-SchooltoolGit rev-parse refs/remotes/origin/codex/features/second-feature
-Invoke-SchooltoolGit push "--force-with-lease=refs/heads/codex/features/second-feature:$previous" origin "$($other.ReservationCommit):refs/heads/codex/features/second-feature"
-function Invoke-SchooltoolReleaseChecks { throw 'CHECKS_MUST_NOT_REPEAT' }
-gitpreview resume $id -Feature first-feature
-POWERSHELL;
-    $result = runBranchWorkflowCommand($this->workflowPc, $command);
-    assertBranchWorkflowSucceeded($result);
-    expect($result->getOutput())->toContain('PREVIEW_UPLOAD_REQUESTED')
-        ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'main'))->toBe($this->workflowMain);
-});
-
-it('requires refresh consent when switching the shared preview in either direction', function (string $selected, bool $approved): void {
-    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitstart first-feature'));
-    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowLaptop, 'gitstart second-feature'));
-    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitwork '.$selected));
-    $previous = $selected === 'first-feature' ? 'second-feature' : 'first-feature';
-    $command = branchWorkflowPreviewMocks()."\nUpdate-SchooltoolRemote\n".'$previousFeature = (Get-SchooltoolActiveFeature -Branch "feature/'.$previous.'").Id'."\n".'$approveRefresh = '.($approved ? '$true' : '$false')."\n".<<<'POWERSHELL'
-function Invoke-SchooltoolRemoteJson { [pscustomobject]@{ public_key = ('a' * 64); needs_snapshot = $true; state_token = ('b' * 64); feature_id = $previousFeature } }
-function Read-Host {
-    param([string]$Prompt)
-    if ($Prompt -match 'REFRESH') {
-        Write-Host 'REFRESH_CONSENT_REQUESTED'
-        if ($approveRefresh) { return 'REFRESH' }
-        return ''
-    }
-    'PREVIEW'
-}
-function Send-SchooltoolPreview {
-    param($SnapshotStatus)
-    if (-not $SnapshotStatus.needs_snapshot -or $SnapshotStatus.feature_id -ne $previousFeature) { throw 'Previous preview data binding was lost.' }
-    Write-Host 'PREVIEW_UPLOAD_REQUESTED'
-}
-POWERSHELL;
-    $result = runBranchWorkflowCommand($this->workflowPc, $command."\ngitpreview -Feature ".$selected);
-    assertBranchWorkflowSucceeded($result);
-    expect($result->getOutput())->toContain('REFRESH_CONSENT_REQUESTED')
-        ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'main'))->toBe($this->workflowMain);
-    if ($approved) {
-        expect($result->getOutput())->toContain('PREVIEW_UPLOAD_REQUESTED');
-
-        return;
-    }
-    expect($result->getOutput())->toContain('Data refresh cancelled. Nothing published.')
-        ->and($result->getOutput())->not->toContain('PREVIEW_UPLOAD_REQUESTED')
-        ->and(glob(branchWorkflowCommonDirectory($this->workflowPc).'/schooltool-preview/*.started'))->toBe([])
-        ->and(runBranchWorkflowGit($this->workflowRemote, 'for-each-ref', '--format=%(refname)', 'refs/heads/preview/'))->toBe('');
-})->with(['first-feature', 'second-feature'])->with([false, true]);
-
-it('retains old preview bundles for inspection but refuses publication without the current deployment protocol', function (): void {
-    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitstart first-feature'));
-    commitBranchWorkflowFile($this->workflowPc, 'scripts/deploy_preview_cloudways.sh', "#!/bin/bash\nexit 0\n");
-    runBranchWorkflowGit($this->workflowPc, 'push', 'origin', 'feature/first-feature');
-    $command = branchWorkflowPreviewMocks()."\n".<<<'POWERSHELL'
-gitpreview prepare
-$id = (Get-ChildItem -LiteralPath (Get-SchooltoolPreviewDirectory) -Filter '*.receipt').BaseName
-function Invoke-SchooltoolReleaseChecks { throw 'CHECKS_MUST_NOT_REPEAT' }
-gitpreview resume $id
-POWERSHELL;
-    $result = runBranchWorkflowCommand($this->workflowPc, $command);
-    expect($result->isSuccessful())->toBeFalse()
-        ->and($result->getOutput())->not->toContain('CHECKS_MUST_NOT_REPEAT', 'PREVIEW_UPLOAD_REQUESTED')
-        ->and(glob(branchWorkflowCommonDirectory($this->workflowPc).'/schooltool-preview/*.receipt'))->toHaveCount(1)
-        ->and(glob(branchWorkflowCommonDirectory($this->workflowPc).'/schooltool-preview/*.started'))->toBe([])
-        ->and(runBranchWorkflowGit($this->workflowRemote, 'for-each-ref', '--format=%(refname)', 'refs/heads/preview/'))->toBe('');
-});
-
 it('pins the guarded deployment protocol when helpers load instead of trusting a later matching old file', function (bool $loadOldProtocol): void {
     foreach (['git_preview_helpers.ps1', 'git_preview_receipt.ps1', 'git_ssh_helpers.ps1'] as $file) {
         copy(dirname(__DIR__, 2).'/scripts/'.$file, $this->workflowPc.'/scripts/'.$file);
@@ -1615,7 +1407,6 @@ it('resumes a legacy feature receipt without a reservation ref while another fea
 $feature = New-SchooltoolFeatureReservation 'feature/matura'
 Invoke-SchooltoolGit push --atomic origin "$($feature.ReservationCommit):refs/heads/codex/active-feature" 'HEAD:refs/heads/feature/matura'
 gitwork matura
-gitpreview prepare
 $id = (Get-ChildItem -LiteralPath (Get-SchooltoolPreviewDirectory) -Filter '*.receipt').BaseName
 $receipt = Read-SchooltoolPreviewReceipt $id
 $receipt.Feature.PSObject.Properties.Remove('ReservationRef')
@@ -1628,28 +1419,10 @@ POWERSHELL);
     $resumed = runBranchWorkflowCommand($this->workflowPc, branchWorkflowPreviewMocks()."\n".<<<'POWERSHELL'
 $id = (Get-ChildItem -LiteralPath (Get-SchooltoolPreviewDirectory) -Filter '*.receipt').BaseName
 function Invoke-SchooltoolReleaseChecks { throw 'CHECKS_MUST_NOT_REPEAT' }
-gitpreview resume $id -Feature matura
 POWERSHELL);
     assertBranchWorkflowSucceeded($resumed);
     expect($resumed->getOutput())->toContain('PREVIEW_UPLOAD_REQUESTED')
         ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'codex/active-feature'))->toBe($legacyCommit)
-        ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'main'))->toBe($this->workflowMain);
-});
-
-it('refuses publication if the shared preview state changes after confirmation', function (): void {
-    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitstart first-feature'));
-    $command = branchWorkflowPreviewMocks()."\n".<<<'POWERSHELL'
-$script:previewState = 'b' * 64
-function Invoke-SchooltoolRemoteJson { [pscustomobject]@{ public_key = ('a' * 64); needs_snapshot = $false; state_token = $script:previewState; feature_id = $null } }
-function Read-Host { $script:previewState = 'c' * 64; 'PREVIEW' }
-gitpreview -Feature first-feature
-POWERSHELL;
-    $result = runBranchWorkflowCommand($this->workflowPc, $command);
-    expect($result->isSuccessful())->toBeFalse()
-        ->and($result->getOutput())->toContain('shared preview changed')
-        ->and($result->getOutput())->not->toContain('PREVIEW_UPLOAD_REQUESTED')
-        ->and(glob(branchWorkflowCommonDirectory($this->workflowPc).'/schooltool-preview/*.started'))->toBe([])
-        ->and(runBranchWorkflowGit($this->workflowRemote, 'for-each-ref', '--format=%(refname)', 'refs/heads/preview/'))->toBe('')
         ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'main'))->toBe($this->workflowMain);
 });
 
@@ -2344,18 +2117,10 @@ POWERSHELL;
 it('binds refresh and deployment through the real dispatcher without evaluating argument text', function (string $shell): void {
     copy(dirname(__DIR__, 2).'/scripts/git_workflow.ps1', $this->workflowPc.'/scripts/git_workflow.ps1');
     file_put_contents($this->workflowPc.'/scripts/git_helpers.ps1', <<<'POWERSHELL'
-function gitpreview {
-    param([string]$Mode = 'deploy', [string]$BundleId, [switch]$RefreshData, [Alias('Feature')][string]$FeatureName, [switch]$Main)
-    Write-Output "PREVIEW_MODE=$Mode REFRESH=$RefreshData BUNDLE=$BundleId FEATURE=$FeatureName MAIN=$Main"
-}
 function gitdeploy { Write-Output 'LIVE_DEPLOY_REQUESTED' }
 function gitdiscard { param([string]$Name); Write-Output "DISCARD_NAME=$Name" }
 POWERSHELL);
     $result = runBranchWorkflowCommand($this->workflowPc, <<<'POWERSHELL'
-& ./scripts/git_workflow.ps1 -Command gitpreview -CommandArguments @('prepare', '-RefreshData')
-& ./scripts/git_workflow.ps1 -Command gitpreview -CommandArguments @('resume', '0123456789abcdef0123456789abcdef', '-RefreshData')
-& ./scripts/git_workflow.ps1 -Command gitpreview -CommandArguments @('prepare', '-Feature', 'first-feature')
-& ./scripts/git_workflow.ps1 -Command gitpreview -CommandArguments @('prepare', '-Main')
 & ./scripts/git_workflow.ps1 -Command gitdeploy
 & ./scripts/git_workflow.ps1 -Command gitdiscard -CommandArguments @('discard-me')
 try {
@@ -2367,7 +2132,7 @@ catch {
     Write-Output 'INVALID_DISCARD_ARGUMENT_REJECTED'
 }
 try {
-    & ./scripts/git_workflow.ps1 -Command gitpreview -CommandArguments @('$(throw "EVALUATED_ARGUMENT")')
+    & ./scripts/git_workflow.ps1 -Command gitdeploy -CommandArguments @('$(throw "EVALUATED_ARGUMENT")')
     throw 'UNEXPECTED_ARGUMENT_ACCEPTED'
 }
 catch {
@@ -2377,7 +2142,7 @@ catch {
 POWERSHELL, $shell);
     assertBranchWorkflowSucceeded($result);
 
-    expect($result->getOutput())->toContain('PREVIEW_MODE=prepare REFRESH=True', 'PREVIEW_MODE=resume REFRESH=True BUNDLE=0123456789abcdef0123456789abcdef', 'FEATURE=feature/first-feature', 'MAIN=True', 'LIVE_DEPLOY_REQUESTED', 'DISCARD_NAME=discard-me', 'INVALID_DISCARD_ARGUMENT_REJECTED', 'INVALID_ARGUMENT_REJECTED');
+    expect($result->getOutput())->toContain('LIVE_DEPLOY_REQUESTED', 'DISCARD_NAME=discard-me', 'INVALID_DISCARD_ARGUMENT_REJECTED', 'INVALID_ARGUMENT_REJECTED');
 })->with(['powershell', 'pwsh']);
 
 it('atomically rejects publication if main advances after release confirmation begins', function (): void {
@@ -2417,290 +2182,31 @@ it('dispatches the real workflow entrypoint and rejects releasing main', functio
         ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'main'))->toBe($this->workflowMain);
 });
 
-it('prepares or publishes a preview without modifying main tags or the source feature', function (string $mode): void {
-    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitstart "new-function"'));
-    file_put_contents($this->workflowPc.'/feature.txt', "Preview work\n");
-    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitsave "Save preview work"'));
-    $feature = runBranchWorkflowGit($this->workflowPc, 'rev-parse', 'HEAD');
-    $command = branchWorkflowReleaseMocks()."\n".<<<'POWERSHELL'
-$env:SCHOOLTOOL_PREVIEW_PATH = '/home/example/applications/preview/public_html'
-function Read-Host { 'PREVIEW' }
-function Get-SchooltoolPreviewTarget { [pscustomobject]@{ Ssh = 'schooltool-feature@example.test'; Path = '/home/example/applications/preview/public_html' } }
-function Invoke-SchooltoolRemoteJson { [pscustomobject]@{ public_key = ('a' * 64); needs_snapshot = $false; state_token = ('b' * 64); feature_id = $null } }
-function Send-SchooltoolPreview { Write-Host 'PREVIEW_UPLOAD_REQUESTED' }
-POWERSHELL;
-    $result = runBranchWorkflowCommand($this->workflowPc, $command."\n"."gitpreview '$mode'");
-    assertBranchWorkflowSucceeded($result);
-
-    expect($result->getOutput())->toContain('BACKGROUND_CI_REQUIRED')->not->toContain('FULL_CHECKS_REQUESTED')
-        ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'main'))->toBe($this->workflowMain)
-        ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'feature/new-function'))->toBe($feature)
-        ->and(runBranchWorkflowGit($this->workflowRemote, 'tag', '--list'))->toBe('')
-        ->and(runBranchWorkflowGit($this->workflowPc, 'branch', '--show-current'))->toBe('feature/new-function')
-        ->and(runBranchWorkflowGit($this->workflowRemote, 'for-each-ref', '--format=%(refname)', 'refs/heads/codex/operations/'))->toBe('')
-        ->and(glob(branchWorkflowCommonDirectory($this->workflowPc).'/schooltool-preview/*.tar.gz'))->toHaveCount(1);
-
-    $previewRefs = runBranchWorkflowGit($this->workflowRemote, 'for-each-ref', '--format=%(refname)', 'refs/heads/preview/');
-    if ($mode === 'deploy') {
-        expect($previewRefs)->toStartWith('refs/heads/preview/')
-            ->and($result->getOutput())->toContain('PREVIEW_UPLOAD_REQUESTED');
-    } else {
-        expect($previewRefs)->toBe('')
-            ->and($result->getOutput())->not->toContain('PREVIEW_UPLOAD_REQUESTED');
-    }
-})->with(['prepare', 'deploy']);
-
-it('prepares schema changes for the isolated preview database without modifying the original branch', function (): void {
-    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitstart "new-function"'));
-    mkdir($this->workflowPc.'/database/migrations', 0777, true);
-    commitBranchWorkflowFile($this->workflowPc, 'database/migrations/new-table.php', '<?php');
-    runBranchWorkflowGit($this->workflowPc, 'push', 'origin', 'HEAD:feature/new-function');
-    $result = runBranchWorkflowCommand($this->workflowPc, branchWorkflowReleaseMocks()."\n".'gitpreview prepare');
-    assertBranchWorkflowSucceeded($result);
-
-    expect($result->getOutput())->toContain('BACKGROUND_CI_REQUIRED')->not->toContain('FULL_CHECKS_REQUESTED')
-        ->and(runBranchWorkflowGit($this->workflowPc, 'branch', '--show-current'))->toBe('feature/new-function')
-        ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'main'))->toBe($this->workflowMain);
-});
-
-it('stops a preview when build preflight fails without uploading or publishing', function (): void {
-    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitstart "new-function"'));
-    $command = branchWorkflowReleaseMocks()."\n".<<<'POWERSHELL'
-function Invoke-SchooltoolReleaseChecks { throw 'PREVIEW_CHECKS_FAILED' }
-function Send-SchooltoolPreview { throw 'UNEXPECTED_UPLOAD' }
-gitpreview prepare
-POWERSHELL;
-    $result = runBranchWorkflowCommand($this->workflowPc, $command);
-
-    expect($result->isSuccessful())->toBeFalse()
-        ->and($result->getOutput())->toContain('PREVIEW_CHECKS_FAILED')
-        ->and(glob(branchWorkflowCommonDirectory($this->workflowPc).'/schooltool-preview/*.receipt'))->toBe([])
-        ->and($result->getOutput())->not->toContain('UNEXPECTED_UPLOAD')
-        ->and(runBranchWorkflowGit($this->workflowRemote, 'for-each-ref', '--format=%(refname)', 'refs/heads/preview/'))->toBe('')
-        ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'main'))->toBe($this->workflowMain)
-        ->and(runBranchWorkflowGit($this->workflowPc, 'branch', '--show-current'))->toBe('feature/new-function');
-});
-
-it('pins complete single preview origin URLs for fetch and push', function (string $powershell): void {
+it('pins complete single feature origin URLs for fetch and push', function (string $powershell): void {
     if (! (new ExecutableFinder)->find($powershell)) {
         $this->markTestSkipped("$powershell is not available.");
     }
     runBranchWorkflowGit($this->workflowPc, 'remote', 'set-url', 'origin', 'https://example.test/Schooltool/project.git');
     runBranchWorkflowGit($this->workflowPc, 'remote', 'set-url', '--push', 'origin', 'git@example.test:Schooltool/project.git');
     $result = runBranchWorkflowCommand($this->workflowPc, <<<'POWERSHELL'
-Write-Output ('FETCH=' + (Get-SchooltoolPreviewOrigin))
-Write-Output ('PUSH=' + (Get-SchooltoolPreviewOrigin -Push))
+Write-Output ('FETCH=' + (Get-SchooltoolFeatureOrigin))
+Write-Output ('PUSH=' + (Get-SchooltoolFeatureOrigin -Push))
 POWERSHELL, $powershell);
     assertBranchWorkflowSucceeded($result);
     expect($result->getOutput())->toContain('FETCH=https://example.test/Schooltool/project.git', 'PUSH=git@example.test:Schooltool/project.git');
 })->with(['powershell', 'pwsh']);
 
-it('rejects multiple preview origin URLs for fetch or push', function (string $direction, string $powershell): void {
+it('rejects multiple feature origin URLs for fetch or push', function (string $direction, string $powershell): void {
     if (! (new ExecutableFinder)->find($powershell)) {
         $this->markTestSkipped("$powershell is not available.");
     }
     $key = $direction === 'push' ? 'remote.origin.pushurl' : 'remote.origin.url';
     runBranchWorkflowGit($this->workflowPc, 'config', '--replace-all', $key, 'https://example.test/Schooltool/first.git');
     runBranchWorkflowGit($this->workflowPc, 'config', '--add', $key, 'https://example.test/Schooltool/second.git');
-    $result = runBranchWorkflowCommand($this->workflowPc, 'Get-SchooltoolPreviewOrigin'.($direction === 'push' ? ' -Push' : ''), $powershell);
+    $result = runBranchWorkflowCommand($this->workflowPc, 'Get-SchooltoolFeatureOrigin'.($direction === 'push' ? ' -Push' : ''), $powershell);
     expect($result->isSuccessful())->toBeFalse()
         ->and($result->getOutput())->toContain('requires exactly one origin fetch URL and one push URL');
 })->with(['fetch', 'push'])->with(['powershell', 'pwsh']);
-
-it('resumes a checked preview after preparation or cancellation without repeating checks', function (string $initial, string $powershell): void {
-    if (! (new ExecutableFinder)->find($powershell)) {
-        $this->markTestSkipped("$powershell is not available.");
-    }
-    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitstart "new-function"'));
-    $command = branchWorkflowPreviewMocks()."\nfunction Read-Host { '' }\ngitpreview $initial\n";
-    $prepared = runBranchWorkflowCommand($this->workflowPc, $command, $powershell);
-    assertBranchWorkflowSucceeded($prepared);
-    $receipts = glob(branchWorkflowCommonDirectory($this->workflowPc).'/schooltool-preview/*.receipt');
-    expect($receipts)->toHaveCount(1)
-        ->and(runBranchWorkflowGit($this->workflowRemote, 'for-each-ref', '--format=%(refname)', 'refs/heads/preview/'))->toBe('');
-    $id = basename($receipts[0], '.receipt');
-    expect($prepared->getOutput())->toContain("gitpreview resume $id");
-    if ($initial === 'deploy') {
-        expect($prepared->getOutput())->toContain('Preview cancelled. Nothing published.');
-    }
-    $resume = branchWorkflowPreviewMocks()."\n".<<<'POWERSHELL'
-function Invoke-SchooltoolReleaseChecks { throw 'CHECKS_MUST_NOT_REPEAT' }
-function New-SchooltoolCandidateWorktree { throw 'CANDIDATE_MUST_NOT_REPEAT' }
-function Enter-SchooltoolCandidateEnvironment { throw 'DATABASE_MUST_NOT_REPEAT' }
-POWERSHELL;
-    $result = runBranchWorkflowCommand($this->workflowPc, $resume."\ngitpreview resume $id", $powershell);
-    assertBranchWorkflowSucceeded($result);
-    expect($result->getOutput())->toContain('PREVIEW_UPLOAD_REQUESTED')
-        ->and($result->getOutput())->not->toContain('FULL_CHECKS_REQUESTED')
-        ->and(runBranchWorkflowGit($this->workflowRemote, 'for-each-ref', '--format=%(refname)', 'refs/heads/preview/'))->toBe("refs/heads/preview/$id")
-        ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'main'))->toBe($this->workflowMain)
-        ->and(file_exists(branchWorkflowCommonDirectory($this->workflowPc)."/schooltool-preview/$id.started"))->toBeTrue();
-})->with([
-    'Windows PowerShell prepare' => ['prepare', 'powershell'],
-    'Windows PowerShell cancellation' => ['deploy', 'powershell'],
-    'PowerShell 7 prepare' => ['prepare', 'pwsh'],
-]);
-
-it('rejects unsafe preview resume evidence before publishing or repeating checks', function (string $mutation, string $message): void {
-    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitstart "new-function"'));
-    $command = branchWorkflowPreviewMocks()."\n".<<<'POWERSHELL'
-gitpreview prepare
-$id = (Get-ChildItem -LiteralPath (Get-SchooltoolPreviewDirectory) -Filter '*.receipt').BaseName
-$receipt = Read-SchooltoolPreviewReceipt $id
-$receiptPath = Join-Path (Get-SchooltoolPreviewDirectory) "$id.receipt"
-function Invoke-SchooltoolReleaseChecks { throw 'CHECKS_MUST_NOT_REPEAT' }
-function Send-SchooltoolPreview { throw 'UPLOAD_MUST_NOT_HAPPEN' }
-POWERSHELL;
-    $result = runBranchWorkflowCommand($this->workflowPc, $command."\n".$mutation."\ngitpreview resume \$id");
-    expect($result->isSuccessful())->toBeFalse()
-        ->and($result->getOutput())->toContain($message)
-        ->and($result->getOutput())->not->toContain('CHECKS_MUST_NOT_REPEAT', 'UPLOAD_MUST_NOT_HAPPEN')
-        ->and(runBranchWorkflowGit($this->workflowRemote, 'for-each-ref', '--format=%(refname)', 'refs/heads/preview/'))->toBe('');
-})->with([
-    'missing receipt' => ['[System.IO.File]::Delete($receiptPath)', 'No source-bound successful-check receipt'],
-    'tampered receipt' => ['[System.IO.File]::WriteAllText($receiptPath, "forged")', 'receipt is invalid'],
-    'invalid check result' => ['$receipt.Checks = "failed"; [System.IO.File]::Delete($receiptPath); Write-SchooltoolPreviewReceipt $receipt', 'Invalid preview check receipt'],
-    'tampered bundle' => ['[System.IO.File]::AppendAllText((Join-Path (Get-SchooltoolPreviewDirectory) "$id.tar.gz"), "changed")', 'bundle checksum differs'],
-    'dirty candidate' => ['[System.IO.File]::WriteAllText((Join-Path $receipt.Candidate.Path "uncommitted.txt"), "changed")', 'Unsaved changes'],
-    'dirty original checkout' => ['[System.IO.File]::WriteAllText((Join-Path (Get-Location) "uncommitted.txt"), "changed")', 'Unsaved changes'],
-    'already attempted publication' => ['Start-SchooltoolPreviewPublication $id', 'Publication was already attempted'],
-    'changed source identity' => ['$receipt.SourceCommit = ("a" * 40); [System.IO.File]::Delete($receiptPath); Write-SchooltoolPreviewReceipt $receipt', 'artifact source does not match'],
-    'changed fetch origin' => ['Invoke-SchooltoolGit remote set-url origin https://example.test/changed.git', 'checkout or origin differs'],
-    'changed push origin' => ['Invoke-SchooltoolGit remote set-url --push origin https://example.test/changed.git', 'checkout or origin differs'],
-    'changed artifact identity' => ['$receipt.ArtifactCommit = ("a" * 40); [System.IO.File]::Delete($receiptPath); Write-SchooltoolPreviewReceipt $receipt', 'Invalid detached preview candidate identity'],
-    'changed checked tree' => ['$receipt.SourceTree = ("a" * 64); [System.IO.File]::Delete($receiptPath); Write-SchooltoolPreviewReceipt $receipt', 'Source files or the active branch changed'],
-    'new receipt cannot use legacy evidence' => ['$receipt.EvidenceKind = "legacy-reviewed"; [System.IO.File]::Delete($receiptPath); Write-SchooltoolPreviewReceipt $receipt', 'require inline build and integrity evidence'],
-    'new receipt cannot use patch evidence' => ['$receipt.EvidenceKind = "reviewed-patch"; [System.IO.File]::Delete($receiptPath); Write-SchooltoolPreviewReceipt $receipt', 'require inline build and integrity evidence'],
-    'new receipt cannot claim full success' => ['$receipt.Checks = "full-success"; [System.IO.File]::Delete($receiptPath); Write-SchooltoolPreviewReceipt $receipt', 'Invalid preview check receipt'],
-    'v2 cannot claim fast evidence' => ['$receipt.Format = "schooltool-preview-v2"; [System.IO.File]::Delete($receiptPath); Write-SchooltoolPreviewReceipt $receipt', 'require the complete inline full checks'],
-    'advanced main' => ['$next = Invoke-SchooltoolGit commit-tree "HEAD^{tree}" -p HEAD -m "Concurrent main"; Invoke-SchooltoolGit push origin "${next}:refs/heads/main"', 'main changed'],
-    'advanced feature' => ['$next = Invoke-SchooltoolGit commit-tree "HEAD^{tree}" -p HEAD -m "Concurrent feature"; Invoke-SchooltoolGit push origin "${next}:refs/heads/feature/new-function"', 'feature changed'],
-    'changed reservation' => ['$ref = "refs/remotes/origin/codex/features/new-function"; $next = Invoke-SchooltoolGit commit-tree "${ref}^{tree}" -m "Concurrent reservation"; Invoke-SchooltoolGit push origin "${next}:refs/heads/test-reservation-transfer"; $remote = Invoke-SchooltoolGit remote get-url origin; Invoke-SchooltoolGit -C $remote update-ref refs/heads/codex/features/new-function $next', 'active feature changed'],
-    'missing legacy evidence' => ['ConvertTo-LegacyPreviewTestReceipt $receipt; $receipt.EvidenceKind = "legacy-reviewed"; [System.IO.File]::Delete($receiptPath); Write-SchooltoolPreviewReceipt $receipt', 'Missing reviewed legacy evidence'],
-    'tampered legacy evidence' => [
-        'ConvertTo-LegacyPreviewTestReceipt $receipt; $evidencePath = Join-Path (Get-SchooltoolPreviewDirectory) "checks.log"; [System.IO.File]::WriteAllText($evidencePath, "successful mock checks"); $receipt.EvidenceKind = "legacy-reviewed"; $receipt | Add-Member -NotePropertyName Evidence -NotePropertyValue ([pscustomobject]@{ ReviewedAt = [DateTime]::UtcNow.ToString("o"); Basis = "isolated test evidence"; Files = @([pscustomobject]@{ Path = $evidencePath; Sha256 = (Get-SchooltoolFileChecksum $evidencePath) }) }); [System.IO.File]::Delete($receiptPath); Write-SchooltoolPreviewReceipt $receipt; [System.IO.File]::AppendAllText($evidencePath, "changed")',
-        'reviewed legacy preview evidence changed',
-    ],
-]);
-
-it('binds reviewed patch preview receipts to their exact reviewed source delta', function (string $mutation, string $message, string $scope = ''): void {
-    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitstart "new-function"'));
-    $command = branchWorkflowPreviewMocks()."\n".'$snapshotLifetime = '.($scope === 'snapshot-lifetime' ? '$true' : '$false')."\n".'$snapshotTargetConfig = '.($scope === 'snapshot-target-config' ? '$true' : '$false')."\n".<<<'POWERSHELL'
-$baseline = Invoke-SchooltoolGit rev-parse HEAD
-$reviewedPaths = @('app/Services/FeaturePreviewDatabaseGuard.php', 'tests/Unit/FeaturePreviewDatabaseGuardTest.php')
-if ($snapshotLifetime) {
-    $reviewedPaths = @('app/Services/FeaturePreviewDatabaseGuard.php', 'app/Services/FeaturePreviewSnapshotService.php', 'scripts/deploy_preview_cloudways.sh', 'tests/Feature/FeaturePreviewReadOnlySourceTest.php', 'tests/Feature/FeaturePreviewSnapshotTest.php', 'tests/Unit/PreviewDeploymentTest.php')
-}
-if ($snapshotTargetConfig) {
-    $reviewedPaths = @('app/Services/FeaturePreviewDatabaseGuard.php', 'tests/Feature/FeaturePreviewReadOnlySourceTest.php')
-}
-foreach ($path in $reviewedPaths) {
-    [System.IO.Directory]::CreateDirectory((Split-Path -Parent (Join-Path (Get-Location) $path))) | Out-Null
-    [System.IO.File]::WriteAllText((Join-Path (Get-Location) $path), "<?php // reviewed fixture patch")
-}
-Invoke-SchooltoolGit add -- @reviewedPaths | Out-Null
-Invoke-SchooltoolGit commit -m 'Reviewed fixture patch' | Out-Null
-Invoke-SchooltoolGit push origin HEAD:feature/new-function | Out-Null
-gitpreview prepare
-$id = (Get-ChildItem -LiteralPath (Get-SchooltoolPreviewDirectory) -Filter '*.receipt').BaseName
-$receipt = Read-SchooltoolPreviewReceipt $id
-$receiptPath = Join-Path (Get-SchooltoolPreviewDirectory) "$id.receipt"
-$evidencePath = Join-Path (Get-SchooltoolPreviewDirectory) 'patch-review.log'
-[System.IO.File]::WriteAllText($evidencePath, 'Isolated fixture: reviewed baseline and targeted patch validation')
-ConvertTo-LegacyPreviewTestReceipt $receipt
-$receipt.EvidenceKind = 'reviewed-patch'
-$receipt.Checks = 'reviewed-patch-success'
-$receipt | Add-Member -NotePropertyName Evidence -NotePropertyValue ([pscustomobject]@{
-    ReviewedAt = [DateTime]::UtcNow.ToString('o'); Basis = 'Isolated fixture only'; BaselineSource = $baseline
-    Files = @([pscustomobject]@{ Path = $evidencePath; Sha256 = (Get-SchooltoolFileChecksum $evidencePath) })
-    ReviewedFiles = @($reviewedPaths | ForEach-Object { [pscustomobject]@{ Path = $_; Sha256 = (Get-SchooltoolFileChecksum (Join-Path $receipt.Candidate.Path $_)) } })
-})
-if ($snapshotLifetime) { $receipt.Evidence | Add-Member -NotePropertyName Scope -NotePropertyValue 'snapshot-lifetime' }
-if ($snapshotTargetConfig) { $receipt.Evidence | Add-Member -NotePropertyName Scope -NotePropertyValue 'snapshot-target-config' }
-function Invoke-SchooltoolReleaseChecks { throw 'CHECKS_MUST_NOT_REPEAT' }
-function New-SchooltoolCandidateWorktree { throw 'CANDIDATE_MUST_NOT_REPEAT' }
-function Read-Host { '' }
-POWERSHELL;
-    $command .= "\n".$mutation."\n".<<<'POWERSHELL'
-[System.IO.File]::Delete($receiptPath)
-Write-SchooltoolPreviewReceipt $receipt
-gitpreview resume $id
-POWERSHELL;
-    $result = runBranchWorkflowCommand($this->workflowPc, $command);
-    expect($result->isSuccessful())->toBe($message === '', $result->getOutput().$result->getErrorOutput())
-        ->and($result->getOutput())->toContain($message === '' ? 'Preview cancelled. Nothing published.' : $message)
-        ->and($result->getOutput())->not->toContain('CHECKS_MUST_NOT_REPEAT', 'CANDIDATE_MUST_NOT_REPEAT', 'PREVIEW_UPLOAD_REQUESTED')
-        ->and(glob(branchWorkflowCommonDirectory($this->workflowPc).'/schooltool-preview/*.started'))->toBe([])
-        ->and(runBranchWorkflowGit($this->workflowRemote, 'for-each-ref', '--format=%(refname)', 'refs/heads/preview/'))->toBe('');
-})->with([
-    'approved exact patch' => ['', ''],
-    'must not claim full checks' => ['$receipt.Checks = "full-success"', 'Invalid preview check receipt'],
-    'missing reviewed metadata' => ['$receipt.Evidence.Basis = ""', 'Missing reviewed legacy evidence or reviewed patch evidence'],
-    'missing baseline' => ['$receipt.Evidence.BaselineSource = ""', 'Invalid reviewed patch scope'],
-    'unrelated baseline' => ['$receipt.Evidence.BaselineSource = Invoke-SchooltoolGit commit-tree "HEAD^{tree}" -m "Unrelated baseline"', 'Git failed'],
-    'source hash mismatch' => ['$receipt.Evidence.ReviewedFiles[0].Sha256 = ("a" * 64)', 'reviewed patch source checksum changed'],
-    'unapproved path' => ['$receipt.Evidence.ReviewedFiles[0].Path = "unreviewed.php"', 'Invalid reviewed patch scope'],
-    'extra reviewed path' => ['$receipt.Evidence.ReviewedFiles += $receipt.Evidence.ReviewedFiles[0]', 'Invalid reviewed patch scope'],
-    'unreviewed source delta' => [
-        '$tree = Invoke-SchooltoolGit rev-parse "$baseline`^{tree}"; $oldIndex = $env:GIT_INDEX_FILE; try { $env:GIT_INDEX_FILE = Join-Path (Get-SchooltoolPreviewDirectory) "fixture.index"; Invoke-SchooltoolGit read-tree $tree; Invoke-SchooltoolGit update-index --force-remove shared.txt; $changedTree = Invoke-SchooltoolGit write-tree; $receipt.Evidence.BaselineSource = Invoke-SchooltoolGit commit-tree $changedTree -m "Earlier fixture"; Invoke-SchooltoolGit replace --graft $baseline $receipt.Evidence.BaselineSource } finally { $env:GIT_INDEX_FILE = $oldIndex }',
-        'changes outside the reviewed patch',
-    ],
-    'changed evidence log' => ['[System.IO.File]::AppendAllText($evidencePath, "changed")', 'reviewed patch evidence changed'],
-    'snapshot-lifetime exact patch needs the current deployment protocol' => ['', 'older or different preview deployment protocol', 'snapshot-lifetime'],
-    'snapshot-lifetime missing scope' => ['$receipt.Evidence.PSObject.Properties.Remove("Scope")', 'Invalid reviewed patch scope', 'snapshot-lifetime'],
-    'snapshot-lifetime unknown scope' => ['$receipt.Evidence.Scope = "anything"', 'Invalid reviewed patch scope', 'snapshot-lifetime'],
-    'snapshot-lifetime missing file' => ['$receipt.Evidence.ReviewedFiles = @($receipt.Evidence.ReviewedFiles | Select-Object -First 5)', 'Invalid reviewed patch scope', 'snapshot-lifetime'],
-    'snapshot-lifetime extra file' => ['$receipt.Evidence.ReviewedFiles += $receipt.Evidence.ReviewedFiles[0]', 'Invalid reviewed patch scope', 'snapshot-lifetime'],
-    'snapshot-lifetime unapproved path' => ['$receipt.Evidence.ReviewedFiles[0].Path = "unreviewed.php"', 'Invalid reviewed patch scope', 'snapshot-lifetime'],
-    'snapshot-lifetime source hash mismatch' => ['$receipt.Evidence.ReviewedFiles[0].Sha256 = ("a" * 64)', 'reviewed patch source checksum changed', 'snapshot-lifetime'],
-    'snapshot-target-config exact patch' => ['', '', 'snapshot-target-config'],
-    'snapshot-target-config missing scope' => ['$receipt.Evidence.PSObject.Properties.Remove("Scope")', 'Invalid reviewed patch scope', 'snapshot-target-config'],
-    'snapshot-target-config unknown scope' => ['$receipt.Evidence.Scope = "anything"', 'Invalid reviewed patch scope', 'snapshot-target-config'],
-    'snapshot-target-config missing file' => ['$receipt.Evidence.ReviewedFiles = @($receipt.Evidence.ReviewedFiles | Select-Object -First 1)', 'Invalid reviewed patch scope', 'snapshot-target-config'],
-    'snapshot-target-config extra file' => ['$receipt.Evidence.ReviewedFiles += $receipt.Evidence.ReviewedFiles[0]', 'Invalid reviewed patch scope', 'snapshot-target-config'],
-    'snapshot-target-config unapproved path' => ['$receipt.Evidence.ReviewedFiles[1].Path = "tests/Unit/FeaturePreviewDatabaseGuardTest.php"', 'Invalid reviewed patch scope', 'snapshot-target-config'],
-]);
-
-it('revalidates preview resume evidence after the publication confirmation', function (): void {
-    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitstart "new-function"'));
-    $command = branchWorkflowPreviewMocks()."\n".<<<'POWERSHELL'
-gitpreview prepare
-$id = (Get-ChildItem -LiteralPath (Get-SchooltoolPreviewDirectory) -Filter '*.receipt').BaseName
-$resumeReceipt = Read-SchooltoolPreviewReceipt $id
-function Invoke-SchooltoolReleaseChecks { throw 'CHECKS_MUST_NOT_REPEAT' }
-function Send-SchooltoolPreview { throw 'UPLOAD_MUST_NOT_HAPPEN' }
-function Read-Host {
-    [System.IO.File]::AppendAllText((Join-Path $resumeReceipt.Directory "$($resumeReceipt.Id).tar.gz"), 'changed at confirmation')
-    'PREVIEW'
-}
-gitpreview resume $id
-POWERSHELL;
-    $result = runBranchWorkflowCommand($this->workflowPc, $command);
-    expect($result->isSuccessful())->toBeFalse()
-        ->and($result->getOutput())->toContain('bundle checksum differs')
-        ->and($result->getOutput())->not->toContain('CHECKS_MUST_NOT_REPEAT', 'UPLOAD_MUST_NOT_HAPPEN')
-        ->and(glob(branchWorkflowCommonDirectory($this->workflowPc).'/schooltool-preview/*.started'))->toBe([])
-        ->and(runBranchWorkflowGit($this->workflowRemote, 'for-each-ref', '--format=%(refname)', 'refs/heads/preview/'))->toBe('');
-});
-
-it('retains a preview resume receipt when refresh confirmation is cancelled', function (): void {
-    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitstart "new-function"'));
-    $command = branchWorkflowPreviewMocks()."\n".<<<'POWERSHELL'
-gitpreview prepare
-$id = (Get-ChildItem -LiteralPath (Get-SchooltoolPreviewDirectory) -Filter '*.receipt').BaseName
-function Invoke-SchooltoolReleaseChecks { throw 'CHECKS_MUST_NOT_REPEAT' }
-function Send-SchooltoolPreview { throw 'UPLOAD_MUST_NOT_HAPPEN' }
-function Read-Host { '' }
-gitpreview resume $id -RefreshData
-POWERSHELL;
-    $result = runBranchWorkflowCommand($this->workflowPc, $command);
-    assertBranchWorkflowSucceeded($result);
-    expect($result->getOutput())->toContain('Data refresh cancelled. Nothing published.', '-RefreshData')
-        ->and($result->getOutput())->not->toContain('CHECKS_MUST_NOT_REPEAT', 'UPLOAD_MUST_NOT_HAPPEN')
-        ->and(glob(branchWorkflowCommonDirectory($this->workflowPc).'/schooltool-preview/*.receipt'))->toHaveCount(1)
-        ->and(glob(branchWorkflowCommonDirectory($this->workflowPc).'/schooltool-preview/*.started'))->toBe([])
-        ->and(runBranchWorkflowGit($this->workflowRemote, 'for-each-ref', '--format=%(refname)', 'refs/heads/preview/'))->toBe('');
-});
 
 it('retains detached candidate commits without adding visible branches', function (string $kind): void {
     $command = '$kind = "'.$kind.'"; '.<<<'POWERSHELL'
@@ -2722,41 +2228,7 @@ POWERSHELL;
     assertBranchWorkflowSucceeded($result);
     expect(runBranchWorkflowGit($this->workflowPc, 'for-each-ref', '--format=%(refname)', 'refs/heads/'))->toBe('refs/heads/main')
         ->and(runBranchWorkflowGit($this->workflowPc, 'log', '-1', '--format=%s', runBranchWorkflowGit($this->workflowPc, 'for-each-ref', '--format=%(refname)', 'refs/schooltool/candidates/')))->toBe('Retained candidate work');
-})->with(['preview', 'release']);
-
-it('blocks preview replay after an actual publication or transfer failure', function (string $failure, string $powershell): void {
-    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitstart "new-function"', $powershell));
-    $command = branchWorkflowPreviewMocks()."\n".'$failure = "'.$failure.'"; '.<<<'POWERSHELL'
-gitpreview prepare
-$id = (Get-ChildItem -LiteralPath (Get-SchooltoolPreviewDirectory) -Filter '*.receipt').BaseName
-$script:publicationCalls = 0
-$script:transferCalls = 0
-$script:publicationRefspec = "$((Read-SchooltoolPreviewReceipt $id).ArtifactCommit):refs/heads/preview/$id"
-$script:originalGit = (Get-Command Invoke-SchooltoolGit).ScriptBlock
-function Invoke-SchooltoolGit {
-    if ($args[0] -ceq 'push' -and $args -ccontains $script:publicationRefspec) {
-        $script:publicationCalls++
-        if ($failure -ceq 'push') { throw 'EXPECTED_PUSH_FAILURE' }
-    }
-    & $script:originalGit @args
-}
-function Send-SchooltoolPreview { $script:transferCalls++; throw 'EXPECTED_TRANSFER_FAILURE' }
-function Invoke-SchooltoolReleaseChecks { throw 'CHECKS_MUST_NOT_REPEAT' }
-try { gitpreview resume $id; throw 'FIRST_ATTEMPT_SHOULD_FAIL' }
-catch { if ($_.Exception.Message -cnotmatch '^EXPECTED_(PUSH|TRANSFER)_FAILURE$') { throw } }
-if (-not (Test-Path (Join-Path (Get-SchooltoolPreviewDirectory) "$id.started"))) { throw 'Publication marker was lost.' }
-try { gitpreview resume $id; throw 'REPLAY_WAS_ALLOWED' }
-catch { if ($_.Exception.Message -notmatch 'Publication was already attempted') { throw } }
-Write-Output "PUBLICATION_CALLS=$script:publicationCalls TRANSFER_CALLS=$script:transferCalls"
-POWERSHELL;
-    $result = runBranchWorkflowCommand($this->workflowPc, $command, $powershell);
-    assertBranchWorkflowSucceeded($result);
-    expect($result->getOutput())->toContain('PUBLICATION_CALLS=1 TRANSFER_CALLS='.($failure === 'push' ? '0' : '1'))
-        ->and($result->getOutput())->not->toContain('CHECKS_MUST_NOT_REPEAT')
-        ->and(glob(branchWorkflowCommonDirectory($this->workflowPc).'/schooltool-preview/*.started'))->toHaveCount(1)
-        ->and(runBranchWorkflowGit($this->workflowRemote, 'for-each-ref', '--format=%(refname)', 'refs/heads/codex/operations/'))->toBe('')
-        ->and(runBranchWorkflowGit($this->workflowRemote, 'rev-parse', 'main'))->toBe($this->workflowMain);
-})->with(['push', 'transfer'])->with(['powershell', 'pwsh']);
+})->with(['release']);
 
 it('refuses changed detached candidate identity without changing user branches', function (string $mutation, string $message): void {
     $command = <<<'POWERSHELL'
@@ -2775,41 +2247,6 @@ POWERSHELL;
     'moved recovery ref' => ['$next = Invoke-SchooltoolGit commit-tree "HEAD^{tree}" -p HEAD -m "Other writer"; Invoke-SchooltoolGit update-ref $candidate.RecoveryRef $next', 'recovery reference changed'],
     'symbolic recovery ref' => ['Invoke-SchooltoolGit symbolic-ref $candidate.RecoveryRef refs/heads/main', 'must be a direct ref'],
     'rewritten candidate history' => ['$next = Invoke-SchooltoolGit commit-tree "HEAD^{tree}" -m "Unrelated"; Invoke-SchooltoolGit checkout --detach $next', 'history changed unexpectedly'],
-]);
-
-it('recovers unchanged legacy receipts from archived detached candidates', function (string $mutation, bool $accepted): void {
-    assertBranchWorkflowSucceeded(runBranchWorkflowCommand($this->workflowPc, 'gitstart "new-function"'));
-    $command = branchWorkflowPreviewMocks()."\n".<<<'POWERSHELL'
-gitpreview prepare
-$id = (Get-ChildItem -LiteralPath (Get-SchooltoolPreviewDirectory) -Filter '*.receipt').BaseName
-$receipt = Read-SchooltoolPreviewReceipt $id
-ConvertTo-LegacyPreviewTestReceipt $receipt
-$path = Join-Path (Get-SchooltoolPreviewDirectory) "$id.receipt"
-[System.IO.File]::Delete($path)
-Write-SchooltoolPreviewReceipt $receipt
-$before = Get-SchooltoolFileChecksum $path
-$archive = 'refs/schooltool/archived-heads/20260921-' + ('a' * 32) + '/' + $receipt.Candidate.Branch
-function Invoke-SchooltoolReleaseChecks { throw 'CHECKS_MUST_NOT_REPEAT' }
-function Read-Host { '' }
-POWERSHELL;
-    $command .= "\n".$mutation."\n".<<<'POWERSHELL'
-try { gitpreview resume $id }
-finally {
-    if ((Get-SchooltoolFileChecksum $path) -cne $before) { throw 'Legacy receipt was rewritten.' }
-    Write-Output 'LEGACY_RECEIPT_UNCHANGED'
-}
-POWERSHELL;
-    $result = runBranchWorkflowCommand($this->workflowPc, $command);
-    expect($result->isSuccessful())->toBe($accepted, $result->getOutput().$result->getErrorOutput())
-        ->and($result->getOutput())->toContain('LEGACY_RECEIPT_UNCHANGED')
-        ->and($result->getOutput())->not->toContain('CHECKS_MUST_NOT_REPEAT', 'PREVIEW_UPLOAD_REQUESTED')
-        ->and(runBranchWorkflowGit($this->workflowRemote, 'for-each-ref', '--format=%(refname)', 'refs/heads/preview/'))->toBe('');
-})->with([
-    'exact archived identity' => ['', true],
-    'original named candidate' => ['Invoke-SchooltoolGit -C $receipt.Candidate.Path switch -c $receipt.Candidate.Branch; Invoke-SchooltoolGit update-ref -d $archive', true],
-    'missing archive' => ['Invoke-SchooltoolGit update-ref -d $archive', false],
-    'moved archive' => ['Invoke-SchooltoolGit update-ref $archive $receipt.SourceCommit', false],
-    'unrelated archive name' => ['Invoke-SchooltoolGit update-ref ($archive + "-other") $receipt.ArtifactCommit; Invoke-SchooltoolGit update-ref -d $archive', false],
 ]);
 
 it('preserves a concurrent recovery ref update through compare and swap', function (): void {

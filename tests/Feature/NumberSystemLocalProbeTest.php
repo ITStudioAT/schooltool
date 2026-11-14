@@ -21,7 +21,7 @@ requireMultipleChoiceTestDatabase();
 uses(RefreshDatabase::class);
 
 beforeEach(function () {
-    config(['app.key' => 'base64:'.base64_encode(str_repeat('p', 32)), 'schooltool.preview.instance' => false]);
+    config(['app.key' => 'base64:'.base64_encode(str_repeat('p', 32))]);
     app()->detectEnvironment(fn () => 'local');
     $this->probeStorage = sys_get_temp_dir().DIRECTORY_SEPARATOR.'number-system-probe-test-'.Str::uuid();
     mkdir($this->probeStorage.DIRECTORY_SEPARATOR.'logs', 0700, true);

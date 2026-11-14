@@ -55,21 +55,19 @@ afterEach(function () {
     Mockery::close();
 });
 
-test('curriculum file disk mapping only redirects saved s3 in preview', function (bool $preview, ?string $storedDisk, string $expectedDisk): void {
-    config(['schooltool.preview.instance' => $preview]);
+test('curriculum file disk mapping preserves the configured disk', function (?string $storedDisk, string $expectedDisk): void {
     $document = (new TeachingCurriculumDocument)->forceFill(['storage_disk' => $storedDisk]);
 
     expect($this->service->diskName($document))->toBe($expectedDisk)
         ->and($document->storage_disk)->toBe($storedDisk);
 })->with([
-    'preview s3 copy' => [true, 's3', 'local'],
-    'preview trimmed s3' => [true, ' s3 ', 'local'],
-    'main s3' => [false, 's3', 's3'],
-    'preview local' => [true, 'local', 'local'],
-    'preview public' => [true, 'public', 'public'],
-    'preview unknown' => [true, 'unknown-disk', 'unknown-disk'],
-    'main unknown' => [false, 'unknown-disk', 'unknown-disk'],
-    'preview default' => [true, null, 'local'],
+    's3' => ['s3', 's3'],
+    'trimmed s3' => [' s3 ', 's3'],
+    'local' => ['local', 'local'],
+    'public' => ['public', 'public'],
+    'unknown' => ['unknown-disk', 'unknown-disk'],
+    'unknown' => ['unknown-disk', 'unknown-disk'],
+    'default' => [null, 'local'],
 ]);
 
 test('curriculum detail groups multiple unit files with protected urls in one query', function () {

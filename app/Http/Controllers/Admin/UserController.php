@@ -392,7 +392,7 @@ class UserController extends Controller
         $validated = $request->validated();
 
         $data['school'] = $user->selectedSchool;
-        $adminService->setToken2Fa($user, $data, 'Code für Kennwort-Änderung', 'password_reset');
+        $adminService->setToken2Fa($user, $data, 'Code für Kennwort-Änderung');
 
         $data = ['step' => 'PASSWORD_ENTER_TOKEN'];
 

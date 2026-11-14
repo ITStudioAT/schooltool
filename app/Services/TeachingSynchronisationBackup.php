@@ -13,7 +13,7 @@ class TeachingSynchronisationBackup
 
     private const MAX_JSON_BYTES = 512 * 1024 * 1024;
 
-    public function __construct(private FeaturePreviewSnapshotArchive $archive) {}
+    public function __construct(private EncryptedRecordArchive $archive) {}
 
     public function write(array $payload, string $path): void
     {

@@ -1,7 +1,7 @@
 <?php
 
 use App\Models\User;
-use App\Services\FeaturePreviewDatabaseGuard;
+use App\Services\LiveExportDatabaseGuard;
 use App\Services\TeachingSynchronisationFiles;
 use App\Services\TeachingSynchronisationGraph;
 use Illuminate\Config\Repository;
@@ -29,11 +29,11 @@ try {
     // Use the local reviewed reader implementation, without installing code or booting LIVE providers.
     eval(substr(base64_decode('__TEACHING_GRAPH__', true), 5));
     eval(substr(base64_decode('__TEACHING_FILES__', true), 5));
-    if (! $app->environment('production') || config('schooltool.preview.instance')) {
+    if (! $app->environment('production') || filter_var(env('SCHOOLTOOL_PREVIEW_INSTANCE', false), FILTER_VALIDATE_BOOLEAN)) {
         throw new RuntimeException('MAIN production required.');
     }
     $stage = 'read_only_connection';
-    $snapshot = $app->make(FeaturePreviewDatabaseGuard::class)->withMainReadOnlyConnection(function (Connection $connection) use ($request, $configuration, $app, &$stage): array {
+    $snapshot = $app->make(LiveExportDatabaseGuard::class)->withMainReadOnlyConnection(function (Connection $connection) use ($request, $configuration, $app, &$stage): array {
         $stage = 'school_identity';
         $schoolId = (int) $request['school']['id'];
         $school = $connection->table('schools')->where('id', $schoolId)->first(['id', 'short_name', 'long_name']);

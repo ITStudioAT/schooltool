@@ -31,7 +31,7 @@ function mcTestFolderImportContext(): object
     Mail::fake();
     Queue::fake();
     Storage::fake('local');
-    config(['schooltool.preview.instance' => false, 'app.url' => 'http://localhost:8000', 'services.dropbox.client_id' => 'fixture-client',
+    config(['app.url' => 'http://localhost:8000', 'services.dropbox.client_id' => 'fixture-client',
         'services.dropbox.client_secret' => 'fixture-secret', 'services.dropbox.redirect_uri' => 'http://localhost:8000/admin/teaching/dropbox/callback']);
     foreach (['teacher', 'student', 'user'] as $role) {
         Role::findOrCreate($role, 'web');

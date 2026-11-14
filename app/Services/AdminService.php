@@ -121,8 +121,6 @@ class AdminService
             ->where('school_id', $data['school']['id'])
             ->first();
 
-        app(FeaturePreviewService::class)->assertCanEnter($user);
-
         if (! $user->consumeToken2Fa($data['token_2fa'])) {
             abort(423, 'Der Token ist ungültig oder abgelaufen.');
         }
@@ -132,21 +130,12 @@ class AdminService
 
     public function checkEmail(array $data): array
     {
-        $preview = app(FeaturePreviewService::class);
-        if ($preview->isPreview()) {
-            abort_unless($preview->enabled(), 503, 'Die Vorschau ist derzeit deaktiviert.');
-        }
-
         $users = User::where('email', $data['email'])
             ->where('is_active', true)
             ->whereHas('roles', function ($query) {
                 $query->whereIn('name', self::ADMIN_LOGIN_ROLES);
             })
             ->get();
-
-        if ($preview->isPreview()) {
-            $users = $users->filter(fn (User $user): bool => $preview->allowed($user))->values();
-        }
 
         $data['users_count'] = $users->count();
 
@@ -173,7 +162,7 @@ class AdminService
         $user = $this->findUserByEmailAndSchool($data['email'], $data['school_id']);
         $this->validateAdminCanLogin($user);
         $data['school'] = $user->selectedSchool;
-        $this->setToken2Fa($user, $data, 'Code für Login', 'login');
+        $this->setToken2Fa($user, $data, 'Code für Login');
 
         return $data;
     }
@@ -244,8 +233,6 @@ class AdminService
     public function passwordUnkownSetPassword(array $data): array
     {
         $user = $this->findUserByEmailAndSchool($data['email'], $data['school_id']);
-        app(FeaturePreviewService::class)->assertCanEnter($user);
-
         if (! $user->consumeToken2Fa($data['token_2fa'])) {
             abort(401, 'Token falsch oder abgelaufen');
         }
@@ -267,8 +254,6 @@ class AdminService
         $user = User::where('email', $data['email'])
             ->where('school_id', $data['school']['id'])
             ->first();
-
-        app(FeaturePreviewService::class)->assertCanEnter($user);
 
         if ($user->hasEnabledTwoFactorAuthentication()) {
             $this->startTwoFactorChallenge($user, $this->resolveRemember($data));
@@ -307,17 +292,17 @@ class AdminService
         $user->token_2fa_expires_at = now()->addMinutes(config('schooltool.token_expire_time'));
         $user->save();
 
-        $this->sendTokenEmail($user, $user->email_2fa, $data['school']['long_name'], $subject, $token, 'login', 'second_factor');
+        $this->sendTokenEmail($user->email_2fa, $data['school']['long_name'], $subject, $token);
     }
 
-    public function setToken2Fa($user, array $data, string $subject, ?string $previewPurpose = null): void
+    public function setToken2Fa($user, array $data, string $subject): void
     {
         $token = random_int(100000, 999999);
         $user->token_2fa = $token;
         $user->token_2fa_expires_at = now()->addMinutes(config('schooltool.token_expire_time'));
         $user->save();
 
-        $this->sendTokenEmail($user, $user->email, $data['school']['long_name'], $subject, $token, $previewPurpose);
+        $this->sendTokenEmail($user->email, $data['school']['long_name'], $subject, $token);
     }
 
     public function setToken2FaEmail2Fa($user, array $data, string $subject): void
@@ -327,7 +312,7 @@ class AdminService
         $user->token_2fa_2_expires_at = now()->addMinutes(config('schooltool.token_expire_time'));
         $user->save();
 
-        $this->sendTokenEmail($user, $user->email_2fa, $data['school']['long_name'], $subject, $token, 'login', 'second_factor');
+        $this->sendTokenEmail($user->email_2fa, $data['school']['long_name'], $subject, $token);
     }
 
     private function findUserByEmailAndSchool(string $email, int $schoolId): User
@@ -348,7 +333,7 @@ class AdminService
         }
     }
 
-    private function sendTokenEmail(User $user, string $email, string $fromName, string $subject, int $token, ?string $previewPurpose, string $recipientKind = 'account'): void
+    private function sendTokenEmail(string $email, string $fromName, string $subject, int $token): void
     {
 
         $mail = [
@@ -362,9 +347,6 @@ class AdminService
         ];
 
         $notification = new StandardEmail($mail);
-        if ($previewPurpose !== null) {
-            $notification->forPreviewAuthentication($user, $email, $previewPurpose, $recipientKind);
-        }
 
         Notification::route('mail', EmailAliasResolver::resolveConfigured($email))->notify($notification);
     }
@@ -468,8 +450,6 @@ class AdminService
 
     private function validateUserCanLogin($user): void
     {
-        app(FeaturePreviewService::class)->assertCanEnter($user);
-
         if (! $user->confirmed_at) {
             abort(423, 'Benutzer ist noch nicht bestätigt.');
         }
@@ -481,10 +461,6 @@ class AdminService
 
     public function activeSuperAdminPasswordIsValid(int $schoolId, string $password): bool
     {
-        if (app(FeaturePreviewService::class)->isPreview()) {
-            return false;
-        }
-
         return User::query()
             ->bySchoolAndRole($schoolId, 'super_admin')
             ->where('is_active', true)

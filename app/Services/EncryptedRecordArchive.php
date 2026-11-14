@@ -7,13 +7,13 @@ use RuntimeException;
 use SensitiveParameter;
 use Throwable;
 
-class FeaturePreviewSnapshotArchive
+class EncryptedRecordArchive
 {
     private const MAGIC = "STPREVIEW\x01";
 
     public const MAX_RECORD_BYTES = 32 * 1024 * 1024;
 
-    private const FAILURE = 'The encrypted preview snapshot could not be processed safely.';
+    private const FAILURE = 'The encrypted archive could not be processed safely.';
 
     public static function generateKeyPair(): string
     {

@@ -48,8 +48,6 @@ class RestaurantHomepageAuthService
             ->first();
 
         if ($directUser) {
-            app(FeaturePreviewService::class)->assertCanEnter($directUser);
-
             $directUser->setAttribute(
                 'matched_children',
                 $this->childLabelsFromParentImports($this->parentImportsForEmail($schoolId, $normalizedEmail))
@@ -73,8 +71,6 @@ class RestaurantHomepageAuthService
             ->first();
 
         if ($pendingUser) {
-            app(FeaturePreviewService::class)->assertCanEnter(null);
-
             if ($this->userCanSkipRestaurantConfirmation($pendingUser)) {
                 return [
                     'status' => 'REGISTER_REQUIRED',
@@ -102,8 +98,6 @@ class RestaurantHomepageAuthService
         $matchedUsers = $this->matchedUsersFromParentEmail($schoolId, $normalizedEmail);
 
         if ($matchedUsers->isNotEmpty()) {
-            app(FeaturePreviewService::class)->assertCanEnter($matchedUsers->first());
-
             return [
                 'status' => 'USER_FOUND',
                 'school_id' => $schoolId,
@@ -117,8 +111,6 @@ class RestaurantHomepageAuthService
                 'available_auth_methods' => ['code', 'password'],
             ];
         }
-
-        app(FeaturePreviewService::class)->assertCanEnter(null);
 
         $context = $this->resolveRegistrationContext($schoolId, $normalizedEmail);
 
@@ -404,7 +396,7 @@ class RestaurantHomepageAuthService
             $this->sendParentLoginCode($user, $normalizedEmail);
         } else {
             session()->forget(self::PARENT_CHALLENGE_SESSION_KEY);
-            $this->userService->sendCode($user, 'Ihr Login-Code für das Restaurant', $normalizedEmail, 'login');
+            $this->userService->sendCode($user, 'Ihr Login-Code für das Restaurant', $normalizedEmail);
         }
 
         return [
@@ -783,12 +775,9 @@ class RestaurantHomepageAuthService
 
     private function loginRestaurantUser(User $user, ?string $loginEmail = null): void
     {
-        app(FeaturePreviewService::class)->assertCanEnter($user);
-
         $isParentLogin = $loginEmail !== null && $this->normalizeEmail((string) $user->email) !== $loginEmail;
 
         if ($isParentLogin) {
-            abort_unless(app(FeaturePreviewService::class)->authenticationRecipientAllowed($user, $loginEmail, 'restaurant_parent'), 403);
             session()->put(RestrictRestaurantParentSession::SESSION_KEY, (int) $user->id);
             session()->put('restaurant.parent_email', $loginEmail);
             Cookie::queue(Cookie::forget(Auth::guard('web')->getRecallerName()));
@@ -804,8 +793,6 @@ class RestaurantHomepageAuthService
 
     private function sendParentLoginCode(User $user, string $email): void
     {
-        abort_unless(app(FeaturePreviewService::class)->authenticationRecipientAllowed($user, $email, 'restaurant_parent'), 403);
-
         $token = (string) random_int(100000, 999999);
         $expiryMinutes = (int) config('schooltool.token_expire_time');
         session()->put(self::PARENT_CHALLENGE_SESSION_KEY, [
@@ -818,7 +805,7 @@ class RestaurantHomepageAuthService
         ]);
 
         $school = School::query()->findOrFail($user->school_id);
-        Notification::route('mail', EmailAliasResolver::resolveConfigured($email))->notify((new StandardEmail([
+        Notification::route('mail', EmailAliasResolver::resolveConfigured($email))->notify(new StandardEmail([
             'from_address' => config('schooltool.noreply_email'),
             'from_name' => $school->long_name,
             'logo' => asset('/storage/images/'.$school->logo),
@@ -826,13 +813,11 @@ class RestaurantHomepageAuthService
             'markdown' => 'mails.homepage.sendCode',
             'token_2fa' => $token,
             'token-expire-time' => $expiryMinutes,
-        ]))->forPreviewAuthentication($user, $email, 'login', 'restaurant_parent'));
+        ]));
     }
 
     private function consumeParentLoginCode(User $user, string $email, string $token): bool
     {
-        abort_unless(app(FeaturePreviewService::class)->authenticationRecipientAllowed($user, $email, 'restaurant_parent'), 403);
-
         $challenge = session(self::PARENT_CHALLENGE_SESSION_KEY);
         if (! is_array($challenge)
             || (int) ($challenge['user_id'] ?? 0) !== (int) $user->id
@@ -868,8 +853,6 @@ class RestaurantHomepageAuthService
         if (! $user) {
             abort(403, 'Die Anmeldung ist für dieses Mittagskonto nicht möglich.');
         }
-
-        app(FeaturePreviewService::class)->assertCanEnter($user);
 
         if (mb_strtolower(trim((string) $user->email)) === $normalizedEmail) {
             return $user;
@@ -1166,14 +1149,10 @@ class RestaurantHomepageAuthService
         $matches = [];
 
         $this->parentImportsForEmail($schoolId, $normalizedEmail)
-            ->each(function (Import116 $importRow) use ($schoolId, $normalizedEmail, &$matches): void {
+            ->each(function (Import116 $importRow) use ($schoolId, &$matches): void {
                 $linkedUser = $this->linkedLunchUserForImportStudent($schoolId, $importRow);
 
                 if (! $linkedUser) {
-                    return;
-                }
-
-                if (! app(FeaturePreviewService::class)->authenticationRecipientAllowed($linkedUser, $normalizedEmail, 'restaurant_parent')) {
                     return;
                 }
 

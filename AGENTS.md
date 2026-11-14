@@ -20,7 +20,7 @@ Choose the smallest sufficient path from the actual change, not file count alone
 | Text, alignment, spacing, color or an existing CSS/Vuetify class | One agent; edit the relevant file directly and check the result in the existing preview when available. Vite/HMR already compiles the changed component; no separate test command is required. If there is no usable preview, use a focused compilation check only when useful. No PHP suite, full UI suite, coverage, new implementation-mirroring test or release build. |
 | Local component/store/controller behavior | Read its direct callers and applicable rules. Add/update a regression test when behavior changes; run the affected test file(s), without coverage. |
 | Shared behavior, authentication, permissions, database, queues or deployment tooling | Inspect the affected boundaries and run focused regression/integration tests. Broaden only for a concrete uncovered risk. |
-| Explicit full validation, preview publication or release | Follow the existing checked Git/release workflow. Keep its mandatory gates and database ownership checks. |
+| Explicit full validation or release | Follow the existing checked Git/release workflow. Keep its mandatory gates and database ownership checks. |
 
 - Start with a targeted search and the relevant files. Avoid repository-wide audits for local changes.
 - Read each relevant skill/rule once per task; reuse known context.
@@ -116,16 +116,16 @@ and state only a limitation that affects the result.
 
 ## Git and publication
 
-Follow the existing gitsave/gitpreview/gitrelease/gitdeploy helpers.
+Follow the existing gitsave/gitrelease/gitdeploy helpers.
 Use `codex/` for task branches unless the user requests another name.
 Do not force-push, rewrite published history or change dependencies without scope.
 
 - Main gitsave builds a source-bound release and starts nonblocking background CI;
   do not add optional `-Full` unless requested or justified by a concrete issue.
-- Preview/feature-release require build and package preflight, not full local suites.
+- Feature releases require build and package preflight, not full local suites.
 - Running gitdeploy explicitly requests production deployment. The command requires the
   bounded isolated runtime smoke and pinned source/frontend identity. Full CI is
-  asynchronous and must not block save, preview, release or live deployment.
+  asynchronous and must not block save, release or live deployment.
 - Never bypass a gate with bare deployment scripts or reuse unrelated test logs.
 - Destructive release migrations require the authorized target and a validated backup.
 - Keep tests of local changes separate from publication; do not start publication

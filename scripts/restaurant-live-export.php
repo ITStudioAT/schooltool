@@ -3,7 +3,7 @@
 // Executed in memory through the existing, host-verified MAIN SSH connection.
 use App\Models\RestaurantSepaMandate;
 use App\Models\User;
-use App\Services\FeaturePreviewDatabaseGuard;
+use App\Services\LiveExportDatabaseGuard;
 use Illuminate\Config\Repository;
 use Illuminate\Database\Connection;
 use Illuminate\Database\Connectors\ConnectionFactory;
@@ -29,11 +29,11 @@ try {
     $app->register(EncryptionServiceProvider::class);
     Facade::setFacadeApplication($app);
     // Do not boot application providers or filesystem adapters: neither may create live caches, logs or directories.
-    if (! $app->environment('production') || config('schooltool.preview.instance')) {
+    if (! $app->environment('production') || filter_var(env('SCHOOLTOOL_PREVIEW_INSTANCE', false), FILTER_VALIDATE_BOOLEAN)) {
         throw new RuntimeException('The source must be MAIN production.');
     }
     $stage = 'read_only_connection';
-    $snapshot = $app->make(FeaturePreviewDatabaseGuard::class)->withMainReadOnlyConnection(function (Connection $connection) use ($request, $configuration, &$stage): array {
+    $snapshot = $app->make(LiveExportDatabaseGuard::class)->withMainReadOnlyConnection(function (Connection $connection) use ($request, $configuration, &$stage): array {
         $stage = 'schema';
         $tables = [...array_keys($request['tables']), 'users', 'import116', 'school_tools', 'schoolyears', 'teachers', 'roles', 'model_has_roles'];
         $engines = $connection->table('information_schema.TABLES')->where('TABLE_SCHEMA', $connection->getDatabaseName())->whereIn('TABLE_NAME', $tables)->pluck('ENGINE');

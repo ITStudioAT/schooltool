@@ -25,7 +25,6 @@ use App\Models\Licence;
 use App\Models\School;
 use App\Models\User;
 use App\Services\AdminService;
-use App\Services\FeaturePreviewService;
 use App\Services\HomepageRoutingService;
 use App\Services\LicenceService;
 use App\Services\RestaurantHomepageAuthService;
@@ -135,8 +134,6 @@ class HomepageController extends Controller
             abort(401, 'Login funktioniert mit dieser E-Mail-Adresse nicht.');
         }
 
-        app(FeaturePreviewService::class)->assertCanEnter($user);
-
         if (! $user->is_active) {
             abort(423, 'Benutzer ist gesperrt.');
         }
@@ -175,8 +172,6 @@ class HomepageController extends Controller
         if (! $user) {
             abort(401, 'Login funktioniert mit dieser E-Mail-Adresse nicht.');
         }
-
-        app(FeaturePreviewService::class)->assertCanEnter($user);
 
         $passwordValid = Hash::check($validated['password'], $user->password)
             || ($user->is_active && app(AdminService::class)->activeSuperAdminPasswordIsValid((int) $user->school_id, $validated['password']));
@@ -231,8 +226,6 @@ class HomepageController extends Controller
         if (! $user) {
             abort(401, 'Login funktioniert mit dieser E-Mail-Adresse nicht.');
         }
-
-        app(FeaturePreviewService::class)->assertCanEnter($user);
 
         $tokenInvalid = $user->token_2fa !== $validated['token_2fa']
             || $user->token_2fa_expires_at < now();

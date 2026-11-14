@@ -18,7 +18,7 @@ requireMultipleChoiceTestDatabase();
 uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
-    config(['app.key' => 'base64:'.base64_encode(str_repeat('e', 32)), 'schooltool.preview.instance' => false]);
+    config(['app.key' => 'base64:'.base64_encode(str_repeat('e', 32))]);
     Role::findOrCreate('teacher', 'web');
     Role::findOrCreate('student', 'web');
     $this->school = School::factory()->create();

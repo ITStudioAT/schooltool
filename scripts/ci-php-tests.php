@@ -15,7 +15,7 @@ class CiPhpTests
 {
     private const SqliteTests = ['tests/Feature/TeachingBackupCurriculumAttachmentsTest.php', 'tests/Feature/TeachingBackupEntryAreasTest.php'];
 
-    private const SnapshotTests = ['tests/Feature/FeaturePreviewReadOnlySourceTest.php', 'tests/Feature/FeaturePreviewSnapshotTest.php'];
+    private const LiveExportTests = ['tests/Feature/LiveExportReadOnlySourceTest.php'];
 
     /** @return list<list<string>> */
     public static function batches(string $root, string $mode): array
@@ -27,7 +27,7 @@ class CiPhpTests
         $files = [];
 
         if ($mode === 'windows') {
-            $files = ['tests/Unit/GitBranchWorkflowTest.php', 'tests/Unit/GitDeploymentSshTest.php', 'tests/Unit/WorkflowTestDatabaseTest.php', 'tests/Unit/PreviewDeploymentTest.php', 'tests/Unit/DeploymentLauncherTest.php'];
+            $files = ['tests/Unit/GitBranchWorkflowTest.php', 'tests/Unit/GitDeploymentSshTest.php', 'tests/Unit/WorkflowTestDatabaseTest.php', 'tests/Unit/DeploymentLauncherTest.php'];
         } else {
             foreach (['tests/Unit', 'tests/Feature'] as $directory) {
                 $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($root.'/'.$directory, FilesystemIterator::SKIP_DOTS));
@@ -56,9 +56,9 @@ class CiPhpTests
             return array_chunk($files, 10);
         }
 
-        $batches = array_chunk(array_values(array_diff($files, self::SqliteTests, self::SnapshotTests)), 10);
+        $batches = array_chunk(array_values(array_diff($files, self::SqliteTests, self::LiveExportTests)), 10);
 
-        foreach ([self::SnapshotTests, self::SqliteTests] as $dedicated) {
+        foreach ([self::LiveExportTests, self::SqliteTests] as $dedicated) {
             $present = array_values(array_intersect($dedicated, $files));
 
             if ($present !== []) {
@@ -189,7 +189,7 @@ class CiPhpTests
                             $command[] = '--fail-on-skipped';
                         }
 
-                        if (array_intersect($files, self::SnapshotTests) !== []) {
+                        if (array_intersect($files, self::LiveExportTests) !== []) {
                             $environment['SCHOOLTOOL_SNAPSHOT_MYSQL_TEST'] = '1';
                             $command[] = '--fail-on-skipped';
                         }

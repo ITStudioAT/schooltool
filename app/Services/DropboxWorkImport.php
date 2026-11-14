@@ -37,7 +37,7 @@ class DropboxWorkImport
         $secure = parse_url($url, PHP_URL_SCHEME) === 'https'
             || (parse_url($url, PHP_URL_SCHEME) === 'http' && in_array(parse_url($url, PHP_URL_HOST), ['localhost', '127.0.0.1', '[::1]'], true));
 
-        return ! config('schooltool.preview.instance') && $secure
+        return $secure
             && filled(config('services.dropbox.client_id')) && filled(config('services.dropbox.client_secret'))
             && config('services.dropbox.redirect_uri') === $url.route('teaching.dropbox.callback', [], false);
     }
