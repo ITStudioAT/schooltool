@@ -651,6 +651,8 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::get('/admin/restaurant/menu-plans/{planId}/entries/{entryId}/bookings', [RestaurantMenuPlanController::class, 'entryBookings']);
         Route::post('/admin/restaurant/menu-plans/{planId}/entries/{entryId}/bookings', [RestaurantMenuPlanController::class, 'storeEntryBooking']);
         Route::delete('/admin/restaurant/menu-plans/{planId}/entries/{entryId}/bookings/{bookingId}', [RestaurantMenuPlanController::class, 'destroyEntryBooking']);
+        Route::get('/admin/restaurant/menu-plans/{planId}/entries/{entryId}/booking-portions', [RestaurantMenuPlanController::class, 'entryBookingPortions']);
+        Route::delete('/admin/restaurant/menu-plans/{planId}/entries/{entryId}/bookings/{bookingId}/portions/{portionIndex}', [RestaurantMenuPlanController::class, 'destroyEntryBookingPortion']);
         Route::post('/admin/restaurant/menu-plans/{id}/toggle-lock', [RestaurantMenuPlanController::class, 'toggleLock']);
         Route::apiResource('/admin/restaurant/menu-plans', RestaurantMenuPlanController::class);
     });

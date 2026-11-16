@@ -1,5 +1,17 @@
 # UPDATES
 
+## 3.54.8
+
+### Kurse
+
+- Neuaufbau des Anlegens von Kursen
+- Browser-Erinnerungen entfernen
+
+### Restaurant
+
+- Bei mehreren Buchungen über einen Account: Einzeln löschbar
+- Buchungen eines Menüs im Menüplan: Sortierung nach Nachname
+
 ## 3.54.7
 
 ### System

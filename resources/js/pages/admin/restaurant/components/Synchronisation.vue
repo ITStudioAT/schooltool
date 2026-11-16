@@ -42,6 +42,11 @@
                     {{ preview.reused_student_accounts }} eindeutig zugeordnete Schüler-Platzhalterkonten werden wiederverwendet.
                     Ihre Konto-IDs, lokalen Anmeldeadressen und Passwörter bleiben erhalten.
                 </p>
+                <v-alert v-if="preview.advanced_student_links" type="warning" variant="tonal" class="mt-3">
+                    Bei {{ preview.advanced_student_links }} Benutzerkonten wird die Schülerzuordnung auf den eindeutig
+                    zugeordneten Eintrag eines anderen Schuljahres aktualisiert. Die bisherigen Schülerdatensätze bleiben erhalten.
+                    Dies erfolgt erst nach der Bestätigung der Übernahme.
+                </v-alert>
                 <v-alert v-if="preview.removed_student_links" type="warning" variant="tonal" class="mt-3">
                     Bei {{ preview.removed_student_links }} Benutzerkonten wird die lokale Schülerzuordnung entfernt,
                     weil sie beim zugeordneten Live-Konto fehlt. Die Schülerdatensätze und Unterrichtsdaten bleiben erhalten.

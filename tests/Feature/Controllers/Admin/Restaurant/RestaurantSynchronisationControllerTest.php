@@ -9,6 +9,7 @@ use App\Models\RestaurantMenuPlanBooking;
 use App\Models\RestaurantMenuPlanEntry;
 use App\Models\RestaurantSepaMandate;
 use App\Models\School;
+use App\Models\Schoolyear;
 use App\Models\User;
 use App\Services\RestaurantLiveSource;
 use App\Services\RestaurantSynchronisationService;
@@ -447,6 +448,59 @@ test('preview reports independent identity schema image and settings conflicts t
     )->and($this->restaurantUser->fresh()->import116_id)->toBe($this->student->id)
         ->and(RestaurantMenuPlanBooking::count())->toBe(1)->and(Storage::disk('public')->allFiles())->toBe([]);
 });
+
+function restaurantSyncYearTransitionFixture(object $context): void
+{
+    $oldYear = Schoolyear::factory()->create(['school_id' => $context->school->id, 'from' => '2025-09-01', 'until' => '2026-07-31']);
+    $newYear = Schoolyear::factory()->create(['school_id' => $context->school->id, 'from' => '2026-09-01', 'until' => '2027-07-31']);
+    $identity = ['first_name' => 'Alex', 'last_name' => 'Beispiel', 'student_code' => 'STABLE-123', 'birth_date' => '2010-03-15'];
+    $context->student->update([...$identity, 'schoolyear_id' => $oldYear->id, 'user_id' => $context->restaurantUser->id]);
+    $context->restaurantUser->update(['first_name' => 'Alex', 'last_name' => 'Beispiel']);
+    $context->newStudent = Import116::factory()->forSchool($context->school)->importedBy($context->actor)->create([
+        ...$identity, 'schoolyear_id' => $newYear->id, 'user_id' => $context->restaurantUser->id,
+    ]);
+    $context->snapshot = restaurantSyncFixtureSnapshot($context->school);
+    $context->snapshot['schoolyears'] = DB::table('schoolyears')->whereIn('id', [$oldYear->id, $newYear->id])
+        ->get(['id', 'from', 'until'])->map(fn (object $row): array => (array) $row)->all();
+    $studentIndex = array_search($context->newStudent->id, array_column($context->snapshot['imports'], 'id'), true);
+    $liveStudentId = $context->newStudent->id + 1000000;
+    $context->snapshot['imports'][$studentIndex]['id'] = $liveStudentId;
+    $index = array_search($context->restaurantUser->id, array_column($context->snapshot['users'], 'id'), true);
+    $context->snapshot['users'][$index]['import116_id'] = $liveStudentId;
+}
+
+test('preview identifies a proven same student in another schoolyear and reports the link update', function () {
+    restaurantSyncYearTransitionFixture($this);
+    $token = $this->actingAs($this->actor, 'sanctum')->postJson('/api/admin/restaurant/synchronisation/preview')
+        ->assertSuccessful()->assertJsonPath('data.advanced_student_links', 1)->json('data.token');
+    expect($this->restaurantUser->fresh()->import116_id)->toBe($this->student->id);
+    $this->postJson('/api/admin/restaurant/synchronisation/apply', ['token' => $token, 'confirmed' => true])->assertSuccessful();
+    expect($this->restaurantUser->fresh()->import116_id)->toBe($this->newStudent->id)
+        ->and($this->student->fresh()->user_id)->toBe($this->restaurantUser->id)
+        ->and($this->newStudent->fresh()->user_id)->toBe($this->restaurantUser->id);
+});
+
+test('schoolyear transition remains blocked when stable identity or reciprocal links disagree', function (string $conflict) {
+    restaurantSyncYearTransitionFixture($this);
+    if ($conflict === 'birth') {
+        $this->newStudent->update(['birth_date' => '2010-03-16']);
+    }
+    if ($conflict === 'code') {
+        $this->student->update(['student_code' => 'OTHER']);
+    }
+    if ($conflict === 'old-user') {
+        $this->student->update(['user_id' => null]);
+    }
+    if ($conflict === 'new-user') {
+        $this->newStudent->update(['user_id' => null]);
+    }
+    if ($conflict === 'name') {
+        $this->student->update(['last_name' => 'Anders']);
+    }
+    $this->actingAs($this->actor, 'sanctum')->postJson('/api/admin/restaurant/synchronisation/preview')
+        ->assertUnprocessable()->assertJsonPath('message', 'Ein vorhandenes Benutzerkonto ist mit einem anderen Schüler verknüpft.');
+    expect($this->restaurantUser->fresh()->import116_id)->toBe($this->student->id);
+})->with(['birth', 'code', 'old-user', 'new-user', 'name']);
 
 test('preview collects missing schoolyear and duplicate account conflicts without following invalid mappings', function () {
     $this->snapshot['schoolyears'] = [['id' => 999999, 'from' => '1900-01-01', 'until' => '1900-12-31']];

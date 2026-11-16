@@ -302,6 +302,13 @@ test('exercise handoff respects explicit MC selection and exports only active sa
     TeachingCourseStudent::query()->create(['teaching_course_id' => $this->course->id, 'user_id' => $other->id, 'canceled_at' => null]);
     $this->work->update(['groups' => [['name' => 'Prüfungsgruppe', 'date' => '2026-10-20', 'student_ids' => [$this->student->id]]]]);
     $before = $this->work->fresh()->getAttributes();
+    if ($mc) {
+        $this->getJson($this->url.'?purpose=exercise&include_mc=1&date=2026-10-20')->assertConflict();
+        expect($this->work->fresh()->getAttributes())->toEqual($before);
+        Http::assertNothingSent();
+
+        return;
+    }
     $data = $this->getJson($this->url.'?purpose=exercise&include_mc='.(int) $mc.'&date=2026-10-20')
         ->assertOk()->assertHeader('Cache-Control', 'no-store, private')->json('data');
 
@@ -330,14 +337,12 @@ test('exercise handoff excludes cancelled memberships and does not revive a canc
 
 test('exercise handoff includes a real saved module path and identity without treating an import directory as the module', function (): void {
     Http::preventStrayRequests();
-    $this->partialMock(DropboxModuleLinks::class)->shouldReceive('exercise')->once()
-        ->andReturn(['status' => 'missing', 'folder' => null]);
     $connection = DropboxConnection::factory()->create(['user_id' => $this->teacher->id]);
     TeachingWorkModuleLink::query()->create(['dropbox_connection_id' => $connection->id,
         'teaching_course_work_id' => $this->work->id, 'module_id' => 'A263B873-4f27-4167-90f0-7d94ea0f67fa', 'schema_version' => 1,
         'account_id' => $connection->account_id, 'folder_id' => 'id:module', 'folder_name' => 'Modul',
         'folder_path' => '/Materialien/Lerninhalte/Modul', 'handshake_file_id' => 'id:handshake', 'handshake_revision' => 'r1']);
-    $data = $this->getJson($this->url.'?purpose=exercise&include_mc=1')->assertOk()->json('data');
+    $data = $this->getJson($this->url.'?purpose=exercise&include_mc=0')->assertOk()->json('data');
 
     expect($data['context']['module_binding']['module_id'])->toBe('A263B873-4f27-4167-90f0-7d94ea0f67fa');
     expect($data['text'])->toContain('Modul: verknüpft – Dropbox: /Materialien/Lerninhalte/Modul', 'Assessment Template', 'Multiple Choice Fragen');

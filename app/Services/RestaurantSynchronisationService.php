@@ -98,7 +98,8 @@ class RestaurantSynchronisationService
         return ['token' => $token, 'captured_at' => $source['captured_at'], 'expires_in_minutes' => 15,
             'school' => $school->long_name, 'summary' => $plan['summary'], 'files' => count($plan['files']),
             'reused_student_accounts' => $plan['reused_student_accounts'],
-            'removed_student_links' => $plan['removed_student_links']];
+            'removed_student_links' => $plan['removed_student_links'],
+            'advanced_student_links' => $plan['advanced_student_links']];
     }
 
     public function apply(User $actor, string $token): void
@@ -344,7 +345,7 @@ class RestaurantSynchronisationService
             $conflicts[] = 'Die SEPA-Verschlüsselungszuordnung stimmt nicht überein.';
         }
         $plan = ['tables' => [], 'users' => [], 'imports' => [], 'summary' => [], 'files' => [], 'roles' => [],
-            'reused_student_accounts' => $reusedStudentAccounts, 'removed_student_links' => 0];
+            'reused_student_accounts' => $reusedStudentAccounts, 'removed_student_links' => 0, 'advanced_student_links' => 0];
         $fileMap = [];
         foreach ($source['files'] as $file) {
             try {
@@ -427,7 +428,10 @@ class RestaurantSynchronisationService
                 $fields = array_intersect_key($sourceUser, array_flip(array_diff(self::USER_FIELDS, ['id', 'email', 'is_active'])));
                 $fields['import116_id'] = $fields['import116_id'] ? ($maps['import116'][$fields['import116_id']] ?? throw new RuntimeException('Schülerzuordnung fehlt.')) : null;
                 if ($existing && $existing['import116_id'] && $fields['import116_id'] && $existing['import116_id'] !== $fields['import116_id']) {
-                    throw new RuntimeException('Ein vorhandenes Benutzerkonto ist mit einem anderen Schüler verknüpft.');
+                    if (! $this->sameStudentAcrossSchoolyears($sourceUser, $existing, $fields['import116_id'], $source, $local)) {
+                        throw new RuntimeException('Ein vorhandenes Benutzerkonto ist mit einem anderen Schüler verknüpft.');
+                    }
+                    $plan['advanced_student_links']++;
                 }
                 if ($existing && $existing['import116_id'] && ! $fields['import116_id']) {
                     $plan['removed_student_links']++;
@@ -559,6 +563,34 @@ class RestaurantSynchronisationService
             ->whereNotIn('roles.name', [...self::ROLES, 'student'])->exists();
 
         return $privileged ? null : $candidate;
+    }
+
+    private function sameStudentAcrossSchoolyears(array $sourceUser, array $existing, int $targetId, array $source, array $local): bool
+    {
+        $incoming = collect($source['imports'])->firstWhere('id', $sourceUser['import116_id']);
+        $old = collect($local['imports'])->firstWhere('id', $existing['import116_id']);
+        $target = collect($local['imports'])->firstWhere('id', $targetId);
+        if (! $incoming || ! $old || ! $target || ! $old['schoolyear_id'] || ! $target['schoolyear_id']
+            || $old['schoolyear_id'] === $target['schoolyear_id']
+            || $incoming['user_id'] !== $sourceUser['id'] || $old['user_id'] !== $existing['id']
+            || $target['user_id'] !== $existing['id'] || trim((string) $incoming['student_code']) === ''
+            || ! $incoming['birth_date']) {
+            return false;
+        }
+        foreach ([$old, $target] as $student) {
+            if ($student['student_code'] !== $incoming['student_code'] || $student['birth_date'] !== $incoming['birth_date']) {
+                return false;
+            }
+        }
+        foreach (['first_name', 'last_name'] as $field) {
+            $name = mb_strtolower(trim((string) $incoming[$field]));
+            if ($name === '' || collect([$sourceUser, $existing, $old, $target])
+                ->contains(fn (array $row): bool => mb_strtolower(trim((string) $row[$field])) !== $name)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private function remapFood(array $food, array $fileMap, array $maps, array $imageContents): array

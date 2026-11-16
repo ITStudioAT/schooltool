@@ -12,6 +12,7 @@ use App\Models\TeachingEntryDefinition;
 use App\Models\TeachingWorkModuleLink;
 use App\Models\User;
 use App\Services\DropboxModuleLinks;
+use App\Services\MultipleChoice\McModuleTemplateSource;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
@@ -58,8 +59,9 @@ function workMcFixture(object $context): void
     $context->actingAs($context->teacher, 'sanctum');
 }
 
-test('the LF creates and binds one draft MC test with its actual candidates and safely resumes the same request', function (): void {
-    workMcFixture($this);
+test('the LF prepares its bound draft MC test with its actual candidates and safely resumes the same request', function (): void {
+    workMcBoundModuleFixture($this);
+    $this->partialMock(DropboxModuleLinks::class)->shouldReceive('exercise')->andReturn(['status' => 'missing']);
     $before = $this->work->getAttributes();
     $response = $this->postJson($this->base.'/prepare-exercise', $this->payload)->assertOk()
         ->assertJsonPath('data.context.include_multiple_choice', true)
@@ -84,31 +86,29 @@ test('the LF creates and binds one draft MC test with its actual candidates and 
     Http::assertNothingSent();
 });
 
-test('the LF uses the selected question count and rejects unavailable or invalid counts', function (): void {
+test('the LF rejects legacy requests to create tests with any question count', function (): void {
     workMcFixture($this);
-    $this->postJson($this->base.'/prepare-exercise', [...$this->payload, 'question_count' => 0])
-        ->assertUnprocessable()->assertJsonValidationErrors('question_count');
-    $this->postJson($this->base.'/prepare-exercise', [...$this->payload, 'question_count' => 11])
-        ->assertUnprocessable()->assertJsonValidationErrors('question_count');
+    foreach ([0, 7, 11] as $count) {
+        $this->postJson($this->base.'/prepare-exercise', [...$this->payload, 'question_count' => $count])
+            ->assertUnprocessable()->assertJsonValidationErrors('mc_mode');
+    }
     expect(McTest::query()->count())->toBe(0);
-
-    $response = $this->postJson($this->base.'/prepare-exercise', [...$this->payload, 'question_count' => 7, 'duration_minutes' => 7])
-        ->assertOk()->assertJsonPath('data.context.multiple_choice_test.question_count', 7);
-    $test = McTest::query()->findOrFail($response->json('data.context.multiple_choice_test.test_id'));
-    expect($test->question_count)->toBe(7)->and($test->duration_seconds)->toBe(420);
 });
 
-test('a small reviewed catalog can be used for a test with fewer than ten questions', function (): void {
-    workMcFixture($this);
+test('an already bound test can use a small reviewed catalog', function (): void {
+    workMcBoundModuleFixture($this);
+    $this->partialMock(DropboxModuleLinks::class)->shouldReceive('exercise')->andReturn(['status' => 'missing']);
     $this->catalog->update(['questions' => array_slice($this->catalog->questions, 0, 4)]);
+    $this->test->update(['question_count' => 4]);
     $this->getJson($this->base.'/exercise-options?date=2026-10-20')->assertOk()
         ->assertJsonPath('catalogs.0.reviewed_question_count', 4);
-    $this->postJson($this->base.'/prepare-exercise', [...$this->payload, 'question_count' => 4])
+    $this->postJson($this->base.'/prepare-exercise', $this->payload)
         ->assertOk()->assertJsonPath('data.context.multiple_choice_test.question_count', 4);
 });
 
 test('work responses show only the titles of tests actually bound to the work and its school year', function (): void {
-    workMcFixture($this);
+    workMcBoundModuleFixture($this);
+    $this->partialMock(DropboxModuleLinks::class)->shouldReceive('exercise')->andReturn(['status' => 'missing']);
     $id = $this->postJson($this->base.'/prepare-exercise', $this->payload)->assertOk()->json('data.context.multiple_choice_test.test_id');
     $test = McTest::query()->findOrFail($id);
     $otherSchool = School::factory()->create();
@@ -136,21 +136,24 @@ test('work responses show only the titles of tests actually bound to the work an
 });
 
 test('LF MC tests use the saved end time when one is specified', function (): void {
-    workMcFixture($this);
+    workMcBoundModuleFixture($this);
+    $this->partialMock(DropboxModuleLinks::class)->shouldReceive('exercise')->andReturn(['status' => 'missing']);
     $this->work->update(['finish_until_date' => '2026-11-13', 'finish_until_time' => '12:25']);
     $id = $this->postJson($this->base.'/prepare-exercise', $this->payload)->assertOk()->json('data.context.multiple_choice_test.test_id');
     expect(McTest::query()->findOrFail($id)->closes_at->setTimezone('Europe/Vienna')->toIso8601String())->toBe('2026-11-13T12:25:00+01:00');
 });
 
 test('LF MC creation requires a future saved end date and does not invent one', function (?string $date): void {
-    workMcFixture($this);
+    workMcBoundModuleFixture($this);
+    $this->partialMock(DropboxModuleLinks::class)->shouldReceive('exercise')->andReturn(['status' => 'missing']);
     $this->work->update(['finish_until_date' => $date]);
     $this->postJson($this->base.'/prepare-exercise', $this->payload)->assertUnprocessable()->assertJsonValidationErrors('mc_mode');
-    expect(McTest::query()->count())->toBe(0);
+    expect(McTest::query()->count())->toBe(1)->and($this->test->fresh()->snapshot)->toBeNull();
 })->with([null, '2026-09-30']);
 
 test('linking an unstarted common MC test changes its start and deadline without replacing questions or links', function (): void {
-    workMcFixture($this);
+    workMcBoundModuleFixture($this);
+    $this->partialMock(DropboxModuleLinks::class)->shouldReceive('exercise')->andReturn(['status' => 'missing']);
     $id = $this->postJson($this->base.'/prepare-exercise', $this->payload)->assertOk()->json('data.context.multiple_choice_test.test_id');
     $test = McTest::query()->findOrFail($id);
     $snapshot = $test->snapshot;
@@ -167,7 +170,8 @@ test('linking an unstarted common MC test changes its start and deadline without
 });
 
 test('linking cannot change a common MC test whose countdown or personal attempt already started', function (bool $countdown): void {
-    workMcFixture($this);
+    workMcBoundModuleFixture($this);
+    $this->partialMock(DropboxModuleLinks::class)->shouldReceive('exercise')->andReturn(['status' => 'missing']);
     $id = $this->postJson($this->base.'/prepare-exercise', $this->payload)->assertOk()->json('data.context.multiple_choice_test.test_id');
     $test = McTest::query()->findOrFail($id);
     $test->update(['start_mode' => 'common', 'closes_at' => null, 'starts_at' => $countdown ? now()->addMinute() : null]);
@@ -180,10 +184,12 @@ test('linking cannot change a common MC test whose countdown or personal attempt
     expect($test->fresh()->getAttributes())->toBe($before);
 })->with([true, false]);
 
-test('new LF MC tests use the saved performance date work title class and course group', function (string $workTitle, string $courseTitle, array $classes, string $expectedTitle): void {
-    workMcFixture($this);
+test('the LF preserves the existing MC test title across course and work names', function (string $workTitle, string $courseTitle, array $classes, string $expectedTitle): void {
+    workMcBoundModuleFixture($this);
+    $this->partialMock(DropboxModuleLinks::class)->shouldReceive('exercise')->andReturn(['status' => 'missing']);
     $this->course->update(['title' => $courseTitle, 'classes' => $classes]);
     $this->work->update(['title' => $workTitle]);
+    $this->test->update(['title' => $expectedTitle]);
 
     $response = $this->postJson($this->base.'/prepare-exercise', $this->payload)->assertOk()
         ->assertJsonPath('data.context.multiple_choice_test.title', $expectedTitle);
@@ -197,18 +203,24 @@ test('new LF MC tests use the saved performance date work title class and course
     'multiword title' => ['Dateien und Ordner', 'DGB - 3B - 1', ['3B'], '2026-10-20_Dateien-und-Ordner_3B_Gruppe-1'],
 ]);
 
-test('the MC name follows the selected work group date instead of a deadline or creation date', function (): void {
-    workMcFixture($this);
+test('the existing MC test is used for the selected work group date', function (): void {
+    workMcBoundModuleFixture($this);
+    $this->partialMock(DropboxModuleLinks::class)->shouldReceive('exercise')->andReturn(['status' => 'missing']);
     $this->course->update(['title' => 'Informatik - 5A - 1', 'classes' => ['5A']]);
     $this->work->update(['title' => 'Dateimanagement', 'date_for_all_groups' => null, 'finish_until_date' => '2026-11-20',
         'groups' => [['date' => '2026-11-13', 'student_ids' => [$this->student->id]]]]);
+    $status = $this->work->fresh()->status;
+    $status['multiple_choice_tests']['2026-11-13'] = $status['multiple_choice_tests']['2026-10-20'];
+    $this->work->update(['status' => $status]);
+    $this->test->update(['title' => 'Vorhandener Test']);
 
     $this->postJson($this->base.'/prepare-exercise', [...$this->payload, 'date' => '2026-11-13'])->assertOk()
-        ->assertJsonPath('data.context.multiple_choice_test.title', '2026-11-13_Dateimanagement_5A_Gruppe-1');
+        ->assertJsonPath('data.context.multiple_choice_test.title', 'Vorhandener Test');
 });
 
 test('an existing MC test is reused without a second test or changing its name or attempts', function (): void {
-    workMcFixture($this);
+    workMcBoundModuleFixture($this);
+    $this->partialMock(DropboxModuleLinks::class)->shouldReceive('exercise')->andReturn(['status' => 'missing']);
     $id = $this->postJson($this->base.'/prepare-exercise', $this->payload)->assertOk()->json('data.context.multiple_choice_test.test_id');
     McTest::query()->findOrFail($id)->update(['title' => 'Eigener Testname']);
     $attempts = McTest::query()->findOrFail($id)->attempts()->get()->toArray();
@@ -217,32 +229,25 @@ test('an existing MC test is reused without a second test or changing its name o
         ->assertJsonPath('data.context.multiple_choice_test.test_id', $id)
         ->assertJsonPath('data.context.multiple_choice_test.title', 'Eigener Testname');
     expect(McTest::query()->count())->toBe(1)->and(McTest::query()->findOrFail($id)->attempts()->get()->toArray())->toBe($attempts);
-    $this->postJson($this->base.'/prepare-exercise', [...$this->payload, 'request_id' => '571bbef6-a38e-4bb0-8c8c-892eb9361fa5'])
-        ->assertConflict();
+    $this->postJson($this->base.'/prepare-exercise', [...$this->payload, 'mc_mode' => 'new', 'request_id' => '571bbef6-a38e-4bb0-8c8c-892eb9361fa5'])
+        ->assertUnprocessable();
     expect(McTest::query()->count())->toBe(1);
 });
 
-test('a removed linked test can be replaced using the actual binding from the refreshed choices', function (): void {
-    workMcFixture($this);
-    $oldId = $this->postJson($this->base.'/prepare-exercise', $this->payload)->assertOk()->json('data.context.multiple_choice_test.test_id');
-    $oldTest = McTest::query()->findOrFail($oldId);
-    $oldTest->attempts()->delete();
-    $oldTest->delete();
-
-    $options = $this->getJson($this->base.'/exercise-options?date=2026-10-20')->assertOk()
-        ->assertJsonPath('linked_test_id', null)
-        ->assertJsonPath('expected_test_id', $oldId);
-    $payload = [...$this->payload, 'request_id' => '81d80352-d86c-4872-a14f-e8c6d5be8f5c'];
-    $this->postJson($this->base.'/prepare-exercise', $payload)->assertConflict();
-    $response = $this->postJson($this->base.'/prepare-exercise', [...$payload,
-        'expected_test_id' => $options->json('expected_test_id')])->assertOk();
-
-    expect($response->json('data.context.multiple_choice_test.test_id'))->not->toBe($oldId);
-    expect(McTest::query()->count())->toBe(1);
+test('a removed linked test cannot be replaced or recreated by this workflow', function (): void {
+    workMcBoundModuleFixture($this);
+    $this->partialMock(DropboxModuleLinks::class)->shouldReceive('exercise')->andReturn(['status' => 'missing']);
+    $oldId = $this->test->id;
+    $this->test->delete();
+    $this->getJson($this->base.'/exercise-options?date=2026-10-20')->assertOk()
+        ->assertJsonPath('linked_test_id', null)->assertJsonPath('eligible_test', null)->assertJsonPath('expected_test_id', $oldId);
+    $this->postJson($this->base.'/prepare-exercise', $this->payload)->assertConflict();
+    expect(McTest::query()->count())->toBe(0);
 });
 
 test('a numeric expected binding from JSON is compared by ID without weakening stale binding protection', function (): void {
-    workMcFixture($this);
+    workMcBoundModuleFixture($this);
+    $this->partialMock(DropboxModuleLinks::class)->shouldReceive('exercise')->andReturn(['status' => 'missing']);
     $id = $this->postJson($this->base.'/prepare-exercise', $this->payload)->assertOk()->json('data.context.multiple_choice_test.test_id');
 
     $this->postJson($this->base.'/prepare-exercise', [...$this->payload, 'mc_mode' => 'existing', 'test_id' => $id,
@@ -254,7 +259,8 @@ test('a numeric expected binding from JSON is compared by ID without weakening s
 });
 
 test('existing test choices identify their catalog even when it can no longer create a new test', function (): void {
-    workMcFixture($this);
+    workMcBoundModuleFixture($this);
+    $this->partialMock(DropboxModuleLinks::class)->shouldReceive('exercise')->andReturn(['status' => 'missing']);
     $id = $this->postJson($this->base.'/prepare-exercise', $this->payload)->assertOk()->json('data.context.multiple_choice_test.test_id');
     $this->catalog->update(['questions' => []]);
     $this->getJson($this->base.'/exercise-options')->assertOk()
@@ -270,26 +276,31 @@ test('existing test choices identify their catalog even when it can no longer cr
 });
 
 test('MC choices and creation enforce course and catalog ownership without creating orphan tests', function (): void {
-    workMcFixture($this);
+    workMcBoundModuleFixture($this);
+    $this->partialMock(DropboxModuleLinks::class)->shouldReceive('exercise')->andReturn(['status' => 'missing']);
+    $before = $this->work->fresh()->status;
     $other = User::factory()->create(['school_id' => $this->teacher->school_id, 'schoolyear_id' => $this->teacher->schoolyear_id])->assignRole('teacher');
     $this->catalog->update(['owner_id' => $other->id]);
     $this->getJson($this->base.'/exercise-options')->assertOk()->assertJsonCount(0, 'catalogs');
-    $this->postJson($this->base.'/prepare-exercise', $this->payload)->assertNotFound();
-    expect(McTest::query()->count())->toBe(0)->and($this->work->fresh()->status)->not->toHaveKey('multiple_choice_tests');
+    $this->postJson($this->base.'/prepare-exercise', $this->payload)->assertConflict();
+    expect(McTest::query()->count())->toBe(1)->and($this->work->fresh()->status)->toBe($before);
     $this->actingAs($other, 'sanctum')->getJson($this->base.'/exercise-options')->assertForbidden();
     $this->postJson($this->base.'/prepare-exercise', $this->payload)->assertForbidden();
 });
 
 test('incomplete question pools and dates outside the LF roll back the MC draft and binding', function (): void {
-    workMcFixture($this);
+    workMcBoundModuleFixture($this);
+    $this->partialMock(DropboxModuleLinks::class)->shouldReceive('exercise')->andReturn(['status' => 'missing']);
+    $before = $this->work->fresh()->status;
     $this->catalog->update(['questions' => array_slice($this->catalog->questions, 0, 9)]);
     $this->postJson($this->base.'/prepare-exercise', $this->payload)->assertUnprocessable();
     $this->postJson($this->base.'/prepare-exercise', [...$this->payload, 'date' => '2026-10-21'])->assertUnprocessable();
-    expect(McTest::query()->count())->toBe(0)->and($this->work->fresh()->status)->not->toHaveKey('multiple_choice_tests');
+    expect(McTest::query()->count())->toBe(1)->and($this->work->fresh()->status)->toBe($before)->and($this->test->fresh()->snapshot)->toBeNull();
 });
 
 test('an existing test cannot be bound to candidates missing from its saved attempts', function (): void {
-    workMcFixture($this);
+    workMcBoundModuleFixture($this);
+    $this->partialMock(DropboxModuleLinks::class)->shouldReceive('exercise')->andReturn(['status' => 'missing']);
     $id = $this->postJson($this->base.'/prepare-exercise', $this->payload)->assertOk()->json('data.context.multiple_choice_test.test_id');
     $other = User::factory()->create(['school_id' => $this->teacher->school_id, 'schoolyear_id' => $this->teacher->schoolyear_id])->assignRole('student');
     $this->course->teachingCourseStudents()->create(['user_id' => $other->id]);
@@ -302,25 +313,31 @@ test('an existing test cannot be bound to candidates missing from its saved atte
 });
 
 test('MC test selection rejects other owners and schoolyears even when an ID is supplied directly', function (string $changed): void {
-    workMcFixture($this);
+    workMcBoundModuleFixture($this);
+    $this->partialMock(DropboxModuleLinks::class)->shouldReceive('exercise')->andReturn(['status' => 'missing']);
     $id = $this->postJson($this->base.'/prepare-exercise', $this->payload)->assertOk()->json('data.context.multiple_choice_test.test_id');
     $test = McTest::query()->findOrFail($id);
     $test->update($changed === 'owner' ? ['owner_id' => $this->student->id]
         : ['schoolyear_id' => Schoolyear::factory()->create(['school_id' => $this->teacher->school_id])->id]);
     $this->getJson($this->base.'/exercise-options')->assertOk()->assertJsonCount(0, 'tests')->assertJsonPath('linked_test_id', null);
     $this->postJson($this->base.'/prepare-exercise', ['mc_mode' => 'existing', 'mc_points' => 2, 'expected_maximum_points' => 5, 'test_id' => $id, 'expected_test_id' => $id,
-        'date' => '2026-10-20', 'request_id' => 'a4c4b2fd-94de-4830-9bdf-c1db638ac17f'])->assertNotFound();
+        'date' => '2026-10-20', 'request_id' => 'a4c4b2fd-94de-4830-9bdf-c1db638ac17f'])->assertConflict();
 })->with(['owner', 'year']);
 
 test('MC allocation must fit the saved LF points and never creates an orphan test on failure', function (mixed $points): void {
-    workMcFixture($this);
-    $this->postJson($this->base.'/prepare-exercise', [...$this->payload, 'mc_points' => $points])->assertUnprocessable()
+    workMcBoundModuleFixture($this);
+    $this->partialMock(DropboxModuleLinks::class)->shouldReceive('exercise')->andReturn(['status' => 'missing']);
+    $before = $this->work->fresh()->status;
+    $payload = array_diff_key($this->payload, ['other_points' => true]);
+    $this->postJson($this->base.'/prepare-exercise', [...$payload, 'mc_points' => $points])->assertUnprocessable()
         ->assertJsonValidationErrors('mc_points');
-    expect(McTest::query()->count())->toBe(0)->and($this->work->fresh()->status)->not->toHaveKey('multiple_choice_tests');
+    expect(McTest::query()->count())->toBe(1)->and($this->work->fresh()->status)->toBe($before)->and($this->test->fresh()->snapshot)->toBeNull();
 })->with([null, 0, -1, 5.01]);
 
-test('MC creation records an explicit conversion budget without increasing the LF maximum', function (): void {
-    workMcFixture($this);
+test('an existing MC test records an explicit conversion budget without increasing the LF maximum', function (): void {
+    workMcBoundModuleFixture($this);
+    $this->partialMock(DropboxModuleLinks::class)->shouldReceive('exercise')->andReturn(['status' => 'missing']);
+    $this->test->update(['total_points' => 10]);
     $this->postJson($this->base.'/prepare-exercise', [...$this->payload, 'total_points' => 10])->assertOk()
         ->assertJsonPath('data.context.multiple_choice_test.points_plan.mc_points', 2)
         ->assertJsonPath('data.context.multiple_choice_test.points_plan.other_points', 3)
@@ -329,7 +346,8 @@ test('MC creation records an explicit conversion budget without increasing the L
 });
 
 test('assessment points can differ from the saved Schooltool scale without changing it', function (): void {
-    workMcFixture($this);
+    workMcBoundModuleFixture($this);
+    $this->partialMock(DropboxModuleLinks::class)->shouldReceive('exercise')->andReturn(['status' => 'missing']);
     $this->course->teachingEntryArea->entryDefinitions()->update(['maximum_points' => 15]);
     $payload = [...$this->payload, 'mc_points' => 5, 'total_points' => 5, 'other_points' => 30, 'expected_maximum_points' => 15];
 
@@ -345,50 +363,141 @@ test('assessment points can differ from the saved Schooltool scale without chang
 });
 
 test('invalid remaining points do not create a test', function (mixed $otherPoints): void {
-    workMcFixture($this);
+    workMcBoundModuleFixture($this);
+    $this->partialMock(DropboxModuleLinks::class)->shouldReceive('exercise')->andReturn(['status' => 'missing']);
 
     $this->postJson($this->base.'/prepare-exercise', [...$this->payload, 'other_points' => $otherPoints])
         ->assertUnprocessable()->assertJsonValidationErrors('other_points');
-    expect(McTest::query()->count())->toBe(0);
+    expect(McTest::query()->count())->toBe(1)->and($this->test->fresh()->snapshot)->toBeNull();
 })->with([-1, '2.345', 100000]);
 
 test('changed LF totals invalidate an open MC allocation before creating a test', function (): void {
-    workMcFixture($this);
+    workMcBoundModuleFixture($this);
+    $this->partialMock(DropboxModuleLinks::class)->shouldReceive('exercise')->andReturn(['status' => 'missing']);
     TeachingEntryDefinition::query()->where('teaching_entry_area_id', $this->course->teaching_entry_area_id)->update(['maximum_points' => 4]);
     $this->postJson($this->base.'/prepare-exercise', $this->payload)->assertConflict();
-    expect(McTest::query()->count())->toBe(0);
+    expect(McTest::query()->count())->toBe(1)->and($this->test->fresh()->snapshot)->toBeNull();
 });
 
 test('a confirmed participant dispatch blocks MC additions even after an earlier unlocked preview', function (string $mode): void {
-    workMcFixture($this);
+    workMcBoundModuleFixture($this);
+    $this->partialMock(DropboxModuleLinks::class)->shouldReceive('exercise')->andReturn(['status' => 'missing']);
     app()->instance('env', 'local');
     $this->getJson($this->base.'/exercise-options')->assertOk()->assertJsonPath('configuration.locked', false);
     $hash = str_repeat('a', 64);
     $record = ['student_id' => $this->student->id, 'purpose' => 'tasks', 'origin' => 'dispatch_import',
         'log_sha256' => $hash, 'sent_at' => '2026-10-19T10:00:00Z', 'provider_id' => 'confirmed-1', 'mode' => $mode];
-    $status = ['automation_enabled' => true, 'dispatch_logs' => [['origin' => 'dispatch_import', 'purpose' => 'tasks', 'sha256' => $hash]],
-        ($mode === 'live' ? 'dispatch_notifications' : 'dispatch_attempts') => [$record]];
+    $status = $this->work->fresh()->status;
+    $status['dispatch_logs'] = [['origin' => 'dispatch_import', 'purpose' => 'tasks', 'sha256' => $hash]];
+    $status[$mode === 'live' ? 'dispatch_notifications' : 'dispatch_attempts'] = [$record];
     $this->work->update(['status' => $status]);
     $status = $this->work->fresh()->status;
     $this->getJson($this->base.'/exercise-options')->assertOk()->assertJsonPath('configuration.locked', true);
     $this->postJson($this->base.'/prepare-exercise', $this->payload)->assertUnprocessable()->assertJsonValidationErrors('mc_mode');
-    expect(McTest::query()->count())->toBe(0)->and($this->work->fresh()->status)->toBe($status);
-    $this->getJson($this->base.'/ai-export?purpose=exercise&include_mc=1&date=2026-10-20')->assertUnprocessable();
+    expect(McTest::query()->count())->toBe(1)->and($this->work->fresh()->status)->toBe($status);
+    $this->getJson($this->base.'/ai-export?purpose=exercise&include_mc=1&date=2026-10-20')->assertConflict();
 })->with(['live', 'mailpit']);
 
 test('MC mutation rechecks Dropbox dispatch and fails closed for partial or unclear delivery', function (string $dispatchStatus): void {
-    workMcFixture($this);
-    $connection = DropboxConnection::factory()->create(['user_id' => $this->teacher->id]);
-    TeachingWorkModuleLink::query()->create(['dropbox_connection_id' => $connection->id,
-        'teaching_course_work_id' => $this->work->id, 'module_id' => 'a263b873-4f27-4167-90f0-7d94ea0f67fa', 'schema_version' => 1,
-        'account_id' => $connection->account_id, 'folder_id' => 'id:module', 'folder_name' => 'Modul',
-        'folder_path' => '/Materialien/Lerninhalte/Modul', 'handshake_file_id' => 'id:handshake', 'handshake_revision' => 'r1']);
+    workMcBoundModuleFixture($this);
+    $connection = DropboxConnection::query()->where('user_id', $this->teacher->id)->firstOrFail();
+    $before = $this->work->fresh()->status;
     $this->partialMock(DropboxModuleLinks::class)->shouldReceive('exercise')->once()
         ->withArgs(fn ($checkedConnection, $checkedWork, $link, $date, $refresh, $initial): bool => $checkedConnection->id === $connection->id && $checkedWork->id === $this->work->id
             && $date === '2026-10-20' && $refresh === true && $initial === false)
         ->andReturn(['status' => 'found', 'folder' => ['id' => 'id:lf'],
             'email_dispatch' => ['status' => $dispatchStatus, 'confirmed_count' => $dispatchStatus === 'partial' ? 1 : 0]]);
     $this->postJson($this->base.'/prepare-exercise', $this->payload)->assertUnprocessable()->assertJsonValidationErrors('mc_mode');
-    expect(McTest::query()->count())->toBe(0)->and($this->work->fresh()->status)->not->toHaveKey('multiple_choice_tests');
+    expect(McTest::query()->count())->toBe(1)->and($this->work->fresh()->status)->toBe($before)->and($this->test->fresh()->snapshot)->toBeNull();
     Http::assertNothingSent();
 })->with(['partial', 'unknown']);
+
+function workMcBoundModuleFixture(object $context): void
+{
+    workMcFixture($context);
+    $connection = DropboxConnection::factory()->create(['user_id' => $context->teacher->id]);
+    TeachingWorkModuleLink::query()->create(['dropbox_connection_id' => $connection->id,
+        'teaching_course_work_id' => $context->work->id, 'module_id' => 'a263b873-4f27-4167-90f0-7d94ea0f67fa', 'schema_version' => 1,
+        'account_id' => $connection->account_id, 'folder_id' => 'id:module', 'folder_name' => 'Modul',
+        'folder_path' => '/Materialien/Lerninhalte/Modul', 'handshake_file_id' => 'id:handshake', 'handshake_revision' => 'r1']);
+    $context->catalog->update(['module_sources' => [['module_id' => 'a263b873-4f27-4167-90f0-7d94ea0f67fa',
+        'module_folder_id' => 'id:module', 'source_file_id' => 'id:questions']]]);
+    $context->test = McTest::query()->create(['school_id' => $context->teacher->school_id, 'schoolyear_id' => $context->teacher->schoolyear_id,
+        'owner_id' => $context->teacher->id, 'catalog_id' => $context->catalog->id, 'title' => 'Zugeordneter Test',
+        'status' => 'draft', 'question_count' => 10, 'total_points' => 5, 'duration_seconds' => 900, 'lead_seconds' => 60,
+        'start_mode' => 'individual', 'closes_at' => CarbonImmutable::parse('2026-10-20 23:59:00', 'Europe/Vienna'),
+        'exam_mode' => false, 'balance_types' => true, 'shuffle_questions' => true, 'shuffle_options' => true]);
+    $status = $context->work->status;
+    $status['multiple_choice_tests']['2026-10-20'] = ['work_id' => $context->work->id, 'test_id' => $context->test->id];
+    $context->work->update(['status' => $status]);
+    $context->payload = ['mc_mode' => 'existing', 'test_id' => $context->test->id, 'expected_test_id' => $context->test->id,
+        'mc_points' => 2, 'other_points' => 3, 'expected_maximum_points' => 5,
+        'request_id' => 'b10ca8e3-181f-48b7-b842-01a16c855ae8', 'date' => '2026-10-20'];
+}
+
+test('bound module test is the only eligible test for this exercise and its export', function (): void {
+    workMcBoundModuleFixture($this);
+    $this->partialMock(DropboxModuleLinks::class)->shouldReceive('exercise')->andReturn(['status' => 'missing']);
+    $this->getJson($this->base.'/exercise-options?date=2026-10-20')->assertOk()
+        ->assertJsonPath('eligible_test.id', $this->test->id);
+    $this->postJson($this->base.'/prepare-exercise', $this->payload)->assertOk()
+        ->assertJsonPath('data.context.multiple_choice_test.test_id', $this->test->id);
+    $this->getJson($this->base.'/ai-export?purpose=exercise&include_mc=1&date=2026-10-20')->assertOk()
+        ->assertJsonPath('data.context.multiple_choice_test.test_id', $this->test->id);
+    expect(McTest::query()->count())->toBe(1);
+    Http::assertNothingSent();
+});
+
+test('a confirmed module catalog creates one test only when requested and resumes safely', function (): void {
+    workMcBoundModuleFixture($this);
+    $this->work->update(['status' => ['automation_enabled' => true]]);
+    $source = ['fingerprint' => str_repeat('a', 64), 'questions' => $this->catalog->questions,
+        'source' => ['module_id' => 'a263b873-4f27-4167-90f0-7d94ea0f67fa', 'module_folder_id' => 'id:module',
+            'source_file_id' => 'id:answers', 'source_revision' => 'r1']];
+    $this->mock(McModuleTemplateSource::class)->shouldReceive('workCatalog')->andReturn($source);
+    $this->partialMock(DropboxModuleLinks::class)->shouldReceive('exercise')->andReturn(['status' => 'missing']);
+    $payload = ['mc_mode' => 'module', 'catalog_fingerprint' => $source['fingerprint'], 'question_count' => 10,
+        'duration_minutes' => 7, 'mc_points' => 2, 'other_points' => 35, 'expected_maximum_points' => 5,
+        'expected_test_id' => null, 'request_id' => 'ea7f8626-a38e-4f8a-8c8c-892eb9361fa5', 'date' => '2026-10-20'];
+    $this->postJson($this->base.'/prepare-exercise', [...$payload, 'catalog_fingerprint' => str_repeat('b', 64)])->assertConflict();
+    expect(McTest::query()->count())->toBe(1)->and(McCatalog::query()->count())->toBe(1);
+    $id = $this->postJson($this->base.'/prepare-exercise', $payload)->assertOk()->json('data.context.multiple_choice_test.test_id');
+    $this->postJson($this->base.'/prepare-exercise', $payload)->assertOk()->assertJsonPath('data.context.multiple_choice_test.test_id', $id);
+    $test = McTest::query()->findOrFail($id);
+    expect(McTest::query()->count())->toBe(2)->and(McCatalog::query()->count())->toBe(2)
+        ->and($test->question_count)->toBe(10)->and((float) $test->total_points)->toBe(2.0)
+        ->and($test->duration_seconds)->toBe(420)->and($test->catalog->module_sources[0]['source_file_id'])->toBe('id:answers');
+    Mail::assertNothingSent();
+});
+
+test('new and foreign tests are rejected and do not modify the work or tests', function (): void {
+    workMcBoundModuleFixture($this);
+    $this->partialMock(DropboxModuleLinks::class)->shouldReceive('exercise')->andReturn(['status' => 'missing']);
+    $other = $this->test->replicate();
+    $other->title = 'Fremder Test';
+    $other->save();
+    $before = $this->work->fresh()->status;
+    $this->postJson($this->base.'/prepare-exercise', [...$this->payload, 'test_id' => $other->id])->assertConflict();
+    $this->postJson($this->base.'/prepare-exercise', [...$this->payload, 'mc_mode' => 'new', 'catalog_id' => $this->catalog->id,
+        'duration_minutes' => 15, 'total_points' => 5])->assertUnprocessable()->assertJsonValidationErrors('mc_mode');
+    expect(McTest::query()->count())->toBe(2)->and($this->work->fresh()->status)->toBe($before)
+        ->and($this->test->fresh()->snapshot)->toBeNull();
+    Http::assertNothingSent();
+});
+
+test('a missing or different module source never becomes eligible', function (string $condition): void {
+    workMcBoundModuleFixture($this);
+    $this->partialMock(DropboxModuleLinks::class)->shouldReceive('exercise')->andReturn(['status' => 'missing']);
+    if ($condition === 'different') {
+        $this->catalog->update(['module_sources' => [['module_id' => 'a263b873-4f27-4167-90f0-7d94ea0f67fa',
+            'module_folder_id' => 'id:other', 'source_file_id' => 'id:questions']]]);
+    } else {
+        $this->work->update(['status' => ['automation_enabled' => true]]);
+    }
+    $before = $this->work->fresh()->status;
+    $this->getJson($this->base.'/exercise-options?date=2026-10-20')->assertOk()->assertJsonPath('eligible_test', null);
+    $this->postJson($this->base.'/prepare-exercise', $this->payload)->assertConflict();
+    $this->getJson($this->base.'/ai-export?purpose=exercise&include_mc=1&date=2026-10-20')->assertConflict();
+    $this->getJson($this->base.'/ai-export?purpose=exercise&include_mc=0&date=2026-10-20')->assertOk();
+    expect($this->work->fresh()->status)->toBe($before)->and($this->test->fresh()->snapshot)->toBeNull();
+})->with(['different', 'missing']);

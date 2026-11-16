@@ -7,6 +7,7 @@ use App\Models\McAttempt;
 use App\Models\McCatalog;
 use App\Models\McTest;
 use App\Models\TeachingCourseWork;
+use App\Models\TeachingWorkModuleLink;
 use App\Models\User;
 use App\Services\MultipleChoice\McTestService;
 use Carbon\CarbonImmutable;
@@ -46,12 +47,49 @@ class TeachingWorkMultipleChoice
             'linked_other_points' => $binding['points_plan']['other_points'] ?? null];
     }
 
+    public function linkedModuleTest(TeachingCourseWork $work, User $actor, ?string $date, bool $lock = false): ?McTest
+    {
+        if (! Schema::hasTable('mc_tests') || ! Schema::hasTable('mc_catalogs') || ! Schema::hasColumn('mc_catalogs', 'module_sources')) {
+            return null;
+        }
+        $binding = $work->status['multiple_choice_tests'][$this->slot($work, $date)] ?? null;
+        $link = app(DropboxModuleLinks::class)->current($work);
+        if ($link && $lock) {
+            $link = TeachingWorkModuleLink::query()->lockForUpdate()->find($link->id);
+        }
+        $connection = $link ? DropboxConnection::query()->where('user_id', $actor->id)->whereNull('revoked_at')->find($link->dropbox_connection_id) : null;
+        if (! $link || ! $connection || $connection->account_id !== $link->account_id
+            || (int) ($binding['work_id'] ?? 0) !== (int) $work->id || ! is_numeric($binding['test_id'] ?? null)) {
+            return null;
+        }
+        $query = McTest::query()->where('school_id', $work->teachingCourse->school_id)
+            ->where('schoolyear_id', $work->teachingCourse->schoolyear_id)->where('owner_id', $actor->id);
+        $test = ($lock ? $query->lockForUpdate() : $query)->find($binding['test_id']);
+        $catalogQuery = McCatalog::query();
+        $catalog = $test ? ($lock ? $catalogQuery->lockForUpdate() : $catalogQuery)->find($test->catalog_id) : null;
+        if (! $catalog || (int) $catalog->school_id !== (int) $work->teachingCourse->school_id || (int) $catalog->owner_id !== (int) $actor->id) {
+            return null;
+        }
+        $sources = collect($catalog->module_sources ?? []);
+        if ($sources->contains(fn (mixed $source): bool => ! is_array($source) || empty($source['source_file_id'])
+            || ($source['module_folder_id'] ?? null) !== $link->folder_id
+            || ! is_string($source['module_id'] ?? null) || strcasecmp($source['module_id'], $link->module_id) !== 0)) {
+            return null;
+        }
+        $sources = $sources->keyBy('source_file_id')->values();
+        if ($sources->count() !== 1) {
+            return null;
+        }
+
+        return $test;
+    }
+
     /**
      * @param  array<string, mixed>  $data
      * @param  list<array<string, mixed>>  $participants
      * @return array<string, mixed>
      */
-    public function prepare(TeachingCourseWork $work, User $actor, array $data, array $participants, array $workContext = []): array
+    public function prepare(TeachingCourseWork $work, User $actor, array $data, array $participants, array $workContext = [], ?array $moduleCatalog = null): array
     {
         $configuration = $this->configuration($work, $actor, $data['date'] ?? null, $workContext, true);
         if ($configuration['locked']) {
@@ -77,6 +115,8 @@ class TeachingWorkMultipleChoice
         $binding = $work->status['multiple_choice_tests'][$slot] ?? null;
         $requestHash = hash('sha256', json_encode([$data, array_column($participants, 'schooltool_person_id')], JSON_THROW_ON_ERROR));
         $repeated = ($binding['request_id'] ?? null) === $data['request_id'] && ($binding['request_hash'] ?? null) === $requestHash;
+        abort_if($data['mc_mode'] === 'module' && isset($binding['test_id']) && ! $repeated, 409,
+            'Es besteht bereits eine MC-Verknüpfung. Bitte die Arbeit erneut prüfen.');
         abort_unless($repeated || (isset($binding['test_id']) ? (int) $binding['test_id'] : null) === (isset($data['expected_test_id']) ? (int) $data['expected_test_id'] : null), 409,
             'Die MC-Verknüpfung wurde inzwischen geändert. Bitte den Dialog erneut öffnen.');
         $studentIds = array_column($participants, 'schooltool_person_id');
@@ -96,12 +136,20 @@ class TeachingWorkMultipleChoice
             abort_unless(array_diff($studentIds, $assigned) === [], 422,
                 'Der ausgewählte MC-Test enthält nicht alle Prüfungskandidaten dieser Leistungsfeststellung.');
         } else {
-            $catalog = McCatalog::query()->where('school_id', $work->teachingCourse->school_id)->where('owner_id', $actor->id)
-                ->lockForUpdate()->findOrFail($data['catalog_id']);
+            if ($data['mc_mode'] === 'module') {
+                abort_unless($moduleCatalog && hash_equals($moduleCatalog['fingerprint'], $data['catalog_fingerprint']), 409);
+                $questions = array_map(fn (array $question): array => [...$question, 'reviewed' => true], $moduleCatalog['questions']);
+                $catalog = McCatalog::query()->create(['school_id' => $work->teachingCourse->school_id, 'owner_id' => $actor->id,
+                    'title' => $this->newTestTitle($work, $data['date'] ?? $workContext['scheduled_date'] ?? null),
+                    'questions' => $questions, 'module_sources' => [$moduleCatalog['source']]]);
+            } else {
+                $catalog = McCatalog::query()->where('school_id', $work->teachingCourse->school_id)->where('owner_id', $actor->id)
+                    ->lockForUpdate()->findOrFail($data['catalog_id']);
+            }
             $test = McTest::query()->create([
                 'school_id' => $work->teachingCourse->school_id, 'schoolyear_id' => $work->teachingCourse->schoolyear_id,
                 'owner_id' => $actor->id, 'catalog_id' => $catalog->id, 'title' => $this->newTestTitle($work, $data['date'] ?? $workContext['scheduled_date'] ?? null),
-                'status' => 'draft', 'question_count' => $data['question_count'] ?? 10, 'total_points' => $data['total_points'],
+                'status' => 'draft', 'question_count' => $data['question_count'] ?? 10, 'total_points' => $data['mc_mode'] === 'module' ? $mcPoints : $data['total_points'],
                 'duration_seconds' => $data['duration_minutes'] * 60, 'lead_seconds' => 60,
                 'start_mode' => 'individual', 'closes_at' => $closingDeadline, 'exam_mode' => false, 'balance_types' => true,
                 'shuffle_questions' => true, 'shuffle_options' => true,

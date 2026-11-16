@@ -35,45 +35,35 @@ describe('Due teaching reminders', () => {
         vi.useRealTimers()
     })
 
-    it('shows due details, notifies once across polls, and stops polling when unmounted', async () => {
+    it('shows due details without browser notifications and stops polling when unmounted', async () => {
         const notification = mockNotifications()
         wrapper = mount(TeachingDueReminders)
         await flushPromises()
         expect(wrapper.text()).toContain('Test, Anna · Mathematik')
         expect(wrapper.text()).toContain('Unterlagen mitbringen')
         expect(wrapper.text()).toContain('05.09.2026 um 14:30')
-        expect(notification).toHaveBeenCalledTimes(1)
+        expect(notification).not.toHaveBeenCalled()
+        expect(notification.requestPermission).not.toHaveBeenCalled()
         await vi.advanceTimersByTimeAsync(60000)
         expect(axios.get).toHaveBeenCalledTimes(2)
-        expect(notification).toHaveBeenCalledTimes(1)
+        expect(notification).not.toHaveBeenCalled()
         wrapper.unmount()
         wrapper = undefined
         await vi.advanceTimersByTimeAsync(60000)
         expect(axios.get).toHaveBeenCalledTimes(2)
     })
 
-    it('requests notification permission only after clicking activate', async () => {
-        const notification = mockNotifications('default')
-        wrapper = mount(TeachingDueReminders)
-        await flushPromises()
-        expect(notification.requestPermission).not.toHaveBeenCalled()
-        expect(notification).not.toHaveBeenCalled()
-        await wrapper.findAll('v-btn').find((button) => button.text().includes('aktivieren'))!.trigger('click')
-        await flushPromises()
-        expect(notification.requestPermission).toHaveBeenCalledTimes(1)
-        expect(notification).toHaveBeenCalledTimes(1)
-    })
-
-    it.each(['denied', 'unsupported'])('keeps reminders usable when browser notifications are %s', async (permission) => {
+    it.each(['default', 'granted', 'denied', 'unsupported'])('keeps in-page reminders without browser access when permission is %s', async (permission) => {
         const notification = mockNotifications(permission)
         if (permission === 'unsupported') {
             vi.stubGlobal('Notification', undefined)
         }
         wrapper = mount(TeachingDueReminders)
         await flushPromises()
-        expect(wrapper.text()).toContain(permission === 'denied' ? 'blockiert' : 'nicht verfügbar')
+        expect(wrapper.text()).not.toContain('Browser-Erinnerungen')
         expect(wrapper.text()).toContain('Unterlagen mitbringen')
         expect(notification).not.toHaveBeenCalled()
+        expect(notification.requestPermission).not.toHaveBeenCalled()
     })
 
     it('marks a reminder done with its original schedule and removes it only after success', async () => {
@@ -120,12 +110,13 @@ describe('Due teaching reminders', () => {
         expect(wrapper.text()).not.toContain('Unterlagen mitbringen')
     })
 
-    it('notifies again after the reminder text changes', async () => {
+    it('refreshes changed reminder text without a browser notification', async () => {
         const notification = mockNotifications()
         wrapper = mount(TeachingDueReminders)
         await flushPromises()
         vi.mocked(axios.get).mockResolvedValue({ data: { data: [{ ...reminder, description: 'Neue Unterlagen' }] } })
         await vi.advanceTimersByTimeAsync(60000)
-        expect(notification).toHaveBeenCalledTimes(2)
+        expect(wrapper.text()).toContain('Neue Unterlagen')
+        expect(notification).not.toHaveBeenCalled()
     })
 })

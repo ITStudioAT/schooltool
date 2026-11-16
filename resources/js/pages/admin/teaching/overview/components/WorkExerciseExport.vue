@@ -25,92 +25,67 @@
     <WorkProgressCheck v-if="workAutomationEnabled(work) && checkProgress && !needsPreparation && active && current" :work="work" :disabled="disabled"
         :check-key="workDropboxKey(admin.config?.user?.id, work)" @checked="emit('progress-checked', $event)"
         @saved="emit('deadline-saved', $event)" @busy="emit('check-busy', $event)" />
-    <v-dialog v-if="opened" v-model="opened" max-width="640" :persistent="loading">
+    <v-dialog v-if="opened" :model-value="opened" max-width="640" :persistent="loading || checkingModuleQuestions"
+        @update:model-value="updateDialog">
         <v-card>
-            <v-card-title class="text-wrap">Leistungsfeststellung erstellen</v-card-title>
-            <v-card-text>
-                <p class="text-body-2 mb-3">Text für die KI erzeugen oder das vollständige Materialpaket direkt über die OpenAI-API vorbereiten und nach Prüfung in Dropbox anlegen.</p>
+            <v-card-title class="text-wrap"><span ref="dialogTitle" tabindex="-1">Leistungsfeststellung erstellen</span></v-card-title>
+            <v-card-text v-if="checkingModuleQuestions" class="module-questions-loading">
+                <div ref="moduleQuestionsStatus" role="status" aria-live="polite" tabindex="-1" class="module-questions-status">
+                    <v-progress-circular indeterminate color="primary" size="48" width="5" aria-hidden="true" />
+                    <span>Multiple-Choice-Fragen werden geprüft …</span>
+                </div>
+            </v-card-text>
+            <v-card-text v-else>
+                <p class="text-body-2 mb-3">Übergabetext für die Erstellung der Leistungsfeststellung erzeugen.</p>
                 <div class="exercise-deadline-fields mb-3">
                     <v-text-field v-model="deadlineDate" label="Endgültige Abgabefrist" type="date" :disabled="loading" hide-details />
                     <v-text-field v-model="deadlineTime" label="Uhrzeit (optional)" type="time" :disabled="loading" hide-details />
                 </div>
                 <p class="text-caption mb-3">Die endgültige Frist wird beim Erstellen gespeichert. Ohne Uhrzeit endet ein MC-Test um 23:59 Uhr.</p>
                 <p v-if="!deadlineValid" class="text-caption text-error mb-3" role="status">Bitte ein gültiges Datum und eine gültige Uhrzeit eingeben.</p>
-                <v-checkbox v-model="includeMc" label="Multiple-Choice-Fragen einbeziehen" :disabled="loading || mcDispatchLocked" hide-details />
+                <div class="exercise-points mb-3">
+                    <p><strong>Prüfungsvorlage:</strong> <template v-if="templatePoints !== null">{{ templatePoints }} Punkte</template><template v-else>Punkte nicht eindeutig ermittelt</template></p>
+                    <p><strong>Multiple-Choice-Teil:</strong> <template v-if="moduleQuestions === 'available' && mcPointsDisplayValid">{{ mcPoints }} Punkte (vorgesehener Anteil)</template><template v-else-if="moduleQuestions === 'available'">Punkte bitte gültig festlegen</template><template v-else-if="moduleQuestions === 'error'">Nicht eindeutig geprüft</template><template v-else>Kein passender Fragenkatalog verfügbar</template></p>
+                </div>
+                <p v-if="moduleQuestions === 'missing'" class="text-caption" role="status">Kein verwendbarer Multiple-Choice-Fragenkatalog gefunden.</p>
+                <p v-else-if="moduleQuestions === 'error'" class="text-caption text-warning" role="status">Multiple-Choice-Fragen konnten nicht eindeutig geprüft werden. Bitte den Dialog erneut öffnen.</p>
+                <p v-else-if="moduleQuestions === 'no-test'" class="text-caption" role="status">Kein passender Multiple-Choice-Test für diese Arbeit und das verknüpfte Lernmodul vorhanden.</p>
+                <v-checkbox v-else-if="moduleQuestions === 'available'" v-model="includeMc" label="Multiple-Choice-Fragen einbeziehen" :disabled="loading || mcDispatchLocked" hide-details />
                 <div v-if="includeMc" class="mt-4">
                     <p class="text-caption mb-3">Individueller Start beim Öffnen des persönlichen Links. Als Schlussfrist gilt das Enddatum der Arbeit; ohne Uhrzeit gilt 23:59:00 Uhr.</p>
-                    <p v-if="mcLoading" role="status">MC-Tests und Fragenkataloge laden …</p>
-                    <template v-else-if="mcOptions?.available">
+                    <template v-if="mcOptions?.available">
                         <v-alert v-if="mcOptions.configuration?.locked" type="warning" variant="tonal" class="mb-3">{{ mcOptions.configuration.message }}</v-alert>
-                        <v-radio-group v-model="mcMode" :disabled="loading || mcOptions.configuration?.locked" hide-details>
-                            <v-radio value="existing" label="Bestehenden MC-Test verwenden" />
-                            <v-radio value="new" label="Neuen MC-Test erstellen" />
-                        </v-radio-group>
-                        <template v-if="mcMode === 'existing'">
-                            <v-select v-model="mcExistingCatalogId" :items="mcTestCatalogs" item-title="title" item-value="id"
-                                label="Fragenkatalog filtern" placeholder="Alle Fragenkataloge" clearable :disabled="loading" class="mt-3" hide-details />
-                            <v-select v-model="mcTestId" :items="filteredMcTests" item-title="selection_label" item-value="id"
-                                label="MC-Test auswählen" :disabled="loading" class="mt-3" hide-details />
-                            <p v-if="selectedMcTest" class="text-caption mt-2">Fragenkatalog: {{ selectedMcTest.catalog_label }}</p>
-                            <p v-if="!filteredMcTests.length" class="text-caption mt-2">Keine bestehenden MC-Tests für diese Auswahl vorhanden.</p>
-                        </template>
+                        <p v-if="mcOptions.eligible_test" class="text-caption mt-2">Zugeordneter MC-Test: {{ mcOptions.eligible_test.title }}</p>
                         <template v-else>
-                            <v-select v-model="mcCatalogId" :items="mcOptions.catalogs" item-title="title" item-value="id"
-                                label="Fragenkatalog auswählen" :disabled="loading" class="mt-3" hide-details />
-                            <p class="text-caption mt-2">Die Prüfungskandidaten werden aus dieser Leistungsfeststellung übernommen.<template v-if="selectedMcCatalog"> Im Katalog sind {{ selectedMcCatalog.reviewed_question_count }} aktive, geprüfte Fragen verfügbar.</template></p>
-                            <v-text-field v-model.number="mcQuestionCount" label="Anzahl der Fragen" type="number" min="1" :max="mcQuestionLimit || 2000" :disabled="loading" class="mt-3" hide-details />
-                            <p v-if="selectedMcCatalog && !mcQuestionCountValid" class="text-caption text-error mt-2" role="status">Bitte eine Anzahl zwischen 1 und {{ mcQuestionLimit }} auswählen.</p>
-                            <v-text-field v-model.number="mcDuration" label="MC-Bearbeitungszeit in Minuten" type="number" min="1" max="1440" :disabled="loading" class="mt-3" hide-details />
-                            <p class="text-caption mt-2">Der neue Test wird als Entwurf erstellt und mit dieser Leistungsfeststellung verknüpft. Die Freigabe erfolgt später im MC-Bereich.</p>
-                            <p v-if="!mcOptions.catalogs.length" class="text-caption mt-2">Bitte zuerst unter Unterricht-Tools · Multiple Choice einen Fragenkatalog vorbereiten.</p>
+                            <p class="text-caption mt-2">Fragenkatalog: {{ moduleCatalog.count }} Fragen verfügbar</p>
+                            <v-text-field v-model.number="mcQuestionCount" label="Anzahl der Fragen" type="number" min="1" :max="moduleCatalog.count" :disabled="loading" hide-details />
+                            <v-text-field v-model.number="mcDurationMinutes" label="MC-Bearbeitungszeit (Minuten)" type="number" min="1" max="1440" :disabled="loading" hide-details />
                         </template>
                         <v-text-field v-model.number="mcPoints" label="MC-Punkte" type="number" min="0.01" max="100000"
                             step="0.01" :disabled="loading || mcOptions.configuration?.locked" class="mt-3" hide-details />
                         <v-text-field v-model.number="mcOtherPoints" label="Punkte übrige Aufgaben" type="number" min="0" max="100000"
                             step="0.01" :disabled="loading || mcOptions.configuration?.locked" class="mt-3" hide-details />
-                        <p v-if="mcPointsValid" class="text-caption mt-2" role="status">{{ mcPoints }} Punkte MC + {{ mcOtherPoints }} Punkte übrige Aufgaben = {{ assessmentPoints }} Punkte gesamt.<template v-if="mcMode === 'existing'"> Die Punkte des vorhandenen MC-Tests werden auf diesen Anteil umgerechnet.</template></p>
+                        <p v-if="mcPointsValid" class="text-caption mt-2" role="status">{{ mcPoints }} Punkte MC + {{ mcOtherPoints }} Punkte übrige Aufgaben = {{ assessmentPoints }} Punkte gesamt.<template v-if="mcOptions.eligible_test"> Die Punkte des vorhandenen MC-Tests werden auf diesen Anteil umgerechnet.</template></p>
                         <p v-if="mcPointsValid && assessmentPoints !== Number(mcMaximumPoints)" class="text-caption mt-2">Die Bewertungsskala in Schooltool beträgt {{ mcMaximumPoints }} Punkte. Die Umrechnung für die spätere Übernahme ist noch abzustimmen.</p>
                         <p v-if="!mcPointsValid" class="text-caption mt-2" role="status">Bitte gültige Punkte für den MC-Test und die übrigen Aufgaben angeben.</p>
                     </template>
                     <v-alert v-else-if="!error" type="warning" variant="tonal">Multiple Choice ist noch nicht verfügbar.</v-alert>
                 </div>
                 <v-divider class="my-4" />
-                <h3 class="text-subtitle-2 mb-2">Direkt über die OpenAI-API</h3>
-                <p class="text-caption mb-3">Schooltool liest die verknüpfte Modulquelle und „Assessment Template“. OpenAI erhält die fachlichen Quellen und Arbeitsvorgaben; die Schülerliste wird erst beim Anlegen aus den bestätigten Schooltool-Daten gespeichert.</p>
-                <v-select v-model="formDecision" :items="formDecisions" item-title="title" item-value="id"
-                    label="Formabzüge für Betreff, Anrede, Inhalt und Signatur?" :disabled="loading" hide-details />
-                <v-text-field v-if="formDecision === 1" v-model="formDeductions" label="Abzug je Bereich und maximaler Gesamtabzug" :disabled="loading" class="mt-3" hide-details />
                 <v-textarea v-model="instructions" label="Ergänzende Vorgaben oder Antworten auf Rückfragen" :disabled="loading" rows="3" class="mt-3" hide-details />
-                <v-alert v-if="generation?.questions?.length" type="warning" variant="tonal" class="mt-3" role="status">
-                    <p>Vor der Erstellung fehlen Angaben:</p><ul><li v-for="question in generation.questions" :key="question">{{ question }}</li></ul>
-                </v-alert>
-                <template v-if="generation?.ready">
-                    <h3 class="text-subtitle-2 mt-4">Konkrete Fassung prüfen</h3>
-                    <p class="text-caption mb-2">Mit „Paket in Dropbox anlegen“ bestätigen Sie diese Aufgabenstellung und Kriterien. Die Vorschau gilt 30 Minuten.</p>
-                    <details open class="mt-2"><summary>Aufgabenstellung</summary><pre class="exercise-preview">{{ generation.assignment_markdown }}</pre></details>
-                    <details open class="mt-2"><summary>Bewertungskriterien</summary><pre class="exercise-preview">{{ generation.criteria_markdown }}</pre></details>
-                    <ul class="text-caption mt-2"><li v-for="criterion in generation.criteria" :key="criterion.title">{{ criterion.title }}: {{ criterion.points }} Punkte · {{ criterion.description }}</li></ul>
-                    <p class="text-caption mt-3">Bestätigte Quellen:</p>
-                    <ul class="text-caption"><li v-for="source in generation.sources" :key="source.id">{{ source.path_lower }} · {{ source.revision }}</li></ul>
-                    <div class="d-flex flex-wrap ga-2 mt-3"><v-btn v-for="pdf in generation.pdfs || []" :key="pdf.name" size="small" variant="tonal" prepend-icon="mdi-file-pdf-box" @click="previewPdf(pdf)">{{ pdf.name }}</v-btn></div>
-                </template>
-                <v-alert v-if="generation?.warnings?.length" type="warning" variant="tonal" class="mt-3"><ul><li v-for="warning in generation.warnings" :key="warning">{{ warning }}</li></ul></v-alert>
-                <v-alert v-if="createdPackage" type="success" variant="tonal" class="mt-3" role="status">Materialpaket in Dropbox bestätigt: {{ createdPackage.folder.path }}. Versand und Schülerfreigabe erfolgen gesondert.</v-alert>
                 <v-alert v-if="error" type="error" variant="tonal" class="mt-3" role="alert">{{ error }}</v-alert>
                 <v-alert v-if="message" :type="copied ? 'success' : 'warning'" variant="tonal" role="status" aria-live="polite" class="mt-3">{{ message }}</v-alert>
                 <template v-if="result">
                     <p class="text-caption mt-3">{{ result.participants_count }} bestätigte Prüfungskandidaten.</p>
                     <details class="mt-2"><summary>Übergabetext anzeigen</summary>
-                        <textarea ref="copyText" :value="result.text" readonly rows="9" aria-label="Leistungsfeststellungsauftrag zum Kopieren" class="exercise-export-text" />
+                        <textarea ref="copyText" :value="handoffText" readonly rows="9" aria-label="Leistungsfeststellungsauftrag zum Kopieren" class="exercise-export-text" />
                     </details>
                 </template>
             </v-card-text>
-            <v-card-actions class="flex-wrap ga-2">
+            <v-card-actions v-if="!checkingModuleQuestions" class="flex-wrap ga-2">
                 <v-spacer />
                 <v-btn :disabled="loading" @click="opened = false">{{ result ? 'Ende' : 'Abbrechen' }}</v-btn>
-                <v-btn v-if="!createdPackage" :color="copied ? 'success' : 'primary'" :prepend-icon="copied ? 'mdi-check' : undefined" :loading="loading" :disabled="loading || !current || !mcReady || !deadlineValid" @click="copyExport()">{{ copied ? 'Kopiert' : result ? 'Text kopieren' : includeMc && mcOptions?.available && mcMode === 'new' ? 'MC-Test erstellen und Übergabetext kopieren' : 'Übergabetext kopieren' }}</v-btn>
-                <v-btn v-if="!createdPackage" color="primary" :loading="loading" :disabled="loading || !current || !mcReady || !deadlineValid || !formPolicy" @click="copyExport(true)">Über OpenAI vorbereiten</v-btn>
-                <v-btn v-if="generation?.ready && !createdPackage" color="success" :loading="loading" :disabled="loading || disabled || !current" @click="storePackage">Paket in Dropbox anlegen</v-btn>
+                <v-btn :color="copied ? 'success' : 'primary'" :prepend-icon="copied ? 'mdi-check' : undefined" :loading="loading" :disabled="loading || !current || !mcReady || !deadlineValid" @click="copyExport()">{{ copied ? 'Kopiert' : result ? 'Text kopieren' : 'Übergabetext kopieren' }}</v-btn>
             </v-card-actions>
         </v-card>
     </v-dialog>
@@ -118,8 +93,8 @@
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
-import { VRadio, VRadioGroup, VTextarea, VDivider } from 'vuetify/components'
-import { aiExport, exerciseOptions, prepareExercise, storeExercise } from '@/actions/App/Http/Controllers/Admin/Teaching/CourseWorkController'
+import { VTextarea, VDivider } from 'vuetify/components'
+import { aiExport, exerciseOptions, prepareExercise } from '@/actions/App/Http/Controllers/Admin/Teaching/CourseWorkController'
 import { loadWorkExercise, workDropboxKey, workDropboxStates, workExerciseCheck } from '@/helpers/workDropbox'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { workLinkedMcTestTitle, workNeedsPreparation } from '@/helpers/workOverview'
@@ -140,32 +115,26 @@ let pendingSavedDeadline = null
 const deadlineValid = computed(() => (!deadlineDate.value || /^\d{4}-\d{2}-\d{2}$/.test(deadlineDate.value))
     && (!deadlineTime.value || (deadlineDate.value && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(deadlineTime.value))))
 const includeMc = ref(false)
+const moduleQuestions = ref('loading')
+const templatePoints = ref(null)
+const checkingModuleQuestions = computed(() => moduleQuestions.value === 'loading')
+const moduleQuestionsStatus = ref(null)
+const dialogTitle = ref(null)
+let moduleQuestionsSequence = 0
 const linkedMcTest = computed(() => workLinkedMcTestTitle(props.work, props.date))
 const mcOptions = ref(null)
-const mcLoading = ref(false)
-const mcMode = ref('existing')
-const mcTestId = ref(null)
-const mcCatalogId = ref(null)
-const mcExistingCatalogId = ref(null)
-const mcTestCatalogs = computed(() => [...new Map((mcOptions.value?.tests || []).map(test => [Number(test.catalog_id || 0),
-    { id: Number(test.catalog_id || 0), title: test.catalog_label }])).values()]
-    .sort((first, second) => first.title.localeCompare(second.title, 'de', { sensitivity: 'base' })))
-const filteredMcTests = computed(() => (mcOptions.value?.tests || []).filter(test => mcExistingCatalogId.value === null
-    || Number(test.catalog_id || 0) === Number(mcExistingCatalogId.value)))
-const selectedMcTest = computed(() => filteredMcTests.value.find(test => String(test.id) === String(mcTestId.value)))
+const moduleCatalog = ref(null)
 const mcQuestionCount = ref(10)
-const selectedMcCatalog = computed(() => (mcOptions.value?.catalogs || []).find(catalog => String(catalog.id) === String(mcCatalogId.value)))
-const mcQuestionLimit = computed(() => Math.min(2000, Number(selectedMcCatalog.value?.reviewed_question_count) || 0))
-const mcQuestionCountValid = computed(() => Boolean(selectedMcCatalog.value) && Number.isInteger(Number(mcQuestionCount.value))
-    && Number(mcQuestionCount.value) >= 1 && Number(mcQuestionCount.value) <= mcQuestionLimit.value)
-const mcDuration = ref(7)
+const mcDurationMinutes = ref(7)
 const mcPoints = ref(2)
+const mcPointsDisplayValid = computed(() => Number(mcPoints.value) > 0 && /^\d+(?:\.\d{1,2})?$/.test(String(mcPoints.value)))
 const mcMaximumPoints = computed(() => mcOptions.value?.configuration?.maximum_points ?? null)
 const enteredOtherPoints = ref(null)
 const otherPointsEdited = ref(false)
 const mcOtherPoints = computed({
     get: () => otherPointsEdited.value ? enteredOtherPoints.value
-        : Math.max(0, Math.round((Number(mcMaximumPoints.value) - Number(mcPoints.value)) * 100) / 100),
+        : (!mcOptions.value?.eligible_test && moduleCatalog.value && templatePoints.value !== null ? templatePoints.value
+            : Math.max(0, Math.round((Number(mcMaximumPoints.value) - Number(mcPoints.value)) * 100) / 100)),
     set: value => { otherPointsEdited.value = true; enteredOtherPoints.value = value },
 })
 const assessmentPoints = computed(() => Math.round((Number(mcPoints.value) + Number(mcOtherPoints.value)) * 100) / 100)
@@ -173,11 +142,11 @@ const mcPointsValid = computed(() => Number(mcMaximumPoints.value) > 0 && Number
     && /^\d+(?:\.\d{1,2})?$/.test(String(mcPoints.value)) && mcOtherPoints.value !== null
     && /^\d+(?:\.\d{1,2})?$/.test(String(mcOtherPoints.value)) && assessmentPoints.value <= 100000)
 const mcDispatchLocked = ref(false)
-const mcReady = computed(() => !includeMc.value || (!mcLoading.value && !mcDispatchLocked.value && !mcOptions.value?.configuration?.locked
-    && mcPointsValid.value && mcOptions.value?.available && (mcMode.value === 'existing'
-    ? Boolean(selectedMcTest.value) : mcQuestionCountValid.value
-        && Number.isInteger(Number(mcDuration.value)) && Number(mcDuration.value) >= 1 && Number(mcDuration.value) <= 1440)))
-let mcSequence = 0
+const mcReady = computed(() => !includeMc.value || (!mcDispatchLocked.value && !mcOptions.value?.configuration?.locked
+    && mcPointsValid.value && mcOptions.value?.available && (Boolean(mcOptions.value?.eligible_test)
+        || (moduleCatalog.value && Number.isInteger(mcQuestionCount.value) && mcQuestionCount.value > 0
+            && mcQuestionCount.value <= moduleCatalog.value.count && Number.isInteger(mcDurationMinutes.value)
+            && mcDurationMinutes.value > 0 && mcDurationMinutes.value <= 1440))))
 let mcPayload = null
 let expectedTestId = null
 const loading = ref(false)
@@ -186,16 +155,8 @@ const error = ref('')
 const message = ref('')
 const copied = ref(false)
 const copyText = ref(null)
-const generation = ref(null)
-const createdPackage = ref(null)
-const formDecision = ref(null)
-const formDeductions = ref('')
 const instructions = ref('')
-const formDecisions = [{ id: 0, title: 'Keine Abzüge in allen vier Formbereichen' },
-    { id: 1, title: 'Konkrete Formabzüge festlegen' }, { id: 2, title: 'Keine Abgabe-E-Mail vorgesehen' }]
-const formPolicy = computed(() => formDecision.value === 0 ? 'Keine Formabzüge für Betreff, Anrede, Inhalt und Signatur.'
-    : formDecision.value === 2 ? 'Keine Abgabe-E-Mail vorgesehen; Betreff, Anrede, Inhalt und Signatur sind nicht anwendbar.'
-        : formDecision.value === 1 && formDeductions.value.trim() ? `Formabzüge für Betreff, Anrede, Inhalt und Signatur: ${formDeductions.value.trim()}` : '')
+const handoffText = computed(() => result.value ? `${result.value.text}${instructions.value.trim() ? `\n\nErgänzende Vorgaben oder Antworten auf Rückfragen:\n${instructions.value.trim()}` : ''}` : '')
 const exerciseFolder = ref(null)
 const exerciseChecking = ref(false)
 const checkedStatus = ref('unknown')
@@ -306,71 +267,74 @@ function clear() {
     controller?.abort()
     loading.value = false
     result.value = null
-    generation.value = null
-    createdPackage.value = null
     error.value = ''
     message.value = ''
     copied.value = false
 }
 
 function openDialog() {
-    if (!props.active || !needsPreparation.value || !current.value || !moduleLinked.value || props.disabled || exerciseChecking.value || checkedStatus.value !== 'missing' || exerciseFolder.value) return
+    if (opened.value || !props.active || !needsPreparation.value || !current.value || !moduleLinked.value || props.disabled || exerciseChecking.value || checkedStatus.value !== 'missing' || exerciseFolder.value) return
     clear()
-    formDecision.value = null
-    formDeductions.value = ''
     instructions.value = ''
     deadlineDate.value = props.deadlineDraft ? props.deadlineDraft.date || '' : props.work?.finish_until_date?.slice(0, 10) || ''
     deadlineTime.value = props.deadlineDraft ? props.deadlineDraft.time || '' : props.work?.finish_until_time || ''
     includeMc.value = false
     mcOptions.value = null
-    mcTestId.value = null
-    mcCatalogId.value = null
-    mcExistingCatalogId.value = null
-    mcQuestionCount.value = 10
-    mcDuration.value = 7
     mcPoints.value = 2
     enteredOtherPoints.value = null
     otherPointsEdited.value = false
-    mcMode.value = 'existing'
     mcPayload = null
     expectedTestId = null
     opened.value = true
+    checkModuleQuestions()
 }
 
 defineExpose({ openDialog })
 
-async function loadMcOptions() {
-    const operation = ++mcSequence
-    mcLoading.value = true
-    try {
-        const { data } = await axios.get(exerciseOptions.url(props.work.id), { params: props.date ? { date: props.date } : {} })
-        if (operation !== mcSequence || !opened.value || !includeMc.value || !current.value) return
-        if (!Array.isArray(data.tests) || !Array.isArray(data.catalogs)) throw new Error('Die MC-Auswahl konnte nicht geladen werden.')
-        mcOptions.value = { ...data, tests: data.tests.map(test => {
-            const catalogLabel = test.catalog_title?.trim()
-                || data.catalogs.find(catalog => String(catalog.id) === String(test.catalog_id))?.title
-                || 'Fragenkatalog nicht verfügbar'
-            return { ...test, catalog_label: catalogLabel,
-                selection_label: `${test.title} · ${catalogLabel} · Nr. ${test.id} · ${test.status === 'published' ? 'freigegeben' : 'Entwurf'}` }
-        }) }
-        expectedTestId = data.expected_test_id ?? data.linked_test_id ?? null
-        mcTestId.value = data.linked_test_id ?? null
-        const linkedTest = mcOptions.value.tests.find(test => String(test.id) === String(mcTestId.value))
-        mcExistingCatalogId.value = linkedTest ? Number(linkedTest.catalog_id || 0) : null
-        mcPoints.value = data.linked_mc_points ?? 2
-        enteredOtherPoints.value = data.linked_other_points ?? null
-        otherPointsEdited.value = data.linked_other_points !== null && data.linked_other_points !== undefined
-        mcMode.value = mcTestId.value || data.tests.length ? 'existing' : 'new'
-    } catch (failure) {
-        if (operation === mcSequence) error.value = failure.response?.data?.message || failure.message || 'Die MC-Auswahl konnte nicht geladen werden.'
-    } finally {
-        if (operation === mcSequence) mcLoading.value = false
-    }
+function updateDialog(value) {
+    if (!value && (loading.value || checkingModuleQuestions.value)) return
+    opened.value = value
 }
 
-async function copyExport(direct = false) {
-    if (!opened.value || props.disabled || !current.value || !moduleLinked.value || loading.value || !mcReady.value || !deadlineValid.value || (direct && !formPolicy.value)) return
-    if (result.value && !direct) {
+async function checkModuleQuestions() {
+    const operation = ++moduleQuestionsSequence
+    moduleQuestions.value = 'loading'
+    templatePoints.value = null
+    mcOptions.value = null
+    moduleCatalog.value = null
+    const context = JSON.stringify([admin.config?.user?.id, props.work?.id, props.course?.id, props.date, bindingVersion.value])
+    const isCurrent = () => operation === moduleQuestionsSequence && opened.value && current.value
+        && context === JSON.stringify([admin.config?.user?.id, props.work?.id, props.course?.id, props.date, bindingVersion.value])
+    nextTick(() => { if (isCurrent() && checkingModuleQuestions.value) moduleQuestionsStatus.value?.focus() })
+    try {
+        const { data } = await axios.get(exerciseOptions.url(props.work.id), { params: { check_module_questions: 1 } })
+        if (!isCurrent()) return
+        if (typeof data.module_questions !== 'boolean') throw new Error('Ungültiges Prüfergebnis')
+        templatePoints.value = typeof data.assessment_points === 'number' && Number.isFinite(data.assessment_points)
+            && data.assessment_points >= 0 ? data.assessment_points : null
+        if (data.module_catalog && Number.isInteger(data.module_catalog.count) && data.module_catalog.count > 0
+            && /^[a-f0-9]{64}$/.test(data.module_catalog.fingerprint)) moduleCatalog.value = data.module_catalog
+        if (!data.module_questions) {
+            moduleQuestions.value = 'missing'
+        } else {
+            const options = await axios.get(exerciseOptions.url(props.work.id), { params: props.date ? { date: props.date } : {} })
+            if (!isCurrent()) return
+            mcOptions.value = options.data
+            expectedTestId = options.data.expected_test_id ?? options.data.linked_test_id ?? null
+            mcPoints.value = options.data.linked_mc_points ?? 2
+            enteredOtherPoints.value = options.data.linked_other_points ?? null
+            otherPointsEdited.value = options.data.linked_other_points !== null && options.data.linked_other_points !== undefined
+            moduleQuestions.value = options.data.available && (options.data.eligible_test || (moduleCatalog.value && expectedTestId === null)) ? 'available' : 'no-test'
+        }
+    } catch {
+        if (isCurrent()) moduleQuestions.value = 'error'
+    }
+    if (isCurrent()) nextTick(() => { if (isCurrent()) dialogTitle.value?.focus() })
+}
+
+async function copyExport() {
+    if (!opened.value || props.disabled || !current.value || !moduleLinked.value || loading.value || checkingModuleQuestions.value || !mcReady.value || !deadlineValid.value) return
+    if (result.value) {
         const operation = sequence
         loading.value = true
         try {
@@ -380,8 +344,6 @@ async function copyExport(direct = false) {
         }
         return
     }
-    const requestedInstructions = generation.value?.questions?.length
-        ? `Vorherige Rückfragen:\n${generation.value.questions.join('\n')}\n\nAntworten und Vorgaben der Lehrperson:\n${instructions.value}` : instructions.value
     clear()
     const operation = sequence
     const workId = props.work.id
@@ -411,14 +373,13 @@ async function copyExport(direct = false) {
             }
         }
         if (mc && !mcPayload) {
-            mcPayload = { mc_mode: mcMode.value, mc_points: Number(mcPoints.value), other_points: Number(mcOtherPoints.value), expected_maximum_points: Number(mcMaximumPoints.value), expected_test_id: expectedTestId, request_id: crypto.randomUUID(),
-                ...(props.date ? { date: props.date } : {}), ...(mcMode.value === 'existing' ? { test_id: mcTestId.value }
-                    : { catalog_id: mcCatalogId.value, question_count: Number(mcQuestionCount.value), total_points: Number(mcPoints.value), duration_minutes: mcDuration.value }) }
+            mcPayload = { ...(mcOptions.value.eligible_test
+                ? { mc_mode: 'existing', test_id: mcOptions.value.eligible_test.id }
+                : { mc_mode: 'module', catalog_fingerprint: moduleCatalog.value.fingerprint, question_count: mcQuestionCount.value, duration_minutes: mcDurationMinutes.value }),
+                mc_points: Number(mcPoints.value), other_points: Number(mcOtherPoints.value), expected_maximum_points: Number(mcMaximumPoints.value), expected_test_id: expectedTestId, request_id: crypto.randomUUID(),
+                ...(props.date ? { date: props.date } : {}) }
         }
-        const { data } = direct ? await axios.post(prepareExercise.url(workId), {
-            ...(mc ? mcPayload : { request_id: crypto.randomUUID(), expected_test_id: null, ...(props.date ? { date: props.date } : {}) }),
-            execution: 'openai', email_form_policy: formPolicy.value, instructions: requestedInstructions,
-        }, { signal: controller.signal }) : mc ? await axios.post(prepareExercise.url(workId), mcPayload, { signal: controller.signal })
+        const { data } = mc ? await axios.post(prepareExercise.url(workId), mcPayload, { signal: controller.signal })
             : await axios.get(aiExport.url(workId), { params: { purpose: 'exercise', include_mc: 0,
                 ...(props.date ? { date: props.date } : {}) }, signal: controller.signal })
         if (operation !== sequence || !opened.value || !current.value) return
@@ -431,14 +392,6 @@ async function copyExport(direct = false) {
         }
         result.value = exported
         if (mc) expectedTestId = exported.context.multiple_choice_test.test_id
-        if (direct) {
-            if (!data.generation || (data.generation.ready !== true && !data.generation.questions?.length)
-                || (data.generation.ready && (!data.generation.id || !data.generation.assignment_markdown || !data.generation.criteria_markdown))) {
-                throw new Error('Die API-Vorschau konnte nicht vollständig bestätigt werden.')
-            }
-            generation.value = data.generation
-            return
-        }
         await nextTick()
         await copyResult(operation)
     } catch (failure) {
@@ -449,52 +402,12 @@ async function copyExport(direct = false) {
     }
 }
 
-function previewPdf(pdf) {
-    if (typeof pdf.base64 !== 'string' || !pdf.base64.startsWith('JVBERi0')) return
-    const bytes = Uint8Array.from(atob(pdf.base64), character => character.charCodeAt(0))
-    const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }))
-    window.open(url, '_blank', 'noopener,noreferrer')
-    setTimeout(() => URL.revokeObjectURL(url), 60000)
-}
-
-async function storePackage() {
-    if (!opened.value || !props.active || props.disabled || loading.value || !current.value || !generation.value?.ready || createdPackage.value) return
-    const operation = sequence
-    const generationId = generation.value.id
-    const workId = props.work.id
-    loading.value = true
-    error.value = ''
-    controller = new AbortController()
-    try {
-        const { data } = await axios.post(storeExercise.url(workId), { generation_id: generationId, approved: true }, { signal: controller.signal })
-        if (operation !== sequence || !opened.value || !current.value) return
-        if (data.data?.status !== 'created' || !data.data.folder?.id || !data.data.folder?.path) throw new Error('Die vollständige Dropbox-Anlage wurde nicht bestätigt.')
-        createdPackage.value = data.data
-        const checked = await loadWorkExercise(workDropboxKey(admin.config?.user?.id, props.work), props.work, props.date, true)
-        if (operation !== sequence || !opened.value) return
-        if (checked.exercise?.status === 'found') {
-            exerciseFolder.value = checked.exercise.folder
-            checkedStatus.value = 'found'
-            checkedAt.value = new Date().toISOString()
-            emit('exercise-status', { userId: admin.config?.user?.id, workId, courseId: props.course.id, date: props.date,
-                status: 'found', folder: checked.exercise.folder, assignmentStatus: checked.exercise.assignment_status,
-                emailPreparation: checked.exercise.email_preparation, emailDispatch: checked.exercise.email_dispatch,
-                checkedAt: checkedAt.value, checking: false })
-        }
-    } catch (failure) {
-        if (operation === sequence) error.value = Object.values(failure.response?.data?.errors || {}).flat()[0]
-            || failure.response?.data?.message || failure.message || 'Die Dropbox-Anlage konnte nicht bestätigt werden.'
-    } finally {
-        if (operation === sequence) loading.value = false
-    }
-}
-
 async function copyResult(operation) {
     copied.value = false
     message.value = ''
     let success = false
     try {
-        await navigator.clipboard.writeText(result.value.text)
+        await navigator.clipboard.writeText(handoffText.value)
         success = true
     } catch {
         if (operation !== sequence) return
@@ -520,22 +433,13 @@ watch([() => admin.config?.user?.id, () => props.work?.id, () => props.course?.i
     pendingSavedDeadline = null
     if (checkProgressState.value?.state === 'running') emit('check-busy', false)
     resetProgressPolling()
-    mcSequence++
     opened.value = false
 })
-watch(opened, value => { if (!value) { clear(); mcSequence++ } })
-watch(includeMc, value => {
-    clear(); mcPayload = null; mcOptions.value = null
-    if (value && opened.value) {
-        loadMcOptions()
-    } else mcSequence++
-})
-watch(mcExistingCatalogId, () => {
-    if (!selectedMcTest.value) mcTestId.value = null
-})
-watch(() => [mcMode.value, mcTestId.value, mcCatalogId.value, mcQuestionCount.value, mcDuration.value, mcPoints.value, mcOtherPoints.value], () => { clear(); mcPayload = null })
+watch(opened, value => { if (!value) { clear(); moduleQuestionsSequence++; includeMc.value = false; moduleQuestions.value = 'loading' } })
+watch(includeMc, () => { clear(); mcPayload = null })
+watch(() => [mcPoints.value, mcOtherPoints.value], () => { clear(); mcPayload = null })
 watch(() => [deadlineDate.value, deadlineTime.value], () => { if (opened.value && (result.value || mcPayload)) { clear(); mcPayload = null } })
-watch([formDecision, formDeductions, instructions], () => { if (opened.value && !loading.value) { generation.value = null; createdPackage.value = null } })
+watch(instructions, () => { copied.value = false; message.value = '' })
 watch(() => props.disabled, disabled => { if (disabled) { clear(); opened.value = false } })
 watch([() => admin.config?.user?.id, () => props.work?.id, () => props.course?.id, () => props.date, () => props.active,
     bindingVersion, needsPreparation, () => JSON.stringify(props.work?.communicated_deadline)],
@@ -547,17 +451,19 @@ watch([() => props.work?.finish_until_date, () => props.work?.finish_until_time]
     }
     if (!savingDeadline.value) checkExercise()
 })
-onBeforeUnmount(() => { clear(); resetProgressPolling(); exerciseSequence++; mcSequence++ })
+onBeforeUnmount(() => { clear(); resetProgressPolling(); exerciseSequence++; moduleQuestionsSequence++ })
 </script>
 
 <style scoped>
 .exercise-deadline-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 8px; }
+.exercise-points { background: #f5f8fa; border-radius: 6px; padding: 12px; }
+.module-questions-loading { min-height: 180px; display: grid; place-items: center; }
+.module-questions-status { display: flex; flex-direction: column; align-items: center; gap: 16px; text-align: center; }
 .exercise-action { display: inline-block; max-width: 100%; }
 .exercise-action--progress { flex-basis: 100%; width: 100%; }
 .exercise-check-button { height: auto; min-height: 32px; padding-block: 6px; }
 .exercise-check-message { flex-basis: 100%; }
 .exercise-folder { display: block; white-space: normal; overflow-wrap: anywhere; }
-.exercise-preview { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: 0.85rem; background: #f7f8fa; padding: 12px; max-height: 420px; overflow-y: auto; }
 .exercise-export-text {
     width: 100%;
     padding: 8px;

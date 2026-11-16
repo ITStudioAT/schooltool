@@ -13,6 +13,7 @@ use App\Models\RestaurantBilling;
 use App\Models\RestaurantMenuPlan;
 use App\Models\RestaurantMenuPlanBooking;
 use App\Models\RestaurantMenuPlanEntry;
+use App\Models\School;
 use App\Models\User;
 use App\Services\RestaurantBookingService;
 use App\Services\RestaurantMenuPlanPdfService;
@@ -374,6 +375,133 @@ class RestaurantMenuPlanController extends Controller
         ], 200, $this->noStoreHeaders());
     }
 
+    public function entryBookingPortions(int $planId, int $entryId, RestaurantMenuPlanService $service, RestaurantBookingService $bookingService): JsonResponse
+    {
+        if (! $authUser = $this->userHasRole(['admin', 'lunch_admin'])) {
+            abort(403, 'Sie haben keine Berechtigung.');
+        }
+        [$plan, $entry] = $this->resolvePlanAndEntry($authUser, $planId, $entryId, $service);
+        $bookings = RestaurantMenuPlanBooking::query()->where('school_id', $authUser->school_id)
+            ->whereHas('user', fn ($users) => $users->where('school_id', $authUser->school_id))
+            ->where('restaurant_menu_plan_entry_id', $entryId)
+            ->with(['user:id,first_name,last_name,email', 'eatingTime', 'import116:id,first_name,last_name,class'])->get();
+        $labels = $this->resolveOrderedForLabels($bookings, (int) $plan->school_id);
+        $recipientIds = $bookings->flatMap(fn (RestaurantMenuPlanBooking $booking): array => collect(data_get($booking->metadata, 'recipients', []))
+            ->pluck('import116_id')->filter()->all())->unique()->values()->all();
+        $students = Import116::query()->where('school_id', $authUser->school_id)->whereIn('id', $recipientIds)
+            ->get(['id', 'first_name', 'last_name', 'class'])->keyBy('id');
+        $rows = [];
+        foreach ($bookings as $booking) {
+            $row = ['id' => $booking->id, 'user_name' => $booking->user?->email ?: ($booking->user?->full_name ?: 'Unbekannt'),
+                'user_email' => $booking->user?->email ?? '', 'child_name' => $booking->child_name,
+                'ordered_for' => $labels[$booking->id] ?? $this->orderedForFallback($booking),
+                'eating_time' => $this->resolvedEatingTime($booking), 'booked_at' => $this->resolvedBookedAt($booking), 'notes' => $booking->notes];
+            $recipients = $this->bookingPortions($booking, $bookingService);
+            for ($index = 0; $index < $booking->quantity; $index++) {
+                $recipient = $recipients[$index] ?? null;
+                $label = $recipient['name'] ?? 'Empfänger nicht eindeutig';
+                $student = $recipient && $recipient['import116_id'] ? $students->get($recipient['import116_id']) : null;
+                $class = null;
+                if (! data_get($booking->metadata, 'recipients')) {
+                    if ($index === 0) {
+                        [$label, $class] = array_pad(explode(', ', $row['ordered_for'], 2), 2, null);
+                        $student = $booking->import116;
+                    } else {
+                        $label = 'Empfänger nicht einzeln erfasst';
+                    }
+                }
+                $name = $this->portionDisplayName($label, $student, $booking->user, $class);
+                $rows[] = [...$row, 'ordered_for' => $name['display'], 'sort_last' => $name['last'], 'sort_first' => $name['first'],
+                    'quantity' => 1, 'portion_index' => $index,
+                    'portion_token' => $recipients === null || ! $this->hasConsistentPortionPrice($booking)
+                        ? null : $this->bookingPortionToken($booking, $index)];
+            }
+        }
+        $collator = class_exists(\Collator::class) ? new \Collator('de_AT') : null;
+        usort($rows, fn (array $a, array $b): int => ($collator?->compare($a['sort_last'], $b['sort_last']) ?? strnatcasecmp($a['sort_last'], $b['sort_last']))
+            ?: ($collator?->compare($a['sort_first'], $b['sort_first']) ?? strnatcasecmp($a['sort_first'], $b['sort_first']))
+            ?: ($a['id'] <=> $b['id']) ?: ($a['portion_index'] <=> $b['portion_index']));
+        $rows = array_map(fn (array $row): array => array_diff_key($row, array_flip(['sort_last', 'sort_first'])), $rows);
+
+        return response()->json(['data' => $rows, 'meta' => [
+            'can_delete_bookings' => ! $this->weekIsBilled((int) $plan->school_id, $entry->plan_date),
+        ]], 200, $this->noStoreHeaders());
+    }
+
+    /** @return array{display: string, last: string, first: string} */
+    private function portionDisplayName(string $name, ?Import116 $student, ?User $user, ?string $class): array
+    {
+        $name = trim(preg_replace('/\s+/u', ' ', $name));
+        if (in_array($name, ['Empfänger nicht eindeutig', 'Empfänger nicht einzeln erfasst'], true)) {
+            return ['display' => $name, 'last' => 'zzzzzzzz', 'first' => $name];
+        }
+        foreach ([$student, $user] as $person) {
+            if (! $person) {
+                continue;
+            }
+            $first = trim((string) $person->first_name);
+            $last = trim((string) $person->last_name);
+            $normalized = $this->normalizeComparableString($name);
+            if ($first !== '' && $last !== '' && in_array($normalized, [
+                $this->normalizeComparableString($first.' '.$last), $this->normalizeComparableString($last.' '.$first),
+            ], true)) {
+                $class ??= $person instanceof Import116 ? $this->trimNullableString($person->class) : null;
+
+                return ['display' => trim($last.' '.$first).($class ? ', '.$class : ''), 'last' => $last, 'first' => $first];
+            }
+        }
+        if (str_contains($name, '@')) {
+            return ['display' => $name.($class ? ', '.$class : ''), 'last' => $name, 'first' => ''];
+        }
+        if (str_contains($name, ',')) {
+            [$last, $first] = array_map('trim', explode(',', $name, 2));
+        } else {
+            $parts = preg_split('/\s+/u', $name);
+            $last = array_pop($parts) ?? '';
+            $first = implode(' ', $parts);
+        }
+
+        return ['display' => trim($last.' '.$first).($class ? ', '.$class : ''), 'last' => $last, 'first' => $first];
+    }
+
+    /** @return list<array{name: string, type: string, import116_id: ?int}>|null */
+    private function bookingPortions(RestaurantMenuPlanBooking $booking, RestaurantBookingService $service): ?array
+    {
+        $raw = data_get($booking->metadata, 'recipients');
+        $recipients = $service->recipientsForBooking($booking);
+        if (is_array($raw) && $raw !== []) {
+            if (! array_is_list($raw) || count($raw) !== $booking->quantity || count($recipients) !== $booking->quantity
+                || collect($raw)->contains(fn (mixed $recipient): bool => ! is_array($recipient))) {
+                return null;
+            }
+
+            return $recipients;
+        }
+        if ($raw !== null && $raw !== []) {
+            return null;
+        }
+
+        return count($recipients) === 1 && $booking->quantity === 1 ? $recipients : null;
+    }
+
+    private function bookingPortionToken(RestaurantMenuPlanBooking $booking, int $index): string
+    {
+        return hash('sha256', json_encode([$booking->getAttributes(), $index], JSON_THROW_ON_ERROR));
+    }
+
+    private function hasConsistentPortionPrice(RestaurantMenuPlanBooking $booking): bool
+    {
+        if ($booking->quantity === 1) {
+            return true;
+        }
+        if ($booking->price === null) {
+            return false;
+        }
+
+        return $booking->total_price === null
+            || (int) round((float) $booking->total_price * 100) === (int) round((float) $booking->price * 100) * $booking->quantity;
+    }
+
     public function storeEntryBooking(
         StoreRestaurantMenuPlanBookingRequest $request,
         int $planId,
@@ -492,6 +620,50 @@ class RestaurantMenuPlanController extends Controller
 
             return response()->json(['message' => 'Buchung wurde gelöscht.']);
         });
+    }
+
+    public function destroyEntryBookingPortion(Request $request, int $planId, int $entryId, int $bookingId, int $portionIndex,
+        RestaurantMenuPlanService $service, RestaurantBookingService $bookingService): JsonResponse
+    {
+        if (! $authUser = $this->userHasRole(['admin', 'lunch_admin'])) {
+            abort(403, 'Sie haben keine Berechtigung.');
+        }
+        $validated = $request->validate(['portion_token' => ['required', 'string', 'regex:/\A[a-f0-9]{64}\z/']]);
+        [$plan, $entry] = $this->resolvePlanAndEntry($authUser, $planId, $entryId, $service);
+
+        return DB::transaction(function () use ($authUser, $plan, $entry, $entryId, $bookingId, $portionIndex, $validated, $bookingService): JsonResponse {
+            School::query()->whereKey($plan->school_id)->lockForUpdate()->firstOrFail();
+            $booking = RestaurantMenuPlanBooking::query()->where('school_id', $authUser->school_id)
+                ->whereHas('user', fn ($users) => $users->where('school_id', $authUser->school_id))
+                ->where('restaurant_menu_plan_entry_id', $entryId)->with('user:id,first_name,last_name,email')
+                ->lockForUpdate()->find($bookingId);
+            abort_unless($booking, 404, 'Buchung nicht gefunden.');
+            if ($this->weekIsBilled((int) $plan->school_id, $entry->plan_date, true)) {
+                return response()->json(['message' => 'Buchungen aus bereits abgerechneten Wochen können nicht gelöscht werden.'], 409);
+            }
+            $recipients = $this->bookingPortions($booking, $bookingService);
+            abort_unless($recipients !== null && $this->hasConsistentPortionPrice($booking) && isset($recipients[$portionIndex])
+                && hash_equals($this->bookingPortionToken($booking, $portionIndex), $validated['portion_token']), 409,
+                'Die Buchung hat sich geändert. Bitte die Liste erneut laden.');
+            if ($booking->quantity === 1) {
+                $booking->delete();
+
+                return response()->json(['message' => 'Portion wurde gelöscht.']);
+            }
+            $metadata = $booking->metadata ?? [];
+            if (! empty($metadata['recipients'])) {
+                array_splice($metadata['recipients'], $portionIndex, 1);
+                $booking->metadata = $metadata;
+                $remaining = $bookingService->recipientsForBooking($booking)[0];
+                $booking->child_name = $remaining['name'];
+                $booking->child_type = $remaining['type'];
+                $booking->import116_id = $remaining['import116_id'];
+            }
+            $booking->quantity--;
+            $booking->save();
+
+            return response()->json(['message' => 'Portion wurde gelöscht.']);
+        }, attempts: 3);
     }
 
     public function print(Request $request, int $id, RestaurantMenuPlanService $service, RestaurantMenuPlanPdfService $pdfService): BinaryFileResponse

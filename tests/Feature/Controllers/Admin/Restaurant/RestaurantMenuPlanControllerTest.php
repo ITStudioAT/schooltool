@@ -13,6 +13,7 @@ use App\Models\School;
 use App\Models\SchoolTool;
 use App\Models\Schoolyear;
 use App\Models\User;
+use App\Services\RestaurantBillingService;
 use App\Services\RestaurantBookingService;
 use App\Services\RestaurantMenuPlanPdfService;
 use App\Services\RestaurantService;
@@ -1537,6 +1538,112 @@ test('destroy entry booking deletes a booking when the week is not billed', func
         ->assertJsonPath('message', 'Buchung wurde gelöscht.');
 
     expect(RestaurantMenuPlanBooking::query()->find($booking->id))->toBeNull();
+});
+
+test('a single selected portion is removed and billing and daily orders retain the other recipient', function () {
+    $plan = RestaurantMenuPlan::factory()->create(['school_id' => $this->school->id, 'start_date' => '2026-11-09', 'end_date' => '2026-11-13']);
+    $entry = RestaurantMenuPlanEntry::factory()->create(['restaurant_menu_plan_id' => $plan->id, 'plan_date' => '2026-11-10',
+        'restaurant_menu_id' => $this->menu->id, 'menu_title' => 'Kaspressknödel']);
+    $booking = RestaurantMenuPlanBooking::query()->create(['school_id' => $this->school->id, 'user_id' => $this->admin->id,
+        'restaurant_menu_plan_entry_id' => $entry->id, 'price' => 9.90, 'quantity' => 2, 'child_name' => 'Leon Beispiel',
+        'child_type' => 'other_person', 'booked_at' => '2026-11-03 20:52:10',
+        'metadata' => ['extra' => 'preserve', 'recipients' => [
+            ['name' => 'Leon Beispiel', 'type' => 'other_person', 'import116_id' => null],
+            ['name' => 'David Beispiel', 'type' => 'other_person', 'import116_id' => null],
+        ]]]);
+    $base = "/api/admin/restaurant/menu-plans/{$plan->id}/entries/{$entry->id}";
+    $rows = $this->actingAs($this->admin, 'sanctum')->getJson($base.'/booking-portions')->assertOk()->assertJsonCount(2, 'data')->json('data');
+    expect(array_column($rows, 'ordered_for'))->toBe(['Beispiel David', 'Beispiel Leon']);
+    $leon = collect($rows)->firstWhere('ordered_for', 'Beispiel Leon');
+    $david = collect($rows)->firstWhere('ordered_for', 'Beispiel David');
+    expect($leon['quantity'])->toBe(1)->and($david['quantity'])->toBe(1);
+    $before = app(RestaurantBillingService::class)->previewForUser($this->admin, ['weeks' => ['2026-11-09']]);
+    expect($before->snapshot['overall_total_quantity'])->toBe(2)->and((float) $before->snapshot['overall_total_amount'])->toBe(19.8);
+    $this->deleteJson($base."/bookings/{$booking->id}/portions/{$leon['portion_index']}", ['portion_token' => $leon['portion_token']])->assertOk();
+    $remaining = $booking->fresh();
+    expect($remaining->quantity)->toBe(1)->and((float) $remaining->total_price)->toBe(9.9)
+        ->and($remaining->user_id)->toBe($this->admin->id)->and($remaining->child_name)->toBe('David Beispiel')
+        ->and($remaining->metadata['extra'])->toBe('preserve')->and($remaining->metadata['recipients'])->toHaveCount(1)
+        ->and($remaining->booked_at->format('Y-m-d H:i:s'))->toBe('2026-11-03 20:52:10');
+    $this->deleteJson($base."/bookings/{$booking->id}/portions/{$david['portion_index']}", ['portion_token' => $david['portion_token']])->assertConflict();
+    $this->getJson('/api/admin/restaurant/bookings?week_start=2026-11-09')->assertOk()->assertJsonPath('data.0.person', 'David Beispiel');
+    $after = app(RestaurantBillingService::class)->previewForUser($this->admin, ['weeks' => ['2026-11-09']]);
+    expect($after->snapshot['overall_total_quantity'])->toBe(1)->and((float) $after->snapshot['overall_total_amount'])->toBe(9.9);
+    $fresh = $this->getJson($base.'/booking-portions')->assertOk()->assertJsonCount(1, 'data')->json('data.0');
+    $this->deleteJson($base."/bookings/{$booking->id}/portions/{$fresh['portion_index']}", ['portion_token' => $fresh['portion_token']])->assertOk();
+    $this->assertModelMissing($booking);
+});
+
+test('ambiguous legacy and malformed multi-portion bookings cannot be cancelled by recipient', function () {
+    $plan = RestaurantMenuPlan::factory()->create(['school_id' => $this->school->id]);
+    $entry = RestaurantMenuPlanEntry::factory()->create(['restaurant_menu_plan_id' => $plan->id]);
+    $booking = RestaurantMenuPlanBooking::query()->create(['school_id' => $this->school->id, 'user_id' => $this->admin->id,
+        'restaurant_menu_plan_entry_id' => $entry->id, 'price' => 8.50, 'quantity' => 2, 'child_name' => 'Altes Kind', 'child_type' => 'child']);
+    $base = "/api/admin/restaurant/menu-plans/{$plan->id}/entries/{$entry->id}";
+    $rows = $this->actingAs($this->admin, 'sanctum')->getJson($base.'/booking-portions')->assertOk()->assertJsonCount(2, 'data')->json('data');
+    expect($rows[0]['ordered_for'])->toBe('Kind Altes')->and($rows[1]['ordered_for'])->toBe('Empfänger nicht einzeln erfasst')
+        ->and($rows[0]['portion_token'])->toBeNull()->and($rows[1]['portion_token'])->toBeNull();
+    $booking->refresh()->update(['metadata' => ['recipients' => [['name' => 'Altes Kind', 'type' => 'child']]]]);
+    $this->getJson($base.'/booking-portions')->assertOk()->assertJsonPath('data.0.portion_token', null);
+    $this->deleteJson($base."/bookings/{$booking->id}/portions/0", ['portion_token' => str_repeat('a', 64)])->assertConflict();
+    expect($booking->fresh()->quantity)->toBe(2);
+});
+
+test('booking portions sort by last then first name without changing their removal indices', function () {
+    $plan = RestaurantMenuPlan::factory()->create(['school_id' => $this->school->id]);
+    $entry = RestaurantMenuPlanEntry::factory()->create(['restaurant_menu_plan_id' => $plan->id]);
+    $child = Import116::factory()->forSchool($this->school)->importedBy($this->admin)->create([
+        'first_name' => 'Anna', 'last_name' => 'von Adler', 'class' => '2B',
+    ]);
+    $booking = RestaurantMenuPlanBooking::query()->create(['school_id' => $this->school->id, 'user_id' => $this->admin->id,
+        'restaurant_menu_plan_entry_id' => $entry->id, 'price' => 9.90, 'quantity' => 2, 'child_name' => 'Leon Brunkel',
+        'metadata' => ['recipients' => [
+            ['name' => 'Leon Brunkel', 'type' => 'other_person'], ['name' => 'David Brunkel', 'type' => 'other_person'],
+        ]]]);
+    $other = User::factory()->create(['school_id' => $this->school->id]);
+    RestaurantMenuPlanBooking::query()->create(['school_id' => $this->school->id, 'user_id' => $other->id,
+        'restaurant_menu_plan_entry_id' => $entry->id, 'price' => 9.90, 'quantity' => 1, 'child_name' => 'Anna von Adler',
+        'metadata' => ['recipients' => [['name' => 'Anna von Adler', 'type' => 'child', 'import116_id' => $child->id]]]]);
+    $self = User::factory()->create(['school_id' => $this->school->id, 'first_name' => 'Zoe', 'last_name' => 'Zimmer']);
+    RestaurantMenuPlanBooking::query()->create(['school_id' => $this->school->id, 'user_id' => $self->id,
+        'restaurant_menu_plan_entry_id' => $entry->id, 'price' => 9.90, 'quantity' => 1, 'child_name' => 'Zoe Zimmer',
+        'metadata' => ['recipients' => [['name' => 'Zoe Zimmer', 'type' => 'self']]]]);
+    $base = "/api/admin/restaurant/menu-plans/{$plan->id}/entries/{$entry->id}";
+    $rows = $this->actingAs($this->admin, 'sanctum')->getJson($base.'/booking-portions')->assertOk()->json('data');
+    expect(array_column($rows, 'ordered_for'))->toBe(['Brunkel David', 'Brunkel Leon', 'von Adler Anna, 2B', 'Zimmer Zoe'])
+        ->and($rows[0]['portion_index'])->toBe(1)->and($rows[1]['portion_index'])->toBe(0);
+    $this->deleteJson($base."/bookings/{$booking->id}/portions/{$rows[0]['portion_index']}", ['portion_token' => $rows[0]['portion_token']])->assertOk();
+    expect($booking->fresh()->child_name)->toBe('Leon Brunkel');
+});
+
+test('portion removal enforces restaurant access and billing lock', function () {
+    $plan = RestaurantMenuPlan::factory()->create(['school_id' => $this->school->id, 'start_date' => '2026-04-20', 'end_date' => '2026-04-24']);
+    $entry = RestaurantMenuPlanEntry::factory()->create(['restaurant_menu_plan_id' => $plan->id, 'plan_date' => '2026-04-22']);
+    $booking = RestaurantMenuPlanBooking::query()->create(['school_id' => $this->school->id, 'user_id' => $this->admin->id,
+        'restaurant_menu_plan_entry_id' => $entry->id, 'price' => 8.50, 'quantity' => 1]);
+    $base = "/api/admin/restaurant/menu-plans/{$plan->id}/entries/{$entry->id}";
+    $row = $this->actingAs($this->admin, 'sanctum')->getJson($base.'/booking-portions')->assertOk()->json('data.0');
+    $url = $base."/bookings/{$booking->id}/portions/0";
+    $this->actingAs($this->teacher, 'sanctum')->deleteJson($url, ['portion_token' => $row['portion_token']])->assertForbidden();
+    RestaurantBilling::factory()->create(['school_id' => $this->school->id, 'created_by_user_id' => $this->admin->id,
+        'start_date' => '2026-04-20', 'end_date' => '2026-04-26']);
+    $this->actingAs($this->admin, 'sanctum')->deleteJson($url, ['portion_token' => $row['portion_token']])->assertConflict();
+    $this->assertModelExists($booking);
+});
+
+test('portion removal is blocked when the original price cannot be allocated safely', function () {
+    $plan = RestaurantMenuPlan::factory()->create(['school_id' => $this->school->id]);
+    $entry = RestaurantMenuPlanEntry::factory()->create(['restaurant_menu_plan_id' => $plan->id]);
+    $booking = RestaurantMenuPlanBooking::query()->create(['school_id' => $this->school->id, 'user_id' => $this->admin->id,
+        'restaurant_menu_plan_entry_id' => $entry->id, 'price' => null, 'quantity' => 2, 'total_price' => 19.80,
+        'metadata' => ['recipients' => [
+            ['name' => 'Leon', 'type' => 'other_person'], ['name' => 'David', 'type' => 'other_person'],
+        ]]]);
+    $base = "/api/admin/restaurant/menu-plans/{$plan->id}/entries/{$entry->id}";
+    $rows = $this->actingAs($this->admin, 'sanctum')->getJson($base.'/booking-portions')->assertOk()->assertJsonCount(2, 'data')->json('data');
+    expect($rows[0]['portion_token'])->toBeNull()->and($rows[1]['portion_token'])->toBeNull();
+    $this->deleteJson($base."/bookings/{$booking->id}/portions/0", ['portion_token' => str_repeat('a', 64)])->assertConflict();
+    expect($booking->fresh()->quantity)->toBe(2)->and((float) $booking->fresh()->total_price)->toBe(19.8);
 });
 
 test('destroy entry booking rejects deleting bookings from billed weeks', function () {

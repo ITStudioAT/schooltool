@@ -758,9 +758,21 @@ describe('MenuPlans entry page', () => {
         ;(wrapper.vm as any).bookingsDialogData = [
             {
                 id: 7,
+                portion_index: 0,
+                portion_token: 'a'.repeat(64),
                 user_name: 'besteller@example.com',
                 user_email: 'besteller@example.com',
                 ordered_for: 'Kind Beispiel, 2B',
+                eating_time: '12:30',
+                quantity: 1,
+                booked_at: '16.04.2026 19:39',
+            },
+            {
+                id: 7,
+                portion_index: 1,
+                portion_token: 'b'.repeat(64),
+                user_name: 'besteller@example.com',
+                ordered_for: 'Andere Person',
                 eating_time: '12:30',
                 quantity: 1,
                 booked_at: '16.04.2026 19:39',
@@ -771,31 +783,34 @@ describe('MenuPlans entry page', () => {
         const headers = wrapper.get('.mpe-bookings-table').findAll('th').map((cell) => cell.text().trim())
 
         expect(headers).toEqual(['Bestellung', 'Essenszeit', 'Anz.', 'Gebucht am', ''])
-        expect(wrapper.find('[data-testid="delete-booking-7"]').exists()).toBe(true)
+        expect(wrapper.find('[data-testid="delete-booking-7-0"]').exists()).toBe(true)
+        expect(wrapper.find('[data-testid="delete-booking-7-1"]').exists()).toBe(true)
+        expect(wrapper.get('.mpe-bookings-table').text()).toContain('Andere Person')
     })
 
     it('opens the booking delete confirmation only when deletion is allowed', () => {
         const deletableContext = {
             bookingsDialogCanDelete: true,
             deleteBookingDialog: false,
-            deleteBookingTargetId: null,
+            deleteBookingTarget: null,
+            isDeletingBooking: false,
         }
 
-        ;(MenuPlansEntry as any).methods.requestDeleteBooking.call(deletableContext, { id: 11 })
+        ;(MenuPlansEntry as any).methods.requestDeleteBooking.call(deletableContext, { id: 11, portion_index: 0, portion_token: 'a' })
 
         expect(deletableContext.deleteBookingDialog).toBe(true)
-        expect(deletableContext.deleteBookingTargetId).toBe(11)
+        expect(deletableContext.deleteBookingTarget).toEqual({ id: 11, portion_index: 0, portion_token: 'a' })
 
         const blockedContext = {
             bookingsDialogCanDelete: false,
             deleteBookingDialog: false,
-            deleteBookingTargetId: null,
+            deleteBookingTarget: null,
         }
 
-        ;(MenuPlansEntry as any).methods.requestDeleteBooking.call(blockedContext, { id: 12 })
+        ;(MenuPlansEntry as any).methods.requestDeleteBooking.call(blockedContext, { id: 12, portion_index: 0, portion_token: 'b' })
 
         expect(blockedContext.deleteBookingDialog).toBe(false)
-        expect(blockedContext.deleteBookingTargetId).toBe(null)
+        expect(blockedContext.deleteBookingTarget).toBe(null)
     })
 
     it('closes the booking delete confirmation after a successful deletion', async () => {
@@ -804,22 +819,26 @@ describe('MenuPlans entry page', () => {
         const ctx = {
             planId: 17,
             bookingsDialogEntryId: 29,
-            deleteBookingTargetId: 7,
+            deleteBookingTarget: { id: 7, portion_index: 1, portion_token: 'a'.repeat(64) } as any,
+            bookingsDialogEntryTitle: 'Menü',
             deleteBookingDialog: true,
             isDeletingBooking: false,
             bookingsDialogData: [{ id: 7 }, { id: 8 }],
             loadExistingPlan: vi.fn(() => Promise.resolve()),
+            openBookingsDialog: vi.fn(() => Promise.resolve()),
             cancelDeleteBooking: () => (MenuPlansEntry as any).methods.cancelDeleteBooking.call(ctx),
         }
 
         await (MenuPlansEntry as any).methods.confirmDeleteBooking.call(ctx)
 
-        expect(axiosMock.delete).toHaveBeenCalledWith('/api/admin/restaurant/menu-plans/17/entries/29/bookings/7')
+        expect(axiosMock.delete).toHaveBeenCalledWith('/api/admin/restaurant/menu-plans/17/entries/29/bookings/7/portions/1',
+            { data: { portion_token: 'a'.repeat(64) } })
+        expect(ctx.openBookingsDialog).toHaveBeenCalledWith({ id: 29, menuTitle: 'Menü' })
         expect(ctx.loadExistingPlan).toHaveBeenCalledWith(17)
         expect(ctx.deleteBookingDialog).toBe(false)
-        expect(ctx.deleteBookingTargetId).toBe(null)
+        expect(ctx.deleteBookingTarget).toBe(null)
         expect(ctx.isDeletingBooking).toBe(false)
-        expect(ctx.bookingsDialogData).toEqual([{ id: 8 }])
+        expect(ctx.bookingsDialogData).toEqual([{ id: 7 }, { id: 8 }])
     })
 
     it('renders each day in the requested range and keeps open days ready for menu assignment', () => {

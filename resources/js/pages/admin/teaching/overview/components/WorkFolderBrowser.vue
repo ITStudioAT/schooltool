@@ -5,8 +5,8 @@
             <v-card-title class="text-wrap">{{ section || (module ? 'Lernmodulordner' : exercise ? 'Leistungsfeststellungsordner' : 'Arbeitsordner') }} · {{ work?.title }}</v-card-title>
             <v-card-text>
                 <div v-if="current" class="folder-browser-path text-caption mb-3" aria-label="Dropbox-Ordnerpfad">{{ current.path }}</div>
-                <nav v-if="breadcrumbs.length" class="d-flex flex-wrap align-center mb-2" aria-label="Ordnernavigation">
-                    <v-btn v-for="(folder, index) in breadcrumbs" :key="folder.id" size="small" variant="text"
+                <nav v-if="visibleBreadcrumbs.length" class="d-flex flex-wrap align-center mb-2" aria-label="Ordnernavigation">
+                    <v-btn v-for="(folder, index) in visibleBreadcrumbs" :key="folder.id" size="small" variant="text"
                         :disabled="loading || unlinking" @click="navigate(folder, index)">{{ folder.name }}</v-btn>
                 </nav>
                 <v-progress-linear v-if="loading" indeterminate aria-label="Ordnerinhalt wird geladen" />
@@ -48,6 +48,7 @@ const error = ref('')
 const current = ref(null)
 const entries = ref([])
 const breadcrumbs = ref([])
+const visibleBreadcrumbs = computed(() => props.module && current.value?.path ? breadcrumbs.value.slice(0, -1) : breadcrumbs.value)
 const cursor = ref(null)
 const linkVersion = ref(null)
 const sortedEntries = computed(() => [...entries.value].sort((left, right) =>

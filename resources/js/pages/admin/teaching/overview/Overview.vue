@@ -40,10 +40,7 @@
 
         <v-row v-if="selected_course && action != 'teaching_course_new_or_edit' && show_students && action_2 != 'course_student_view'">
             <v-col>
-                <CourseEvaluations v-if="studentPanel === 'evaluations' && calculationsEnabled"
-                    :course="selected_course" :schoolyear="config?.selected_schoolyear"
-                    :active-semester="activeSemester" @update:active-semester="activeSemester = $event" />
-                <CourseStudents v-else />
+                <CourseStudents />
             </v-col>
         </v-row>
 
@@ -204,7 +201,6 @@ import { useTeachingStore } from '@/stores/admin/teaching/TeachingStore'
 
 const MyCourses = defineAsyncComponent(() => import('./components/MyCourses.vue'))
 const CourseStudents = defineAsyncComponent(() => import('./components/CourseStudents.vue'))
-const CourseEvaluations = defineAsyncComponent(() => import('./components/CourseEvaluations.vue'))
 const CourseStudent = defineAsyncComponent(() => import('./components/CourseStudent.vue'))
 const CourseInfos = defineAsyncComponent(() => import('./components/CourseInfos.vue'))
 const CourseDates = defineAsyncComponent(() => import('./components/CourseDates.vue'))
@@ -220,7 +216,6 @@ export default {
     components: {
         MyCourses,
         CourseStudents,
-        CourseEvaluations,
         CourseStudent,
         CourseInfos,
         CourseDates,
@@ -255,7 +250,6 @@ export default {
             schoolHourStore: null,
             teachingStore: null,
             activeSemester: 1,
-            studentPanel: 'students',
             _urlPanelRestored: false,
             curriculumSelectionId: null,
             curriculumLoading: false,
@@ -479,7 +473,6 @@ export default {
                 panels.push({ id: 'students', label: 'Schüler:innen', icon: 'mdi-account-group' })
                 panels.push({ id: 'infos', label: 'Infos', icon: 'mdi-information-outline' })
                 panels.push({ id: 'works', label: 'Arbeiten', icon: 'mdi-brain' })
-                if (this.calculationsEnabled) panels.push({ id: 'evaluations', label: 'Auswertungen', icon: 'mdi-chart-box-outline' })
                 panels.push({ id: 'print', label: 'Druck', icon: 'mdi-printer-outline' })
                 panels.push({ id: 'lists', label: 'Listen', icon: 'mdi-format-list-bulleted' })
             }
@@ -491,7 +484,7 @@ export default {
         functionalPanelSelection: {
             get() {
                 if (!this.selected_course) return undefined
-                if (this.show_students) return this.studentPanel === 'evaluations' && this.calculationsEnabled ? 'evaluations' : 'students'
+                if (this.show_students) return 'students'
                 if (this.show_infos) return 'infos'
                 if (this.show_works) return 'works'
                 if (this.show_print) return 'print'
@@ -505,8 +498,8 @@ export default {
             },
             set(value) {
                 if (value === 'attendance' && this.attendanceVisible === false) value = 'table'
-                this.studentPanel = value === 'evaluations' ? 'evaluations' : 'students'
-                this.show_students = ['students', 'evaluations'].includes(value)
+                if (value === 'evaluations') value = 'students'
+                this.show_students = value === 'students'
                 this.show_infos = value === 'infos'
                 this.show_works = value === 'works'
                 this.show_print = value === 'print'
@@ -540,7 +533,6 @@ export default {
             immediate: true,
             async handler(newCourse, oldCourse) {
             if (!newCourse) {
-                this.studentPanel = 'students'
                 this._lastCourseId = null
                 this.curriculumSelectionId = null
                 this.curriculumEditMode = false
@@ -561,8 +553,7 @@ export default {
                     : requestedPanel
                 if (urlPanel === 'attendance' && this.attendanceVisible === false) urlPanel = 'table'
                 const urlGrades = this.$route?.query?.grades
-                if (urlPanel === 'curriculum') {
-                    this.studentPanel = 'students'
+                if (['curriculum', 'evaluations'].includes(urlPanel)) {
                     this._urlPanelRestored = true
                     this._lastCourseId = newCourse.id
                     this.show_students = true
@@ -590,7 +581,6 @@ export default {
                     'table',
                     'attendance',
                     'students',
-                    'evaluations',
                     'dates',
                     'infos',
                     'works',
@@ -618,8 +608,7 @@ export default {
                             query,
                         }).catch(() => {})
                     }
-                    this.studentPanel = urlPanel === 'evaluations' && this.calculationsEnabled ? 'evaluations' : 'students'
-                    this.show_students = ['students', 'evaluations'].includes(urlPanel)
+                    this.show_students = urlPanel === 'students'
                     this.show_infos = urlPanel === 'infos'
                     this.show_works = urlPanel === 'works'
                     this.show_print = urlPanel === 'print'
@@ -633,7 +622,6 @@ export default {
                     return
                 }
                 if (urlGrades) {
-                    this.studentPanel = 'students'
                     this.show_students = true
                     this.show_infos = false
                     this.show_works = false
@@ -654,7 +642,6 @@ export default {
             }
             this._lastCourseId = newCourse.id
             this._urlPanelRestored = true
-            this.studentPanel = 'students'
             this.show_students = false
             this.show_infos = false
             this.show_works = false

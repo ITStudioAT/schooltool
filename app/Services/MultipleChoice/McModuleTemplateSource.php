@@ -3,6 +3,7 @@
 namespace App\Services\MultipleChoice;
 
 use App\Models\DropboxConnection;
+use App\Models\TeachingWorkModuleLink;
 use App\Models\User;
 use App\Services\DropboxModuleLinks;
 use App\Services\DropboxWorkImport;
@@ -14,6 +15,199 @@ use JsonException;
 class McModuleTemplateSource
 {
     public function __construct(private DropboxModuleLinks $modules, private DropboxWorkImport $dropbox, private McImportService $imports) {}
+
+    /** @return array<string, mixed>|null */
+    public function workCatalog(User $user, TeachingWorkModuleLink $link): ?array
+    {
+        $connection = $this->dropbox->connection($user);
+        abort_unless($connection->id === $link->dropbox_connection_id && $connection->account_id === $link->account_id, 409);
+        $module = $this->modules->inspect($connection, $link->handshake_file_id);
+        abort_unless($module['folder_id'] === $link->folder_id && strcasecmp($module['module_id'], $link->module_id) === 0
+            && strcasecmp($module['folder_path'], $link->folder_path) === 0 && $module['handshake_revision'] === $link->handshake_revision, 409);
+        $folders = array_values(array_filter($this->children($connection, $module['folder_id']),
+            fn (array $entry): bool => ($entry['.tag'] ?? null) === 'folder'
+                && in_array(mb_strtolower($entry['name']), ['multiple choice fragen', 'fragenkatalog'], true)));
+        abort_if(count($folders) > 1, 409, 'Mehrere Fragenordner gefunden.');
+        if ($folders === []) {
+            return null;
+        }
+        $folder = $this->dropbox->metadata($connection, $folders[0]['id']);
+        abort_unless(dirname($folder['path_lower']) === mb_strtolower($module['folder_path']), 409);
+        $files = array_values(array_filter($this->children($connection, $folder['id']),
+            fn (array $entry): bool => ($entry['.tag'] ?? null) === 'file' && strtolower(pathinfo($entry['name'], PATHINFO_EXTENSION)) === 'md'));
+        abort_if(count($files) > 20 || array_sum(array_column($files, 'size')) > 4 * 1024 * 1024, 422);
+        $pairs = [];
+        foreach ($files as $answer) {
+            if (! preg_match('/^(.*)_Antworten\.md$/iu', $answer['name'], $matches)) {
+                continue;
+            }
+            $questionFiles = array_values(array_filter($files, fn (array $file): bool => mb_strtolower($file['name']) === mb_strtolower($matches[1].'.md')));
+            abort_if(count($questionFiles) > 1, 409, 'Der Fragenkatalog ist nicht eindeutig.');
+            if ($questionFiles === []) {
+                continue;
+            }
+            $questions = $this->document($connection, $questionFiles[0]['id']);
+            $solutions = $this->document($connection, $answer['id']);
+            abort_unless(dirname($questions['path_lower']) === $folder['path_lower'] && dirname($solutions['path_lower']) === $folder['path_lower'], 409);
+            $questionPreview = $this->imports->preview($questions['contents']);
+            $answerPreview = $this->imports->preview($solutions['contents']);
+            if (! $answerPreview['valid'] || $answerPreview['questions'] === []
+                || count($questionPreview['questions']) !== count($answerPreview['questions'])) {
+                continue;
+            }
+            $same = true;
+            foreach ($answerPreview['questions'] as $index => $item) {
+                $other = $questionPreview['questions'][$index];
+                if (($item['id'] ?? null) !== ($other['id'] ?? null) || ($item['prompt'] ?? null) !== ($other['prompt'] ?? null)
+                    || ($item['type'] ?? null) !== ($other['type'] ?? null) || ($item['options'] ?? null) !== ($other['options'] ?? null)
+                    || ($other['correct_option_ids'] ?? []) !== []) {
+                    $same = false;
+                    break;
+                }
+            }
+            if (! $same) {
+                continue;
+            }
+            $source = ['module_id' => $module['module_id'], 'module_folder_id' => $module['folder_id'],
+                'module_path' => $module['folder_path'], 'source_file_id' => $solutions['id'], 'source_revision' => $solutions['rev'],
+                'source_path' => $solutions['path_display'] ?? $solutions['path_lower']];
+            $fingerprint = hash('sha256', json_encode([$module, $questions['id'], $questions['rev'], $solutions['id'], $solutions['rev']], JSON_THROW_ON_ERROR));
+            $pairs[] = ['questions' => $answerPreview['questions'], 'source' => $source, 'fingerprint' => $fingerprint];
+        }
+        abort_if(count($pairs) > 1, 409, 'Mehrere passende Fragenkataloge gefunden.');
+
+        return $pairs[0] ?? null;
+    }
+
+    public function hasUsableQuestions(User $user, TeachingWorkModuleLink $link): bool
+    {
+        $connection = $this->dropbox->connection($user);
+        abort_unless($connection->id === $link->dropbox_connection_id && $connection->account_id === $link->account_id,
+            409, 'Die Modulverbindung gehört nicht zum aktuellen Dropbox-Konto.');
+        $module = $this->modules->inspect($connection, $link->handshake_file_id);
+        abort_unless($module['folder_id'] === $link->folder_id && strcasecmp($module['module_id'], $link->module_id) === 0
+            && strcasecmp($module['folder_path'], $link->folder_path) === 0 && $module['handshake_revision'] === $link->handshake_revision,
+            409, 'Die bestätigte Modulverbindung hat sich geändert. Bitte erneut prüfen.');
+        $folders = array_values(array_filter($this->children($connection, $module['folder_id']),
+            fn (array $entry): bool => ($entry['.tag'] ?? null) === 'folder'
+                && in_array(mb_strtolower($entry['name'] ?? ''), ['multiple choice fragen', 'fragenkatalog'], true)));
+        abort_if(count($folders) > 1, 409, 'Mehrere Fragenordner gefunden. Die Quelle ist nicht eindeutig.');
+        if ($folders === []) {
+            return false;
+        }
+        $folder = $this->dropbox->metadata($connection, $folders[0]['id']);
+        abort_unless(dirname($folder['path_lower']) === mb_strtolower($module['folder_path']), 409, 'Der Fragenordner wurde verschoben.');
+        $files = array_values(array_filter($this->children($connection, $folder['id']), fn (array $entry): bool => ($entry['.tag'] ?? null) === 'file'
+            && in_array(strtolower(pathinfo($entry['name'] ?? '', PATHINFO_EXTENSION)), ['md', 'txt', 'json'], true)));
+        abort_if(count($files) > 20 || array_sum(array_column($files, 'size')) > 4 * 1024 * 1024, 422, 'Der Fragenordner ist für eine vollständige Prüfung zu groß.');
+        foreach ($files as $file) {
+            $document = $this->document($connection, $file['id']);
+            abort_unless(dirname($document['path_lower']) === $folder['path_lower'], 409, 'Eine Fragenvorlage wurde verschoben.');
+            $format = strtolower(pathinfo($document['name'], PATHINFO_EXTENSION)) === 'json' ? 'json' : 'markdown';
+            $preview = $this->imports->preview($document['contents'], $format);
+            if ($preview['valid'] && collect($preview['questions'])->contains(fn (mixed $question): bool => is_array($question) && ($question['active'] ?? false) === true)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public function assessmentPoints(User $user, TeachingWorkModuleLink $link): ?float
+    {
+        $connection = $this->dropbox->connection($user);
+        abort_unless($connection->id === $link->dropbox_connection_id && $connection->account_id === $link->account_id, 409);
+        $module = $this->modules->inspect($connection, $link->handshake_file_id);
+        abort_unless($module['folder_id'] === $link->folder_id && strcasecmp($module['module_id'], $link->module_id) === 0
+            && strcasecmp($module['folder_path'], $link->folder_path) === 0 && $module['handshake_revision'] === $link->handshake_revision, 409);
+        $folders = array_values(array_filter($this->children($connection, $module['folder_id']),
+            fn (array $entry): bool => ($entry['.tag'] ?? null) === 'folder'
+                && in_array(mb_strtolower($entry['name']), ['prüfungsvorlage', 'leistungsfeststellung', 'assessment template', 'assessment_template'], true)));
+        if (count($folders) !== 1) {
+            return null;
+        }
+        $folder = $this->dropbox->metadata($connection, $folders[0]['id']);
+        abort_unless(dirname($folder['path_lower']) === mb_strtolower($module['folder_path']), 409);
+        $entries = $this->children($connection, $folder['id']);
+        if (collect($entries)->contains(fn (array $entry): bool => ($entry['.tag'] ?? null) === 'folder')) {
+            return null;
+        }
+        $files = array_values(array_filter($entries, fn (array $entry): bool => ($entry['.tag'] ?? null) === 'file'
+            && (in_array(strtolower(pathinfo($entry['name'], PATHINFO_EXTENSION)), ['md', 'txt'], true)
+                || strcasecmp($entry['name'], 'Pruefungspunkte.json') === 0)));
+        if ($files === [] || count($files) > 10 || array_sum(array_column($files, 'size')) > 4 * 1024 * 1024) {
+            return null;
+        }
+        $points = [];
+        $metadata = null;
+        $taskPoints = [];
+        foreach ($files as $file) {
+            $document = $this->document($connection, $file['id']);
+            abort_unless(dirname($document['path_lower']) === $folder['path_lower'], 409);
+            if (strcasecmp($document['name'], 'Pruefungspunkte.json') === 0) {
+                try {
+                    $metadata = json_decode($document['contents'], true, 32, JSON_THROW_ON_ERROR);
+                } catch (JsonException) {
+                    return null;
+                }
+                if (! is_array($metadata) || ($metadata['schema_version'] ?? null) !== 1
+                    || ! is_numeric($metadata['gesamtpunkte'] ?? null) || ! is_array($metadata['aufgaben'] ?? null)
+                    || ! array_is_list($metadata['aufgaben']) || $metadata['aufgaben'] === []) {
+                    return null;
+                }
+
+                continue;
+            }
+            $contents = preg_replace('/[*_#]/u', '', $document['contents']);
+            if (preg_match('/multiple[ -]choice|\\bmc[ -](?:test|teil|fragen)\\b/iu', $contents)) {
+                return null;
+            }
+            preg_match_all('/^\\s*(?:(?:gesamtpunkte|gesamtpunktzahl|punkte\\s+gesamt|maximal(?:e| erreichbare)?\\s+punkte)\\s*:\\s*(\\d+(?:[,.]\\d{1,2})?)\\s*(?:punkte|p\\.)?|gesamt\\s*:\\s*(\\d+(?:[,.]\\d{1,2})?)\\s*(?:punkte|p\\.))\\s*$/imu', $contents, $matches, PREG_SET_ORDER);
+            foreach ($matches as $match) {
+                $value = $match[1] !== '' ? $match[1] : $match[2];
+                $points[] = (float) str_replace(',', '.', $value);
+            }
+            preg_match_all('/^\s*facts:\s*["\x27]?(\d+(?:[,.]\d{1,2})?)\s+Punkte["\x27]?\s*$/imu', $contents, $facts);
+            foreach ($facts[1] as $value) {
+                $points[] = (float) str_replace(',', '.', $value);
+            }
+            preg_match_all('/^\s*\|\s*\|\s*Gesamt\s*\|\s*(\d+(?:[,.]\d{1,2})?)\s*\|/imu', $contents, $totals);
+            foreach ($totals[1] as $value) {
+                $points[] = (float) str_replace(',', '.', $value);
+            }
+            preg_match_all('/^\s*\|\s*\|\s*Teilsumme Aufgabe\s+(\d+)\s*\|\s*(\d+(?:[,.]\d{1,2})?)\s*\|/imu', $contents, $subtotals, PREG_SET_ORDER);
+            preg_match_all('/^\s*(\d+)\.\s+[^\r\n]+?<small>\s*\((\d+(?:[,.]\d{1,2})?)\s+Punkte\)<\/small>/imu', $contents, $headings, PREG_SET_ORDER);
+            foreach (array_merge($subtotals, $headings) as $task) {
+                $taskPoints[(int) $task[1]][] = (float) str_replace(',', '.', $task[2]);
+            }
+        }
+        $points = array_values(array_unique($points, SORT_REGULAR));
+        if (count($points) !== 1) {
+            return null;
+        }
+        if ($metadata !== null) {
+            $tasks = [];
+            foreach ($metadata['aufgaben'] as $task) {
+                if (! is_array($task) || ! is_int($task['nummer'] ?? null) || $task['nummer'] < 1
+                    || ! is_numeric($task['punkte'] ?? null) || (float) $task['punkte'] < 0 || isset($tasks[$task['nummer']])) {
+                    return null;
+                }
+                $tasks[$task['nummer']] = (float) $task['punkte'];
+            }
+            if (round(array_sum($tasks), 2) !== round((float) $metadata['gesamtpunkte'], 2)
+                || round((float) $metadata['gesamtpunkte'], 2) !== round($points[0], 2) || count($taskPoints) !== count($tasks)) {
+                return null;
+            }
+            foreach ($taskPoints as $number => $values) {
+                if (! isset($tasks[$number]) || count(array_unique($values, SORT_REGULAR)) !== 1
+                    || round($values[0], 2) !== round($tasks[$number], 2)) {
+                    return null;
+                }
+            }
+        }
+
+        return $points[0];
+    }
 
     /** @return array<string, mixed> */
     public function preview(User $user, ?int $catalogId, string $handshake, ?string $sourceId): array
@@ -106,10 +300,13 @@ class McModuleTemplateSource
         $listing = $this->dropbox->readModuleApi($connection, 'files/list_folder', ['path' => $folderId, 'recursive' => false, 'limit' => 200])->json();
         $entries = [];
         for ($page = 0; ; $page++) {
+            abort_unless(is_array($listing['entries'] ?? null) && is_bool($listing['has_more'] ?? null), 422,
+                'Der Fragenordner konnte nicht vollständig gelesen werden. Bitte erneut versuchen.');
             foreach ($listing['entries'] ?? [] as $entry) {
-                if (is_string($entry['id'] ?? null)) {
-                    $entries[$entry['id']] = $entry;
-                }
+                abort_unless(is_array($entry) && is_string($entry['id'] ?? null) && is_string($entry['name'] ?? null)
+                    && in_array($entry['.tag'] ?? null, ['file', 'folder'], true), 422,
+                    'Der Fragenordner konnte nicht vollständig gelesen werden. Bitte erneut versuchen.');
+                $entries[$entry['id']] = $entry;
             }
             if (! ($listing['has_more'] ?? false)) {
                 return array_values($entries);

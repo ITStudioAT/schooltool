@@ -8,10 +8,9 @@ import Overview from '@/pages/admin/teaching/overview/Overview.vue'
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
 
 describe('Teaching overview controls', () => {
-    it('hides grade evaluation navigation when calculations are disabled', () => {
+    it.each([true, false])('omits course evaluations when calculationsEnabled is %s', (calculationsEnabled) => {
         const component = Overview as any
-        const context = { selected_course: { id: 1 }, attendanceVisible: true, calculationsEnabled: false,
-            show_students: true, studentPanel: 'evaluations' }
+        const context = { selected_course: { id: 1 }, attendanceVisible: true, calculationsEnabled, show_students: true }
         expect(component.computed.functionalPanels.call(context).some((panel: { id: string }) => panel.id === 'evaluations')).toBe(false)
         expect(component.computed.functionalPanelSelection.get.call(context)).toBe('students')
     })
@@ -38,7 +37,7 @@ describe('Teaching overview controls', () => {
         expect(component.computed.functionalPanels.call(context).some((panel: { id: string }) => panel.id === 'attendance')).toBe(true)
     })
 
-    it('places Auswertungen after works and renders the dedicated report when selected or restored', async () => {
+    it('redirects a restored or directly selected evaluations panel to students', async () => {
         setActivePinia(createPinia())
         const courseStore = useCourseStore()
         const replace = vi.fn().mockResolvedValue(undefined)
@@ -47,7 +46,6 @@ describe('Teaching overview controls', () => {
             ...Overview,
             components: { ...(Overview as any).components,
                 CourseStudents: { name: 'CourseStudents', template: '<div />' },
-                CourseEvaluations: { name: 'CourseEvaluations', props: ['course', 'schoolyear', 'activeSemester'], template: '<div />' },
             },
         }, {
             global: {
@@ -58,18 +56,15 @@ describe('Teaching overview controls', () => {
         try {
             await nextTick()
             const vm = wrapper.vm as any
-            expect(vm.functionalPanels.map((panel) => panel.id)).toEqual(['table', 'attendance', 'dates', 'students', 'infos', 'works', 'evaluations', 'print', 'lists'])
-            expect(vm.functionalPanelSelection).toBe('evaluations')
-            expect(wrapper.findComponent({ name: 'CourseStudents' }).exists()).toBe(false)
-            expect(wrapper.findComponent({ name: 'CourseEvaluations' }).props('course').id).toBe(18)
-            vm.functionalPanelSelection = 'students'
-            await nextTick()
+            expect(vm.functionalPanels.map((panel) => panel.id)).toEqual(['table', 'attendance', 'dates', 'students', 'infos', 'works', 'print', 'lists'])
             expect(vm.functionalPanelSelection).toBe('students')
             expect(wrapper.findComponent({ name: 'CourseStudents' }).exists()).toBe(true)
             expect(wrapper.findComponent({ name: 'CourseEvaluations' }).exists()).toBe(false)
+            expect(replace).toHaveBeenCalledWith({ path: '/admin/teaching/overview', query: { panel: 'students' } })
             vm.functionalPanelSelection = 'evaluations'
             await nextTick()
-            expect(replace).toHaveBeenLastCalledWith({ path: '/admin/teaching/overview', query: { panel: 'evaluations' } })
+            expect(vm.functionalPanelSelection).toBe('students')
+            expect(replace).toHaveBeenLastCalledWith({ path: '/admin/teaching/overview', query: { panel: 'students' } })
             expect(vm.secondaryOverviewPanelSelection).toBeNull()
             vm.functionalPanelSelection = 'infos'
             await nextTick()

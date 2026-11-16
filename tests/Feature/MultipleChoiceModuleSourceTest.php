@@ -4,12 +4,16 @@ use App\Models\DropboxConnection;
 use App\Models\McCatalog;
 use App\Models\School;
 use App\Models\Schoolyear;
+use App\Models\TeachingCourse;
+use App\Models\TeachingCourseWork;
 use App\Models\TeachingWorkModuleLink;
 use App\Models\User;
+use App\Services\MultipleChoice\McModuleTemplateSource;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Spatie\Permission\Models\Role;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 
 require_once dirname(__DIR__).'/Support/MultipleChoiceTestDatabase.php';
 requireMultipleChoiceTestDatabase();
@@ -68,7 +72,7 @@ function fakeMcModuleSource(object $context): void
         if (str_ends_with($request->url(), '/files/download')) {
             $args = json_decode($request->header('Dropbox-API-Arg')[0], true);
 
-            return Http::response($args['path'] === 'rev:hs' ? $context->handshake : $context->template);
+            return Http::response($args['path'] === 'rev:hs' ? $context->handshake : ($context->documents[$args['path']] ?? $context->template));
         }
 
         throw new RuntimeException('Unexpected module source request: '.$request->url());
@@ -79,6 +83,122 @@ function mcModuleRequest(object $context): array
 {
     return ['filename' => 'handshake.json', 'handshake' => $context->handshake, 'catalog_id' => $context->catalog->id, 'generate' => false];
 }
+
+function workModuleSourceLink(object $context): TeachingWorkModuleLink
+{
+    return new TeachingWorkModuleLink(['dropbox_connection_id' => $context->connection->id,
+        'account_id' => $context->connection->account_id, 'module_id' => 'a263b873-4f27-4167-90f0-7d94ea0f67fa',
+        'folder_id' => 'id:module', 'folder_path' => $context->root.'/emails',
+        'handshake_file_id' => 'id:handshake', 'handshake_revision' => 'hs']);
+}
+
+test('work module questions are checked in the confirmed module and do not use an unrelated catalog', function (): void {
+    fakeMcModuleSource($this);
+    $service = app(McModuleTemplateSource::class);
+    $link = workModuleSourceLink($this);
+    expect($service->hasUsableQuestions($this->teacher, $link))->toBeTrue();
+    $this->entries = array_values(array_filter($this->entries, fn (array $entry): bool => $entry['id'] !== 'id:mc'));
+    expect($service->hasUsableQuestions($this->teacher, $link))->toBeFalse();
+});
+
+test('empty or invalid module questions are not considered usable', function (): void {
+    $this->template = '# Keine Fragen';
+    $this->entries[4]['size'] = strlen($this->template);
+    fakeMcModuleSource($this);
+    expect(app(McModuleTemplateSource::class)->hasUsableQuestions($this->teacher, workModuleSourceLink($this)))->toBeFalse();
+});
+
+test('assessment points are read only from an unambiguous explicit template total', function (string $contents, ?float $expected): void {
+    $this->template = $contents;
+    $this->entries[] = ['.tag' => 'folder', 'id' => 'id:assessment', 'name' => 'Assessment Template',
+        'path_lower' => $this->root.'/emails/assessment template'];
+    $this->entries[] = ['.tag' => 'file', 'id' => 'id:assessment-file', 'name' => 'Aufgaben.md',
+        'path_lower' => $this->root.'/emails/assessment template/aufgaben.md', 'rev' => 'source', 'size' => strlen($contents)];
+    fakeMcModuleSource($this);
+    expect(app(McModuleTemplateSource::class)->assessmentPoints($this->teacher, workModuleSourceLink($this)))->toBe($expected);
+})->with([
+    ['# Aufgaben'."\n".'**Gesamtpunkte:** 30 Punkte', 30.0],
+    ['# Aufgaben'."\n".'Gesamt: 30 Punkte', 30.0],
+    ['# Aufgaben'."\n".'Gesamt: 30', null],
+    ['# Aufgaben'."\n".'Gesamtpunkte: 30 Punkte'."\n".'Gesamtpunktzahl: 35 Punkte', null],
+    ['# Aufgaben'."\n".'10 Fragen und jeweils 3 Punkte', null],
+    ['# Aufgaben'."\n".'Gesamtpunkte: 30 Punkte'."\n".'Multiple-Choice-Teil enthalten', null],
+]);
+
+test('a changed module binding is not reported as an absence of questions', function (): void {
+    fakeMcModuleSource($this);
+    $link = workModuleSourceLink($this);
+    $link->folder_id = 'id:other';
+    app(McModuleTemplateSource::class)->hasUsableQuestions($this->teacher, $link);
+})->throws(HttpException::class);
+
+test('multiple possible question folders remain an ambiguous check', function (): void {
+    $this->entries[] = ['.tag' => 'folder', 'id' => 'id:other-questions', 'name' => 'Fragenkatalog',
+        'path_lower' => $this->root.'/emails/fragenkatalog'];
+    fakeMcModuleSource($this);
+    app(McModuleTemplateSource::class)->hasUsableQuestions($this->teacher, workModuleSourceLink($this));
+})->throws(HttpException::class);
+
+test('the work endpoint checks its own confirmed module instead of a global catalog', function (): void {
+    $this->documents = [
+        'rev:source' => "### 1. Frage?\n- [ ] A\n- [ ] B\n",
+        'rev:answers' => "### 1. Frage?\n- [x] A\n- [ ] B\n",
+    ];
+    $this->entries[4]['size'] = strlen($this->documents['rev:source']);
+    $this->entries[] = ['.tag' => 'file', 'id' => 'id:answers', 'name' => 'Multiple Choice Fragen_E-Mails_Antworten.md',
+        'path_lower' => $this->root.'/emails/multiple choice fragen/answers.md', 'rev' => 'answers', 'size' => strlen($this->documents['rev:answers'])];
+    $course = TeachingCourse::factory()->forSchool(School::findOrFail($this->teacher->school_id))
+        ->forSchoolyear(Schoolyear::findOrFail($this->teacher->schoolyear_id))->forTeacher($this->teacher)->create();
+    $work = TeachingCourseWork::factory()->create(['teaching_course_id' => $course->id]);
+    $link = workModuleSourceLink($this);
+    $link->teaching_course_work_id = $work->id;
+    $link->schema_version = 1;
+    $link->folder_name = 'E-Mails';
+    $link->save();
+    fakeMcModuleSource($this);
+    $url = '/api/admin/teaching/course_works/'.$work->id.'/exercise-options?check_module_questions=1';
+    $this->getJson($url)->assertOk()->assertJsonPath('module_questions', true)->assertJsonPath('module_catalog.count', 1)
+        ->assertJsonMissingPath('module_catalog.questions');
+    $this->entries = array_values(array_filter($this->entries, fn (array $entry): bool => $entry['id'] !== 'id:mc'));
+    $this->getJson($url)->assertOk()->assertJsonPath('module_questions', false);
+    $link->update(['folder_id' => 'id:other']);
+    $this->getJson($url)->assertConflict();
+});
+
+test('module catalog checks the answer key and rejects changed options without saving', function (): void {
+    $this->documents = [
+        'rev:source' => "### 1. Frage?\n- [ ] A\n- [ ] B\n",
+        'rev:answers' => "### 1. Frage?\n- [x] A\n- [ ] B\n",
+    ];
+    $this->entries[4]['size'] = strlen($this->documents['rev:source']);
+    $this->entries[] = ['.tag' => 'file', 'id' => 'id:answers', 'name' => 'Multiple Choice Fragen_E-Mails_Antworten.md',
+        'path_lower' => $this->root.'/emails/multiple choice fragen/answers.md', 'rev' => 'answers', 'size' => strlen($this->documents['rev:answers'])];
+    fakeMcModuleSource($this);
+    $service = app(McModuleTemplateSource::class);
+    $before = McCatalog::query()->count();
+    expect($service->workCatalog($this->teacher, workModuleSourceLink($this))['questions'])->toHaveCount(1);
+    expect(McCatalog::query()->count())->toBe($before);
+    $this->documents['rev:answers'] = "### 1. Frage?\n- [x] A\n- [ ] C\n";
+    expect($service->workCatalog($this->teacher, workModuleSourceLink($this)))->toBeNull();
+});
+
+test('versioned points match task headings and rubric subtotals', function (bool $conflict): void {
+    $task = "---\nfacts: \"35 Punkte\"\n---\n**1. Aufgabe** <small>(8 Punkte)</small>\n**2. Aufgabe** <small>(11 Punkte)</small>\n**3. Aufgabe** <small>(8 Punkte)</small>\n**4. Aufgabe** <small>(8 Punkte)</small>\n";
+    $rubric = "---\nfacts: \"35 Punkte\"\n---\n| | **Teilsumme Aufgabe 1** | **8** |\n| | **Teilsumme Aufgabe 2** | **11** |\n| | **Teilsumme Aufgabe 3** | **8** |\n| | **Teilsumme Aufgabe 4** | **8** |\n| | **Gesamt** | **35** |\n";
+    $json = json_encode(['schema_version' => 1, 'gesamtpunkte' => 35, 'aufgaben' => [
+        ['nummer' => 1, 'punkte' => $conflict ? 9 : 8], ['nummer' => 2, 'punkte' => 11],
+        ['nummer' => 3, 'punkte' => 8], ['nummer' => 4, 'punkte' => 8],
+    ]], JSON_THROW_ON_ERROR);
+    $this->documents = ['rev:task' => $task, 'rev:rubric' => $rubric, 'rev:points' => $json];
+    $path = $this->root.'/emails/prüfungsvorlage';
+    $this->entries[] = ['.tag' => 'folder', 'id' => 'id:assessment', 'name' => 'Prüfungsvorlage', 'path_lower' => $path];
+    foreach (['task' => ['LF_Wordtest.md', $task], 'rubric' => ['Beurteilungskriterien_Wordtest.md', $rubric], 'points' => ['Pruefungspunkte.json', $json]] as $id => [$name, $content]) {
+        $this->entries[] = ['.tag' => 'file', 'id' => 'id:'.$id, 'name' => $name, 'path_lower' => $path.'/'.mb_strtolower($name), 'rev' => $id, 'size' => strlen($content)];
+    }
+    $this->entries[] = ['.tag' => 'file', 'id' => 'id:pdf', 'name' => 'LF_Wordtest.pdf', 'path_lower' => $path.'/lf_wordtest.pdf', 'rev' => 'pdf', 'size' => 123];
+    fakeMcModuleSource($this);
+    expect(app(McModuleTemplateSource::class)->assessmentPoints($this->teacher, workModuleSourceLink($this)))->toBe($conflict ? null : 35.0);
+})->with([false, true]);
 
 test('the actual forty-question module source preserves thirty single and ten multiple questions without generating or saving', function (): void {
     fakeMcModuleSource($this);

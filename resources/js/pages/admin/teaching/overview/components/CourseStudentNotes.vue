@@ -47,7 +47,7 @@
                         density="compact" hide-details :disabled="saving || !!reminderUnavailable" />
                     <v-checkbox v-model="reminder.emailTeacher" label="Lehrperson/Benutzer per E-Mail erinnern"
                         density="compact" hide-details :disabled="saving || !!reminderUnavailable" />
-                    <p class="text-caption mb-3">E-Mails werden zum gewählten Termin an die ausgewählten Empfänger gesendet. Ohne Uhrzeit gilt der Tagesbeginn. Hinweise im Unterricht und freigegebene Browser-Erinnerungen bleiben aktiv.</p>
+                    <p class="text-caption mb-3">E-Mails werden zum gewählten Termin an die ausgewählten Empfänger gesendet. Ohne Uhrzeit gilt der Tagesbeginn. Hinweise im Unterricht bleiben aktiv.</p>
                     <div v-for="entry in reminders" :key="entry.id" class="text-body-2 mb-2">
                         <v-icon size="16">mdi-bell-outline</v-icon>
                         {{ entry.description || entry.type }}<span v-if="entry.due_date"> · Erinnern am: {{ entry.due_date.slice(0, 10) }}<span v-if="entry.due_time"> um {{ entry.due_time.slice(0, 5) }}</span></span>

@@ -9,6 +9,7 @@ use App\Models\TeachingCourseWork;
 use App\Models\User;
 use App\Services\DropboxModuleLinks;
 use App\Services\DropboxWorkImport;
+use App\Services\MultipleChoice\McModuleTemplateSource;
 use App\Services\TeachingCourseStudentEntryService;
 use App\Services\TeachingCourseWorkEntrySyncService;
 use App\Services\TeachingCourseWorkService;
@@ -115,10 +116,30 @@ class CourseWorkController extends Controller
         $actor = $this->userHasRole(['admin', 'teaching_admin', 'teacher']);
         abort_unless($actor && $course_work->teachingCourse, 403);
         $this->authorizeTeachingCourseAccess($course_work->teachingCourse, $actor);
-        $data = $request->validate(['date' => ['nullable', 'date_format:Y-m-d']]);
+        $data = $request->validate(['date' => ['nullable', 'date_format:Y-m-d'], 'check_module_questions' => ['sometimes', 'boolean']]);
+        if ($data['check_module_questions'] ?? false) {
+            $link = app(DropboxModuleLinks::class)->current($course_work);
+            abort_unless($link, 409, 'Für diese Arbeit ist kein Lernmodul bestätigt.');
+
+            $source = app(McModuleTemplateSource::class);
+            $catalog = $source->workCatalog($actor, $link);
+            try {
+                $assessmentPoints = $source->assessmentPoints($actor, $link);
+            } catch (Throwable) {
+                $assessmentPoints = null;
+            }
+
+            return response()->json(['module_questions' => $catalog !== null, 'assessment_points' => $assessmentPoints,
+                'module_catalog' => $catalog ? ['count' => count($catalog['questions']), 'fingerprint' => $catalog['fingerprint']] : null])
+                ->header('Cache-Control', 'private, no-store');
+        }
         $preview = $export->buildExercise($course_work, $actor, false, $data['date'] ?? null);
 
-        return response()->json($multipleChoice->options($course_work, $actor, $data['date'] ?? null, $preview['context']['work']))->header('Cache-Control', 'private, no-store');
+        $options = $multipleChoice->options($course_work, $actor, $data['date'] ?? null, $preview['context']['work']);
+        $test = $multipleChoice->linkedModuleTest($course_work, $actor, $data['date'] ?? null);
+        $options['eligible_test'] = $test ? ['id' => $test->id, 'title' => $test->title, 'total_points' => $test->total_points] : null;
+
+        return response()->json($options)->header('Cache-Control', 'private, no-store');
     }
 
     public function prepareExercise(Request $request, TeachingCourseWork $course_work, TeachingWorkAiExport $export, TeachingWorkMultipleChoice $multipleChoice, TeachingWorkExerciseGeneration $generation): JsonResponse
@@ -127,15 +148,16 @@ class CourseWorkController extends Controller
         abort_unless($actor && $course_work->teachingCourse, 403);
         $this->authorizeTeachingCourseAccess($course_work->teachingCourse, $actor);
         $data = $request->validate([
-            'date' => ['nullable', 'date_format:Y-m-d'], 'mc_mode' => ['required_unless:execution,openai', 'nullable', 'in:existing,new'],
+            'date' => ['nullable', 'date_format:Y-m-d'], 'mc_mode' => ['required_unless:execution,openai', 'nullable', 'in:existing,module'],
             'execution' => ['sometimes', 'in:openai'],
             'email_form_policy' => ['required_if:execution,openai', 'nullable', 'string', 'min:5', 'max:2000'],
             'instructions' => ['nullable', 'string', 'max:8000'],
             'test_id' => ['required_if:mc_mode,existing', 'nullable', 'integer', 'min:1'],
             'catalog_id' => ['required_if:mc_mode,new', 'nullable', 'integer', 'min:1'],
-            'question_count' => ['sometimes', 'required', 'integer', 'min:1', 'max:2000'],
+            'question_count' => ['required_if:mc_mode,module', 'integer', 'min:1', 'max:2000'],
             'total_points' => ['required_if:mc_mode,new', 'nullable', 'numeric', 'min:0.01', 'max:100000', 'decimal:0,2'],
-            'duration_minutes' => ['required_if:mc_mode,new', 'nullable', 'integer', 'min:1', 'max:1440'],
+            'duration_minutes' => ['required_if:mc_mode,module', 'nullable', 'integer', 'min:1', 'max:1440'],
+            'catalog_fingerprint' => ['required_if:mc_mode,module', 'nullable', 'string', 'size:64'],
             'mc_points' => ['required_with:mc_mode', 'numeric', 'min:0.01', 'max:100000', 'decimal:0,2'],
             'other_points' => ['sometimes', 'required', 'numeric', 'min:0', 'max:100000', 'decimal:0,2'],
             'expected_maximum_points' => ['required_with:mc_mode', 'numeric', 'min:0.01', 'max:100000', 'decimal:0,2'],
@@ -152,8 +174,21 @@ class CourseWorkController extends Controller
             if (empty($data['mc_mode'])) {
                 return $preview;
             }
+            $catalog = null;
+            if ($data['mc_mode'] === 'existing') {
+                $linkedTest = $multipleChoice->linkedModuleTest($work, $actor, $data['date'] ?? null, true);
+                abort_unless($linkedTest && (int) $linkedTest->id === (int) ($data['test_id'] ?? 0), 409,
+                    'Für diese Arbeit ist kein passender MC-Test aus dem verknüpften Lernmodul bestätigt.');
+            } else {
+                $link = app(DropboxModuleLinks::class)->current($work);
+                abort_unless($link, 409, 'Das Lernmodul ist nicht mehr bestätigt.');
+                $catalog = app(McModuleTemplateSource::class)->workCatalog($actor, $link);
+                abort_unless($catalog && hash_equals($catalog['fingerprint'], $data['catalog_fingerprint'])
+                    && $data['question_count'] <= count($catalog['questions']), 409,
+                    'Der Fragenkatalog hat sich geändert oder ist nicht eindeutig. Bitte erneut prüfen.');
+            }
             $mcData = array_diff_key($data, array_flip(['execution', 'email_form_policy', 'instructions']));
-            $test = $multipleChoice->prepare($work, $actor, $mcData, $preview['context']['course_roster']['participants'], $preview['context']['work']);
+            $test = $multipleChoice->prepare($work, $actor, $mcData, $preview['context']['course_roster']['participants'], $preview['context']['work'], $catalog);
 
             return $export->buildExercise($work, $actor, true, $data['date'] ?? null, $test);
         });
@@ -243,7 +278,23 @@ class CourseWorkController extends Controller
                     ->header('Cache-Control', 'private, no-store');
             }
 
-            return response()->json(['data' => $exercise ? $export->buildExercise($work, $actor, (bool) $data['include_mc'], $data['date'] ?? null)
+            $mc = null;
+            if ($exercise && (bool) $data['include_mc']) {
+                $test = app(TeachingWorkMultipleChoice::class)->linkedModuleTest($work, $actor, $data['date'] ?? null);
+                abort_unless($test && is_array($test->snapshot) && is_array($test->snapshot['questions'] ?? null), 409,
+                    'Für diese Arbeit ist kein vorbereiteter MC-Test aus dem verknüpften Lernmodul bestätigt.');
+                $slot = $data['date'] ?? $work->date_for_all_groups?->format('Y-m-d') ?? 'all';
+                $ready = $test->status === 'published' && $test->access_links_disabled_at === null;
+                $mc = ['test_id' => $test->id, 'catalog_id' => $test->catalog_id, 'title' => $test->title,
+                    'points_plan' => $work->status['multiple_choice_tests'][$slot]['points_plan'] ?? null,
+                    'status' => $test->status, 'question_count' => $test->question_count, 'total_points' => $test->total_points,
+                    'duration_seconds' => $test->duration_seconds, 'start_mode' => $test->start_mode,
+                    'closes_at' => $test->closes_at?->toIso8601String(), 'question_pool' => $test->snapshot['questions'],
+                    'access_links_ready' => $ready, 'exercise_export_url' => $ready
+                        ? route('admin.multiple-choice.tests.exercise-export', ['test' => $test->id]) : null];
+            }
+
+            return response()->json(['data' => $exercise ? $export->buildExercise($work, $actor, (bool) $data['include_mc'], $data['date'] ?? null, $mc)
                 : $export->build($work, $actor)])
                 ->header('Cache-Control', 'private, no-store');
         });

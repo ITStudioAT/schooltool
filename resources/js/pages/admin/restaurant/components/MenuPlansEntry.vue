@@ -1046,7 +1046,7 @@
                             </tr>
                         </thead>
                         <tbody>
-                            <tr v-for="booking in bookingsDialogData" :key="booking.id">
+                            <tr v-for="booking in bookingsDialogData" :key="`${booking.id}:${booking.portion_index}`">
                                 <td>
                                     <div>{{ booking.ordered_for }}</div>
                                     <div
@@ -1059,13 +1059,13 @@
                                 <td class="text-right">{{ booking.quantity }}</td>
                                 <td>{{ booking.booked_at || '–' }}</td>
                                 <td v-if="bookingsDialogCanDelete" class="text-right">
-                                    <v-btn
+                                    <v-btn v-if="booking.portion_token"
                                         icon="mdi-close"
                                         size="x-small"
                                         variant="text"
                                         color="error"
-                                        title="Buchung löschen"
-                                        :data-testid="`delete-booking-${booking.id}`"
+                                        title="Portion löschen"
+                                        :data-testid="`delete-booking-${booking.id}-${booking.portion_index}`"
                                         @click="requestDeleteBooking(booking)" />
                                 </td>
                             </tr>
@@ -1078,6 +1078,9 @@
                             </tr>
                         </tfoot>
                     </v-table>
+                    <p v-if="bookingsDialogCanDelete && bookingsDialogData.some(booking => !booking.portion_token)" class="text-caption mt-2">
+                        Ohne eindeutige Zuordnung oder einen passenden Portionspreis ist kein einzelnes Storno möglich.
+                    </p>
                 </v-card-text>
 
                 <v-card-actions class="px-6 pb-5">
@@ -1089,9 +1092,9 @@
 
         <v-dialog v-model="deleteBookingDialog" max-width="480" persistent data-testid="delete-booking-dialog">
             <v-card rounded="xl">
-                <v-card-title>Buchung löschen</v-card-title>
+                <v-card-title>Portion löschen</v-card-title>
                 <v-card-text>
-                    Soll diese Buchung wirklich gelöscht werden?
+                    Soll die Portion für {{ deleteBookingTarget?.ordered_for }} wirklich gelöscht werden?
                 </v-card-text>
                 <v-card-actions class="px-6 pb-5">
                     <v-spacer />
@@ -1551,7 +1554,7 @@ export default {
             createBookingSearchTimer: null,
             createBookingSaving: false,
             deleteBookingDialog: false,
-            deleteBookingTargetId: null,
+            deleteBookingTarget: null,
             isDeletingBooking: false,
             isDeletingPlan: false,
             hasPlanBookings: false,
@@ -2425,7 +2428,7 @@ export default {
             this.bookingsDialog = true
 
             try {
-                const response = await axios.get(`/api/admin/restaurant/menu-plans/${this.planId}/entries/${entry.id}/bookings`)
+                const response = await axios.get(`/api/admin/restaurant/menu-plans/${this.planId}/entries/${entry.id}/booking-portions`)
                 this.bookingsDialogData = response?.data?.data || []
                 this.bookingsDialogCanDelete = response?.data?.meta?.can_delete_bookings === true
             } catch (error) {
@@ -2607,11 +2610,11 @@ export default {
         },
 
         requestDeleteBooking(booking) {
-            if (! this.bookingsDialogCanDelete || ! booking?.id) {
+            if (! this.bookingsDialogCanDelete || ! booking?.id || ! booking.portion_token || this.isDeletingBooking) {
                 return
             }
 
-            this.deleteBookingTargetId = booking.id
+            this.deleteBookingTarget = { ...booking }
             this.deleteBookingDialog = true
         },
 
@@ -2621,26 +2624,28 @@ export default {
             }
 
             this.deleteBookingDialog = false
-            this.deleteBookingTargetId = null
+            this.deleteBookingTarget = null
         },
 
         async confirmDeleteBooking() {
-            if (! this.planId || ! this.bookingsDialogEntryId || ! this.deleteBookingTargetId) {
+            if (! this.planId || ! this.bookingsDialogEntryId || ! this.deleteBookingTarget || this.isDeletingBooking) {
                 return
             }
 
             this.isDeletingBooking = true
 
             try {
-                await axios.delete(`/api/admin/restaurant/menu-plans/${this.planId}/entries/${this.bookingsDialogEntryId}/bookings/${this.deleteBookingTargetId}`)
+                const target = this.deleteBookingTarget
+                await axios.delete(`/api/admin/restaurant/menu-plans/${this.planId}/entries/${this.bookingsDialogEntryId}/bookings/${target.id}/portions/${target.portion_index}`,
+                    { data: { portion_token: target.portion_token } })
 
-                this.bookingsDialogData = this.bookingsDialogData.filter((booking) => booking.id !== this.deleteBookingTargetId)
+                await this.openBookingsDialog({ id: this.bookingsDialogEntryId, menuTitle: this.bookingsDialogEntryTitle })
                 await this.loadExistingPlan(this.planId)
                 this.isDeletingBooking = false
                 this.cancelDeleteBooking()
 
                 useNotificationStore().notify({
-                    message: 'Buchung wurde gelöscht.',
+                    message: 'Portion wurde gelöscht.',
                     type: 'success',
                     timeout: 2200,
                 })
