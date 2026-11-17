@@ -23,6 +23,8 @@
                 <v-alert v-else-if="currentWork.status?.student_distribution?.withdrawn_at" type="info" variant="tonal" class="mb-3">Die Aufgabenfreigabe wurde zurückgenommen. Du kannst die Aufgabe erneut pausiert vorbereiten und später bewusst freigeben. Gespeicherte MC-Zeiten und vorhandene Versuche bleiben erhalten.</v-alert>
                 <v-textarea v-model="instructions" label="Aufgabentext" :disabled="saving" :maxlength="20000" auto-grow rows="5" />
                 <v-checkbox v-for="file in existingFiles" :key="file.id" v-model="retainedFileIds" :value="file.id" :label="file.name" :disabled="saving" density="compact" hide-details />
+                <v-btn v-if="deferAssignment && available && !assignmentFile" variant="tonal" size="small" prepend-icon="mdi-file-search-outline"
+                    :loading="assignmentLoading" :disabled="saving || assignmentLoading" class="mb-3" @click="loadRequestedAssignment">Aufgaben-PDF laden</v-btn>
                 <div v-if="assignmentFile" class="mb-3">
                     <span>Aufgabenstellung aus „{{ assignmentSection }}“:</span>
                     <v-btn variant="text" size="small" color="primary" prepend-icon="mdi-file-pdf-box" @click="openPreview">{{ assignmentFile.name }}</v-btn>
@@ -62,8 +64,8 @@
                 <v-spacer />
                 <v-btn :disabled="saving || loading" @click="dialog = false">Abbrechen</v-btn>
                 <v-btn v-if="!ready && !loading" @click="open">Erneut laden</v-btn>
-                <v-btn v-if="ready && !dialogPublished" color="primary" variant="flat" :loading="saving" :disabled="mcLoading || !!mcError" @click="save(false)">{{ dialogPrepared ? 'Vorbereitung speichern' : 'Pausiert vorbereiten' }}</v-btn>
-                <v-btn v-if="ready && (dialogPrepared || dialogPublished)" color="success" variant="flat" :loading="saving" :disabled="mcLoading || !!mcError" @click="save(true)">{{ dialogPublished ? 'Freigabe aktualisieren' : 'Jetzt freigeben' }}</v-btn>
+                <v-btn v-if="ready && !dialogPublished" color="primary" variant="flat" :loading="saving" :disabled="mcLoading || !!mcError || assignmentLoading" @click="save(false)">{{ dialogPrepared ? 'Vorbereitung speichern' : 'Pausiert vorbereiten' }}</v-btn>
+                <v-btn v-if="ready && (dialogPrepared || dialogPublished)" color="success" variant="flat" :loading="saving" :disabled="mcLoading || !!mcError || assignmentLoading" @click="save(true)">{{ dialogPublished ? 'Freigabe aktualisieren' : 'Jetzt freigeben' }}</v-btn>
             </v-card-actions>
         </v-card>
     </v-dialog>
@@ -84,11 +86,12 @@ import { show, studentDistribution, studentDistributionPreview } from '@/actions
 import { folders } from '@/actions/App/Http/Controllers/Admin/Teaching/WorkDropboxController'
 import CurriculumPdfPreview from '../../curricula/CurriculumPdfPreview.vue'
 
-const props = defineProps({ work: { type: Object, required: true }, date: { type: String, default: '' }, available: Boolean, disabled: Boolean })
+const props = defineProps({ work: { type: Object, required: true }, date: { type: String, default: '' }, available: Boolean, disabled: Boolean, deferAssignment: Boolean })
 const emit = defineEmits(['saved'])
 const dialog = ref(false)
 const saving = ref(false)
 const loading = ref(false)
+const assignmentLoading = ref(false)
 const ready = ref(false)
 const currentWork = ref(null)
 const error = ref('')
@@ -185,11 +188,13 @@ async function readAssignmentPdf(fileId) {
 async function loadAssignment() {
     const entries = []
     let cursor = null
+    let sharedAssignment = false
     for (let page = 0; page < 10; page++) {
         const response = await axios.get(folders.url(props.work.id), {
             params: { ...assignmentParams.value, ...(cursor ? { cursor } : {}) }, timeout: 120000,
         })
         entries.push(...response.data.entries)
+        sharedAssignment ||= response.data.shared_assignment === true
         assignmentSection.value = response.data.root?.name || 'Angaben'
         cursor = response.data.cursor
         if (!cursor) break
@@ -197,7 +202,7 @@ async function loadAssignment() {
     if (cursor) throw new Error('Die Aufgabenliste konnte nicht vollständig geladen werden.')
     const filenamePattern = assignmentSection.value === 'Quellunterlagen'
         ? /^(?:Aufgabenstellung|Leistungsfeststellung)_.+\.pdf$/i : /^Aufgabenstellung_.+\.pdf$/i
-    const candidates = [...new Map(entries.filter(entry => entry.type === 'file' && filenamePattern.test(entry.name))
+    const candidates = [...new Map(entries.filter(entry => entry.type === 'file' && (sharedAssignment || filenamePattern.test(entry.name)))
         .map(entry => [entry.id, entry])).values()]
     if (candidates.length !== 1) throw new Error(`Unter „${assignmentSection.value}“ wurde keine eindeutige Aufgabenstellungs-PDF gefunden. Bitte ein Aufgaben-PDF auswählen.`)
     const candidate = candidates[0]
@@ -207,6 +212,26 @@ async function loadAssignment() {
     assignmentFile.value = new File([pdf], candidate.name, { type: 'application/pdf' })
     assignmentFileId.value = candidate.id
     setLoadStep('pdf', 'completed')
+}
+
+async function loadRequestedAssignment() {
+    if (assignmentLoading.value || saving.value) return
+    assignmentLoading.value = true
+    assignmentWarning.value = ''
+    setLoadStep('assignment', 'running')
+    setLoadStep('pdf', 'pending')
+    try {
+        await loadAssignment()
+        if (!instructions.value?.trim()) instructions.value = 'Siehe Aufgaben-PDF.'
+    } catch (failure) {
+        for (const step of loadSteps.value.filter(step => ['assignment', 'pdf'].includes(step.id))) {
+            if (step.state === 'running') setLoadStep(step.id, 'failed')
+            else if (step.state === 'pending') setLoadStep(step.id, 'blocked')
+        }
+        assignmentWarning.value = failure.response?.data?.message || failure.message || 'Die Aufgabenstellung konnte nicht geladen werden. Bitte ein Aufgaben-PDF auswählen.'
+    } finally {
+        assignmentLoading.value = false
+    }
 }
 
 async function open() {
@@ -237,7 +262,7 @@ async function open() {
         setLoadStep('work', 'completed')
         if (Object.keys(work.status?.multiple_choice_tests || {}).length) await loadMcTests()
         else setLoadStep('mc', 'skipped', 'Kein MC-Test verknüpft')
-        if (!work.local_task_copy && !work.status?.student_distribution?.published_at && !work.status?.student_distribution?.prepared_at && props.available) {
+        if (!work.local_task_copy && !work.status?.student_distribution?.published_at && !work.status?.student_distribution?.prepared_at && props.available && !props.deferAssignment) {
             setLoadStep('assignment', 'running')
             try {
                 await loadAssignment()
@@ -254,7 +279,7 @@ async function open() {
             }
         } else {
             const savedTasks = work.local_task_copy || work.status?.student_distribution?.published_at || work.status?.student_distribution?.prepared_at
-            setLoadStep('assignment', 'skipped', savedTasks ? 'Gespeicherte Aufgaben verwenden' : 'Kein automatischer PDF-Import erforderlich')
+            setLoadStep('assignment', 'skipped', savedTasks ? 'Gespeicherte Aufgaben verwenden' : props.deferAssignment ? 'Aufgaben-PDF bei Bedarf laden' : 'Kein automatischer PDF-Import erforderlich')
             setLoadStep('pdf', 'skipped')
         }
         instructions.value = work.status?.student_distribution?.instructions
@@ -272,7 +297,7 @@ async function open() {
 }
 
 async function save(releaseNow) {
-    if (saving.value || mcLoading.value || mcError.value) return
+    if (saving.value || mcLoading.value || mcError.value || assignmentLoading.value) return
     if (!instructions.value?.trim() && !assignmentFile.value && files.value.length === 0 && retainedFileIds.value.length === 0) {
         error.value = 'Bitte einen Aufgabentext eingeben oder ein Aufgaben-PDF auswählen.'
         return

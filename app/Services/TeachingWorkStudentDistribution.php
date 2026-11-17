@@ -74,7 +74,7 @@ class TeachingWorkStudentDistribution
         }
     }
 
-    /** @return list<array{test: McTest, attempts: Collection<int, McAttempt>}> */
+    /** @return list<array{test: McTest, attempts: Collection<int, McAttempt>, active_attempts: Collection<int, McAttempt>}> */
     private function mcTests(TeachingCourseWork $work, bool $lock = false): array
     {
         $bindings = $work->status['multiple_choice_tests'] ?? [];
@@ -265,6 +265,23 @@ class TeachingWorkStudentDistribution
         return array_values(array_unique($ids));
     }
 
+    /** @return list<int> */
+    public function verifiedMcGroupAccounts(TeachingCourseWork $work, string $slot, bool $lock = false): array
+    {
+        $active = $this->mcGroupAccounts($work, $slot, $lock)['active'];
+        if ($active === []) {
+            throw ValidationException::withMessages(['mc_selection' => 'Für diesen Termin ist keine aktive Prüfungsgruppe mit Schülerkonten zugeordnet.']);
+        }
+
+        return $active;
+    }
+
+    /** @return list<int> */
+    public function verifiedInactiveMcGroupAccounts(TeachingCourseWork $work, string $slot, bool $lock = false): array
+    {
+        return $this->mcGroupAccounts($work, $slot, $lock)['inactive'];
+    }
+
     /** @return array{active: list<int>, inactive: list<int>} */
     private function mcGroupAccounts(TeachingCourseWork $work, string $slot, bool $lock = false): array
     {
@@ -345,6 +362,49 @@ class TeachingWorkStudentDistribution
                 $query->whereRaw('JSON_CONTAINS(JSON_EXTRACT(status, ?), ?)', ['$.multiple_choice_tests.*.test_id', json_encode((int) $attempt->test_id, JSON_THROW_ON_ERROR)])
                     ->orWhereRaw('JSON_CONTAINS(JSON_EXTRACT(status, ?), ?)', ['$.multiple_choice_tests.*.test_id', json_encode((string) $attempt->test_id, JSON_THROW_ON_ERROR)]);
             })->exists();
+    }
+
+    public function isVerifiedWorkTestForStudent(McAttempt $attempt, User $student): bool
+    {
+        $test = $attempt->test;
+        if (! $test || (int) $attempt->student_id !== (int) $student->id || (int) $test->school_id !== (int) $student->school_id) {
+            return false;
+        }
+        $works = TeachingCourseWork::query()->with('teachingCourse')
+            ->whereHas('teachingCourse', fn ($query) => $query->where('school_id', $test->school_id)
+                ->where('schoolyear_id', $test->schoolyear_id)->where('user_id', $test->owner_id))
+            ->where(function ($query) use ($test): void {
+                $query->whereRaw('JSON_CONTAINS(JSON_EXTRACT(status, ?), ?)', ['$.multiple_choice_tests.*.test_id', json_encode((int) $test->id, JSON_THROW_ON_ERROR)])
+                    ->orWhereRaw('JSON_CONTAINS(JSON_EXTRACT(status, ?), ?)', ['$.multiple_choice_tests.*.test_id', json_encode((string) $test->id, JSON_THROW_ON_ERROR)]);
+            })->get();
+        foreach ($works as $work) {
+            foreach ($work->status['multiple_choice_tests'] ?? [] as $slot => $binding) {
+                if (! is_array($binding) || (int) ($binding['work_id'] ?? 0) !== (int) $work->id
+                    || (int) ($binding['test_id'] ?? 0) !== (int) $test->id) {
+                    continue;
+                }
+                try {
+                    $sourceIds = $work->teachingCourse->teachingCourseStudentsWithTrashed()->whereNull('user_id')
+                        ->whereHas('import116', fn ($query) => $query->where('user_id', $student->id))->pluck('import116_id')
+                        ->map(fn ($id): int => (int) $id)->all();
+                    $sourceIds[] = (int) $student->id;
+                    $personalWork = clone $work;
+                    $personalWork->groups = array_map(function (array $group) use ($sourceIds): array {
+                        $group['student_ids'] = array_values(array_filter($group['student_ids'] ?? [],
+                            fn ($id): bool => in_array((int) $id, $sourceIds, true)));
+
+                        return $group;
+                    }, $work->groups ?? []);
+                    if ($this->verifiedMcGroupAccounts($personalWork, (string) $slot) === [(int) $student->id]) {
+                        return true;
+                    }
+                } catch (ValidationException) {
+                    continue;
+                }
+            }
+        }
+
+        return false;
     }
 
     /** @param list<UploadedFile> $uploads

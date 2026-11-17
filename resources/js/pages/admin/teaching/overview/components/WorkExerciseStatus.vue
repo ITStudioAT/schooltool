@@ -12,7 +12,7 @@
         <v-card>
             <v-card-title class="text-wrap">Leistungsfeststellung · {{ work.title || 'Ohne Titel' }}</v-card-title>
             <v-card-text>
-                <v-alert :type="historical || assignmentReady ? 'success' : 'warning'" variant="tonal" class="mb-4">{{ historical ? 'Bestehende Leistungsfeststellung – gespeicherte Originalnachweise vorhanden.' : assignmentReady ? 'Aufgabenstellung erstellt – Prüfungsordner bestätigt.' : 'Prüfungsordner bestätigt; die Aufgabenstellung ist noch nicht bestätigt.' }}</v-alert>
+                <v-alert :type="historical || assignmentReady || prepared ? 'success' : 'warning'" variant="tonal" class="mb-4">{{ historical ? 'Bestehende Leistungsfeststellung – gespeicherte Originalnachweise vorhanden.' : prepared ? 'Leistungsfeststellung vorbereitet.' : assignmentReady ? 'Aufgabenstellung erstellt – Prüfungsordner bestätigt.' : 'Prüfungsordner bestätigt; die Aufgabenstellung ist noch nicht bestätigt.' }}</v-alert>
                 <p v-if="checkTime" class="text-caption mb-3">Letzter Check: {{ checkTime }}</p>
                 <dl class="exercise-info">
                     <template v-for="item in details" :key="item.label">
@@ -25,13 +25,14 @@
                 </template>
                 <h3 class="text-subtitle-2 mt-4 mb-1">Prüfungsordner</h3>
                 <p class="exercise-info-path text-body-2">{{ folder?.path || folder?.name || 'Der Prüfungsordner ist derzeit nicht bestätigt. Gespeicherte Nachweise bleiben erhalten.' }}</p>
-                <div v-if="folder?.id" class="d-flex flex-wrap ga-2 mt-4" aria-label="Prüfungsunterlagen">
+                <div v-if="folder?.id && !prepared" class="d-flex flex-wrap ga-2 mt-4" aria-label="Prüfungsunterlagen">
                     <WorkExercisePdf v-for="section in ['Angaben', 'Bewertungskriterien']" :key="section" :work="work" :date="date" :section="section" />
                     <WorkEvaluationPdf :work="work" />
                 </div>
             </v-card-text>
             <v-card-actions class="flex-wrap">
                 <v-spacer />
+                <v-btn v-if="prepared && canCreate" @click="opened = false; emit('create')">Leistungsfeststellung erstellen</v-btn>
                 <v-btn @click="opened = false">Schließen</v-btn>
             </v-card-actions>
         </v-card>
@@ -39,7 +40,7 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { workAutomationEnabled } from '@/helpers/workAutomation'
 import { workLinkedMcTestTitle, workNeedsPreparation } from '@/helpers/workOverview'
@@ -49,7 +50,7 @@ import { workHasProgress } from '@/helpers/workProgress'
 import WorkExercisePdf from './WorkExercisePdf.vue'
 import WorkEvaluationPdf from './WorkEvaluationPdf.vue'
 
-const props = defineProps({ work: Object, course: Object, date: { type: String, default: '' }, state: Object, size: { type: [Number, String], default: 30 }, disabled: Boolean, canCreate: Boolean })
+const props = defineProps({ work: Object, course: Object, date: { type: String, default: '' }, state: Object, size: { type: [Number, String], default: 30 }, disabled: Boolean, canCreate: Boolean, recheck: Function })
 const emit = defineEmits(['create'])
 const admin = useAdminStore()
 const binding = computed(() => workDropboxStates.get(workDropboxKey(admin.config?.user?.id, props.work)))
@@ -75,12 +76,14 @@ const status = computed(() => {
     return state.status
 })
 const assignmentReady = computed(() => props.state?.assignmentStatus === 'ready')
-const color = computed(() => props.disabled ? 'grey' : historical.value || (status.value === 'found' && assignmentReady.value) ? 'success'
+const prepared = computed(() => status.value === 'found' && props.state?.preparation?.status === 'ready')
+const color = computed(() => props.disabled ? 'grey' : historical.value || (status.value === 'found' && (assignmentReady.value || prepared.value)) ? 'success'
     : status.value === 'found' ? 'warning' : status.value === 'missing' ? 'error' : 'grey')
 const tooltip = computed(() => {
     if (props.disabled) return 'Zuerst den Lernmaterialordner verknüpfen'
     if (historical.value) return folder.value?.id ? `Leistungsfeststellung erstellt: ${folder.value.name}`
         : 'Bestehende Leistungsfeststellung – gespeicherte Nachweise ansehen'
+    if (prepared.value) return 'Leistungsfeststellung vorbereitet'
     if (status.value === 'found') return assignmentReady.value ? `Leistungsfeststellung erstellt: ${props.state.folder?.name || ''}`
         : 'Prüfungsordner vorhanden; Aufgabenstellung noch nicht bestätigt'
     if (status.value === 'missing') return 'Leistungsfeststellung noch nicht erstellt'
@@ -120,8 +123,13 @@ const details = computed(() => {
         ...(work.is_group_work && groups.value.length ? [{ label: 'Prüfungsgruppe', value: groups.value
             .map(group => group.name || `Gruppe ${group.index + 1}`).join(', ') }] : []),
         { label: 'Teilnehmer:innen aktuell', value: participants.value === null ? 'Nicht bestätigt' : String(participants.value) },
+        ...(prepared.value ? [
+            { label: 'Prüfungspunkte Aufgabenblatt', value: String(props.state.preparation.components.aufgabenblatt.points) },
+            { label: 'Prüfungspunkte MC', value: props.state.preparation.components.multiple_choice.included ? String(props.state.preparation.components.multiple_choice.points) : 'Nicht einbezogen' },
+            { label: 'Prüfungspunkte gesamt', value: String(props.state.preparation.total_points) },
+        ] : []),
         ...(maximumPoints !== null && maximumPoints !== undefined && Number.isFinite(Number(maximumPoints))
-            ? [{ label: 'Maximale Punkte', value: new Intl.NumberFormat('de-AT').format(Number(maximumPoints)) }] : []),
+            ? [{ label: prepared.value ? 'Schooltool-Bewertungsskala' : 'Maximale Punkte', value: new Intl.NumberFormat('de-AT').format(Number(maximumPoints)) }] : []),
         { label: 'Beurteilung', value: workAutomationEnabled(work) ? 'Automatische Beurteilung' : 'Manuelle Beurteilung' },
         ...(linkedMcTests.value.length ? [{ label: linkedMcTests.value.length === 1 ? 'MC-Test' : 'MC-Tests', value: linkedMcTests.value.join(', ') }] : []),
         { label: 'Hauptfrist', value: deadline(work.finish_until_date, work.finish_until_time) },
@@ -138,8 +146,13 @@ function deadline(date, time, empty = 'Nicht festgelegt') {
     return `${displayDate(date)}${time ? `, ${time.slice(0, 5)} Uhr` : ''}`
 }
 
-function openDialog() {
-    if (accessible.value && !historical.value && status.value === 'missing') {
+async function openDialog() {
+    if (!accessible.value) return
+    if (props.recheck) {
+        await props.recheck()
+        await nextTick()
+    }
+    if (accessible.value && !historical.value && status.value === 'missing' && props.canCreate) {
         emit('create')
         return
     }

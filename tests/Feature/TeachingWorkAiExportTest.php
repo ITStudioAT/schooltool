@@ -18,6 +18,9 @@ use App\Models\TeachingWorkDropboxFolder;
 use App\Models\TeachingWorkModuleLink;
 use App\Models\User;
 use App\Services\DropboxModuleLinks;
+use App\Services\MultipleChoice\McModuleTemplateSource;
+use App\Services\TeachingWorkAiExport;
+use App\Services\TeachingWorkMultipleChoice;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
@@ -122,6 +125,44 @@ test('email preparation exports a confirmed exercise with the chosen form and a 
         ->and($this->work->fresh()->getAttributes())->toEqual($before);
     Http::assertNothingSent();
 })->with(['du', 'sie']);
+
+test('modern exam email preparation uses the AI 2027 skill and requires no send authorization', function (): void {
+    Http::preventStrayRequests();
+    $connection = DropboxConnection::factory()->create(['user_id' => $this->teacher->id]);
+    TeachingWorkModuleLink::query()->create(['teaching_course_work_id' => $this->work->id, 'dropbox_connection_id' => $connection->id,
+        'account_id' => $connection->account_id, 'module_id' => 'a263b873-4f27-4167-90f0-7d94ea0f67fa', 'schema_version' => 1,
+        'handshake_file_id' => 'id:handshake', 'handshake_revision' => 'rev1', 'folder_id' => 'id:module', 'folder_name' => 'Modul', 'folder_path' => '/Materialien/Modul']);
+    $this->partialMock(DropboxModuleLinks::class)->shouldReceive('exercise')->once()->andReturn([
+        'status' => 'found', 'folder' => ['id' => 'id:exercise'], 'preparation' => ['status' => 'ready'],
+    ]);
+    $before = $this->work->fresh()->getAttributes();
+    $data = $this->getJson($this->url.'?purpose=email_preparation&date=2026-10-20&address_form=du')->assertOk()->json('data');
+    expect($data['context']['email_address_form'])->toBe('sie')
+        ->and($data['context']['delivery']['send_authorized'])->toBeFalse()
+        ->and($data['context']['exercise_folder']['id'])->toBe('id:exercise')
+        ->and($data['text'])->toContain('/AI 2027/10_Arbeitsbereiche/Schule/Skills/Leistungsfeststellungen/E-Mail-Versand vorbereiten/SKILL.md',
+            'status.json', 'Kandidaten/<Person>/Angaben', 'E-Mail-Vorlage/<Person>', 'preview.html', 'receipt.json', 'kein Nachweis',
+            'keine MC-PDFs, Katalogdateien oder persönlichen MC-Links', 'ausdrücklich dieser Prüfung zugeordnete weitere Beilagen')
+        ->and($data['text'])->not->toContain('Schooltool-Versandvorbereitung.json', 'send-exercise-via-email');
+    expect($this->work->fresh()->getAttributes())->toEqual($before);
+    Http::assertNothingSent();
+});
+
+test('modern exam dispatch rejects a legacy ready flag', function (): void {
+    Http::preventStrayRequests();
+    $connection = DropboxConnection::factory()->create(['user_id' => $this->teacher->id]);
+    TeachingWorkModuleLink::query()->create(['teaching_course_work_id' => $this->work->id, 'dropbox_connection_id' => $connection->id,
+        'account_id' => $connection->account_id, 'module_id' => 'a263b873-4f27-4167-90f0-7d94ea0f67fa', 'schema_version' => 1,
+        'handshake_file_id' => 'id:handshake', 'handshake_revision' => 'rev1', 'folder_id' => 'id:module', 'folder_name' => 'Modul', 'folder_path' => '/Materialien/Modul']);
+    $this->partialMock(DropboxModuleLinks::class)->shouldReceive('exercise')->once()->andReturn([
+        'status' => 'found', 'folder' => ['id' => 'id:exercise'], 'preparation' => ['status' => 'ready'],
+        'email_preparation' => ['status' => 'ready'],
+    ]);
+
+    $this->getJson($this->url.'?purpose=email_dispatch&delivery_mode=live')->assertUnprocessable()
+        ->assertJsonPath('message', 'Der E-Mail-Versand für diesen Prüfungsaufbau ist noch nicht eingerichtet.');
+    Http::assertNothingSent();
+});
 
 test('email dispatch references the confirmed preparation with the explicitly selected delivery mode', function (string $deliveryMode, bool $local): void {
     $this->app['env'] = $local ? 'local' : 'production';
@@ -295,24 +336,17 @@ beforeEach(function () {
     $this->actingAs($this->teacher, 'sanctum');
 });
 
-test('exercise handoff respects explicit MC selection and exports only active saved work candidates without changing work data', function (bool $mc): void {
+test('exercise handoff ignores stale MC selection and exports only active saved work candidates without changing work data', function (bool $mc): void {
     Http::preventStrayRequests();
     $other = User::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->year->id,
         'first_name' => 'Andere', 'last_name' => 'Person', 'schoolclass' => 'Abend']);
     TeachingCourseStudent::query()->create(['teaching_course_id' => $this->course->id, 'user_id' => $other->id, 'canceled_at' => null]);
     $this->work->update(['groups' => [['name' => 'Prüfungsgruppe', 'date' => '2026-10-20', 'student_ids' => [$this->student->id]]]]);
     $before = $this->work->fresh()->getAttributes();
-    if ($mc) {
-        $this->getJson($this->url.'?purpose=exercise&include_mc=1&date=2026-10-20')->assertConflict();
-        expect($this->work->fresh()->getAttributes())->toEqual($before);
-        Http::assertNothingSent();
-
-        return;
-    }
-    $data = $this->getJson($this->url.'?purpose=exercise&include_mc='.(int) $mc.'&date=2026-10-20')
+    $data = $this->getJson($this->url.'?purpose=exercise&include_mc='.(int) $mc.'&date=2026-10-20&mc_points=99&other_points=19')
         ->assertOk()->assertHeader('Cache-Control', 'no-store, private')->json('data');
 
-    expect($data['context']['include_multiple_choice'])->toBe($mc);
+    expect($data['context']['include_multiple_choice'])->toBeFalse();
     expect($data['context']['grading_policy'])->toMatchArray(['email_form_decision_required' => true,
         'email_form_components' => ['Betreff', 'Anrede', 'Inhalt', 'Signatur'], 'recheck_points_when_mc_changes' => true,
         'mc_changes_after_task_delivery_allowed' => false]);
@@ -320,28 +354,39 @@ test('exercise handoff respects explicit MC selection and exports only active sa
     expect($data['context']['course_roster']['participants'][0]['schooltool_person_id'])->toBe((string) $this->student->id);
     expect($data['context']['work']['groups'][0]['name'])->toBe('Prüfungsgruppe');
     expect($data['context']['work']['main_deadline'])->toBe(['date' => '2026-10-21', 'time' => '20:15']);
-    expect($data['text'])->toContain('Skill create-exercise', 'keine zweite Schooltool-Arbeit', 'Modul: nicht verknüpft',
-        $mc ? 'Multiple-Choice-Fragen einbeziehen: Ja.' : 'Multiple-Choice-Fragen einbeziehen: Nein.');
+    expect($data['context']['purpose'])->toBe('leistungsfeststellungen-erstellen');
+    expect($data['text'])->toContain('leistungsfeststellungen-erstellen', 'Leistungsfeststellungen erstellen',
+        '/AI 2027/10_Arbeitsbereiche/Schule/Skills/Leistungsfeststellungen/Erstellen/SKILL.md',
+        'keine zweite Schooltool-Arbeit', 'Modul: nicht verknüpft', 'persönlichen Ordnern',
+        'included: false und points: null', 'keine persönlichen MC-PDFs')
+        ->not->toContain('create-exercise', 'Bestandsprüfer', 'Kriterienraster dokumentieren', 'Bewertungskriterien konsistent abstimmen und aktualisieren',
+            'passenden MC-Fragen im bestätigten Dropbox-Lernmodul online zu', 'MC-Anteil:');
     expect($data['text'])->not->toContain('Andere');
+    preg_match('/```json\n(.*?)\n```/s', $data['text'], $match);
+    $handoff = json_decode($match[1], true, flags: JSON_THROW_ON_ERROR);
+    expect($handoff['include_multiple_choice'])->toBeFalse()
+        ->and($handoff)->not->toHaveKey('multiple_choice_test')
+        ->and($handoff['module_source_subfolders'])->not->toHaveKey('multiple_choice')
+        ->and($handoff['assessment_points'])->not->toHaveKey('mc_selected');
     expect($this->work->fresh()->getAttributes())->toEqual($before);
     Http::assertNothingSent();
 })->with([false, true]);
 
-test('exercise handoff excludes inactive accounts while retaining historical null activity as active', function (): void {
+test('exercise handoff excludes inactive accounts while retaining historical null activity as active', function (string $mcSelection): void {
     $this->student->forceFill(['is_active' => false])->save();
     $nullActivity = User::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->year->id, 'is_active' => null]);
     TeachingCourseStudent::query()->create(['teaching_course_id' => $this->course->id, 'user_id' => $nullActivity->id, 'canceled_at' => null]);
     $this->work->update(['groups' => [['date' => '2026-10-20', 'student_ids' => [$this->student->id, $nullActivity->id]]]]);
     $before = $this->work->fresh()->getAttributes();
 
-    $data = $this->getJson($this->url.'?purpose=exercise&include_mc=0&date=2026-10-20')->assertOk()->json('data');
+    $data = $this->getJson($this->url.'?purpose=exercise&date=2026-10-20'.$mcSelection)->assertOk()->json('data');
 
     expect($data['participants_count'])->toBe(1)
         ->and(array_column($data['context']['course_roster']['participants'], 'schooltool_person_id'))->toBe([(string) $nullActivity->id])
         ->and(array_map('strval', $data['context']['work']['groups'][0]['schooltool_student_ids']))->toBe([(string) $nullActivity->id])
         ->and($this->work->fresh()->getAttributes())->toBe($before)
         ->and($this->student->fresh()->is_active)->toBeFalsy();
-});
+})->with(['explicit MC off' => '&include_mc=0', 'default MC off' => '']);
 
 test('exercise handoff excludes cancelled memberships and does not revive a cancelled assigned candidate', function (): void {
     $this->membership->update(['canceled_at' => now()]);
@@ -349,6 +394,21 @@ test('exercise handoff excludes cancelled memberships and does not revive a canc
     TeachingCourseStudent::query()->create(['teaching_course_id' => $this->course->id, 'user_id' => $other->id, 'canceled_at' => null]);
     $this->work->update(['groups' => [['student_ids' => [$this->student->id]]]]);
     $this->getJson($this->url.'?purpose=exercise&include_mc=0')->assertUnprocessable()->assertJsonValidationErrors('roster');
+});
+
+test('modern copied order excludes stale MC test data and MC points even when supplied by a caller', function (): void {
+    $this->mock(TeachingWorkMultipleChoice::class)->shouldReceive('configuration')->once()->andReturn(['locked' => false]);
+    $result = app(TeachingWorkAiExport::class)->buildExercise($this->work, $this->teacher, true, '2026-10-20', [
+        'test_id' => 123, 'points_plan' => ['other_points' => 19, 'mc_points' => 99, 'maximum_points' => 118],
+        'question_pool' => [['question' => 'Unzulässige Testfrage']],
+    ], ['verified' => false, 'points' => 35]);
+
+    preg_match('/```json\n(.*?)\n```/s', $result['text'], $match);
+    $handoff = json_decode($match[1], true, flags: JSON_THROW_ON_ERROR);
+    expect($handoff['assessment_points']['total'])->toEqual(35)
+        ->and($handoff['include_multiple_choice'])->toBeFalse()
+        ->and($handoff)->not->toHaveKey('multiple_choice_test')
+        ->and($result['text'])->not->toContain('Unzulässige Testfrage', 'MC-Anteil:', '118 Punkte');
 });
 
 test('exercise handoff includes a real saved module path and identity without treating an import directory as the module', function (): void {
@@ -361,13 +421,93 @@ test('exercise handoff includes a real saved module path and identity without tr
     $data = $this->getJson($this->url.'?purpose=exercise&include_mc=0')->assertOk()->json('data');
 
     expect($data['context']['module_binding']['module_id'])->toBe('A263B873-4f27-4167-90f0-7d94ea0f67fa');
-    expect($data['text'])->toContain('Modul: verknüpft – Dropbox: /Materialien/Lerninhalte/Modul', 'Assessment Template', 'Multiple Choice Fragen');
+    expect($data['text'])->toContain('Modul: verknüpft – Dropbox: /Materialien/Lerninhalte/Modul', 'Assessment Template');
     expect($data['text'])->not->toContain('Keine Arbeitsordnerbindung');
     Http::assertNothingSent();
 });
 
-test('exercise handoff requires a conscious MC choice and a real saved date and permits authorized manual work text export', function (): void {
-    $this->getJson($this->url.'?purpose=exercise')->assertUnprocessable()->assertJsonValidationErrors('include_mc');
+test('exercise copy uses verified module as target and its points without exposing the work type scale', function (): void {
+    $connection = DropboxConnection::factory()->create(['user_id' => $this->teacher->id]);
+    TeachingWorkModuleLink::query()->create(['dropbox_connection_id' => $connection->id,
+        'teaching_course_work_id' => $this->work->id, 'module_id' => 'A263B873-4f27-4167-90f0-7d94ea0f67fa', 'schema_version' => 1,
+        'account_id' => $connection->account_id, 'folder_id' => 'id:module', 'folder_name' => 'Word',
+        'folder_path' => '/Materialien/Lerninhalte/Word', 'handshake_file_id' => 'id:handshake', 'handshake_revision' => 'r1']);
+    $this->mock(McModuleTemplateSource::class)->shouldReceive('assessmentPoints')->andReturn(35.0);
+    $before = $this->work->fresh()->getAttributes();
+    $data = $this->getJson($this->url.'?purpose=exercise&include_mc=0&date=2026-10-20')->assertOk()->json('data');
+    expect($data['text'])->toContain('Vorgesehener Dropbox-Ziel-Überordner: /Materialien/Lerninhalte/Word',
+        'Prüfungsvorlage: 35 Standardpunkte.', 'Gesamt: 35 Punkte.',
+        'Beurteilung.md', 'Beurteilung.pdf direkt im Prüfungsordner neben Kandidaten',
+        'Angaben, Abgaben und Auswertung', 'vorhandene geprüfte Aufgabenblatt als PDF',
+        'erstellen Sie keine persönlichen MC-PDFs',
+        'zusätzliche ausdrücklich eingegebene Vorgaben für den Vorlagenteil haben Vorrang');
+    expect($data['text'])->not->toContain('Erstellen oder ändern Sie keine Prüfungsvorlagen, Fragen, Tests, Teilnehmerdateien');
+    preg_match('/```json\n(.*?)\n```/s', $data['text'], $match);
+    $handoff = json_decode($match[1], true, flags: JSON_THROW_ON_ERROR);
+    expect($handoff['assessment_target_parent']['dropbox_folder_id'])->toBe('id:module')
+        ->and($handoff['assessment_target_parent']['dropbox_path'])->toBe('/Materialien/Lerninhalte/Word')
+        ->and($handoff['assessment_target_parent']['default_unless_explicit_target'])->toBeTrue()
+        ->and($handoff['assessment_points']['template_standard'])->toEqual(35)
+        ->and($handoff['assessment_points']['total'])->toEqual(35)
+        ->and($handoff['work']['scheduled_date'])->toBe('2026-10-20')
+        ->and($handoff['work'])->not->toHaveKeys(['type', 'type_definition', 'maximum_points', 'maximum_plus'])
+        ->and($this->work->fresh()->getAttributes())->toBe($before);
+    expect($data['context']['work']['type'])->toBe('LF')->and($data['context']['work']['maximum_points'])->toEqual(5);
+});
+
+test('unverified module or unavailable points are not invented in the exercise copy', function (bool $throws): void {
+    $connection = DropboxConnection::factory()->create(['user_id' => $this->teacher->id]);
+    TeachingWorkModuleLink::query()->create(['dropbox_connection_id' => $connection->id,
+        'teaching_course_work_id' => $this->work->id, 'module_id' => 'A263B873-4f27-4167-90f0-7d94ea0f67fa', 'schema_version' => 1,
+        'account_id' => $connection->account_id, 'folder_id' => 'id:module', 'folder_name' => 'Word',
+        'folder_path' => '/Materialien/Lerninhalte/Word', 'handshake_file_id' => 'id:handshake', 'handshake_revision' => 'r1']);
+    $mock = $this->mock(McModuleTemplateSource::class)->shouldReceive('assessmentPoints');
+    $throws ? $mock->andThrow(new RuntimeException('Offline')) : $mock->andReturn(null);
+    $data = $this->getJson($this->url.'?purpose=exercise&include_mc=0')->assertOk()->json('data');
+    expect($data['text'])->toContain('Standardpunkte nicht eindeutig ermittelt')
+        ->not->toContain('Prüfungsvorlage: 5 Standardpunkte.');
+    if ($throws) {
+        expect($data['text'])->toContain('Dropbox-Ziel-Überordner: nicht eindeutig zugeordnet');
+    }
+})->with([false, true]);
+
+test('a changed template total invalidates the earlier dialog value before copying', function (): void {
+    $connection = DropboxConnection::factory()->create(['user_id' => $this->teacher->id]);
+    TeachingWorkModuleLink::query()->create(['dropbox_connection_id' => $connection->id,
+        'teaching_course_work_id' => $this->work->id, 'module_id' => 'A263B873-4f27-4167-90f0-7d94ea0f67fa', 'schema_version' => 1,
+        'account_id' => $connection->account_id, 'folder_id' => 'id:module', 'folder_name' => 'Word',
+        'folder_path' => '/Materialien/Lerninhalte/Word', 'handshake_file_id' => 'id:handshake', 'handshake_revision' => 'r1']);
+    $this->mock(McModuleTemplateSource::class)->shouldReceive('assessmentPoints')->andReturn(30.0);
+    $this->getJson($this->url.'?purpose=exercise&include_mc=0&template_points_snapshot=35')->assertConflict();
+});
+
+test('exercise handoff preserves verified template points and explicitly requests a proportional target', function (string $target, float $expected): void {
+    $connection = DropboxConnection::factory()->create(['user_id' => $this->teacher->id]);
+    TeachingWorkModuleLink::query()->create(['dropbox_connection_id' => $connection->id,
+        'teaching_course_work_id' => $this->work->id, 'module_id' => 'A263B873-4f27-4167-90f0-7d94ea0f67fa', 'schema_version' => 1,
+        'account_id' => $connection->account_id, 'folder_id' => 'id:module', 'folder_name' => 'Word',
+        'folder_path' => '/Materialien/Lerninhalte/Word', 'handshake_file_id' => 'id:handshake', 'handshake_revision' => 'r1']);
+    $this->mock(McModuleTemplateSource::class)->shouldReceive('assessmentPoints')->andReturn(35.0);
+    $before = $this->work->fresh()->getAttributes();
+    $data = $this->getJson($this->url.'?purpose=exercise&template_points_snapshot=35&template_points_target='.$target)->assertOk()->json('data');
+
+    preg_match('/```json\n(.*?)\n```/s', $data['text'], $match);
+    $handoff = json_decode($match[1], true, flags: JSON_THROW_ON_ERROR);
+    expect($handoff['assessment_points'])->toMatchArray(['template_standard' => 35, 'template_selected' => $expected,
+        'template_selection' => 'specified', 'total' => $expected])
+        ->and($data['text'])->toContain('proportional auf dieses Ziel um', 'die Vorlage bleibt unverändert')
+        ->and($this->work->fresh()->getAttributes())->toBe($before);
+})->with([['20', 20.0], ['20.5', 20.5]]);
+
+test('exercise handoff rejects invalid point targets and requires the confirmed standard snapshot', function (): void {
+    $this->getJson($this->url.'?purpose=exercise&template_points_snapshot=35&template_points_target=20.25')
+        ->assertUnprocessable()->assertJsonValidationErrors('template_points_target');
+    $this->getJson($this->url.'?purpose=exercise&template_points_target=20')
+        ->assertUnprocessable()->assertJsonValidationErrors('template_points_snapshot');
+});
+
+test('exercise handoff needs a real saved date and permits authorized manual work text export', function (): void {
+    $this->getJson($this->url.'?purpose=exercise')->assertOk();
     $this->getJson($this->url.'?purpose=exercise&include_mc=0&date=2026-11-25')->assertUnprocessable()->assertJsonValidationErrors('date');
     $this->work->update(['status' => ['automation_enabled' => false]]);
     $this->getJson($this->url.'?purpose=exercise&include_mc=0')->assertOk();

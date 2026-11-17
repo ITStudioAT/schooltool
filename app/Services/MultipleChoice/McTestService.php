@@ -5,6 +5,7 @@ namespace App\Services\MultipleChoice;
 use App\Models\McAttempt;
 use App\Models\McCatalog;
 use App\Models\McTest;
+use App\Models\TeachingCourseWork;
 use App\Models\User;
 use App\Services\TeachingWorkStudentDistribution;
 use Carbon\CarbonImmutable;
@@ -51,9 +52,9 @@ class McTestService
     }
 
     /** @param list<int|User> $students */
-    public function prepare(McTest $test, array $students, bool $lockAssignments = true): McTest
+    public function prepare(McTest $test, array $students, bool $lockAssignments = true, ?TeachingCourseWork $work = null, ?string $slot = null): McTest
     {
-        return DB::transaction(function () use ($test, $students, $lockAssignments): McTest {
+        return DB::transaction(function () use ($test, $students, $lockAssignments, $work, $slot): McTest {
             $locked = McTest::query()->lockForUpdate()->findOrFail($test->id);
             if ($locked->status === 'published' || $locked->snapshot !== null) {
                 return $locked;
@@ -75,7 +76,7 @@ class McTestService
             if ((int) $catalog->school_id !== (int) $locked->school_id || (int) $catalog->owner_id !== (int) $locked->owner_id) {
                 throw ValidationException::withMessages(['catalog_id' => 'Der Katalog gehört nicht zu diesem Lehrer und dieser Schule.']);
             }
-            $questions = array_values(array_filter($catalog->questions ?? [], fn (mixed $question): bool => is_array($question) && ($question['active'] ?? false) === true && ($question['reviewed'] ?? false) === true));
+            $questions = $catalog->questionsForTesting();
             $this->validateQuestions($questions);
             if (count($questions) < $locked->question_count) {
                 throw ValidationException::withMessages(['question_count' => 'Es sind zu wenige aktive, geprüfte Fragen vorhanden.']);
@@ -85,9 +86,22 @@ class McTestService
             if ($ids === []) {
                 throw ValidationException::withMessages(['students' => 'Mindestens ein zugeordnetes Schülerkonto ist erforderlich.']);
             }
-            $users = User::query()->where('school_id', $locked->school_id)
-                ->where(fn ($query) => $query->where('is_active', true)->orWhereNull('is_active'))
-                ->role('student')->whereIn('id', $ids)->get();
+            $usersQuery = User::query()->where('school_id', $locked->school_id)
+                ->where(fn ($query) => $query->where('is_active', true)->orWhereNull('is_active'))->whereIn('id', $ids);
+            if ($work !== null && $slot !== null) {
+                $course = $work->teachingCourse;
+                $verified = app(TeachingWorkStudentDistribution::class)->verifiedMcGroupAccounts($work, $slot, true);
+                $requested = $ids;
+                sort($requested, SORT_NUMERIC);
+                if (! $course || (int) $course->school_id !== (int) $locked->school_id
+                    || (int) $course->schoolyear_id !== (int) $locked->schoolyear_id
+                    || (int) $course->user_id !== (int) $locked->owner_id || $verified !== $requested) {
+                    throw ValidationException::withMessages(['students' => 'Die Prüfungskandidaten sind nicht eindeutig dieser Arbeit zugeordnet.']);
+                }
+            } else {
+                $usersQuery->role('student');
+            }
+            $users = $usersQuery->get();
             if ($users->count() !== count($ids)) {
                 throw ValidationException::withMessages(['students' => 'Alle Teilnehmer müssen Schülerkonten dieser Schule sein.']);
             }

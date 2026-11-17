@@ -41,6 +41,40 @@ function render(status = 'checking', props = {}) {
     } })
 }
 
+it('checks again before opening a prepared exercise and distinguishes its points from the school scale', async () => {
+    const preparation = { status: 'ready', components: { aufgabenblatt: { included: true, points: 35 },
+        multiple_choice: { included: false, points: null } }, total_points: 35 }
+    const recheck = vi.fn().mockResolvedValue(undefined)
+    const wrapper = render('found', { canCreate: true, recheck, work: { ...work, type: 'A5' },
+        course: { id: 2, teaching_entry_area: { entry_definitions: [{ category: 'Benotung', short_name: 'A5', maximum_points: 5 }] } },
+        state: { ...state, status: 'found', assignmentStatus: 'unknown', preparation } })
+    try {
+        expect(wrapper.get('v-icon').attributes('color')).toBe('success')
+        expect(wrapper.get('v-icon').attributes('aria-label')).toBe('Leistungsfeststellung vorbereitet')
+        await wrapper.get('[role="button"]').trigger('click')
+        expect(recheck).toHaveBeenCalledOnce()
+        const dialog = wrapper.get('[role="dialog"]')
+        for (const value of ['Leistungsfeststellung vorbereitet', 'Prüfungspunkte gesamt', '35', 'Schooltool-Bewertungsskala', '5', 'Nicht einbezogen']) {
+            expect(dialog.text()).toContain(value)
+        }
+        expect(dialog.text()).not.toContain('Aufgabenstellung ist noch nicht bestätigt')
+        await dialog.findAll('button').find(item => item.text() === 'Leistungsfeststellung erstellen')!.trigger('click')
+        expect(wrapper.emitted('create')).toHaveLength(1)
+    } finally { wrapper.unmount() }
+})
+
+it('does not open creation when a recheck of a previously missing status becomes unknown', async () => {
+    let wrapper: ReturnType<typeof render>
+    const recheck = vi.fn(async () => wrapper.setProps({ state: { ...state, status: 'unknown' } }))
+    wrapper = render('missing', { canCreate: true, recheck })
+    try {
+        await wrapper.get('[role="button"]').trigger('click')
+        expect(recheck).toHaveBeenCalledOnce()
+        expect(wrapper.emitted('create')).toBeUndefined()
+        expect(wrapper.get('v-icon').attributes('color')).toBe('grey')
+    } finally { wrapper.unmount() }
+})
+
 it('blocks the exercise dialog while folder-dependent actions are disabled', async () => {
     const wrapper = render('found', { disabled: true })
     try {

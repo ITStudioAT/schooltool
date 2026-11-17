@@ -246,6 +246,47 @@ test('multiple compatible files require a deliberate source selection', function
     expect($this->catalog->fresh()->questions)->toBe([]);
 });
 
+test('a merged module offers its confirmed source templates and checks the manifest again before saving', function (): void {
+    $sourcePath = $this->root.'/source-module';
+    $manifest = json_encode(['schema_version' => 1, 'type' => 'lernmodule-zusammenfuehrung',
+        'target' => ['id' => 'id:module', 'path' => $this->root.'/emails'],
+        'sources' => [['id' => 'id:source-module', 'path' => $sourcePath]]], JSON_THROW_ON_ERROR);
+    $this->documents = ['rev:manifest' => $manifest];
+    $this->entries[] = ['.tag' => 'file', 'id' => 'id:manifest', 'name' => 'lernmodule-zusammenfuehrung.json',
+        'path_lower' => $this->root.'/emails/lernmodule-zusammenfuehrung.json', 'rev' => 'manifest', 'size' => strlen($manifest)];
+    $this->entries[] = ['.tag' => 'folder', 'id' => 'id:source-module', 'name' => 'source-module', 'path_lower' => $sourcePath];
+    $this->entries[] = ['.tag' => 'folder', 'id' => 'id:source-mc', 'name' => 'Multiple Choice Fragen', 'path_lower' => $sourcePath.'/multiple choice fragen'];
+    $this->entries[] = ['.tag' => 'file', 'id' => 'id:source-question', 'name' => 'Vorlage.md',
+        'path_lower' => $sourcePath.'/multiple choice fragen/vorlage.md', 'rev' => 'source-question', 'size' => strlen($this->template)];
+    fakeMcModuleSource($this);
+
+    $this->postJson($this->url, mcModuleRequest($this))->assertOk()->assertJsonCount(2, 'sources')->assertJsonMissingPath('source_proof');
+    $data = $this->postJson($this->url, mcModuleRequest($this) + ['source_id' => 'id:source-question'])
+        ->assertOk()->assertJsonPath('module_source.source_file_id', 'id:source-question')->json();
+    $this->patchJson('/api/admin/multiple-choice/catalogs/'.$this->catalog->id, ['title' => $this->catalog->title,
+        'questions' => $data['preview']['questions'], 'module_source_proofs' => [$data['source_proof']]])
+        ->assertOk()->assertJsonPath('catalog.module_sources.0.source_file_id', 'id:source-question');
+
+    $this->documents['rev:changed'] = $manifest;
+    $this->entries[5]['rev'] = 'changed';
+    $this->patchJson('/api/admin/multiple-choice/catalogs/'.$this->catalog->id, ['title' => $this->catalog->title,
+        'questions' => $data['preview']['questions'], 'module_source_proofs' => [$data['source_proof']]])->assertConflict();
+});
+
+test('a merged module cannot reference a folder outside the confirmed learning content root', function (): void {
+    $manifest = json_encode(['schema_version' => 1, 'type' => 'lernmodule-zusammenfuehrung',
+        'target' => ['id' => 'id:module', 'path' => $this->root.'/emails'],
+        'sources' => [['id' => 'id:private', 'path' => '/private']]], JSON_THROW_ON_ERROR);
+    $this->documents = ['rev:manifest' => $manifest];
+    $this->entries[] = ['.tag' => 'file', 'id' => 'id:manifest', 'name' => 'lernmodule-zusammenfuehrung.json',
+        'path_lower' => $this->root.'/emails/lernmodule-zusammenfuehrung.json', 'rev' => 'manifest', 'size' => strlen($manifest)];
+    fakeMcModuleSource($this);
+
+    $this->postJson($this->url, mcModuleRequest($this))->assertUnprocessable();
+    expect($this->catalog->fresh()->questions)->toBe([]);
+    Http::assertNotSent(fn (Request $request): bool => str_ends_with($request->url(), '/files/get_metadata') && $request['path'] === 'id:private');
+});
+
 test('a legacy questions folder can be previewed and its source remains verifiable when saving', function (string $folderName): void {
     $this->entries[2] = array_replace($this->entries[2], ['name' => $folderName, 'path_lower' => $this->root.'/emails/fragenkatalog']);
     $this->entries[4]['path_lower'] = $this->root.'/emails/fragenkatalog/questions.md';

@@ -210,7 +210,9 @@ class TeachingWorkMultipleChoice
     /** @return array{locked: bool, message: ?string, maximum_points: ?float} */
     public function configuration(TeachingCourseWork $work, User $actor, ?string $date, array $workContext, bool $refresh = false): array
     {
-        $locked = ! empty($work->status['student_distribution']['published_at']) || app(TeachingWorkFolderImport::class)->availabilitySources($work, [], []) !== [];
+        $locked = ! empty($work->status['student_distribution']['published_at'])
+            || ! empty($work->status['student_distribution']['prepared_at'])
+            || app(TeachingWorkFolderImport::class)->availabilitySources($work, [], []) !== [];
         $message = $locked ? 'Die Leistungsfeststellung wurde bereits versendet oder bereitgestellt. MC-Fragen können nicht mehr ergänzt oder geändert werden.' : null;
         $modules = app(DropboxModuleLinks::class);
         $link = $modules->current($work);
@@ -220,8 +222,12 @@ class TeachingWorkMultipleChoice
                 $locked = true;
                 $message = 'Der Aufgabenversand kann nicht geprüft werden. Bitte die Ordnerverbindung und den LF-Status erneut prüfen.';
             } else {
-                $exercise = $modules->exercise($connection, $work, $link, $date, refresh: $refresh, initial: false);
+                // A cached missing result can predate a newly created exam; always check the current folder before changing MC.
+                $exercise = $modules->exercise($connection, $work, $link, $date, refresh: true, initial: false);
                 $dispatch = $exercise['email_dispatch'] ?? [];
+                if (($exercise['status'] ?? null) === 'found' && ($exercise['preparation']['status'] ?? null) === 'ready') {
+                    $dispatch = $modules->preparedExerciseDispatch($connection, $work, $link, $date);
+                }
                 if (in_array($dispatch['status'] ?? null, ['sent', 'partial'], true) || ($dispatch['confirmed_count'] ?? 0) > 0) {
                     $locked = true;
                     $message = 'Der Aufgabenversand hat bereits begonnen. MC-Fragen können nicht mehr ergänzt oder geändert werden.';
@@ -238,7 +244,7 @@ class TeachingWorkMultipleChoice
             'maximum_points' => is_numeric($maximum) && (float) $maximum > 0 ? round((float) $maximum, 2) : null];
     }
 
-    private function newTestTitle(TeachingCourseWork $work, ?string $date): string
+    public function newTestTitle(TeachingCourseWork $work, ?string $date): string
     {
         $course = $work->teachingCourse;
         $courseTitle = trim($course->title);

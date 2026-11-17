@@ -21,6 +21,11 @@ class TeachingWorkCollectionStatus
         return Cache::store('file')->get($this->key($work));
     }
 
+    public function forget(TeachingCourseWork $work): void
+    {
+        Cache::store('file')->forget($this->key($work));
+    }
+
     /** @param (callable(string): void)|null $onProgress */
     public function refresh(TeachingCourseWork $work, User $actor, ?array $freshExercise = null, ?array $freshLink = null, ?callable $onProgress = null): void
     {
@@ -136,7 +141,7 @@ class TeachingWorkCollectionStatus
             abort_unless(count($proofs) === 1, 422, 'Der tatsächliche Einsammelabschluss ist nicht eindeutig belegt.');
             $proof = $this->document($connection, $proofs[0]['id'] ?? '', $root['root']['path'].'/Abgabeprotokolle/');
             abort_unless(($proofs[0]['revision'] ?? null) === $proof['revision']
-                && ($proofs[0]['dropbox_path'] ?? null) === $proof['path']
+                && $this->sameCollectionRelativePath($proofs[0]['dropbox_path'] ?? null, $proof['path'])
                 && hash_equals($proofs[0]['sha256'] ?? '', hash('sha256', $proof['contents'])),
                 409, 'Der Einsammelabschluss weicht vom gespeicherten Herkunftsbeleg ab.');
             $run = $this->parse($work, $storage, $this->json($proof['contents']));
@@ -154,6 +159,19 @@ class TeachingWorkCollectionStatus
         $lastChange = collect($runs)->firstWhere('changes_detected', true);
 
         return $runs[0] + ['last_changed_at' => $lastChange['completed_at'] ?? null];
+    }
+
+    private function sameCollectionRelativePath(mixed $recorded, string $actual): bool
+    {
+        if (! is_string($recorded) || ! str_starts_with($recorded, '/') || preg_match('#(?:^|/)(?:\.|\.\.)(?:/|$)#', $recorded)) {
+            return false;
+        }
+        $marker = '/Abgabeprotokolle/';
+        $recordedAt = strrpos($recorded, $marker);
+        $actualAt = strrpos($actual, $marker);
+
+        return $recordedAt !== false && $actualAt !== false
+            && substr($recorded, $recordedAt) === substr($actual, $actualAt);
     }
 
     private function localEmailCheck(DropboxConnection $connection, TeachingCourseWork $work, string $folderId, array $rootEntries, array $entries, array $proof, array $run): ?array

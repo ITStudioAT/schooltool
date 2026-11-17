@@ -1625,13 +1625,13 @@
                                     <WorkContextCopy v-if="savedWorkDialogWork" :work="savedWorkDialogWork" :course="selected_course" :date="workDialog.courseDate?.date || ''" />
                                     <WorkExerciseExport ref="workExerciseExport" :work="savedWorkDialogWork || workDialogForm" :course="selected_course" :date="workDialog.courseDate?.date || ''" :active="workDialog.open" :disabled="workSaving || workDialogTypeEditing || workDialogModeEditing" :check-progress="workHasProgress(savedWorkDialogWork)" :deadline-draft="{ date: normalizeDateKey(workDialogForm.finish_until_date), time: workDialogForm.finish_until_time }" hide-folder-name hide-activator hide-mc-test hide-check-time @exercise-status="workDialogExerciseStatus = $event" @progress-checked="workDialogProgressCheck = $event" @deadline-saved="applyExerciseDeadline" @check-busy="workSaving = $event" />
                                 </div>
-                                <p v-if="workDialogFolderLinked && workDialogExerciseFolderName && !workDialogExerciseReady" class="text-caption mt-2" role="status">Die Aufgabenstellung ist noch nicht bestätigt. Nach ihrer Erstellung erneut prüfen.</p>
+                                <p v-if="workDialogFolderLinked && workDialogExerciseFolderName && !workDialogExerciseReady && workDialogExerciseStatus?.preparation?.status !== 'ready'" class="text-caption mt-2" role="status">Die Aufgabenstellung ist noch nicht bestätigt. Nach ihrer Erstellung erneut prüfen.</p>
                             </section>
                             <div class="d-flex flex-wrap justify-end ga-2 mt-4">
                                 <span v-if="savedWorkDialogWork" class="work-dialog-status-icons d-flex align-center ga-2 mr-auto align-self-center"
                                     :inert="workSaving" :aria-disabled="workSaving" :class="{ 'work-status-checking': workSaving }">
                                     <WorkFolderStatus :work="savedWorkDialogWork" :date="workDialog.courseDate?.date || ''" :size="30" />
-                                    <WorkExerciseStatus :work="savedWorkDialogWork" :course="selected_course" :date="workDialog.courseDate?.date || ''" :state="workDialogExerciseStatus" :size="30" :disabled="!workDialogFolderLinked || workSaving || workDialogTypeEditing || workDialogModeEditing" can-create @create="$refs.workExerciseExport?.openDialog()" />
+                                    <WorkExerciseStatus :work="savedWorkDialogWork" :course="selected_course" :date="workDialog.courseDate?.date || ''" :state="workDialogExerciseStatus" :size="30" :disabled="!workDialogFolderLinked || workSaving || workDialogTypeEditing || workDialogModeEditing" :recheck="() => $refs.workExerciseExport?.recheck()" can-create @create="$refs.workExerciseExport?.openDialog()" />
                                     <WorkDeliveryStatus :work="savedWorkDialogWork" :date="workDialog.courseDate?.date || ''" :state="workDialogExerciseStatus" :exercise-ready="workDialogExerciseReady" :size="30" :disabled="(!workDialogFolderLinked || !workDialogExerciseReady) && !savedWorkDialogWork?.local_task_copy && !savedWorkDialogWork?.status?.student_distribution?.published_at && !savedWorkDialogWork?.status?.student_distribution?.prepared_at" @import="openImport" @saved="applySavedCourseWork({ data: $event })" />
                                 </span>
                                 <v-btn
@@ -1651,9 +1651,9 @@
                             </div>
                             <div class="d-flex flex-wrap justify-space-between align-end ga-2 mt-2 text-caption text-medium-emphasis">
                                 <div>
-                                    <WorkFolderBrowser v-if="workDialogExerciseFolderName" :work="savedWorkDialogWork" exercise :date="workDialog.courseDate?.date || ''" :disabled="workSaving">
-                                        <template #default="{ open }">
-                                            <div><button type="button" class="work-dialog-exercise-folder text-primary" aria-label="Leistungsfeststellungsordner öffnen" @click.stop="open">LF: {{ workDialogExerciseFolderName }}</button></div>
+                                    <WorkFolderBrowser v-if="workDialogExerciseFolderName" ref="workDialogExerciseFolderBrowser" :work="savedWorkDialogWork" exercise :date="workDialog.courseDate?.date || ''" :disabled="workSaving">
+                                        <template #default>
+                                            <div><button type="button" class="work-dialog-exercise-folder text-primary" aria-label="Leistungsfeststellungsordner öffnen" @click.stop="openCheckedExerciseFolder">LF: {{ workDialogExerciseFolderName }}</button></div>
                                         </template>
                                     </WorkFolderBrowser>
                                     <div v-if="workDialogLinkedMcTest">MC-Test: {{ workDialogLinkedMcTest }}</div>
@@ -3309,8 +3309,18 @@ export default {
             const status = { ...work.status }
             Object.values(workManualCompletionFields).forEach(field => { delete status[field] })
 
-            const currentReady = this.workDialogExerciseFolderName && this.workDialogExerciseStatus?.assignmentStatus === 'ready'
-            const cachedReady = checked?.status === 'found' && checked.data?.exercise?.assignment_status === 'ready'
+            const state = this.workDialogExerciseStatus
+            const currentMatches = state && state.userId === useAdminStore().config?.user?.id
+                && String(state.workId) === String(work.id) && String(state.courseId) === String(work.teaching_course_id)
+                && state.date === (this.workDialog.courseDate?.date || '')
+            const cachedNewer = checked && Date.parse(checked.checkedAt) > Date.parse(state?.checkedAt || 0)
+            if (currentMatches && state.status === 'checking') return false
+            if (currentMatches && !cachedNewer && state.status !== 'found') return false
+            if ((!currentMatches || cachedNewer) && checked?.status === 'unknown') return false
+            const currentReady = currentMatches && !cachedNewer && this.workDialogExerciseFolderName
+                && (state.assignmentStatus === 'ready' || state.preparation?.status === 'ready')
+            const cachedReady = (!currentMatches || cachedNewer) && checked?.status === 'found'
+                && (checked.data?.exercise?.assignment_status === 'ready' || checked.data?.exercise?.preparation?.status === 'ready')
             return Boolean(currentReady || cachedReady
                 || (workHasProgress({ ...work, status }) && !workNeedsPreparation(work, this.workFolderState(work))))
         },
@@ -3497,6 +3507,11 @@ export default {
     },
 
     methods: {
+        async openCheckedExerciseFolder() {
+            await this.$refs.workExerciseExport?.recheck()
+            await this.$nextTick()
+            if (this.workDialogExerciseStatus?.status === 'found') this.$refs.workDialogExerciseFolderBrowser?.open()
+        },
         workHasProgress,
         workAutomationEnabled,
         workDeadlineColor,

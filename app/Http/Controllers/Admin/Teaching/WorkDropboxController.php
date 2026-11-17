@@ -46,11 +46,24 @@ class WorkDropboxController extends Controller
             'refresh_collection' => ['sometimes', 'boolean'],
             'progress_id' => ['sometimes', 'uuid'],
             'stream_progress' => ['sometimes', 'boolean'],
+            'status_only' => ['sometimes', 'boolean'],
         ]);
         if ($data['stream_progress'] ?? false) {
             $request->merge(['stream_progress' => false]);
 
             return app(TeachingWorkRefreshProgress::class)->stream($request, fn (): JsonResponse => $this->refresh($request, $course_work, $dropbox, $deadlines));
+        }
+        if ($data['status_only'] ?? false) {
+            $request->merge(['include_exercise' => true, 'refresh' => true]);
+            $response = $this->show($course_work, $dropbox);
+            $body = $response->getData(true);
+            $body['saved_work'] = app(TeachingCourseWorkEntrySyncService::class)->serializeWork($course_work->load('teachingCourseWorkGroupStudents'));
+            $body['progress'] = ['state' => ($body['exercise']['status'] ?? 'unknown') === 'unknown' ? 'failed' : 'done',
+                'active' => null, 'completed' => ['connection', 'folder', 'verification'], 'skipped' => [],
+                'steps' => ['connection', 'folder', 'verification']];
+            $response->setData($body);
+
+            return $response;
         }
         $progressService = app(TeachingWorkRefreshProgress::class);
         $progressKey = isset($data['progress_id']) ? $progressService->key($actor, $course_work, $data['progress_id']) : null;
@@ -84,8 +97,9 @@ class WorkDropboxController extends Controller
                 $work->finish_until_time = $data['finish_until_time'];
                 $deadlines->metadata($work, ['MitgeteilteAbgabefrist' => $work->communicatedDeadline()['at'] ?? null,
                     'Schooltool_Fristdaten' => ['communicated_deadline' => $work->communicatedDeadline()]]);
-                $result = $exercise['status'] === 'found' ? $deadlines->sync($connection, $work, $exercise['folder'])
-                    : ['changed' => false, 'message' => 'Frist gespeichert; die Leistungsfeststellung wurde noch nicht erstellt.'];
+                $result = $exercise['status'] === 'found' && ($exercise['preparation']['status'] ?? null) !== 'ready' ? $deadlines->sync($connection, $work, $exercise['folder'])
+                    : ['changed' => false, 'message' => ($exercise['preparation']['status'] ?? null) === 'ready'
+                        ? 'Frist in Schooltool gespeichert.' : 'Frist gespeichert; die Leistungsfeststellung wurde noch nicht erstellt.'];
                 if ($work->isDirty(['finish_until_date', 'finish_until_time'])) {
                     $work->save();
                     app(TeachingCourseWorkEntrySyncService::class)->syncWork($work);
@@ -318,22 +332,46 @@ class WorkDropboxController extends Controller
             }
             if (filled($data['section'] ?? null)) {
                 abort_unless($request->boolean('exercise'), 422, 'Prüfungsunterlagen erfordern eine bestätigte Leistungsfeststellung.');
-                $rootContents = app(DropboxFolderContents::class)->read($connection, $rootId);
-                $sections = array_values(array_filter($rootContents['entries'], fn (array $entry): bool => $entry['type'] === 'folder'
-                    && $entry['name'] === $data['section']));
-                if ($sections === [] && $rootContents['cursor'] === null && ! $module
-                    && isset($legacyFolders['exercise']) && $data['section'] === 'Angaben') {
+                if (($exercise['preparation']['status'] ?? null) === 'ready' && $data['section'] === 'Angaben') {
+                    abort_unless($request->boolean('verify_exercise') && ! filled($data['folder_id'] ?? null)
+                        && ! filled($data['cursor'] ?? null), 409, 'Das gemeinsame Aufgabenblatt muss aktuell geprüft werden.');
+                    $sharedAssignment = $modules->preparedSharedAssignment($connection, $course_work, $exercise, $data['date'] ?? null);
+                    abort_unless(is_array($sharedAssignment), 409, 'Das gemeinsame Aufgabenblatt konnte nicht eindeutig aus den persönlichen Angaben bestätigt werden. Bitte ein Aufgaben-PDF auswählen.');
+                    $rootId = $sharedAssignment['folder_id'];
+                } else {
+                    $rootContents = app(DropboxFolderContents::class)->read($connection, $rootId);
                     $sections = array_values(array_filter($rootContents['entries'], fn (array $entry): bool => $entry['type'] === 'folder'
-                        && $entry['name'] === 'Quellunterlagen'));
+                        && $entry['name'] === $data['section']));
+                    if ($sections === [] && $rootContents['cursor'] === null && ! $module
+                        && isset($legacyFolders['exercise']) && $data['section'] === 'Angaben') {
+                        $sections = array_values(array_filter($rootContents['entries'], fn (array $entry): bool => $entry['type'] === 'folder'
+                            && $entry['name'] === 'Quellunterlagen'));
+                    }
+                    abort_unless(count($sections) === 1 && $rootContents['cursor'] === null, 404, 'Dieser Bereich ist im Prüfungsordner noch nicht verfügbar.');
+                    $rootId = $sections[0]['id'];
                 }
-                abort_unless(count($sections) === 1 && $rootContents['cursor'] === null, 404, 'Dieser Bereich ist im Prüfungsordner noch nicht verfügbar.');
-                $rootId = $sections[0]['id'];
             }
             $contents = app(DropboxFolderContents::class)->read($connection, $rootId, $data['folder_id'] ?? null, $data['cursor'] ?? null, $excludedFolders);
+            if (isset($sharedAssignment)) {
+                $files = array_values(array_filter($contents['entries'], fn (array $entry): bool => $entry['type'] === 'file'
+                    && $entry['id'] === $sharedAssignment['file_id'] && $entry['name'] === $sharedAssignment['name']));
+                $metadata = $dropbox->readModuleApi($connection, 'files/get_metadata', ['path' => $sharedAssignment['file_id']])->json();
+                abort_unless(count($files) === 1 && ($metadata['.tag'] ?? null) === 'file'
+                    && ($metadata['id'] ?? null) === $sharedAssignment['file_id'] && ($metadata['content_hash'] ?? null) === $sharedAssignment['content_hash']
+                    && ($metadata['size'] ?? null) === $sharedAssignment['size'], 409, 'Das gemeinsame Aufgabenblatt wurde verändert. Bitte erneut prüfen.');
+                $contents = ['root' => ['id' => $exercise['folder']['id'], 'name' => 'Angaben', 'path' => null],
+                    'current' => ['id' => $exercise['folder']['id'], 'name' => 'Angaben', 'path' => null],
+                    'entries' => $files, 'cursor' => null, 'shared_assignment' => true];
+            }
             if ($request->boolean('pdf')) {
                 abort_unless(collect($contents['entries'])->contains(fn (array $entry): bool => $entry['type'] === 'file'
                     && $entry['id'] === $data['file_id'] && preg_match('/\.pdf\z/i', $entry['name'])), 404, 'Die PDF gehört nicht zu diesem Prüfungsbereich.');
                 $pdf = app(DropboxFolderContents::class)->pdf($connection, $rootId, $data['file_id']);
+                if (isset($sharedAssignment)) {
+                    $after = $dropbox->readModuleApi($connection, 'files/get_metadata', ['path' => $sharedAssignment['file_id']])->json();
+                    abort_unless(($after['content_hash'] ?? null) === $sharedAssignment['content_hash'],
+                        409, 'Das gemeinsame Aufgabenblatt wurde verändert. Bitte erneut prüfen.');
+                }
             }
             if (isset($rootContents)) {
                 $scopePath = mb_strtolower($rootContents['root']['path']);

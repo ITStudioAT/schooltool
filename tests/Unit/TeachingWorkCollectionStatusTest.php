@@ -168,14 +168,19 @@ test('actual changes are distinguished from a successful unchanged check and fro
     'unknown comparison despite no newly saved files' => [['new_first_submissions' => null, 'changed_versions' => null, 'new_collection_events' => 0], null],
 ]);
 
-test('reading a repeat run verifies the bound original bytes and follows protocol pagination', function (bool $tampered): void {
+test('reading a repeat run verifies the bound original bytes and follows protocol pagination', function (string $scenario): void {
     $this->travelTo(now()->setDate(2026, 10, 24)->setTime(16, 0));
     [$work, $storage, $completion] = collectionRunFixture();
     $prefix = '/Materialien/Arbeit64/Abgabeprotokolle/';
     $proofPath = $prefix.'Pruefbelege/Laufabschluss_LokalePruefung.json';
     $proofBytes = json_encode($completion, JSON_THROW_ON_ERROR);
-    $storage['verified_files'] = [['id' => 'id:proof', 'revision' => 'revproof', 'dropbox_path' => $proofPath,
-        'sha256' => $tampered ? str_repeat('a', 64) : hash('sha256', $proofBytes)]];
+    $recordedPath = match ($scenario) {
+        'renamed' => str_replace('/Arbeit64/', '/Alter-Name/', $proofPath),
+        'wrong-relative' => str_replace('/Pruefbelege/', '/Anderer-Beleg/', $proofPath),
+        default => $proofPath,
+    };
+    $storage['verified_files'] = [['id' => 'id:proof', 'revision' => 'revproof', 'dropbox_path' => $recordedPath,
+        'sha256' => $scenario === 'tampered' ? str_repeat('a', 64) : hash('sha256', $proofBytes)]];
     $storageBytes = json_encode($storage, JSON_THROW_ON_ERROR);
     $connection = new DropboxConnection;
     $dropbox = Mockery::mock(DropboxWorkImport::class);
@@ -195,7 +200,7 @@ test('reading a repeat run verifies the bound original bytes and follows protoco
         $dropbox->shouldReceive('readModuleApi')->once()->with($connection, 'files/download', ['path' => 'rev:'.$revision])
             ->andReturn(new Response(new PsrResponse(200, [], $bytes)));
     }
-    if ($tampered) {
+    if (in_array($scenario, ['tampered', 'wrong-relative'], true)) {
         expect(fn () => $service->read($connection, $work, 'id:root'))->toThrow(HttpException::class);
 
         return;
@@ -203,7 +208,7 @@ test('reading a repeat run verifies the bound original bytes and follows protoco
     expect($service->read($connection, $work, 'id:root'))->toMatchArray([
         'completed_at' => '2026-10-24T13:46:16+00:00', 'origin' => 'dropbox_collection_run',
         'sha256' => hash('sha256', $storageBytes)]);
-})->with([false, true]);
+})->with(['unchanged', 'tampered', 'renamed', 'wrong-relative']);
 
 test('a later unchanged Dropbox scan retains the last actual change instead of concealing pending grading', function (): void {
     $this->travelTo(now()->setDate(2026, 10, 24)->setTime(18, 0));

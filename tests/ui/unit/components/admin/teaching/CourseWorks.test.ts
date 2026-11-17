@@ -72,6 +72,33 @@ describe('New work overview and assessment mode', () => {
         } finally { wrapper.unmount() }
     })
 
+    it('offers preparation for a verified modern exam and blocks a later failed check', async () => {
+        const work = { id: 65, teaching_course_id: 2, type: 'A5', title: 'Word', groups: [], status: {} }
+        const payload = { connected: true, module_link: { folder: { id: 'id:module' } }, exercise: {
+            status: 'found', folder: { id: 'id:exercise', name: '2026-11-02 – 5L1_Gruppe-1 – Word' }, assignment_status: 'unknown', preparation: { status: 'ready',
+                components: { aufgabenblatt: { included: true, points: 35 }, multiple_choice: { included: false, points: null } }, total_points: 35 },
+            email_preparation: { status: 'unknown' },
+        } }
+        const get = vi.fn().mockResolvedValue({ data: payload })
+        const post = vi.fn().mockResolvedValue({ data: payload })
+        vi.stubGlobal('axios', { get, post })
+        const wrapper = mountOverview(work)
+        try {
+            await flushPromises()
+            expect(wrapper.get('.work-row').text()).toContain('Aufgaben bereitstellen')
+            await wrapper.get('.work-row').trigger('click')
+            await flushPromises()
+            const delivery = wrapper.getComponent({ name: 'WorkDeliveryStatus' })
+            expect(delivery.props('exerciseReady')).toBe(true)
+            expect(delivery.props('disabled')).toBe(false)
+            ;(wrapper.vm as any).workExerciseStatus = { userId: 7, workId: 65, courseId: 2, date: '', status: 'unknown', checkedAt: new Date(Date.now() + 1000).toISOString() }
+            await flushPromises()
+            expect(delivery.props('exerciseReady')).toBe(false)
+            expect(delivery.props('disabled')).toBe(true)
+            expect(post).not.toHaveBeenCalled()
+        } finally { wrapper.unmount() }
+    })
+
     it('labels the overview card as a simulation as soon as a run is prepared', async () => {
         const work = { id: 65, teaching_course_id: 2, type: 'A5', title: 'Testarbeit', groups: [{ student_ids: [12] }], status: {},
             simulation_collection: { origin: 'mailpit_simulation', simulation: true, run_id: 'test-run', work_id: 65, course_id: 2,

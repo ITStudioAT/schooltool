@@ -7,6 +7,7 @@ use App\Models\School;
 use App\Models\Schoolyear;
 use App\Models\User;
 use App\Services\DropboxWorkImport;
+use App\Services\MultipleChoice\McCatalogTemplateSync;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\ConnectionException;
@@ -153,6 +154,22 @@ function mcTemplateSyncAdditionalQuestion(): array
         'options' => [['id' => 'local-a', 'text' => 'Outlook'], ['id' => 'local-b', 'text' => 'Taschenrechner']],
         'correct_option_ids' => ['local-a'], 'active' => true, 'reviewed' => true];
 }
+
+test('a template imported from a merged source reports the unsupported sync and never writes to Dropbox', function (): void {
+    $context = mcTemplateSyncContext();
+    mcTemplateSyncImport($this, $context);
+    $sources = $context->catalog->module_sources;
+    $sources[0]['merge_manifest'] = ['id' => 'id:manifest', 'rev' => 'manifest-rev'];
+    $sources[0]['source_module'] = ['id' => 'id:other-module', 'path' => '/school/materialien/lerninhalte/other'];
+    $context->catalog->update(['module_sources' => $sources]);
+
+    expect(app(McCatalogTemplateSync::class)->status($context->catalog)['message'])
+        ->toContain('Quellmodul');
+    $this->postJson($context->url.'/sync-preview')->assertConflict()
+        ->assertJsonPath('message', 'Der Abgleich für eine Vorlage aus einem verknüpften Quellmodul wird noch nicht unterstützt. Die Vorlage wurde nicht geändert.');
+    expect($context->uploads)->toBeEmpty();
+    Http::assertNotSent(fn (Request $request): bool => str_ends_with($request->url(), '/files/upload'));
+});
 
 test('template synchronization previews a local addition without saving and applies it only after confirmation', function (): void {
     $context = mcTemplateSyncContext();

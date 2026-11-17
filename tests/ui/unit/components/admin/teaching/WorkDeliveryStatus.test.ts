@@ -307,6 +307,57 @@ it('disables all workflow controls while the folder is not linked', async () => 
     } finally { wrapper.unmount() }
 })
 
+it('opens the modern preparation step without sending or publishing', async () => {
+    const get = vi.fn()
+    const post = vi.fn()
+    const put = vi.fn()
+    vi.stubGlobal('axios', { get, post, put })
+    const wrapper = mount(WorkDeliveryStatus, { props: {
+        work: { id: 65, teaching_course_id: 16, title: 'Word', status: { email_preparation_completed: true, task_dispatch_completed: true } }, date: '2026-10-16', exerciseReady: true,
+        state: { status: 'found', userId: 7, workId: 65, courseId: 16, date: '2026-10-16',
+            folder: { id: 'id:exercise' }, preparation: { status: 'ready' }, emailPreparation: { status: 'ready' }, emailDispatch: { status: 'sent' } },
+    }, global: {
+        plugins: [createTestingPinia({ createSpy: vi.fn, initialState: { AdminAdminStore: { config: { user: { id: 7 } } } } })],
+        stubs: { WorkStudentDistribution: { props: ['available'], template: '<button v-if="available">Im Schülerbereich bereitstellen</button>' },
+            'v-btn': { props: ['disabled'], template: '<button :disabled="disabled"><slot /></button>' },
+            'v-dialog': { props: ['modelValue'], template: '<section v-if="modelValue" role="dialog"><slot /></section>' } },
+    } })
+    try {
+        await wrapper.get('[data-workflow-stage="preparation"]').trigger('click')
+        expect(wrapper.get('[role="dialog"]').text()).toContain('Aufgaben bereitstellen')
+        expect(wrapper.get('[role="dialog"]').text()).toContain('Im Schülerbereich bereitstellen')
+        expect(wrapper.get('[role="dialog"]').text()).toContain('Der Prüfungsstatus bestätigt keine Versandbereitschaft')
+        expect(wrapper.findAll('button').some(button => button.text() === 'E-Mails vorbereiten')).toBe(true)
+        expect(wrapper.get('[data-workflow-stage="send"]').element.disabled).toBe(true)
+        expect(wrapper.findAll('button').some(button => button.text() === 'Versandbereitschaft ansehen')).toBe(false)
+        expect(get).not.toHaveBeenCalled()
+        expect(post).not.toHaveBeenCalled()
+        expect(put).not.toHaveBeenCalled()
+    } finally { wrapper.unmount(); vi.unstubAllGlobals() }
+})
+
+it('closes an open legacy send dialog when the modern examination is confirmed', async () => {
+    const put = vi.fn()
+    vi.stubGlobal('axios', { put })
+    const state = { status: 'found', userId: 7, workId: 65, courseId: 16, date: '2026-10-16',
+        folder: { id: 'id:exercise' }, emailPreparation: { status: 'ready' } }
+    const wrapper = mount(WorkDeliveryStatus, { props: {
+        work: { id: 65, teaching_course_id: 16, title: 'Word', status: {} }, date: '2026-10-16', state,
+    }, global: {
+        plugins: [createTestingPinia({ createSpy: vi.fn, initialState: { AdminAdminStore: { config: { user: { id: 7 } } } } })],
+        stubs: { 'v-btn': { props: ['disabled'], template: '<button :disabled="disabled"><slot /></button>' },
+            'v-dialog': { props: ['modelValue'], template: '<section v-if="modelValue" role="dialog"><slot /></section>' } },
+    } })
+    try {
+        await wrapper.get('[data-workflow-stage="send"]').trigger('click')
+        expect(wrapper.get('[role="dialog"]').text()).toContain('Als erledigt markieren')
+        await wrapper.setProps({ state: { ...state, preparation: { status: 'ready' } } })
+        expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+        expect(wrapper.get('[data-workflow-stage="send"]').element.disabled).toBe(true)
+        expect(put).not.toHaveBeenCalled()
+    } finally { wrapper.unmount(); vi.unstubAllGlobals() }
+})
+
 it.each(['ready', 'missing', 'foreign'])('keeps one preparation control with inspection and manual completion: %s', async status => {
     const get = vi.fn()
     const put = vi.fn()

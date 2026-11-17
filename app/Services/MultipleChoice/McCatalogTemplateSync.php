@@ -48,7 +48,8 @@ class McCatalogTemplateSync
         return ['source_path' => $source['source_path'] ?? '', 'source_file_id' => $source['source_file_id'] ?? null,
             'source_revision' => $state['binding']['revision'] ?? $source['source_revision'] ?? null,
             'status' => isset($source['ambiguous']) ? 'ambiguous' : (isset($state['binding']) ? 'connected' : 'needs_confirmation'),
-            'message' => isset($state['pending']) ? 'Ein unterbrochener Abgleich kann über Vorlage synchronisieren fortgesetzt werden.' : null];
+            'message' => isset($state['pending']) ? 'Ein unterbrochener Abgleich kann über Vorlage synchronisieren fortgesetzt werden.'
+                : (isset($source['merge_manifest']) ? 'Der Abgleich für eine Vorlage aus einem verknüpften Quellmodul wird noch nicht unterstützt.' : null)];
     }
 
     /** @return array{account_id: string, source: array<string, mixed>} */
@@ -324,6 +325,8 @@ class McCatalogTemplateSync
 
     private function remote(DropboxConnection $connection, array $source): array
     {
+        abort_if(isset($source['merge_manifest']), 409,
+            'Der Abgleich für eine Vorlage aus einem verknüpften Quellmodul wird noch nicht unterstützt. Die Vorlage wurde nicht geändert.');
         $located = $this->modules->locate($connection, json_encode(['schema_version' => 1, 'module_id' => $source['module_id']], JSON_THROW_ON_ERROR));
         $module = $located['candidate'] ?? null;
         abort_unless(! ($located['conflict'] ?? false) && $module && $module['folder_id'] === $source['module_folder_id'],

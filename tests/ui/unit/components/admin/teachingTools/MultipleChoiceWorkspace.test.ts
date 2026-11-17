@@ -2561,6 +2561,26 @@ describe('Linked questions template sync', () => {
         template_version: 'catalog-v1',
     }
 
+    it('keeps template sync in the catalog and hides it throughout the opened test', async () => {
+        const wrapper = renderWorkspace({ catalogs: [linkedCatalog], tests: [{ id: 7, catalog_id: 4, title: 'Test A', status: 'published' }] })
+        await flushPromises()
+        await clickText(wrapper, 'Katalog öffnen')
+        expect(wrapper.findAll('button').some(button => button.text() === 'Vorlage synchronisieren')).toBe(true)
+
+        const tests = wrapper.findAll('button').find(button => button.text().startsWith('Tests zu diesem Katalog'))
+        await tests.trigger('click')
+        await flushPromises()
+        await clickText(wrapper, 'Test öffnen')
+        expect(wrapper.find('[aria-label="Geöffneter Test"]').exists()).toBe(true)
+        for (const tab of wrapper.find('nav[aria-label="Testbereiche"]').findAll('button')) {
+            await tab.trigger('click')
+            await flushPromises()
+            expect(wrapper.findAll('button').some(button => button.text() === 'Vorlage synchronisieren')).toBe(false)
+            expect(wrapper.find('[aria-label="Vorschau der Vorlagensynchronisierung"]').exists()).toBe(false)
+        }
+        expect(axios.post).not.toHaveBeenCalled()
+    })
+
     it('shows a Question Summary preview and writes only after confirmation', async () => {
         const wrapper = renderWorkspace({ catalogs: [linkedCatalog] })
         await flushPromises()

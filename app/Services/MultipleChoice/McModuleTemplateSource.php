@@ -218,24 +218,35 @@ class McModuleTemplateSource
             $this->fail($located['message'].' '.implode(' · ', array_column($located['candidates'], 'folder_path')));
         }
         $module = $located['candidate'];
-        $folders = array_values(array_filter($this->children($connection, $module['folder_id']),
-            fn (array $entry): bool => ($entry['.tag'] ?? null) === 'folder'
-                && in_array(strtolower($entry['name'] ?? ''), ['multiple choice fragen', 'fragenkatalog'], true)));
-        if ($folders === []) {
-            $this->fail('Im bestätigten Lernmodul fehlt der Unterordner „Multiple Choice Fragen“ oder „Fragenkatalog“.');
-        }
-        if (count($folders) > 1) {
-            $this->fail('Im bestätigten Lernmodul sind mehrere mögliche Fragenordner vorhanden. Die Quelle ist nicht eindeutig.');
-        }
-        $folder = $this->dropbox->metadata($connection, $folders[0]['id']);
-        $files = array_values(array_filter($this->children($connection, $folder['id']), fn (array $entry): bool => ($entry['.tag'] ?? null) === 'file'
-            && in_array(strtolower(pathinfo($entry['name'] ?? '', PATHINFO_EXTENSION)), ['md', 'txt', 'json'], true)));
-        if (count($files) > 20 || array_sum(array_column($files, 'size')) > 4 * 1024 * 1024) {
-            $this->fail('Der Fragenordner enthält zu viele oder zu große Vorlagen für eine begrenzte Prüfung.');
-        }
+        $moduleChildren = $this->children($connection, $module['folder_id']);
+        [$roots, $manifest] = $this->templateRoots($connection, $module, $moduleChildren);
         $sources = [];
         $previews = [];
-        foreach ($files as $file) {
+        $files = [];
+        foreach ($roots as $root) {
+            $children = $root['id'] === $module['folder_id'] ? $moduleChildren : $this->children($connection, $root['id']);
+            $folders = array_values(array_filter($children, fn (array $entry): bool => ($entry['.tag'] ?? null) === 'folder'
+                && in_array(mb_strtolower($entry['name'] ?? ''), ['multiple choice fragen', 'fragenkatalog'], true)));
+            if (count($folders) > 1) {
+                $this->fail('Im bestätigten Lernmodul sind mehrere mögliche Fragenordner vorhanden. Die Quelle ist nicht eindeutig.');
+            }
+            if ($folders === []) {
+                continue;
+            }
+            $folder = $this->dropbox->metadata($connection, $folders[0]['id']);
+            abort_unless(dirname($folder['path_lower']) === mb_strtolower($root['path']), 409, 'Ein Fragenordner wurde verschoben. Bitte erneut prüfen.');
+            foreach ($this->children($connection, $folder['id']) as $entry) {
+                if (($entry['.tag'] ?? null) === 'file' && in_array(strtolower(pathinfo($entry['name'] ?? '', PATHINFO_EXTENSION)), ['md', 'txt', 'json'], true)) {
+                    $files[] = ['entry' => $entry, 'folder' => $folder, 'root' => $root];
+                }
+            }
+        }
+        if (count($files) > 20 || array_sum(array_map(fn (array $file): int => $file['entry']['size'] ?? PHP_INT_MAX, $files)) > 4 * 1024 * 1024) {
+            $this->fail('Die Fragenordner enthalten zu viele oder zu große Vorlagen für eine begrenzte Prüfung.');
+        }
+        foreach ($files as $candidate) {
+            $file = $candidate['entry'];
+            $folder = $candidate['folder'];
             if (($file['size'] ?? PHP_INT_MAX) > 1024 * 1024) {
                 continue;
             }
@@ -248,10 +259,11 @@ class McModuleTemplateSource
             }
             $sources[] = ['id' => $document['id'], 'name' => $document['name'], 'path' => $document['path_display'] ?? $document['path_lower'],
                 'revision' => $document['rev'], 'format' => $format, 'questions_count' => count($preview['questions'])];
-            $previews[$document['id']] = ['preview' => $preview, 'text' => $document['contents'], 'format' => $format];
+            $previews[$document['id']] = ['preview' => $preview, 'text' => $document['contents'], 'format' => $format,
+                'root' => $candidate['root']];
         }
         if ($sources === []) {
-            $this->fail("Im Unterordner „{$folder['name']}“ wurde keine kompatible Markdown-, Text- oder JSON-Fragenvorlage gefunden.");
+            $this->fail('Im bestätigten Lernmodul und seinen belegten Quellen wurde keine kompatible Fragenvorlage gefunden.');
         }
         $result = ['module' => $module, 'sources' => $sources];
         if ($sourceId === null && count($sources) > 1) {
@@ -262,6 +274,12 @@ class McModuleTemplateSource
         abort_unless($selected, 422, 'Die ausgewählte Vorlage gehört nicht zum bestätigten Fragenordner.');
         $source = ['module_id' => $module['module_id'], 'module_folder_id' => $module['folder_id'], 'module_path' => $module['folder_path'],
             'source_file_id' => $selected['id'], 'source_revision' => $selected['revision'], 'source_path' => $selected['path']];
+        $root = $previews[$sourceId]['root'];
+        unset($previews[$sourceId]['root']);
+        if ($root['id'] !== $module['folder_id']) {
+            $source['merge_manifest'] = $manifest;
+            $source['source_module'] = $root;
+        }
         $proof = Crypt::encryptString(json_encode(['kind' => 'mc-module-source', 'user_id' => $user->id, 'catalog_id' => $catalogId,
             'connection_id' => $connection->id, 'account_id' => $connection->account_id, 'module' => $module, 'source' => $source,
             'expires' => now()->addHours(2)->timestamp], JSON_THROW_ON_ERROR));
@@ -285,6 +303,11 @@ class McModuleTemplateSource
         $module = $this->modules->inspect($connection, $pending['module']['handshake_file_id']);
         abort_unless($module === $pending['module'], 409, 'Das Lernmodul hat sich geändert. Bitte die Quelle erneut prüfen.');
         $source = $pending['source'];
+        if (isset($source['merge_manifest'])) {
+            [$roots, $manifest] = $this->templateRoots($connection, $module, $this->children($connection, $module['folder_id']));
+            abort_unless($manifest === $source['merge_manifest'] && in_array($source['source_module'] ?? null, $roots, true),
+                409, 'Die Quellen des zusammengeführten Moduls haben sich geändert. Bitte erneut einlesen.');
+        }
         $metadata = $this->dropbox->readModuleApi($connection, 'files/get_metadata', ['path' => $source['source_file_id']])->json();
         abort_unless(($metadata['.tag'] ?? null) === 'file' && ($metadata['id'] ?? null) === $source['source_file_id']
             && ($metadata['rev'] ?? null) === $source['source_revision']
@@ -292,6 +315,54 @@ class McModuleTemplateSource
             409, 'Die Fragenvorlage wurde geändert oder verschoben. Bitte erneut einlesen; der Katalog wurde nicht gespeichert.');
 
         return $source;
+    }
+
+    /** @return array{0: list<array{id: string, path: string}>, 1: array{id: string, rev: string}|null} */
+    private function templateRoots(DropboxConnection $connection, array $module, array $children): array
+    {
+        $roots = [['id' => $module['folder_id'], 'path' => $module['folder_path']]];
+        $manifests = array_values(array_filter($children, fn (array $entry): bool => ($entry['.tag'] ?? null) === 'file'
+            && mb_strtolower($entry['name'] ?? '') === 'lernmodule-zusammenfuehrung.json'));
+        abort_if(count($manifests) > 1, 409, 'Das Modulmanifest ist mehrdeutig.');
+        if ($manifests === []) {
+            return [$roots, null];
+        }
+        $document = $this->document($connection, $manifests[0]['id']);
+        abort_unless(dirname($document['path_lower']) === mb_strtolower($module['folder_path']), 409, 'Das Modulmanifest wurde verschoben.');
+        try {
+            $data = json_decode($document['contents'], true, 32, JSON_THROW_ON_ERROR);
+        } catch (JsonException) {
+            $this->fail('Das Modulmanifest ist ungültig.');
+        }
+        abort_unless(is_array($data) && ($data['schema_version'] ?? null) === 1 && ($data['type'] ?? null) === 'lernmodule-zusammenfuehrung'
+            && ($data['target']['id'] ?? null) === $module['folder_id'] && is_string($data['target']['path'] ?? null)
+            && mb_strtolower($data['target']['path']) === mb_strtolower($module['folder_path'])
+            && is_array($data['sources'] ?? null) && array_is_list($data['sources']) && count($data['sources']) >= 1 && count($data['sources']) <= 20,
+            422, 'Das Modulmanifest ist ungültig oder passt nicht zum bestätigten Lernmodul.');
+        $materialRoot = null;
+        foreach (config('services.dropbox.module_material_roots', []) as $configured) {
+            if (is_string($configured) && str_starts_with(mb_strtolower($module['folder_path']), rtrim(mb_strtolower($configured), '/').'/')) {
+                $materialRoot = rtrim(mb_strtolower($configured), '/');
+                break;
+            }
+        }
+        if ($materialRoot === null && config('services.dropbox.module_material_roots', []) === []
+            && preg_match('#\A(.*/materialien/lerninhalte)/#u', mb_strtolower($module['folder_path']), $matches)) {
+            $materialRoot = $matches[1];
+        }
+        abort_unless($materialRoot !== null, 409, 'Die Lerninhalte-Wurzel konnte nicht bestätigt werden.');
+        foreach ($data['sources'] as $source) {
+            abort_unless(is_array($source) && is_string($source['id'] ?? null) && is_string($source['path'] ?? null)
+                && str_starts_with(mb_strtolower($source['path']), $materialRoot.'/')
+                && ! preg_match('#(?:\A|/)(?:\.|\.\.)(?:/|\z)|[\x00-\x1f]#u', $source['path']),
+                422, 'Eine Modulquelle liegt außerhalb des bestätigten Lerninhalte-Bestands.');
+            $folder = $this->dropbox->metadata($connection, $source['id']);
+            abort_unless($folder['id'] === $source['id'] && $folder['path_lower'] === mb_strtolower($source['path'])
+                && ! collect($roots)->contains('id', $folder['id']), 409, 'Eine Modulquelle ist nicht eindeutig oder wurde verschoben.');
+            $roots[] = ['id' => $folder['id'], 'path' => $folder['path_display'] ?? $folder['path_lower']];
+        }
+
+        return [$roots, ['id' => $document['id'], 'rev' => $document['rev']]];
     }
 
     /** @return list<array<string, mixed>> */

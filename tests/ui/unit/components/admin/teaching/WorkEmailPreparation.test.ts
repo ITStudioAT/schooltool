@@ -55,6 +55,25 @@ function preparedPreview(overrides = {}) {
     } } }
 }
 
+it('prepares the modern examination with Sie only and ignores legacy readiness', async () => {
+    const get = vi.fn().mockResolvedValue(exported('sie'))
+    const { wrapper, writeText } = render({ modernPrepared: true,
+        state: { ...state, preparation: { status: 'ready' }, emailPreparation: { status: 'ready' } } }, get)
+    try {
+        expect(button(wrapper, 'E-Mails versenden')).toBeUndefined()
+        await button(wrapper, 'E-Mails vorbereiten').trigger('click')
+        await flushPromises()
+        expect(button(wrapper, 'Du-Form')).toBeUndefined()
+        expect(wrapper.get('[role="dialog"]').text()).toContain('Versandbereitschaft wird in Schooltool derzeit nicht geprüft')
+        expect(get).toHaveBeenCalledExactlyOnceWith('/api/admin/teaching/course_works/65/ai-export', {
+            params: { purpose: 'email_preparation', address_form: 'sie', date: state.date }, signal: expect.any(AbortSignal),
+        })
+        await button(wrapper, 'Auftrag kopieren').trigger('click')
+        expect(writeText).toHaveBeenCalledExactlyOnceWith('Auftrag zur Vorbereitung: sie')
+        expect(axios.post).not.toHaveBeenCalled()
+    } finally { wrapper.unmount() }
+})
+
 afterEach(() => {
     vi.restoreAllMocks(); vi.unstubAllGlobals(); document.body.innerHTML = ''
     if (originalExecCommand) Object.defineProperty(document, 'execCommand', originalExecCommand)

@@ -27,10 +27,13 @@ class MultipleChoiceParticipantController extends Controller
         $this->assertLicensed($student);
         $attempts = McAttempt::query()->with('test')
             ->where('student_id', $student->id)
-            ->whereHas('test', fn ($query) => $query->where('school_id', $student->school_id)->where('schoolyear_id', $student->schoolyear_id)->where('status', 'published'))
+            ->whereHas('test', fn ($query) => $query->where('school_id', $student->school_id)->where('status', 'published'))
             ->latest('id')->get();
 
-        return $this->respond(['attempts' => $attempts->filter(fn (McAttempt $attempt): bool => app(TeachingWorkStudentDistribution::class)->mcAccessAllowed($attempt))
+        $distribution = app(TeachingWorkStudentDistribution::class);
+
+        return $this->respond(['attempts' => $attempts->filter(fn (McAttempt $attempt): bool => $distribution->mcAccessAllowed($attempt)
+            && ((int) $attempt->test->schoolyear_id === (int) $student->schoolyear_id || $distribution->isVerifiedWorkTestForStudent($attempt, $student)))
             ->map(fn (McAttempt $attempt): array => $this->serialize($attempt, false))->values()->all()]);
     }
 

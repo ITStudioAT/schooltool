@@ -21,4 +21,11 @@ class McCatalog extends Model
     {
         return $this->hasMany(McTest::class, 'catalog_id');
     }
+
+    /** @return list<array<string, mixed>> */
+    public function questionsForTesting(): array
+    {
+        return array_values(array_filter($this->questions ?? [], fn (mixed $question): bool => is_array($question)
+            && ($question['active'] ?? false) === true && ($question['reviewed'] ?? false) === true));
+    }
 }

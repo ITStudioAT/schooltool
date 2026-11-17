@@ -11,22 +11,25 @@ const course = { id: 2, title: 'INF' }
 const originalExecCommand = Object.getOwnPropertyDescriptor(document, 'execCommand')
 
 function mountExport(get = vi.fn(), writeText = vi.fn().mockResolvedValue(undefined), status = vi.fn().mockResolvedValue({ data: { connected: true, module_link: { folder: { id: 'id:module' } }, exercise: { status: 'missing' } } }), currentWork: any = work,
-    mcOptions: any = { available: true, tests: [{ id: 9, title: 'Vorhandener MC-Test', catalog_id: 3, catalog_title: 'Grundlagen' }], catalogs: [{ id: 3, title: 'Grundlagen' }], linked_test_id: 9 },
-    moduleCheck = vi.fn().mockResolvedValue({ data: { module_questions: true } }), realDialog = false) {
+    mcOptions: any = { available: true, tests: [{ id: 9, title: 'Vorhandener MC-Test', catalog_id: 3, catalog_title: 'Grundlagen' }], catalogs: [{ id: 3, title: 'Grundlagen' }], linked_test_id: null },
+    moduleCheck = vi.fn().mockResolvedValue({ data: { module_questions: true, assessment_points: 35 } }), realDialog = false) {
     vi.stubGlobal('axios', { get: vi.fn((url, options) => url.endsWith('/dropbox') ? status(url, options)
-        : url.endsWith('/exercise-options') && options?.params?.check_module_questions ? moduleCheck(url, options)
+        : url.endsWith('/exercise-options') && options?.params?.mc_selection === 'template_points' ? moduleCheck(url, options)
+        : url.endsWith('/exercise-options') && options?.params?.mc_selection === 'current' ? Promise.resolve({ data: { linked_test_id: mcOptions.linked_test_id ?? null, linked_catalog_id: mcOptions.linked_test_id ? 3 : null } })
+        : url.endsWith('/exercise-options') && options?.params?.mc_selection === 'catalogs' ? Promise.resolve({ data: { catalogs: mcOptions.catalogs?.length ? mcOptions.catalogs : [{ id: 3, title: 'Grundlagen', reviewed_question_count: 10 }] } })
+        : url.endsWith('/exercise-options') && options?.params?.mc_selection === 'candidates' ? Promise.resolve({ data: { candidates: (mcOptions.tests || []).map((test: any) => ({ question_count: 10, total_points: 10, duration_minutes: 20, ...test })), defaults: { question_count: 10, total_points: 10, duration_minutes: 20 }, available_question_count: mcOptions.available_question_count ?? 10 } })
         : url.endsWith('/exercise-options') ? Promise.resolve({ data: { configuration: { locked: false, maximum_points: 5 },
             linked_mc_points: mcOptions.linked_test_id ? 2 : null, ...mcOptions,
             eligible_test: Object.hasOwn(mcOptions, 'eligible_test') ? mcOptions.eligible_test
                 : mcOptions.tests?.find((test: any) => test.id === mcOptions.linked_test_id) || null,
             catalogs: (mcOptions.catalogs || []).map((catalog: any) => ({ reviewed_question_count: 10, ...catalog })) } }) : get(url, options)),
-        post: vi.fn((url, payload, options) => url.endsWith('/prepare-exercise') ? get(url, payload, options) : status(url, payload, options)) })
+        post: vi.fn((url, payload, options) => url.endsWith('/prepare-exercise') ? Promise.resolve({ data: { linked_test_id: payload.mc_selection === 'no' ? null : (payload.test_id || 9), linked_catalog_id: payload.catalog_id ?? null, action: payload.test_id ? 'reused' : 'created', work: currentWork } }) : status(url, payload, options)) })
     vi.stubGlobal('navigator', { clipboard: { writeText }, userAgent: 'Test' })
     return mount(WorkExerciseExport, { attachTo: document.body, props: { work: currentWork, course, date: '2026-10-20' }, global: {
         plugins: [createTestingPinia({ createSpy: vi.fn, initialState: { AdminAdminStore: { config: { user: { id: 7 } } } } }), createVuetify({ components: { VBtn, ...(realDialog ? { VDialog } : {}) } })],
         components: { 'v-btn': VBtn, ...(realDialog ? { 'v-dialog': VDialog } : {}) }, stubs: { 'v-btn': false, VBtn: false,
-            'v-text-field': { props: ['modelValue', 'label', 'disabled', 'type'], emits: ['update:modelValue'],
-                template: '<label>{{ label }}<input :aria-label="label" :type="type" :value="modelValue" :disabled="disabled" @input="$emit(\'update:modelValue\', $event.target.value === \'\' ? null : type === \'number\' ? Number($event.target.value) : $event.target.value)" /></label>' },
+            'v-text-field': { props: ['modelValue', 'label', 'disabled', 'type', 'errorMessages'], emits: ['update:modelValue'],
+                template: '<label>{{ label }}<input :aria-label="label" :type="type" :value="modelValue" :disabled="disabled" @input="$emit(\'update:modelValue\', $event.target.value === \'\' ? null : type === \'number\' ? Number($event.target.value) : $event.target.value)" /><span>{{ [errorMessages].flat().join(\' \') }}</span></label>' },
             'v-dialog': realDialog ? false : { name: 'TestDialog', props: ['modelValue', 'persistent'], emits: ['update:modelValue'],
                 template: '<div v-if="modelValue" role="dialog"><slot /></div>' },
             'v-checkbox': { props: ['modelValue', 'label', 'disabled'], emits: ['update:modelValue'],
@@ -87,184 +90,197 @@ afterEach(() => {
     else delete (document as any).execCommand
 })
 
-it.each(['available', 'missing', 'error'])('blocks the dialog until the module check returns %s', async outcome => {
+it.each(['available', 'missing', 'error'])('shows the dialog while template points are checked: %s', async outcome => {
     let resolveCheck: (value: unknown) => void = () => {}
     let rejectCheck: (reason: Error) => void = () => {}
-    const check = vi.fn().mockImplementation(() => new Promise((resolve, reject) => {
-        resolveCheck = resolve
-        rejectCheck = reject
-    }))
-    const prepare = vi.fn()
-    const wrapper = mountExport(prepare, undefined, undefined, work, undefined, check)
+    const check = vi.fn().mockImplementation(() => new Promise((resolve, reject) => { resolveCheck = resolve; rejectCheck = reject }))
+    const wrapper = mountExport(undefined, undefined, undefined, work, undefined, check)
     try {
         await flushPromises()
         await button(wrapper, 'Leistungsfeststellung erstellen').trigger('click')
-        const dialog = wrapper.get('[role="dialog"]')
-        const status = dialog.get('[role="status"]')
-        expect(status.text()).toContain('Multiple-Choice-Fragen werden geprüft')
-        expect(status.element).toBe(document.activeElement)
-        expect(dialog.find('input').exists()).toBe(false)
-        expect(dialog.find('textarea').exists()).toBe(false)
-        expect(dialog.find('button').exists()).toBe(false)
-        const dialogComponent = wrapper.getComponent({ name: 'TestDialog' })
-        expect(dialogComponent.props('persistent')).toBe(true)
-        dialogComponent.vm.$emit('update:modelValue', false)
-        await dialog.trigger('keydown', { key: 'Escape' })
-        await dialog.trigger('click')
-        expect(wrapper.find('[role="dialog"]').exists()).toBe(true)
-        expect(prepare).not.toHaveBeenCalled()
-
-        if (outcome === 'error') rejectCheck(new Error('Offline'))
-        else resolveCheck({ data: { module_questions: outcome === 'available' } })
         await flushPromises()
+        expect(wrapper.get('[role="dialog"] [role="status"]').text()).toContain('Prüfungsvorlage und Punkte werden geprüft')
+        expect(wrapper.find('[role="dialog"] textarea').exists()).toBe(false)
+        expect(wrapper.find('[role="dialog"] input').exists()).toBe(false)
+        expect(wrapper.find('[role="dialog"] button').exists()).toBe(false)
+        if (outcome === 'error') rejectCheck(new Error('Offline'))
+        else resolveCheck({ data: { assessment_points: outcome === 'available' ? 35 : null } })
+        await flushPromises()
+        expect(wrapper.text()).toContain(outcome === 'available' ? '35 Punkte' : outcome === 'error' ? 'Offline' : 'Punkte der Prüfungsvorlage konnten nicht eindeutig bestätigt werden')
         expect(wrapper.text()).not.toContain('Multiple-Choice-Fragen werden geprüft')
-        expect(document.activeElement?.textContent).toBe('Leistungsfeststellung erstellen')
-        expect(button(wrapper, 'Übergabetext kopieren').attributes('disabled')).toBeUndefined()
-        expect(wrapper.find('input[type="checkbox"]').exists()).toBe(outcome === 'available')
-        expect(wrapper.text().includes('Kein verwendbarer Multiple-Choice-Fragenkatalog gefunden.')).toBe(outcome === 'missing')
-        expect(wrapper.text().includes('konnten nicht eindeutig geprüft werden')).toBe(outcome === 'error')
     } finally { wrapper.unmount() }
 })
-
-it('keeps the real dialog open on Escape and outside clicks during the check', async () => {
-    let resolveCheck: (value: unknown) => void = () => {}
-    const check = vi.fn().mockImplementation(() => new Promise(resolve => { resolveCheck = resolve }))
+it('opens the real dialog while the template check is pending and permits cancellation', async () => {
+    const check = vi.fn().mockImplementation(() => new Promise(() => {}))
     vi.stubGlobal('visualViewport', null)
     const wrapper = mountExport(undefined, undefined, undefined, work, undefined, check, true)
     try {
         await flushPromises()
         await button(wrapper, 'Leistungsfeststellung erstellen').trigger('click')
         await flushPromises()
-        expect(document.querySelector('[role="dialog"]')?.textContent).toContain('Multiple-Choice-Fragen werden geprüft')
-        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
-        const scrim = document.querySelector('.v-overlay__scrim')
-        expect(scrim).not.toBeNull()
-        scrim!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
-        scrim!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
         await flushPromises()
-        expect(document.querySelector('[role="dialog"]')?.textContent).toContain('Multiple-Choice-Fragen werden geprüft')
-        resolveCheck({ data: { module_questions: false } })
-        await flushPromises()
-        expect(document.querySelector('[role="dialog"]')?.textContent).toContain('Kein verwendbarer Multiple-Choice-Fragenkatalog gefunden.')
+        expect(document.querySelector('[role="dialog"]')?.textContent).toContain('Punkte werden geprüft')
         window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
         await flushPromises()
         expect(document.querySelector('[role="dialog"]')).toBeNull()
     } finally { wrapper.unmount() }
 })
-
-it('shows a confirmed absence and still prepares the assignment without multiple choice', async () => {
+it('requires a confirmed template before preparing the assignment', async () => {
     const prepare = vi.fn().mockResolvedValue({ data: { data: { work_id: 65, course_id: 2, roster_complete: true,
         participants_count: 1, text: 'Auftrag ohne MC', context: { include_multiple_choice: false } } } })
-    const wrapper = mountExport(prepare, undefined, undefined, work, undefined, vi.fn().mockResolvedValue({ data: { module_questions: false } }))
+    const wrapper = mountExport(prepare, undefined, undefined, work, undefined, vi.fn().mockResolvedValue({ data: { assessment_points: null } }))
     try {
         await flushPromises()
         await button(wrapper, 'Leistungsfeststellung erstellen').trigger('keydown', { key: 'Enter' })
         await flushPromises()
-        expect(wrapper.text()).toContain('Kein verwendbarer Multiple-Choice-Fragenkatalog gefunden.')
-        expect(wrapper.text()).not.toContain('Multiple-Choice-Fragen einbeziehen')
-        await button(wrapper, 'Übergabetext kopieren').trigger('click')
         await flushPromises()
-        expect(prepare).toHaveBeenCalled()
+        expect(wrapper.text()).toContain('Punkte der Prüfungsvorlage konnten nicht eindeutig bestätigt werden')
+        expect(button(wrapper, 'Übergabetext kopieren')).toBeUndefined()
+        expect(button(wrapper, 'Erneut prüfen')).toBeDefined()
+        expect(prepare).not.toHaveBeenCalled()
+        expect(axios.post).not.toHaveBeenCalled()
     } finally { wrapper.unmount() }
 })
-
-it('distinguishes pending and failed checks from absent questions', async () => {
+it('shows failed template checks and allows retry before the handoff', async () => {
     let rejectCheck: (reason: Error) => void = () => {}
     const check = vi.fn().mockImplementation(() => new Promise((_resolve, reject) => { rejectCheck = reject }))
     const wrapper = mountExport(undefined, undefined, undefined, work, undefined, check)
     try {
         await flushPromises()
         await button(wrapper, 'Leistungsfeststellung erstellen').trigger('keydown', { key: 'Enter' })
-        expect(wrapper.text()).toContain('Multiple-Choice-Fragen werden geprüft')
+        await flushPromises()
+        expect(wrapper.text()).toContain('Punkte werden geprüft')
         rejectCheck(new Error('Offline'))
         await flushPromises()
-        expect(wrapper.text()).toContain('konnten nicht eindeutig geprüft werden')
-        expect(wrapper.text()).not.toContain('Kein verwendbarer Multiple-Choice-Fragenkatalog gefunden.')
-        expect(button(wrapper, 'Übergabetext kopieren').attributes('disabled')).toBeUndefined()
+        expect(wrapper.text()).toContain('Offline')
+        expect(button(wrapper, 'Übergabetext kopieren')).toBeUndefined()
+        expect(button(wrapper, 'Erneut prüfen')).toBeDefined()
     } finally { wrapper.unmount() }
 })
 
-it('does not reuse an earlier module check after switching work', async () => {
+it('retries an unconfirmed template and shows the form only after confirmed points', async () => {
+    const check = vi.fn().mockResolvedValueOnce({ data: { assessment_points: null } }).mockResolvedValueOnce({ data: { assessment_points: 30 } })
+    const wrapper = mountExport(undefined, undefined, undefined, work, undefined, check)
+    try {
+        await flushPromises()
+        await button(wrapper, 'Leistungsfeststellung erstellen').trigger('click')
+        await flushPromises()
+        const dialog = wrapper.get('[role="dialog"]')
+        expect(dialog.text()).toContain('Punkte der Prüfungsvorlage konnten nicht eindeutig bestätigt werden')
+        expect(dialog.find('input').exists()).toBe(false)
+        await dialog.findAll('button').find(item => item.text() === 'Erneut prüfen')!.trigger('click')
+        await flushPromises()
+        expect(dialog.text()).toContain('Prüfungsvorlage: 30 Punkte')
+        expect(dialog.get('input[aria-label="Multiple-Choice-Teil: Nein"]').exists()).toBe(true)
+        expect(check).toHaveBeenCalledTimes(2)
+    } finally { wrapper.unmount() }
+})
+
+it('uses the template points by default and sends an optional whole or half point target separately', async () => {
+    const get = vi.fn().mockResolvedValue({ data: { data: { work_id: 65, course_id: 2, roster_complete: true,
+        participants_count: 1, text: 'Aufgabenblattauftrag', context: { include_multiple_choice: false } } } })
+    const wrapper = mountExport(get)
+    try {
+        await flushPromises()
+        await button(wrapper, 'Leistungsfeststellung erstellen').trigger('click')
+        await flushPromises()
+        const target = wrapper.get('input[aria-label="Alternative Gesamtpunkte für das Aufgabenblatt (optional)"]')
+        expect(wrapper.text()).toContain('Für das Aufgabenblatt gelten 35 Punkte')
+        await target.setValue('20.2')
+        expect(wrapper.text()).toContain('Bitte eine nichtnegative ganze oder halbe Punktzahl eingeben')
+        expect(button(wrapper, 'Übergabetext kopieren').attributes('disabled')).toBeDefined()
+        await target.setValue('20.5')
+        expect(wrapper.text()).toContain('Für das Aufgabenblatt gelten 20,5 Punkte')
+        await button(wrapper, 'Übergabetext kopieren').trigger('click')
+        await flushPromises()
+        expect(get).toHaveBeenCalledWith('/api/admin/teaching/course_works/65/ai-export', expect.objectContaining({
+            params: expect.objectContaining({ template_points_snapshot: 35, template_points_target: 20.5 }),
+        }))
+    } finally { wrapper.unmount() }
+})
+it('does not reuse earlier template points after switching work', async () => {
     let resolveFirst: (value: unknown) => void = () => {}
     const check = vi.fn().mockImplementationOnce(() => new Promise(resolve => { resolveFirst = resolve }))
-        .mockResolvedValueOnce({ data: { module_questions: false } })
+        .mockResolvedValueOnce({ data: { assessment_points: 20 } })
     const wrapper = mountExport(undefined, undefined, undefined, work, undefined, check)
     try {
         await flushPromises()
         await button(wrapper, 'Leistungsfeststellung erstellen').trigger('keydown', { key: 'Enter' })
+        await flushPromises()
         await wrapper.setProps({ work: { ...work, id: 66 } })
         await flushPromises()
         await button(wrapper, 'Leistungsfeststellung erstellen').trigger('keydown', { key: 'Enter' })
         await flushPromises()
-        resolveFirst({ data: { module_questions: true } })
         await flushPromises()
-        expect(wrapper.text()).toContain('Kein verwendbarer Multiple-Choice-Fragenkatalog gefunden.')
-        expect(wrapper.text()).not.toContain('Multiple-Choice-Fragen einbeziehen')
+        resolveFirst({ data: { assessment_points: 35 } })
+        await flushPromises()
+        expect(wrapper.text()).toContain('20 Punkte')
+        expect(wrapper.text()).not.toContain('35 Punkte')
     } finally { wrapper.unmount() }
 })
-
-it('hides the previous result while a new check is pending', async () => {
+it('clears earlier template points while a new check is pending', async () => {
     let resolveSecond: (value: unknown) => void = () => {}
-    const check = vi.fn().mockResolvedValueOnce({ data: { module_questions: true } })
+    const check = vi.fn().mockResolvedValueOnce({ data: { assessment_points: 35 } })
         .mockImplementationOnce(() => new Promise(resolve => { resolveSecond = resolve }))
     const wrapper = mountExport(undefined, undefined, undefined, work, undefined, check)
     try {
         await flushPromises()
         await button(wrapper, 'Leistungsfeststellung erstellen').trigger('click')
         await flushPromises()
-        expect(wrapper.find('input[type="checkbox"]').exists()).toBe(true)
+        await flushPromises()
+        expect(wrapper.text()).toContain('35 Punkte')
         await button(wrapper, 'Abbrechen').trigger('click')
         await button(wrapper, 'Leistungsfeststellung erstellen').trigger('click')
-        expect(wrapper.text()).toContain('Multiple-Choice-Fragen werden geprüft')
-        expect(wrapper.find('input[type="checkbox"]').exists()).toBe(false)
-        resolveSecond({ data: { module_questions: false } })
         await flushPromises()
-        expect(wrapper.text()).toContain('Kein verwendbarer Multiple-Choice-Fragenkatalog gefunden.')
+        expect(wrapper.text()).toContain('Punkte werden geprüft')
+        expect(wrapper.text()).not.toContain('35 Punkte')
+        resolveSecond({ data: { assessment_points: 20 } })
+        await flushPromises()
+        expect(wrapper.text()).toContain('20 Punkte')
     } finally { wrapper.unmount() }
 })
-
-it('discards a delayed check when the linked module changes on the same work', async () => {
+it('discards delayed template points when the linked module changes', async () => {
     let resolveFirst: (value: unknown) => void = () => {}
     const check = vi.fn().mockImplementationOnce(() => new Promise(resolve => { resolveFirst = resolve }))
-        .mockResolvedValueOnce({ data: { module_questions: false } })
-    const replacement = { connected: true, link_version: 'second',
-        module_link: { folder: { id: 'id:second-module' } }, exercise: { status: 'missing' } }
-    const status = vi.fn().mockResolvedValueOnce({ data: { connected: true,
-        module_link: { folder: { id: 'id:module' } }, exercise: { status: 'missing' } } })
+        .mockResolvedValueOnce({ data: { assessment_points: 20 } })
+    const replacement = { connected: true, link_version: 'second', module_link: { folder: { id: 'id:second-module' } }, exercise: { status: 'missing' } }
+    const status = vi.fn().mockResolvedValueOnce({ data: { connected: true, module_link: { folder: { id: 'id:module' } }, exercise: { status: 'missing' } } })
         .mockResolvedValue({ data: replacement })
     const wrapper = mountExport(undefined, undefined, status, work, undefined, check)
     try {
         await flushPromises()
         await button(wrapper, 'Leistungsfeststellung erstellen').trigger('click')
+        await flushPromises()
         workDropboxStates.set('7:2:65', replacement)
         await flushPromises()
         expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
         await button(wrapper, 'Leistungsfeststellung erstellen').trigger('click')
         await flushPromises()
-        resolveFirst({ data: { module_questions: true } })
         await flushPromises()
-        expect(wrapper.text()).toContain('Kein verwendbarer Multiple-Choice-Fragenkatalog gefunden.')
-        expect(wrapper.find('input[type="checkbox"]').exists()).toBe(false)
+        resolveFirst({ data: { assessment_points: 35 } })
+        await flushPromises()
+        expect(wrapper.text()).toContain('20 Punkte')
+        expect(wrapper.text()).not.toContain('35 Punkte')
     } finally { wrapper.unmount() }
 })
-
 it.each([false, true])('copies supplementary instructions with and without MC: %s', async includeMc => {
     const get = vi.fn().mockResolvedValue({ data: { data: { work_id: 65, course_id: 2, roster_complete: true,
-        participants_count: 1, text: 'Bestätigter Auftrag', context: { include_multiple_choice: includeMc,
-            ...(includeMc ? { multiple_choice_test: { test_id: 9 } } : {}) } } } })
+        participants_count: 1, text: 'Bestätigter Auftrag', context: { include_multiple_choice: false } } } })
     const writeText = vi.fn().mockResolvedValue(undefined)
     const wrapper = mountExport(get, writeText)
     try {
         await flushPromises()
         await button(wrapper, 'Leistungsfeststellung erstellen').trigger('keydown', { key: 'Enter' })
         await flushPromises()
+        await flushPromises()
         expect(button(wrapper, 'Über OpenAI vorbereiten')).toBeUndefined()
         expect(wrapper.text()).not.toContain('Formabzüge für Betreff')
         const instructions = wrapper.get('textarea:not([readonly])')
         await instructions.setValue('Bitte zwei Aufgaben erstellen.')
         if (includeMc) {
-            await wrapper.get('input[type="checkbox"]').setValue(true)
+            await wrapper.get('input[aria-label="Multiple-Choice-Teil: Ja"]').setValue(true)
             await flushPromises()
+            await wrapper.get('select[aria-label="Multiple-Choice-Katalog"]').setValue('3')
         }
         await button(wrapper, 'Übergabetext kopieren').trigger('click')
         await flushPromises()
@@ -288,6 +304,7 @@ it('includes supplementary instructions in the manual copy fallback', async () =
     try {
         await flushPromises()
         await button(wrapper, 'Leistungsfeststellung erstellen').trigger('click')
+        await flushPromises()
         await wrapper.get('textarea:not([readonly])').setValue('Weitere Vorgabe')
         await button(wrapper, 'Übergabetext kopieren').trigger('click')
         await flushPromises()
@@ -340,43 +357,36 @@ it('shows only the MC test for the selected date even after the work has progres
     } finally { wrapper.unmount() }
 })
 
-it('blocks MC copying when the server detects a dispatch after the displayed folder check', async () => {
-    const wrapper = mountExport(undefined, undefined, undefined, work, { available: true,
-        tests: [{ id: 9, title: 'Test', catalog_id: 3 }], catalogs: [], linked_test_id: 9,
-        configuration: { locked: true, maximum_points: 5, message: 'Aufgabenversand bereits begonnen.' } })
+it('blocks copying when the server rejects a changed test assignment', async () => {
+    const get = vi.fn()
+    const wrapper = mountExport(get)
     try {
         await flushPromises()
         await button(wrapper, 'Leistungsfeststellung erstellen').trigger('click')
-        await wrapper.get('input[type="checkbox"]').setValue(true)
         await flushPromises()
-        expect(wrapper.text()).toContain('Aufgabenversand bereits begonnen.')
-        expect(button(wrapper, 'Übergabetext kopieren').attributes('disabled')).toBeDefined()
-        expect(axios.post).not.toHaveBeenCalled()
+        await flushPromises()
+        vi.mocked(axios.post).mockRejectedValueOnce({ response: { data: { message: 'Testzuordnung wurde inzwischen geändert.' } } })
+        await button(wrapper, 'Übergabetext kopieren').trigger('click')
+        await flushPromises()
+        expect(wrapper.text()).toContain('Testzuordnung wurde inzwischen geändert.')
+        expect(get).not.toHaveBeenCalled()
     } finally { wrapper.unmount() }
 })
-
-it('uses only the work-bound test and shows the points before MC is selected', async () => {
-    const check = vi.fn().mockResolvedValue({ data: { module_questions: true, assessment_points: 30 } })
-    const wrapper = mountExport(undefined, undefined, undefined, work, { available: true,
-        tests: [{ id: 9, title: 'Zugeordneter Test', catalog_id: 3 }, { id: 10, title: 'Fremder Test', catalog_id: 4 }],
-        catalogs: [], linked_test_id: 9, eligible_test: { id: 9, title: 'Zugeordneter Test' }, linked_mc_points: 5 }, check)
+it('shows an existing test assignment independently of template points', async () => {
+    const check = vi.fn().mockResolvedValue({ data: { assessment_points: 30 } })
+    const wrapper = mountExport(undefined, undefined, undefined, work, { tests: [{ id: 9, title: 'Zugeordneter Test' }], linked_test_id: 9 }, check)
     try {
         await flushPromises()
         await button(wrapper, 'Leistungsfeststellung erstellen').trigger('click')
+        await flushPromises()
         await flushPromises()
         expect(wrapper.text()).toContain('Prüfungsvorlage: 30 Punkte')
-        expect(wrapper.text()).toContain('Multiple-Choice-Teil: 5 Punkte')
-        await wrapper.get('input[type="checkbox"]').setValue(true)
-        expect(wrapper.text()).toContain('Zugeordneter MC-Test: Zugeordneter Test')
-        expect(wrapper.text()).not.toContain('Fremder Test')
-        expect(wrapper.find('select').exists()).toBe(false)
-        expect(wrapper.find('input[type="radio"]').exists()).toBe(false)
-        await wrapper.get('input[aria-label="MC-Punkte"]').setValue('4')
-        expect(wrapper.text()).toContain('Multiple-Choice-Teil: 4 Punkte')
+        expect((wrapper.get('input[aria-label="Multiple-Choice-Teil: Ja"]').element as HTMLInputElement).checked).toBe(true)
+        expect((wrapper.get('select[aria-label="Multiple-Choice-Katalog"]').element as HTMLSelectElement).value).toBe('3')
+        expect(wrapper.find('input[aria-label="MC-Punkte"]').exists()).toBe(false)
     } finally { wrapper.unmount() }
 })
-
-it('uses one explicit recheck for both folder and workflow status without refreshing status on mount', async () => {
+it('uses one explicit read-only recheck without refreshing status on mount', async () => {
     const saved = { ...work, simulation_collection: { simulation: true, complete: true } }
     const get = vi.fn().mockResolvedValue({ data: { data: saved } })
     const status = vi.fn().mockResolvedValueOnce({ data: linkedExercise }).mockResolvedValueOnce({ data: { ...linkedExercise, saved_work: saved } })
@@ -388,15 +398,30 @@ it('uses one explicit recheck for both folder and workflow status without refres
         expect(wrapper.findAll('button').filter(button => button.text().startsWith('Erneut prüfen'))).toHaveLength(1)
         await button(wrapper, 'Erneut prüfen').trigger('click')
         await flushPromises()
-        expect(axios.post).toHaveBeenCalledWith(expect.stringContaining('/dropbox/refresh'), expect.objectContaining({ date: '2026-10-20', refresh_collection: true }), expect.any(Object))
+        expect(axios.post).toHaveBeenCalledWith(expect.stringContaining('/dropbox/refresh'), expect.objectContaining({ date: '2026-10-20', status_only: true }), expect.any(Object))
         expect(get).not.toHaveBeenCalled()
-        expect(wrapper.emitted('deadline-saved')).toEqual([[{ data: saved }]])
+        expect(wrapper.emitted('deadline-saved')).toBeUndefined()
         expect(wrapper.emitted('check-busy')).toEqual([[true], [false]])
         expect(wrapper.findAll('button').filter(button => button.text().startsWith('Erneut prüfen'))).toHaveLength(1)
     } finally { wrapper.unmount() }
 })
 
-it('keeps the saved deadline visible when the combined collection check fails', async () => {
+it('rechecks the exam folder after the saved work title changes', async () => {
+    const renamed = { ...work, title: 'Neuer Titel' }
+    const status = vi.fn().mockResolvedValueOnce({ data: linkedExercise }).mockResolvedValueOnce({ data: {
+        ...linkedExercise, exercise: { ...linkedExercise.exercise, folder: { id: 'id:exercise', name: '2026-10-20 – Gruppe – Neuer Titel' } },
+    } })
+    const wrapper = mountExport(undefined, undefined, status)
+    try {
+        await flushPromises()
+        await wrapper.setProps({ work: renamed })
+        await flushPromises()
+        expect(axios.post).toHaveBeenCalledWith(expect.stringContaining('/dropbox/refresh'), expect.objectContaining({ status_only: true }), expect.any(Object))
+        expect(wrapper.emitted('exercise-status')?.at(-1)?.[0]).toMatchObject({ status: 'found', folder: { name: '2026-10-20 – Gruppe – Neuer Titel' } })
+    } finally { wrapper.unmount() }
+})
+
+it('reports an unexpected collection error without overwriting the current deadline', async () => {
     const saved = { ...work, finish_until_date: '2026-11-13' }
     const status = vi.fn().mockResolvedValueOnce({ data: linkedExercise }).mockResolvedValueOnce({ data: {
         ...linkedExercise, saved_work: saved, collection_error: { message: 'Einsammelprüfung fehlgeschlagen.' },
@@ -405,7 +430,7 @@ it('keeps the saved deadline visible when the combined collection check fails', 
     try {
         await wrapper.setProps({ checkProgress: true }); await flushPromises()
         await button(wrapper, 'Erneut prüfen').trigger('click'); await flushPromises()
-        expect(wrapper.emitted('deadline-saved')).toEqual([[{ data: saved }]])
+        expect(wrapper.emitted('deadline-saved')).toBeUndefined()
         expect(wrapper.text()).toContain('Einsammelprüfung fehlgeschlagen.')
         expect(wrapper.emitted('exercise-status').at(-1)[0].status).toBe('unknown')
     } finally { wrapper.unmount() }
@@ -430,7 +455,7 @@ it('retains one status recheck for historical work without reopening its folder 
     } finally { wrapper.unmount() }
 })
 
-it('retains the last confirmed icon state while a fresh check is pending', async () => {
+it('clears the previous icon state while a fresh check is pending', async () => {
     let finish
     const preparation = { status: 'ready', prepared_at: '2026-10-24T16:00:00Z' }
     const confirmed = { ...linkedExercise, exercise: { ...linkedExercise.exercise, email_preparation: preparation } }
@@ -440,11 +465,29 @@ it('retains the last confirmed icon state while a fresh check is pending', async
     try {
         await flushPromises()
         await button(wrapper, 'Erneut prüfen').trigger('click')
-        expect(wrapper.emitted('exercise-status').at(-1)[0]).toMatchObject({ status: 'found', folder: confirmed.exercise.folder,
-            emailPreparation: preparation, checking: true })
+        expect(wrapper.emitted('exercise-status').at(-1)[0]).toMatchObject({ status: 'checking', folder: null,
+            emailPreparation: null, checking: true })
         expect(wrapper.emitted('check-busy').at(-1)).toEqual([true])
         finish({ data: confirmed }); await flushPromises()
         expect(wrapper.emitted('check-busy').at(-1)).toEqual([false])
+    } finally { wrapper.unmount() }
+})
+
+it('displays confirmed preparation points and clears them when the next check fails', async () => {
+    const preparation = { status: 'ready', components: { aufgabenblatt: { included: true, points: 35 },
+        multiple_choice: { included: false, points: null } }, total_points: 35 }
+    const confirmed = { ...linkedExercise, exercise: { ...linkedExercise.exercise, preparation } }
+    const status = vi.fn().mockResolvedValueOnce({ data: confirmed }).mockRejectedValueOnce(new Error('offline'))
+    const wrapper = mountExport(undefined, undefined, status)
+    try {
+        await flushPromises()
+        expect(wrapper.text()).toContain('Prüfungsordner vorbereitet')
+        expect(wrapper.text()).toContain('Gesamt 35 Punkte')
+        expect(wrapper.emitted('exercise-status').at(-1)[0].preparation).toEqual(preparation)
+        await button(wrapper, 'Erneut prüfen').trigger('click')
+        await flushPromises()
+        expect(wrapper.text()).not.toContain('Prüfungsordner vorbereitet')
+        expect(wrapper.emitted('exercise-status').at(-1)[0]).toMatchObject({ status: 'unknown', preparation: null })
     } finally { wrapper.unmount() }
 })
 
@@ -480,13 +523,15 @@ it('opens a short MC choice dialog with MC off and cancels without loading or co
     try {
         await flushPromises()
         await button(wrapper, 'Leistungsfeststellung erstellen').trigger('click')
-        expect((wrapper.get('input[type="checkbox"]').element as HTMLInputElement).checked).toBe(false)
-        await wrapper.get('input[type="checkbox"]').setValue(true)
+        await flushPromises()
+        expect((wrapper.get('input[aria-label="Multiple-Choice-Teil: Ja"]').element as HTMLInputElement).checked).toBe(false)
+        await wrapper.get('input[aria-label="Multiple-Choice-Teil: Ja"]').setValue(true)
         await button(wrapper, 'Abbrechen').trigger('click')
         expect(get).not.toHaveBeenCalled()
         expect(writeText).not.toHaveBeenCalled()
         await button(wrapper, 'Leistungsfeststellung erstellen').trigger('click')
-        expect((wrapper.get('input[type="checkbox"]').element as HTMLInputElement).checked).toBe(false)
+        await flushPromises()
+        expect((wrapper.get('input[aria-label="Multiple-Choice-Teil: Ja"]').element as HTMLInputElement).checked).toBe(false)
     } finally { wrapper.unmount() }
 })
 
@@ -496,30 +541,34 @@ it.each([false, true])('saves the changed final deadline before preparing the ex
         ? { connected: true, module_link: { folder: { id: 'id:module' } }, exercise: { status: 'missing' }, saved_work: savedWork }
         : { connected: true, module_link: { folder: { id: 'id:module' } }, exercise: { status: 'missing' } } }))
     const get = vi.fn().mockResolvedValue({ data: { data: { work_id: 65, course_id: 2, roster_complete: true, participants_count: 3,
-        text: 'Auftrag mit neuer Frist', context: { include_multiple_choice: includeMc, ...(includeMc ? { multiple_choice_test: { test_id: 9 } } : {}) } } } })
+        text: 'Auftrag mit neuer Frist', context: { include_multiple_choice: false } } } })
     const wrapper = mountExport(get, undefined, status, { ...work, finish_until_date: '2026-10-20', finish_until_time: null },
-        { available: true, tests: [{ id: 9, title: 'Test' }], catalogs: [], linked_test_id: 9 })
+        { available: true, tests: [{ id: 9, title: 'Test' }], catalogs: [], linked_test_id: null })
     try {
         await flushPromises()
         await button(wrapper, 'Leistungsfeststellung erstellen').trigger('click')
+        await flushPromises()
         expect((wrapper.get('input[aria-label="Endgültige Abgabefrist"]').element as HTMLInputElement).value).toBe('2026-10-20')
         await wrapper.get('input[aria-label="Endgültige Abgabefrist"]').setValue('2026-10-25')
         await wrapper.get('input[aria-label="Uhrzeit (optional)"]').setValue('13:30')
         if (includeMc) {
-            await wrapper.get('input[type="checkbox"]').setValue(true)
+            await wrapper.get('input[aria-label="Multiple-Choice-Teil: Ja"]').setValue(true)
             await flushPromises()
+            await wrapper.get('select[aria-label="Multiple-Choice-Katalog"]').setValue('3')
         }
         await button(wrapper, 'Übergabetext kopieren').trigger('click')
         await flushPromises()
         expect(axios.post).toHaveBeenCalledWith('/api/admin/teaching/course_works/65/dropbox/refresh', expect.objectContaining({
             finish_until_date: '2026-10-25', finish_until_time: '13:30', expected: { date: '2026-10-20', time: null },
         }), { timeout: 120000 })
-        expect(wrapper.emitted('deadline-saved')).toEqual([[{ data: savedWork }]])
+        expect(wrapper.emitted('deadline-saved')?.[0]).toEqual([{ data: savedWork }])
         expect(get).toHaveBeenCalledTimes(1)
         expect(navigator.clipboard.writeText).toHaveBeenCalledWith('Auftrag mit neuer Frist')
+        expect((wrapper.get('input[aria-label="Multiple-Choice-Teil: Ja"]').element as HTMLInputElement).checked).toBe(includeMc)
         await wrapper.setProps({ work: savedWork })
         await flushPromises()
         expect(wrapper.get('[role="dialog"]').text()).toContain('Übergabetext kopiert')
+        expect((wrapper.get('input[aria-label="Multiple-Choice-Teil: Ja"]').element as HTMLInputElement).checked).toBe(includeMc)
     } finally { wrapper.unmount() }
 })
 
@@ -532,6 +581,7 @@ it('does not prepare an exercise if saving the deadline fails', async () => {
     try {
         await flushPromises()
         await button(wrapper, 'Leistungsfeststellung erstellen').trigger('click')
+        await flushPromises()
         await wrapper.get('input[aria-label="Endgültige Abgabefrist"]').setValue('2026-10-25')
         await button(wrapper, 'Übergabetext kopieren').trigger('click')
         await flushPromises()
@@ -553,7 +603,8 @@ it('opens the same MC dialog immediately after linking without saving the work f
         await flushPromises()
         expect(wrapper.findAll('[role="button"][aria-label="Leistungsfeststellung erstellen"]')).toHaveLength(1)
         await button(wrapper, 'Leistungsfeststellung erstellen').trigger('click')
-        expect(wrapper.get('[role="dialog"]').text()).toContain('Multiple-Choice-Fragen einbeziehen', 'Übergabetext kopieren')
+        await flushPromises()
+        expect(wrapper.get('[role="dialog"]').text()).toContain('Multiple-Choice-Teil')
         expect(get).not.toHaveBeenCalled()
         await button(wrapper, 'Abbrechen').trigger('click')
         await wrapper.setProps({ work: { ...work, status: { multiple_choice_tests: { '2026-10-20': { work_id: 65, test_id: 9 } } } } })
@@ -562,148 +613,289 @@ it('opens the same MC dialog immediately after linking without saving the work f
     } finally { wrapper.unmount() }
 })
 
-it('does not offer MC when no work-bound test is available', async () => {
-    const wrapper = mountExport(undefined, undefined, undefined, work, { available: true,
-        tests: [{ id: 10, title: 'Fremder Test' }], catalogs: [], linked_test_id: null, eligible_test: null })
+it('offers to prepare a new test from a chosen catalog when no test exists', async () => {
+    const wrapper = mountExport(undefined, undefined, undefined, work, { tests: [], linked_test_id: null })
     try {
         await flushPromises()
         await button(wrapper, 'Leistungsfeststellung erstellen').trigger('click')
         await flushPromises()
-        expect(wrapper.text()).toContain('Kein passender Multiple-Choice-Test')
-        expect(wrapper.find('input[type="checkbox"]').exists()).toBe(false)
+        await flushPromises()
+        await wrapper.get('input[aria-label="Multiple-Choice-Teil: Ja"]').setValue(true)
+        await flushPromises()
+        expect(button(wrapper, 'Übergabetext kopieren').attributes('disabled')).toBeDefined()
+        await wrapper.get('select[aria-label="Multiple-Choice-Katalog"]').setValue('3')
+        await flushPromises()
+        expect(wrapper.text()).toContain('Für diese Durchführung wird ein neuer Test aus dem gewählten Katalog vorbereitet')
+        expect((wrapper.get('input[aria-label="Fragenanzahl"]').element as HTMLInputElement).value).toBe('10')
+        expect((wrapper.get('input[aria-label="Testpunkte"]').element as HTMLInputElement).value).toBe('10')
+        expect((wrapper.get('input[aria-label="Bearbeitungszeit (Minuten)"]').element as HTMLInputElement).value).toBe('20')
         expect(button(wrapper, 'Übergabetext kopieren').attributes('disabled')).toBeUndefined()
         expect(axios.post).not.toHaveBeenCalled()
     } finally { wrapper.unmount() }
 })
 
-it('offers the confirmed catalog without an existing test and keeps its size separate from points', async () => {
-    const check = vi.fn().mockResolvedValue({ data: { module_questions: true, assessment_points: 35,
-        module_catalog: { count: 40, fingerprint: 'a'.repeat(64) } } })
-    const get = vi.fn().mockResolvedValue({ data: { data: { work_id: 65, course_id: 2, roster_complete: true, participants_count: 3,
-        text: 'Auftrag', context: { include_multiple_choice: true, multiple_choice_test: { test_id: 9 } } } } })
-    const wrapper = mountExport(get, undefined, undefined, work,
-        { available: true, tests: [], catalogs: [], linked_test_id: null, eligible_test: null }, check)
-    try {
-        await flushPromises()
-        await button(wrapper, 'Leistungsfeststellung erstellen').trigger('click')
-        await flushPromises()
-        expect(wrapper.text()).toContain('Prüfungsvorlage: 35 Punkte')
-        await wrapper.get('input[type="checkbox"]').setValue(true)
-        expect(wrapper.text()).toContain('Fragenkatalog: 40 Fragen verfügbar')
-        expect(wrapper.text()).toContain('2 Punkte MC + 35 Punkte übrige Aufgaben = 37 Punkte gesamt')
-        expect(wrapper.find('select').exists()).toBe(false)
-        await button(wrapper, 'Übergabetext kopieren').trigger('click')
-        await flushPromises()
-        expect(axios.post).toHaveBeenCalledWith(expect.stringContaining('/prepare-exercise'),
-            expect.objectContaining({ mc_mode: 'module', catalog_fingerprint: 'a'.repeat(64),
-                question_count: 10, duration_minutes: 7, mc_points: 2, other_points: 35 }), expect.any(Object))
-    } finally { wrapper.unmount() }
-})
-
-it('allows 30 points for the remaining tasks and shows the different Schooltool scale', async () => {
-    const get = vi.fn().mockResolvedValue({ data: { data: { work_id: 65, course_id: 2, roster_complete: true, participants_count: 3,
-        text: 'Auftrag mit Punkten', context: { include_multiple_choice: true, multiple_choice_test: { test_id: 9 } } } } })
-    const wrapper = mountExport(get, undefined, undefined, work, { available: true, tests: [{ id: 9, title: 'Test' }], catalogs: [], linked_test_id: 9,
-        configuration: { locked: false, maximum_points: 15 } })
-    try {
-        await flushPromises()
-        await button(wrapper, 'Leistungsfeststellung erstellen').trigger('click')
-        await wrapper.get('input[type="checkbox"]').setValue(true)
-        await flushPromises()
-        await wrapper.get('input[aria-label="MC-Punkte"]').setValue('5')
-        await wrapper.get('input[aria-label="Punkte übrige Aufgaben"]').setValue('30')
-        expect(wrapper.text()).toContain('5 Punkte MC + 30 Punkte übrige Aufgaben = 35 Punkte gesamt')
-        expect(wrapper.text()).toContain('Bewertungsskala in Schooltool beträgt 15 Punkte')
-        await button(wrapper, 'Übergabetext kopieren').trigger('click')
-        await flushPromises()
-        expect(axios.post).toHaveBeenCalledWith(expect.stringContaining('/prepare-exercise'),
-            expect.objectContaining({ mc_points: 5, other_points: 30, expected_maximum_points: 15 }), expect.any(Object))
-    } finally { wrapper.unmount() }
-})
-
-it('does not replace a missing previously linked test', async () => {
-    const wrapper = mountExport(undefined, undefined, undefined, work, { available: true,
-        tests: [], catalogs: [{ id: 3, title: 'Grundlagen' }], linked_test_id: null, expected_test_id: 6, eligible_test: null })
-    try {
-        await flushPromises()
-        await button(wrapper, 'Leistungsfeststellung erstellen').trigger('click')
-        await flushPromises()
-        expect(wrapper.text()).toContain('Kein passender Multiple-Choice-Test')
-        expect(wrapper.text()).not.toContain('Neuen MC-Test erstellen')
-        expect(button(wrapper, 'Übergabetext kopieren').attributes('disabled')).toBeUndefined()
-        expect(axios.post).not.toHaveBeenCalled()
-    } finally { wrapper.unmount() }
-})
-
-it('allows the handoff without MC when the MC feature is unavailable', async () => {
-    const wrapper = mountExport(undefined, undefined, undefined, work, { available: false, tests: [], catalogs: [], linked_test_id: null })
-    try {
-        await flushPromises()
-        await button(wrapper, 'Leistungsfeststellung erstellen').trigger('click')
-        await flushPromises()
-        expect(wrapper.find('input[type="checkbox"]').exists()).toBe(false)
-        expect(wrapper.text()).toContain('Punkte nicht eindeutig ermittelt')
-        expect(button(wrapper, 'Übergabetext kopieren').attributes('disabled')).toBeUndefined()
-        expect(axios.post).not.toHaveBeenCalled()
-    } finally { wrapper.unmount() }
-})
-
-it.each([false, true])('loads a fresh candidate export and copies only the chosen MC handoff (%s)', async mc => {
-    const writeText = vi.fn().mockResolvedValue(undefined)
-    const text = `Verwende den Skill create-exercise. MC-Prüfungsteil: ${mc ? 'Ja' : 'Nein'}.`
+it('requests exactly one new test from the selected catalog and does not repeat creation when copying again', async () => {
     const get = vi.fn().mockResolvedValue({ data: { data: { work_id: 65, course_id: 2, roster_complete: true,
-        participants_count: 3, text, context: { include_multiple_choice: mc, ...(mc ? { multiple_choice_test: { test_id: 9 } } : {}) } } } })
-    const wrapper = mountExport(get, writeText)
+        participants_count: 1, text: 'Aufgabenblattauftrag', context: { include_multiple_choice: false } } } })
+    const wrapper = mountExport(get, undefined, undefined, work, { tests: [], linked_test_id: null })
     try {
         await flushPromises()
         await button(wrapper, 'Leistungsfeststellung erstellen').trigger('click')
-        if (mc) await wrapper.get('input[type="checkbox"]').setValue(true)
+        await flushPromises()
+        await wrapper.get('input[aria-label="Multiple-Choice-Teil: Ja"]').setValue(true)
+        await flushPromises()
+        await wrapper.get('select[aria-label="Multiple-Choice-Katalog"]').setValue('3')
         await flushPromises()
         await button(wrapper, 'Übergabetext kopieren').trigger('click')
         await flushPromises()
-        if (mc) expect(axios.post).toHaveBeenCalledExactlyOnceWith('/api/admin/teaching/course_works/65/prepare-exercise', {
-            mc_mode: 'existing', test_id: 9, expected_test_id: 9, mc_points: 2, other_points: 3, expected_maximum_points: 5, date: '2026-10-20', request_id: expect.any(String),
-        }, { signal: expect.any(AbortSignal) })
-        else expect(get).toHaveBeenCalledExactlyOnceWith('/api/admin/teaching/course_works/65/ai-export', {
-            params: { purpose: 'exercise', include_mc: 0, date: '2026-10-20' }, signal: expect.any(AbortSignal),
-        })
-        expect(writeText).toHaveBeenCalledExactlyOnceWith(text)
-        expect(wrapper.findAll('[role="status"]').some(status => status.text().includes('Übergabetext kopiert'))).toBe(true)
-        expect(wrapper.findAllComponents(VBtn).find(item => item.text() === 'Kopiert')?.props()).toMatchObject({ prependIcon: 'mdi-check', color: 'success' })
-        expect(button(wrapper, 'Ende')).toBeDefined()
-        expect(button(wrapper, 'Abbrechen')).toBeUndefined()
-        expect(wrapper.text()).toContain('3 bestätigte Prüfungskandidaten')
-        await wrapper.get('input[type="checkbox"]').setValue(!mc)
-        expect(button(wrapper, 'Übergabetext kopieren')).toBeDefined()
-        expect(button(wrapper, 'Kopiert')).toBeUndefined()
+        expect(axios.post).toHaveBeenCalledWith('/api/admin/teaching/course_works/65/prepare-exercise',
+            { mc_selection: 'yes', catalog_id: 3, date: '2026-10-20', test_id: null, expected_test_id: null,
+                question_count: 10, total_points: 10, duration_minutes: 20 }, expect.objectContaining({ signal: expect.any(AbortSignal) }))
+        expect(wrapper.emitted('deadline-saved')?.at(-1)?.[0]).toEqual({ data: work })
+        await button(wrapper, 'Kopiert').trigger('click')
+        await flushPromises()
+        expect(axios.post).toHaveBeenCalledTimes(1)
     } finally { wrapper.unmount() }
 })
 
-it.each([false, 'throws'])('keeps a completed handoff and selected text when both clipboard methods fail: %s', async legacyResult => {
+it('keeps custom MC settings across catalogue checks and submits them only within the catalogue limit', async () => {
     const get = vi.fn().mockResolvedValue({ data: { data: { work_id: 65, course_id: 2, roster_complete: true,
-        participants_count: 1, text: 'Vollständiger Übergabetext', context: { include_multiple_choice: false } } } })
-    const wrapper = mountExport(get, vi.fn().mockRejectedValue(new Error('Denied')))
-    const legacyCopy = vi.fn(() => {
-        if (legacyResult === 'throws') throw new Error('Denied')
-        return false
+        participants_count: 1, text: 'Aufgabenblattauftrag', context: { include_multiple_choice: false } } } })
+    const wrapper = mountExport(get, undefined, undefined, work, { tests: [], available_question_count: 8, linked_test_id: null })
+    try {
+        await flushPromises()
+        await button(wrapper, 'Leistungsfeststellung erstellen').trigger('click')
+        await flushPromises()
+        await wrapper.get('input[aria-label="Multiple-Choice-Teil: Ja"]').setValue(true)
+        await flushPromises()
+        const catalog = wrapper.get('select[aria-label="Multiple-Choice-Katalog"]')
+        await catalog.setValue('3')
+        await flushPromises()
+        expect(wrapper.text()).toContain('Bitte eine ganze Zahl von 1 bis 8 eingeben.')
+        expect(button(wrapper, 'Übergabetext kopieren').attributes('disabled')).toBeDefined()
+        expect(axios.post).not.toHaveBeenCalled()
+        await wrapper.get('input[aria-label="Fragenanzahl"]').setValue('7')
+        await wrapper.get('input[aria-label="Testpunkte"]').setValue('12.5')
+        await wrapper.get('input[aria-label="Bearbeitungszeit (Minuten)"]').setValue('25')
+        await catalog.setValue('')
+        await catalog.setValue('3')
+        await flushPromises()
+        await button(wrapper, 'Übergabetext kopieren').trigger('click')
+        await flushPromises()
+        expect(axios.post).toHaveBeenCalledExactlyOnceWith('/api/admin/teaching/course_works/65/prepare-exercise',
+            expect.objectContaining({ test_id: null, question_count: 7, total_points: 12.5, duration_minutes: 25 }),
+            expect.objectContaining({ signal: expect.any(AbortSignal) }))
+        expect(get.mock.calls[0][1].params).not.toHaveProperty('total_points')
+    } finally { wrapper.unmount() }
+})
+
+it.each(['success', 'context change'])('starts the clipboard request on the first click before a slow handoff: %s', async outcome => {
+    let resolveExport!: (value: unknown) => void
+    const get = vi.fn(() => new Promise(resolve => { resolveExport = resolve }))
+    const wrapper = mountExport(get)
+    const consumed = vi.fn()
+    vi.stubGlobal('ClipboardItem', class {
+        representations: Record<string, Promise<Blob>>
+        constructor(representations: Record<string, Promise<Blob>>) { this.representations = representations }
     })
+    const write = vi.fn(async ([item]) => consumed(await item.representations['text/plain']))
+    Object.assign(navigator.clipboard, { write })
+    try {
+        await flushPromises()
+        await button(wrapper, 'Leistungsfeststellung erstellen').trigger('click')
+        await flushPromises()
+        await button(wrapper, 'Übergabetext kopieren').trigger('click')
+        await flushPromises()
+        expect(write).toHaveBeenCalledOnce()
+        expect(write.mock.invocationCallOrder[0]).toBeLessThan(get.mock.invocationCallOrder[0])
+        expect(consumed).not.toHaveBeenCalled()
+        if (outcome === 'context change') await wrapper.setProps({ date: '2026-10-21' })
+        resolveExport({ data: { data: { work_id: 65, course_id: 2, roster_complete: true,
+            participants_count: 1, text: 'Bestätigter Auftrag', context: { include_multiple_choice: false } } } })
+        await flushPromises()
+        if (outcome === 'context change') {
+            expect(consumed).not.toHaveBeenCalled()
+            expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+        } else {
+            expect(consumed).toHaveBeenCalledWith(expect.objectContaining({ type: 'text/plain', size: new Blob(['Bestätigter Auftrag']).size }))
+            expect(button(wrapper, 'Kopiert')).toBeDefined()
+        }
+        expect(navigator.clipboard.writeText).not.toHaveBeenCalled()
+    } finally { wrapper.unmount() }
+})
+
+it('retries a denied clipboard write directly without repeating any server changes', async () => {
+    const get = vi.fn().mockResolvedValue({ data: { data: { work_id: 65, course_id: 2, roster_complete: true,
+        participants_count: 1, text: 'Bestätigter Auftrag', context: { include_multiple_choice: false } } } })
+    const denied = new DOMException('Denied', 'NotAllowedError')
+    const writeText = vi.fn().mockRejectedValue(denied)
+    const wrapper = mountExport(get, writeText)
+    vi.stubGlobal('ClipboardItem', class {})
+    Object.assign(navigator.clipboard, { write: vi.fn().mockRejectedValue(denied) })
+    const legacyCopy = vi.fn().mockReturnValueOnce(false).mockReturnValueOnce(true)
     Object.defineProperty(document, 'execCommand', { configurable: true, value: legacyCopy })
     try {
         await flushPromises()
         await button(wrapper, 'Leistungsfeststellung erstellen').trigger('click')
+        await flushPromises()
+        await button(wrapper, 'Übergabetext kopieren').trigger('click')
+        await flushPromises()
+        expect(wrapper.text()).toContain('Automatisches Kopieren war nicht möglich')
+        expect(button(wrapper, 'Kopiert')).toBeUndefined()
+        await button(wrapper, 'Text kopieren').trigger('click')
+        await flushPromises()
+        expect(button(wrapper, 'Kopiert')).toBeDefined()
+        expect(legacyCopy).toHaveBeenCalledTimes(2)
+        expect(writeText).toHaveBeenCalledTimes(1)
+        expect(axios.post).toHaveBeenCalledTimes(1)
+        expect(get).toHaveBeenCalledTimes(1)
+    } finally { wrapper.unmount() }
+})
+
+it('requires an explicit choice when multiple matching tests exist', async () => {
+    const options = { tests: [{ id: 9, title: 'Test 1' }, { id: 10, title: 'Test 2' }], linked_test_id: null }
+    const wrapper = mountExport(undefined, undefined, undefined, work, options)
+    try {
+        await flushPromises()
+        await button(wrapper, 'Leistungsfeststellung erstellen').trigger('click')
+        await flushPromises()
+        await wrapper.get('input[aria-label="Multiple-Choice-Teil: Ja"]').setValue(true)
+        await flushPromises()
+        await wrapper.get('select[aria-label="Multiple-Choice-Katalog"]').setValue('3')
+        await flushPromises()
+        expect(button(wrapper, 'Übergabetext kopieren').attributes('disabled')).toBeDefined()
+        await wrapper.get('select[aria-label="Passender Multiple-Choice-Test"]').setValue('10')
+        expect(button(wrapper, 'Übergabetext kopieren').attributes('disabled')).toBeUndefined()
+        expect(wrapper.text()).toContain('Test: 10 Fragen, 10 Punkte, 20 Minuten.')
+        expect(wrapper.find('input[aria-label="Fragenanzahl"]').exists()).toBe(false)
+    } finally { wrapper.unmount() }
+})
+it('does not offer catalogue creation or MC points in the assessment dialog', async () => {
+    const check = vi.fn().mockResolvedValue({ data: { assessment_points: 35, module_catalog: { count: 40, fingerprint: 'a'.repeat(64) } } })
+    const wrapper = mountExport(undefined, undefined, undefined, work, { tests: [], linked_test_id: null }, check)
+    try {
+        await flushPromises()
+        await button(wrapper, 'Leistungsfeststellung erstellen').trigger('click')
+        await flushPromises()
+        await flushPromises()
+        await wrapper.get('input[aria-label="Multiple-Choice-Teil: Ja"]').setValue(true)
+        await flushPromises()
+        expect(wrapper.text()).toContain('Prüfungsvorlage: 35 Punkte')
+        expect(wrapper.text()).not.toContain('Fragenkatalog: 40')
+        expect(wrapper.find('input[aria-label="MC-Punkte"]').exists()).toBe(false)
+        expect(button(wrapper, 'Übergabetext kopieren').attributes('disabled')).toBeDefined()
+        expect(axios.post).not.toHaveBeenCalled()
+    } finally { wrapper.unmount() }
+})
+it.each([35, 30])('keeps template points separate from an existing test on a prepared exam: %s', async points => {
+    const prepared = { ...linkedExercise, exercise: { ...linkedExercise.exercise, preparation: { status: 'ready',
+        components: { aufgabenblatt: { included: true, points: 35 }, multiple_choice: { included: false, points: null } }, total_points: 35 } } }
+    const status = vi.fn().mockResolvedValue({ data: prepared })
+    const check = vi.fn().mockResolvedValue({ data: { assessment_points: points } })
+    const wrapper = mountExport(undefined, undefined, status, work, { tests: [{ id: 9, title: 'Test' }], linked_test_id: 9 }, check)
+    try {
+        await flushPromises()
+        await button(wrapper, 'Leistungsfeststellung vorbereitet').trigger('click')
+        await flushPromises()
+        expect(wrapper.get('[role="dialog"]').text()).toContain(`Prüfungsvorlage: ${points} Punkte`)
+        expect((wrapper.get('select[aria-label="Multiple-Choice-Katalog"]').element as HTMLSelectElement).value).toBe('3')
+        expect(wrapper.find('input[aria-label="MC-Punkte"]').exists()).toBe(false)
+    } finally { wrapper.unmount() }
+})
+it('does not prefill an MC point allocation in a test assignment', async () => {
+    const wrapper = mountExport(undefined, undefined, undefined, work, { tests: [{ id: 9, title: 'Test' }], linked_test_id: 9 })
+    try {
+        await flushPromises()
+        await button(wrapper, 'Leistungsfeststellung erstellen').trigger('click')
+        await flushPromises()
+        await flushPromises()
+        expect(wrapper.find('input[aria-label="MC-Punkte"]').exists()).toBe(false)
+        expect(wrapper.find('input[aria-label="Punkte übrige Aufgaben"]').exists()).toBe(false)
+        expect((wrapper.get('select[aria-label="Multiple-Choice-Katalog"]').element as HTMLSelectElement).value).toBe('3')
+    } finally { wrapper.unmount() }
+})
+it('does not silently replace a previously linked test missing from the list', async () => {
+    const wrapper = mountExport(undefined, undefined, undefined, work, { tests: [], linked_test_id: 6 })
+    try {
+        await flushPromises()
+        await button(wrapper, 'Leistungsfeststellung erstellen').trigger('click')
+        await flushPromises()
+        await flushPromises()
+        expect(wrapper.text()).toContain('Der zugeordnete Test ist nicht mehr verfügbar')
+        expect(button(wrapper, 'Übergabetext kopieren').attributes('disabled')).toBeDefined()
+        expect(axios.post).not.toHaveBeenCalled()
+    } finally { wrapper.unmount() }
+})
+it('allows the handoff without MC when no test is available', async () => {
+    const wrapper = mountExport(undefined, undefined, undefined, work, { tests: [], linked_test_id: null })
+    try {
+        await flushPromises()
+        await button(wrapper, 'Leistungsfeststellung erstellen').trigger('click')
+        await flushPromises()
+        await flushPromises()
+        expect((wrapper.get('input[aria-label="Multiple-Choice-Teil: Nein"]').element as HTMLInputElement).checked).toBe(true)
+        expect(wrapper.text()).toContain('35 Punkte')
+        expect(button(wrapper, 'Übergabetext kopieren').attributes('disabled')).toBeUndefined()
+        expect(axios.post).not.toHaveBeenCalled()
+    } finally { wrapper.unmount() }
+})
+it.each([false, true])('loads a fresh candidate export after confirming the chosen test assignment (%s)', async mc => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    const text = 'Aufgabenblatt und Beurteilung; keine persönlichen MC-PDFs.'
+    const get = vi.fn().mockResolvedValue({ data: { data: { work_id: 65, course_id: 2, roster_complete: true,
+        participants_count: 3, text, context: { include_multiple_choice: false } } } })
+    const wrapper = mountExport(get, writeText)
+    try {
+        await flushPromises()
+        await button(wrapper, 'Leistungsfeststellung erstellen').trigger('click')
+        await flushPromises()
+        await flushPromises()
+        if (mc) {
+            await wrapper.get('input[aria-label="Multiple-Choice-Teil: Ja"]').setValue(true)
+            await flushPromises()
+            await wrapper.get('select[aria-label="Multiple-Choice-Katalog"]').setValue('3')
+        }
+        await button(wrapper, 'Übergabetext kopieren').trigger('click')
+        await flushPromises()
+        expect(axios.post).toHaveBeenCalledWith('/api/admin/teaching/course_works/65/prepare-exercise', {
+            mc_selection: mc ? 'yes' : 'no', test_id: mc ? 9 : null, ...(mc ? { catalog_id: 3 } : {}), expected_test_id: null, date: '2026-10-20',
+        }, { signal: expect.any(AbortSignal) })
+        expect(get).toHaveBeenCalledExactlyOnceWith('/api/admin/teaching/course_works/65/ai-export', {
+            params: { purpose: 'exercise', include_mc: 0, template_points_snapshot: 35, date: '2026-10-20' }, signal: expect.any(AbortSignal),
+        })
+        expect(writeText).toHaveBeenCalledExactlyOnceWith(text)
+        expect(wrapper.findAllComponents(VBtn).find(item => item.text() === 'Kopiert')?.props()).toMatchObject({ prependIcon: 'mdi-check', color: 'success' })
+        expect(wrapper.text()).toContain('3 bestätigte Prüfungskandidaten')
+        await wrapper.get(mc ? 'input[aria-label="Multiple-Choice-Teil: Nein"]' : 'input[aria-label="Multiple-Choice-Teil: Ja"]').setValue(true)
+        expect(button(wrapper, 'Übergabetext kopieren')).toBeDefined()
+    } finally { wrapper.unmount() }
+})
+it.each([[false, false], [true, false], [false, 'throws'], [true, 'throws']])('keeps the chosen test state in the manual copy helper: %s, %s', async (includeMc, legacyResult) => {
+    const text = 'Aufgabenblatt und Beurteilung; keine persönlichen MC-PDFs.'
+    const get = vi.fn().mockResolvedValue({ data: { data: { work_id: 65, course_id: 2, roster_complete: true,
+        participants_count: 1, text, context: { include_multiple_choice: false } } } })
+    const wrapper = mountExport(get, vi.fn().mockRejectedValue(new Error('Denied')))
+    const legacyCopy = vi.fn(() => { if (legacyResult === 'throws') throw new Error('Denied'); return false })
+    Object.defineProperty(document, 'execCommand', { configurable: true, value: legacyCopy })
+    try {
+        await flushPromises()
+        await button(wrapper, 'Leistungsfeststellung erstellen').trigger('click')
+        await flushPromises()
+        await flushPromises()
+        if (includeMc) {
+            await wrapper.get('input[aria-label="Multiple-Choice-Teil: Ja"]').setValue(true)
+            await flushPromises()
+            await wrapper.get('select[aria-label="Multiple-Choice-Katalog"]').setValue('3')
+        }
         await button(wrapper, 'Übergabetext kopieren').trigger('click')
         await flushPromises()
         const field = wrapper.get('textarea[aria-label="Leistungsfeststellungsauftrag zum Kopieren"]').element as HTMLTextAreaElement
-        expect(field.value).toBe('Vollständiger Übergabetext')
+        expect(field.value).toBe(text)
+        expect((wrapper.get('input[aria-label="Multiple-Choice-Teil: Ja"]').element as HTMLInputElement).checked).toBe(includeMc)
         expect(field.closest('details')?.open).toBe(true)
         expect(field.selectionStart).toBe(0)
         expect(field.selectionEnd).toBe(field.value.length)
-        expect(button(wrapper, 'Kopiert')).toBeUndefined()
-        expect(button(wrapper, 'Text kopieren')).toBeDefined()
-        expect(button(wrapper, 'Ende')).toBeDefined()
-        expect(button(wrapper, 'Abbrechen')).toBeUndefined()
-        expect(wrapper.text()).toContain('Der Browser blockiert das Kopieren')
-        expect(legacyCopy).toHaveBeenCalledWith('copy')
+        expect(wrapper.text()).toContain('Automatisches Kopieren war nicht möglich')
         legacyCopy.mockImplementation(() => true)
         await button(wrapper, 'Text kopieren').trigger('click')
         await flushPromises()
@@ -711,25 +903,23 @@ it.each([false, 'throws'])('keeps a completed handoff and selected text when bot
         expect(get).toHaveBeenCalledTimes(1)
     } finally { wrapper.unmount() }
 })
-
-it('copies automatically through the legacy method and allows a copy retry without creating another MC test', async () => {
+it('copies through the legacy method and retries without creating a test', async () => {
     const get = vi.fn().mockResolvedValue({ data: { data: { work_id: 65, course_id: 2, roster_complete: true,
-        participants_count: 1, text: 'Vollständiger MC-Auftrag', context: { include_multiple_choice: true, multiple_choice_test: { test_id: 9 } } } } })
+        participants_count: 1, text: 'Aufgabenblattauftrag', context: { include_multiple_choice: false } } } })
     const wrapper = mountExport(get, vi.fn().mockRejectedValue(new Error('Denied')))
-    const legacyCopy = vi.fn(() => {
-        expect((document.activeElement as HTMLTextAreaElement).value).toBe('Vollständiger MC-Auftrag')
-        return true
-    })
+    const legacyCopy = vi.fn(() => true)
     Object.defineProperty(document, 'execCommand', { configurable: true, value: legacyCopy })
     try {
         await flushPromises()
         await button(wrapper, 'Leistungsfeststellung erstellen').trigger('click')
-        await wrapper.get('input[type="checkbox"]').setValue(true)
         await flushPromises()
+        await flushPromises()
+        await wrapper.get('input[aria-label="Multiple-Choice-Teil: Ja"]').setValue(true)
+        await flushPromises()
+        await wrapper.get('select[aria-label="Multiple-Choice-Katalog"]').setValue('3')
         await button(wrapper, 'Übergabetext kopieren').trigger('click')
         await flushPromises()
         expect(wrapper.get('[role="status"][type="success"]').text()).toContain('in der Zwischenablage')
-        expect(button(wrapper, 'Abbrechen')).toBeUndefined()
         await button(wrapper, 'Kopiert').trigger('click')
         await flushPromises()
         expect(legacyCopy).toHaveBeenCalledTimes(2)
@@ -738,7 +928,6 @@ it('copies automatically through the legacy method and allows a copy retry witho
         expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
     } finally { wrapper.unmount() }
 })
-
 it('does not export an unsaved work or copy an unconfirmed roster', async () => {
     const get = vi.fn().mockResolvedValue({ data: { data: { work_id: 65, course_id: 2, roster_complete: false,
         participants_count: 0, text: 'invalid', context: { include_multiple_choice: false } } } })
@@ -750,6 +939,7 @@ it('does not export an unsaved work or copy an unconfirmed roster', async () => 
         await wrapper.setProps({ work })
         await flushPromises()
         await button(wrapper, 'Leistungsfeststellung erstellen').trigger('click')
+        await flushPromises()
         await button(wrapper, 'Übergabetext kopieren').trigger('click')
         await flushPromises()
         expect(writeText).not.toHaveBeenCalled()
@@ -765,6 +955,7 @@ it('discards a delayed candidate response after switching course', async () => {
     try {
         await flushPromises()
         await button(wrapper, 'Leistungsfeststellung erstellen').trigger('click')
+        await flushPromises()
         await button(wrapper, 'Übergabetext kopieren').trigger('click')
         await wrapper.setProps({ course: { id: 3, title: 'Anderer Kurs' } })
         finish({ data: { data: { work_id: 65, course_id: 2, roster_complete: true, participants_count: 1,
@@ -821,7 +1012,7 @@ it('reuses the last check on reopening, refreshes explicitly and clears it immed
         expect(status).toHaveBeenCalledTimes(2)
         expect(axios.post).toHaveBeenCalledExactlyOnceWith('/api/admin/teaching/course_works/65/dropbox/refresh', {
             date: '2026-10-20', finish_until_date: null, finish_until_time: null, expected: { date: null, time: null },
-            progress_id: expect.any(String), stream_progress: true,
+            progress_id: expect.any(String), stream_progress: true, status_only: true,
         }, expect.objectContaining({ timeout: 120000, onDownloadProgress: expect.any(Function) }))
         status.mockResolvedValue({ data: { connected: true, module_link: null, exercise: { status: 'missing', folder: null } } })
         workDropboxStates.set('7:2:65', { connected: true, module_link: null, link_version: 'unlinked' })
@@ -831,11 +1022,11 @@ it('reuses the last check on reopening, refreshes explicitly and clears it immed
     } finally { wrapper.unmount() }
 })
 
-it('saves the edited internal deadline when checking and leaves other form changes out', async () => {
-    const saved = { ...work, finish_until_date: '2026-10-24', finish_until_time: '12:30' }
+it('checks without saving the edited internal deadline or other form changes', async () => {
+    const saved = { ...work, finish_until_date: '2026-10-23', finish_until_time: null }
     const dispatch = { status: 'sent', confirmed_count: 15, expected_count: 15, transport: 'mailpit' }
     const status = vi.fn().mockResolvedValueOnce({ data: linkedExercise }).mockResolvedValueOnce({
-        data: { ...linkedExercise, exercise: { ...linkedExercise.exercise, email_dispatch: dispatch }, saved_work: saved, deadline_sync: { message: 'Interne Endfrist übernommen.' } },
+        data: { ...linkedExercise, exercise: { ...linkedExercise.exercise, email_dispatch: dispatch }, saved_work: saved },
     })
     const wrapper = mountExport(undefined, undefined, status, { ...work, finish_until_date: '2026-10-23', finish_until_time: null })
     try {
@@ -844,14 +1035,14 @@ it('saves the edited internal deadline when checking and leaves other form chang
         await button(wrapper, 'Erneut prüfen').trigger('click')
         await flushPromises()
         expect(axios.post).toHaveBeenCalledExactlyOnceWith('/api/admin/teaching/course_works/65/dropbox/refresh', {
-            date: '2026-10-20', finish_until_date: '2026-10-24', finish_until_time: '12:30',
+            date: '2026-10-20', finish_until_date: '2026-10-23', finish_until_time: null,
             expected: { date: '2026-10-23', time: null },
-            progress_id: expect.any(String), stream_progress: true,
+            progress_id: expect.any(String), stream_progress: true, status_only: true,
         }, expect.objectContaining({ timeout: 120000, onDownloadProgress: expect.any(Function) }))
-        expect(wrapper.emitted('deadline-saved')).toEqual([[{ data: saved }]])
+        expect(wrapper.emitted('deadline-saved')).toBeUndefined()
         expect(wrapper.emitted('exercise-status')?.at(-1)?.[0]).toMatchObject({ status: 'found', emailDispatch: dispatch })
         expect(wrapper.emitted('check-busy')).toEqual([[true], [false]])
-        expect(wrapper.text()).toContain('Interne Endfrist übernommen.')
+        expect(wrapper.text()).not.toContain('Interne Endfrist übernommen.')
     } finally { wrapper.unmount() }
 })
 
@@ -978,5 +1169,75 @@ it.each(['found', 'missing', 'unknown'])('publishes the checked exercise state f
         finish({ data: statusValue === 'found' ? linkedExercise : { exercise: { status: statusValue } } })
         await flushPromises()
         expect(wrapper.emitted('exercise-status')?.at(-1)?.[0]).toMatchObject({ status: statusValue })
+    } finally { wrapper.unmount() }
+})
+
+it.each([false, true])('opens the corrected dialog immediately for a new or prepared exam (%s)', async prepared => {
+    let finish: (value: unknown) => void = () => {}
+    const templateCheck = vi.fn().mockImplementation(() => new Promise(resolve => { finish = resolve }))
+    const status = vi.fn().mockResolvedValue({ data: { connected: true, module_link: { folder: { id: 'id:module' } },
+        exercise: prepared ? { status: 'found', folder: { id: 'id:exercise', name: 'Prüfung' }, preparation: { status: 'ready',
+            components: { aufgabenblatt: { points: 35 }, multiple_choice: { included: false, points: null } }, total_points: 35 } } : { status: 'missing' } } })
+    const wrapper = mountExport(undefined, undefined, status, work, undefined, templateCheck)
+    try {
+        await flushPromises()
+        await button(wrapper, prepared ? 'Leistungsfeststellung vorbereitet' : 'Leistungsfeststellung erstellen').trigger('click')
+        await flushPromises()
+        const dialog = wrapper.get('[role="dialog"]')
+        const loadingStatus = dialog.get('[role="status"]')
+        expect(loadingStatus.text()).toContain('Punkte werden geprüft')
+        expect(loadingStatus.attributes('aria-live')).toBe('polite')
+        expect(document.activeElement).toBe(loadingStatus.element)
+        expect(dialog.find('input').exists()).toBe(false)
+        expect(dialog.find('textarea').exists()).toBe(false)
+        expect(dialog.find('button').exists()).toBe(false)
+        expect(wrapper.text()).not.toContain('Multiple-Choice-Fragen werden geprüft')
+        finish({ data: { assessment_points: 35 } })
+        await flushPromises()
+        expect(wrapper.get('[role="dialog"]').text()).toContain('35 Punkte')
+        expect(axios.get).not.toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ params: expect.objectContaining({ check_module_questions: 1 }) }))
+        expect(axios.get).not.toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ params: expect.objectContaining({ mc_selection: 'tests' }) }))
+    } finally { wrapper.unmount() }
+})
+
+it('assigns one selected existing test independently of the exam handoff', async () => {
+    const get = vi.fn().mockResolvedValue({ data: { data: { work_id: 65, course_id: 2, roster_complete: true,
+        participants_count: 1, text: 'Aufgabenblattauftrag', context: { include_multiple_choice: false } } } })
+    const wrapper = mountExport(get)
+    try {
+        await flushPromises()
+        await button(wrapper, 'Leistungsfeststellung erstellen').trigger('click')
+        await flushPromises()
+        await flushPromises()
+        await wrapper.get('input[aria-label="Multiple-Choice-Teil: Ja"]').setValue(true)
+        await flushPromises()
+        await wrapper.get('select[aria-label="Multiple-Choice-Katalog"]').setValue('3')
+        await button(wrapper, 'Übergabetext kopieren').trigger('click')
+        await flushPromises()
+        expect(axios.post).toHaveBeenCalledWith('/api/admin/teaching/course_works/65/prepare-exercise',
+            { mc_selection: 'yes', date: '2026-10-20', catalog_id: 3, test_id: 9, expected_test_id: null }, expect.objectContaining({ signal: expect.any(AbortSignal) }))
+        expect(wrapper.emitted('deadline-saved')?.at(-1)?.[0]).toEqual({ data: work })
+        expect(get).toHaveBeenCalledWith('/api/admin/teaching/course_works/65/ai-export', expect.objectContaining({ params: {
+            purpose: 'exercise', include_mc: 0, date: '2026-10-20', template_points_snapshot: 35 } }))
+    } finally { wrapper.unmount() }
+})
+
+it('removes only the previous test assignment when the choice changes to no', async () => {
+    const get = vi.fn().mockResolvedValue({ data: { data: { work_id: 65, course_id: 2, roster_complete: true,
+        participants_count: 1, text: 'Aufgabenblattauftrag', context: { include_multiple_choice: false } } } })
+    const options = { linked_test_id: 9, tests: [{ id: 9, title: 'Bestehender Test' }] }
+    const wrapper = mountExport(get, undefined, undefined, work, options)
+    try {
+        await flushPromises()
+        await button(wrapper, 'Leistungsfeststellung erstellen').trigger('click')
+        await flushPromises()
+        await flushPromises()
+        expect((wrapper.get('input[aria-label="Multiple-Choice-Teil: Ja"]').element as HTMLInputElement).checked).toBe(true)
+        await wrapper.get('input[aria-label="Multiple-Choice-Teil: Nein"]').setValue(true)
+        await button(wrapper, 'Übergabetext kopieren').trigger('click')
+        await flushPromises()
+        expect(axios.post).toHaveBeenCalledWith('/api/admin/teaching/course_works/65/prepare-exercise',
+            { mc_selection: 'no', date: '2026-10-20', test_id: null, expected_test_id: 9 }, expect.objectContaining({ signal: expect.any(AbortSignal) }))
+        expect(get).toHaveBeenCalledOnce()
     } finally { wrapper.unmount() }
 })

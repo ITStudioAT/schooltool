@@ -73,7 +73,7 @@
                     <p v-if="opened !== 'preparation' && opened !== 'collection'" class="mt-3">{{ selectedStage?.count }} von {{ selectedStage?.total }} Personen mit gespeichertem Nachweis.</p>
                     <p v-if="selectedStage?.detail && opened !== 'collection'" class="mt-2">{{ selectedStage.detail }}</p>
                     <p v-if="selectedStage?.manuallyCompleted && opened !== 'collection'" class="mt-3">Dieser Schritt ist manuell als erledigt markiert. Die Markierung bestätigt keine erstellten E-Mails, Bewertungen, bereitgestellten PDFs oder versandten Nachrichten. Vorhandene Nachweise, Zeitstempel und Punkte bleiben unverändert.</p>
-                    <p v-if="opened === 'preparation' && !portalPending && !portalRelease && !selectedStage?.manuallyCompleted" class="mt-3">Die E-Mail-Vorbereitung kann als erledigt markiert und die Markierung wieder aufgehoben werden. Damit werden keine E-Mails erstellt oder versandt.</p>
+                    <p v-if="opened === 'preparation' && !modernPrepared && !portalPending && !portalRelease && !selectedStage?.manuallyCompleted" class="mt-3">Die E-Mail-Vorbereitung kann als erledigt markiert und die Markierung wieder aufgehoben werden. Damit werden keine E-Mails erstellt oder versandt.</p>
                     <p v-if="opened === 'notification' && selectedStage?.completedAt" class="mt-3"><strong>Abgeschlossen am:</strong> {{ assessmentTimeText(selectedStage.completedAt) }}</p>
                     <v-btn v-if="opened === 'notification' && selectedStage?.simulation" class="mt-2" variant="text" href="http://127.0.0.1:8025" target="_blank" rel="noopener noreferrer">Simulator-Mailpit öffnen</v-btn>
                     <table v-if="opened === 'evaluation' && simulationEvaluation" class="simulation-evaluation mt-3" aria-label="Testbewertungen">
@@ -131,19 +131,21 @@
                     <p v-if="dispatch.transport === 'mailpit'" class="text-caption text-orange-darken-3 mt-2">Lokaler Entwicklungsdurchlauf nach Testversand über Mailpit.</p>
                 </template>
                 <div v-if="(opened === 'preparation' || opened === 'send') && !portalPending" class="d-flex flex-wrap ga-2 mt-4">
-                    <WorkEmailPreparation :work="work" :date="date" :state="state" :disabled="savingCompletion" :action="opened === 'send' ? 'send' : 'prepare'" />
-                    <WorkStudentDistribution v-if="opened === 'preparation' && !portalRelease" :work="work" :date="date" :available="exerciseReady || work.local_task_copy" :disabled="savingCompletion" @saved="emit('saved', $event)" />
+                    <WorkEmailPreparation :work="work" :date="date" :state="state" :disabled="savingCompletion" :modern-prepared="modernPrepared" :action="opened === 'send' ? 'send' : 'prepare'" />
+                    <WorkStudentDistribution v-if="opened === 'preparation' && !portalRelease" :work="work" :date="date" :available="exerciseReady || work.local_task_copy" :defer-assignment="modernPrepared" :disabled="savingCompletion" @saved="emit('saved', $event)" />
                 </div>
+                <v-alert v-if="opened === 'preparation' && modernPrepared && !portalPending"
+                    type="info" variant="tonal" class="mt-3">Die KI zeigt die vorbereiteten E-Mails zur Prüfung. Der Prüfungsstatus bestätigt keine Versandbereitschaft.</v-alert>
             </v-card-text>
             <v-card-actions class="d-flex flex-wrap ga-2" aria-label="Dialogaktionen">
                 <v-btn v-if="opened === 'preparation' && portalRelease" color="warning" variant="tonal" :disabled="savingCompletion || !!testActionBusy" @click="withdrawConfirm = true">Freigabe zurücknehmen</v-btn>
                 <WorkStudentDistribution v-if="opened === 'preparation' && (portalRelease || portalPending)" :work="work" :date="date" :available="exerciseReady" :disabled="savingCompletion" @saved="emit('saved', $event)" />
-                <WorkEmailPreparation v-if="opened === 'preparation' && !portalPending" :work="work" :date="date" :state="state" :disabled="savingCompletion" status-only>
+                <WorkEmailPreparation v-if="opened === 'preparation' && !portalPending" :work="work" :date="date" :state="state" :disabled="savingCompletion" :modern-prepared="modernPrepared" status-only>
                     <template #status-activator="{ open, available, label }">
-                        <v-btn v-show="available" variant="tonal" prepend-icon="mdi-eye-outline" :title="label" @click.stop="open">Versandbereitschaft ansehen</v-btn>
+                        <v-btn v-if="!modernPrepared || available" v-show="available" variant="tonal" prepend-icon="mdi-eye-outline" :title="label" @click.stop="open">Versandbereitschaft ansehen</v-btn>
                     </template>
                 </WorkEmailPreparation>
-                <v-btn v-if="opened === 'send' && (!sent || manuallyCompleted)" variant="tonal" :prepend-icon="manuallyCompleted ? 'mdi-undo' : 'mdi-check'" :loading="savingCompletion" :disabled="savingCompletion" @click="saveCompletion('task_dispatch_completed', !manuallyCompleted)">
+                <v-btn v-if="opened === 'send' && !modernPrepared && (!sent || manuallyCompleted)" variant="tonal" :prepend-icon="manuallyCompleted ? 'mdi-undo' : 'mdi-check'" :loading="savingCompletion" :disabled="savingCompletion" @click="saveCompletion('task_dispatch_completed', !manuallyCompleted)">
                     {{ manuallyCompleted ? 'Markierung aufheben' : 'Als erledigt markieren' }}
                 </v-btn>
                 <v-btn v-if="selectedStage?.completionField && !(opened === 'preparation' && portalPending)" variant="tonal" :prepend-icon="selectedStage?.manuallyCompleted ? 'mdi-undo' : 'mdi-check'" :loading="savingCompletion" :disabled="savingCompletion || selectedStage.blocked" @click="saveCompletion(selectedStage.completionField, !selectedStage.manuallyCompleted)">
@@ -203,7 +205,20 @@ const props = defineProps({ work: { type: Object, required: true }, date: { type
 const admin = useAdminStore()
 const courseStore = useCourseStore()
 const emit = defineEmits(['import', 'saved'])
-const manuallyCompleted = computed(() => workTaskDispatchCompleted(props.work))
+const modernPrepared = computed(() => {
+    const state = props.state
+    const key = workDropboxKey(admin.config?.user?.id, props.work)
+    const checked = workExerciseCheck(key, props.work, props.date)
+    const currentMatches = state && state.userId === admin.config?.user?.id
+        && String(state.workId) === String(props.work.id) && String(state.courseId) === String(props.work.teaching_course_id)
+        && state.date === props.date
+    if (currentMatches && (state.status === 'checking' || !checked
+        || !(Date.parse(checked.checkedAt) > Date.parse(state.checkedAt || 0)))) {
+        return state.status === 'found' && state.preparation?.status === 'ready'
+    }
+    return checked?.status === 'found' && checked.data?.exercise?.preparation?.status === 'ready'
+})
+const manuallyCompleted = computed(() => !modernPrepared.value && workTaskDispatchCompleted(props.work))
 const portalRelease = computed(() => workStudentDistribution(props.work))
 const portalPrepared = computed(() => Boolean(props.work.status?.student_distribution?.prepared_at && !props.work.status.student_distribution.published_at))
 const portalWithdrawn = computed(() => Boolean(props.work.status?.student_distribution?.published_at && props.work.status.student_distribution.withdrawn_at))
@@ -401,7 +416,7 @@ const lastCollectionRunAt = computed(() => workLastCollectionRunAt(props.work))
 const simulationEvaluation = computed(() => workSimulationEvaluation(props.work))
 const sortedSimulationRows = computed(() => sortedPeople(simulationEvaluation.value?.rows))
 const preparation = computed(() => {
-    const manuallyCompleted = props.work.status?.email_preparation_completed === true
+    const manuallyCompleted = !modernPrepared.value && props.work.status?.email_preparation_completed === true
     const key = workDropboxKey(admin.config?.user?.id, props.work)
     const date = props.date || props.work.date_for_all_groups || ''
     const cached = workExerciseCheck(key, props.work, date)?.data || workDropboxStates.get(key)
@@ -410,13 +425,14 @@ const preparation = computed(() => {
     const current = props.state?.status === 'found' && props.state.userId === admin.config?.user?.id
         && String(props.state.workId) === String(props.work.id) && String(props.state.courseId) === String(props.work.teaching_course_id)
         && props.state.date === props.date ? props.state.emailPreparation : null
-    const ready = (current || checked)?.status === 'ready'
-    return { title: 'E-Mail-Vorbereitung', completionField: workManualCompletionFields.preparation, manuallyCompleted,
+    const ready = !modernPrepared.value && (current || checked)?.status === 'ready'
+    return { title: 'E-Mail-Vorbereitung', completionField: modernPrepared.value ? null : workManualCompletionFields.preparation, manuallyCompleted,
         complete: manuallyCompleted || ready, label: `E-Mail-Vorbereitung: ${manuallyCompleted ? 'manuell erledigt' : ready ? 'vorbereitet' : 'noch offen'}` }
 })
 const sendBlocked = computed(() => !preparation.value.complete)
 const selectedStage = computed(() => opened.value === 'preparation' ? preparation.value : stages.value.find(stage => stage.key === opened.value))
-const nextAction = computed(() => workProgressNextAction(props.work) || (preparation.value.complete ? 'E-Mails versenden' : opened.value === 'preparation' ? 'E-Mails vorbereiten' : 'Abgaben einsammeln'))
+const nextAction = computed(() => modernPrepared.value && !portalRelease.value ? 'E-Mails vorbereiten'
+    : workProgressNextAction(props.work) || (preparation.value.complete ? 'E-Mails versenden' : opened.value === 'preparation' ? 'E-Mails vorbereiten' : 'Abgaben einsammeln'))
 const nextActionText = computed(() => nextAction.value === 'Abgeschlossen' ? 'Status: ABGESCHLOSSEN.' : `Nächster Schritt: ${nextAction.value}.`)
 const opened = ref(null)
 const savingCompletion = ref(false)
@@ -439,11 +455,12 @@ const dispatch = computed(() => {
     return { status: count > 0 ? (count === students.size ? 'sent' : 'partial') : 'missing',
         confirmed_count: count, expected_count: students.size, sent_at: notifications[0]?.sent_at, transport: 'office_outlook' }
 })
-const sent = computed(() => dispatch.value.status === 'sent')
-const hasSentTasks = computed(() => Boolean(portalRelease.value) || manuallyCompleted.value || (['sent', 'partial'].includes(dispatch.value.status) && Number(dispatch.value.confirmed_count) > 0))
+const sent = computed(() => !modernPrepared.value && dispatch.value.status === 'sent')
+const hasSentTasks = computed(() => Boolean(portalRelease.value) || (!modernPrepared.value && (manuallyCompleted.value || (['sent', 'partial'].includes(dispatch.value.status) && Number(dispatch.value.confirmed_count) > 0))))
 watch(stages, value => { if (value.find(stage => stage.key === opened.value)?.blocked) opened.value = null })
 watch(sendBlocked, blocked => { if (blocked && opened.value === 'send') opened.value = null })
-const sendLabel = computed(() => sent.value ? `E-Mails versandt${dispatch.value.transport === 'mailpit' ? ' · Testversand über Mailpit' : ''}`
+const sendLabel = computed(() => modernPrepared.value ? 'E-Mail-Versand für diesen Prüfungsaufbau nicht eingerichtet'
+    : sent.value ? `E-Mails versandt${dispatch.value.transport === 'mailpit' ? ' · Testversand über Mailpit' : ''}`
     : manuallyCompleted.value ? 'E-Mail-Versand: manuell erledigt'
     : dispatch.value.status === 'partial' ? `E-Mail-Versand unvollständig: ${dispatch.value.confirmed_count} bestätigt`
         : dispatch.value.status === 'unknown' ? 'E-Mail-Versand nicht bestätigt – erneut prüfen' : 'E-Mails noch nicht versandt')

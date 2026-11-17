@@ -173,7 +173,7 @@
                 </div>
                 <div v-if="work_form.id" class="mt-2"><WorkDispatchStatus :work="work_form" aggregate /></div>
                 <span v-if="work_form.id" :inert="workChecking" :aria-disabled="workChecking" :class="{ 'work-status-checking': workChecking }">
-                    <WorkDeliveryStatus :work="courseWorks.find(work => work.id === work_form.id) || work_form" :date="work_form.date_for_all_groups || ''" :state="workExerciseStatus" :exercise-ready="workStudentDistributionAvailable(courseWorks.find(work => work.id === work_form.id) || work_form)" :disabled="is_saving" :size="24" @import="openImport" @saved="refreshWorks" />
+                    <WorkDeliveryStatus :work="courseWorks.find(work => work.id === work_form.id) || work_form" :date="work_form.date_for_all_groups || ''" :state="workExerciseStatus" :exercise-ready="workStudentDistributionAvailable(courseWorks.find(work => work.id === work_form.id) || work_form)" :disabled="is_saving || !workDeliveryAvailable(courseWorks.find(work => work.id === work_form.id) || work_form)" :size="24" @import="openImport" @saved="refreshWorks" />
                 </span>
                 <div v-if="work_form.id" class="text-caption mt-2" data-testid="work-assessment-total">
                     {{ workAssessedCount(courseWorks.find(work => work.id === work_form.id)) }} von {{ totalCourseStudentsCount }} beurteilt
@@ -2508,11 +2508,25 @@ export default {
             return workDropboxStates.get(workDropboxKey(this.config?.user?.id, work))
         },
         workStudentDistributionAvailable(work) {
+            const state = this.workExerciseStatus
             const checked = workExerciseCheck(workDropboxKey(this.config?.user?.id, work), work, work.date_for_all_groups || '')
-            if (checked?.status === 'found' && checked.data?.exercise?.assignment_status === 'ready') return true
+            const currentMatches = state && state.userId === this.config?.user?.id && String(state.workId) === String(work.id)
+                && String(state.courseId) === String(work.teaching_course_id) && state.date === (work.date_for_all_groups || '')
+            if (currentMatches && (state.status === 'checking'
+                || !checked || !(Date.parse(checked.checkedAt) > Date.parse(state.checkedAt || 0)))) {
+                if (state.status !== 'found') return false
+                return state.assignmentStatus === 'ready' || state.preparation?.status === 'ready'
+            }
+            if (checked?.status === 'unknown') return false
+            if (checked?.status === 'found' && (checked.data?.exercise?.assignment_status === 'ready'
+                || checked.data?.exercise?.preparation?.status === 'ready')) return true
             const status = { ...work.status }
             Object.values(workManualCompletionFields).forEach(field => { delete status[field] })
             return workHasProgress({ ...work, status }) && !workNeedsPreparation(work, this.workFolderState(work))
+        },
+        workDeliveryAvailable(work) {
+            return Boolean(this.workStudentDistributionAvailable(work) || work.local_task_copy
+                || work.status?.student_distribution?.published_at || work.status?.student_distribution?.prepared_at)
         },
         workEmailPreparationLabel(work) {
             if (workHasProgress(work)) return workProgressNextAction(work, this.deadlineNow)

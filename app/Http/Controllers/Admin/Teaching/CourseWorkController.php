@@ -3,13 +3,18 @@
 namespace App\Http\Controllers\Admin\Teaching;
 
 use App\Http\Controllers\Controller;
+use App\Models\DropboxConnection;
 use App\Models\Import116;
+use App\Models\McCatalog;
+use App\Models\McTest;
 use App\Models\TeachingCourse;
 use App\Models\TeachingCourseWork;
+use App\Models\TeachingWorkDropboxFolder;
 use App\Models\User;
 use App\Services\DropboxModuleLinks;
 use App\Services\DropboxWorkImport;
 use App\Services\MultipleChoice\McModuleTemplateSource;
+use App\Services\MultipleChoice\McTestService;
 use App\Services\TeachingCourseStudentActivity;
 use App\Services\TeachingCourseStudentEntryService;
 use App\Services\TeachingCourseWorkEntrySyncService;
@@ -24,15 +29,18 @@ use App\Services\TeachingWorkMarkdownImport;
 use App\Services\TeachingWorkMultipleChoice;
 use App\Services\TeachingWorkRefreshProgress;
 use App\Services\TeachingWorkStudentDistribution;
+use Carbon\CarbonImmutable;
 use Closure;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpFoundation\StreamedResponse;
+use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 use Throwable;
 
 class CourseWorkController extends Controller
@@ -117,7 +125,33 @@ class CourseWorkController extends Controller
         $actor = $this->userHasRole(['admin', 'teaching_admin', 'teacher']);
         abort_unless($actor && $course_work->teachingCourse, 403);
         $this->authorizeTeachingCourseAccess($course_work->teachingCourse, $actor);
-        $data = $request->validate(['date' => ['nullable', 'date_format:Y-m-d'], 'check_module_questions' => ['sometimes', 'boolean']]);
+        $data = $request->validate(['date' => ['nullable', 'date_format:Y-m-d'], 'check_module_questions' => ['sometimes', 'boolean'],
+            'mc_selection' => ['nullable', Rule::in(['current', 'tests', 'template_points', 'catalogs', 'candidates'])],
+            'catalog_id' => ['required_if:mc_selection,candidates', 'nullable', 'integer', 'min:1']]);
+        if (isset($data['mc_selection'])) {
+            if ($data['mc_selection'] === 'template_points') {
+                return response()->json(['assessment_points' => $this->assessmentSource($course_work, $actor)['points']])
+                    ->header('Cache-Control', 'private, no-store');
+            }
+
+            if ($data['mc_selection'] === 'catalogs') {
+                $catalogs = McCatalog::query()->where('school_id', $course_work->teachingCourse->school_id)
+                    ->where('owner_id', $course_work->teachingCourse->user_id)->orderBy('title')->orderBy('id')->get();
+
+                return response()->json(['catalogs' => $catalogs->map(fn (McCatalog $catalog): array => [
+                    'id' => $catalog->id, 'title' => $catalog->title,
+                    'reviewed_question_count' => count($catalog->questionsForTesting()),
+                ]), 'defaults' => $this->mcSelectionDefaults()])->header('Cache-Control', 'private, no-store');
+            }
+
+            if ($data['mc_selection'] === 'candidates') {
+                return response()->json($this->mcCatalogCandidates($course_work, $data['date'] ?? null, (int) $data['catalog_id']))
+                    ->header('Cache-Control', 'private, no-store');
+            }
+
+            return response()->json($this->mcSelectionOptions($course_work, $data['date'] ?? null, $data['mc_selection'] === 'tests'))
+                ->header('Cache-Control', 'private, no-store');
+        }
         if ($data['check_module_questions'] ?? false) {
             $link = app(DropboxModuleLinks::class)->current($course_work);
             abort_unless($link, 409, 'Für diese Arbeit ist kein Lernmodul bestätigt.');
@@ -143,11 +177,348 @@ class CourseWorkController extends Controller
         return response()->json($options)->header('Cache-Control', 'private, no-store');
     }
 
+    /** @return array<string, mixed> */
+    private function mcSelectionOptions(TeachingCourseWork $work, ?string $date, bool $list): array
+    {
+        $slot = $this->mcSelectionSlot($work, $date);
+        $binding = $work->status['multiple_choice_tests'][$slot] ?? null;
+        abort_if($binding !== null && (! is_array($binding) || (int) ($binding['work_id'] ?? 0) !== (int) $work->id
+            || ! is_numeric($binding['test_id'] ?? null)), 409, 'Die vorhandene MC-Zuordnung ist nicht eindeutig.');
+        $id = $binding === null ? null : (int) $binding['test_id'];
+        $query = McTest::query()->where('school_id', $work->teachingCourse->school_id)
+            ->where('schoolyear_id', $work->teachingCourse->schoolyear_id)->where('owner_id', $work->teachingCourse->user_id);
+        $current = $id ? (clone $query)->find($id) : null;
+        abort_if($id && ! $current, 409, 'Der zugeordnete MC-Test ist nicht eindeutig zugänglich.');
+        $result = ['linked_test_id' => $id, 'linked_test_title' => $current?->title,
+            'linked_catalog_id' => $current?->catalog_id, 'expected_test_id' => $id];
+        if ($list) {
+            try {
+                $required = $this->mcSelectionStudents($work, $slot);
+            } catch (ValidationException $exception) {
+                if (! $current) {
+                    throw $exception;
+                }
+
+                return $result + ['tests' => [['id' => $current->id, 'title' => $current->title, 'status' => $current->status]],
+                    'message' => collect($exception->errors())->flatten()->first()];
+            }
+            $inactive = app(TeachingWorkStudentDistribution::class)->verifiedInactiveMcGroupAccounts($work, $slot);
+            $tests = (clone $query)->orderBy('title')->orderBy('id')->get();
+            $result['tests'] = $tests->filter(fn (McTest $test): bool => (int) $test->id === $id || $this->mcSelectionEligible($work, $test, $required, $inactive))
+                ->map(fn (McTest $test): array => ['id' => $test->id, 'title' => $test->title, 'status' => $test->status])->values();
+        }
+
+        return $result;
+    }
+
+    /** @return array{question_count: int, total_points: int, duration_minutes: int} */
+    private function mcSelectionDefaults(): array
+    {
+        return ['question_count' => 10, 'total_points' => 10, 'duration_minutes' => 20];
+    }
+
+    /** @return array<string, mixed> */
+    private function mcCatalogCandidates(TeachingCourseWork $work, ?string $date, int $catalogId): array
+    {
+        $catalog = McCatalog::query()->where('school_id', $work->teachingCourse->school_id)
+            ->where('owner_id', $work->teachingCourse->user_id)->find($catalogId);
+        abort_unless($catalog, 404, 'Der gewählte MC-Katalog ist für diesen Kurs nicht verfügbar.');
+        $options = ['defaults' => $this->mcSelectionDefaults(),
+            'available_question_count' => min(2000, count($catalog->questionsForTesting()))];
+        $slot = $this->mcSelectionSlot($work, $date);
+        $binding = $work->status['multiple_choice_tests'][$slot] ?? null;
+        abort_if($binding !== null && (! is_array($binding) || (int) ($binding['work_id'] ?? 0) !== (int) $work->id
+            || ! is_numeric($binding['test_id'] ?? null)), 409, 'Die vorhandene MC-Zuordnung ist nicht eindeutig.');
+        $currentId = $binding ? (int) $binding['test_id'] : null;
+        $tests = McTest::query()->where('school_id', $work->teachingCourse->school_id)
+            ->where('schoolyear_id', $work->teachingCourse->schoolyear_id)->where('owner_id', $work->teachingCourse->user_id)
+            ->where('catalog_id', $catalogId)->orderBy('id')->get();
+        $current = $currentId ? $tests->firstWhere('id', $currentId) : null;
+        if ($current) {
+            return ['candidates' => [$this->mcSelectionTestDetails($current)]] + $options;
+        }
+        $required = $this->mcSelectionStudents($work, $slot);
+        $inactive = app(TeachingWorkStudentDistribution::class)->verifiedInactiveMcGroupAccounts($work, $slot);
+        $candidates = [];
+        $unconfirmed = false;
+        foreach ($tests as $test) {
+            $proof = $test->snapshot['schooltool_work'] ?? null;
+            $completeProof = is_array($proof) && is_int($proof['work_id'] ?? null)
+                && is_int($proof['course_id'] ?? null) && is_string($proof['slot'] ?? null);
+            if (is_array($proof) && ($proof['work_id'] ?? null) === (int) $work->id
+                && ($proof['course_id'] ?? null) === (int) $work->teaching_course_id
+                && ($proof['slot'] ?? null) === $slot && $this->mcSelectionEligible($work, $test, $required, $inactive, allowStarted: true)) {
+                $candidates[] = $this->mcSelectionTestDetails($test);
+            } elseif (! $completeProof && $work->finish_until_date !== null && $test->start_mode === 'individual'
+                && $test->closes_at?->equalTo(CarbonImmutable::parse($work->finish_until_date->format('Y-m-d').' '.($work->finish_until_time ?: '23:59:00'), 'Europe/Vienna'))
+                && $test->snapshot !== null && ! $this->mcSelectionReferencedElsewhere($work, $test, $slot)
+                && $this->mcSelectionMatchesGroup($test->attempts()->get(['id', 'student_id']), $required, $inactive)) {
+                $unconfirmed = true;
+            }
+        }
+        abort_if($unconfirmed, 409, 'Ein vorhandener Test dieses Katalogs könnte zur Gruppe und Frist gehören. Seine Zuordnung zur Arbeit ist nicht belegt; bitte zuerst den Test und die Durchführung klären.');
+
+        return ['candidates' => $candidates] + $options;
+    }
+
+    /** @return array<string, mixed> */
+    private function mcSelectionTestDetails(McTest $test): array
+    {
+        return ['id' => $test->id, 'title' => $test->title, 'status' => $test->status,
+            'question_count' => $test->question_count, 'total_points' => (float) $test->total_points,
+            'duration_minutes' => $test->duration_seconds / 60];
+    }
+
+    private function mcSelectionSlot(TeachingCourseWork $work, ?string $date): string
+    {
+        $dates = array_values(array_unique(array_filter([$work->date_for_all_groups?->format('Y-m-d'), ...array_column($work->groups ?? [], 'date')])));
+        if ($date !== null && ! in_array($date, $dates, true)) {
+            throw ValidationException::withMessages(['date' => 'Der ausgewählte Termin ist nicht als Durchführungstermin dieser Arbeit gespeichert.']);
+        }
+
+        return $date ?? $work->date_for_all_groups?->format('Y-m-d') ?? 'all';
+    }
+
+    /** @return list<int> */
+    private function mcSelectionStudents(TeachingCourseWork $work, string $slot, bool $lock = false): array
+    {
+        return app(TeachingWorkStudentDistribution::class)->verifiedMcGroupAccounts($work, $slot, $lock);
+    }
+
+    /** @param list<int> $required
+     * @param  list<int>  $inactive
+     */
+    private function mcSelectionEligible(TeachingCourseWork $work, McTest $test, array $required, array $inactive, bool $lock = false, bool $allowStarted = false): bool
+    {
+        if (! in_array($test->status, ['draft', 'published', 'withdrawn'], true) || (! $allowStarted && $test->starts_at !== null)
+            || ! in_array($test->start_mode, ['individual', 'common'], true) || $test->snapshot === null
+            || $test->access_links_disabled_at !== null) {
+            return false;
+        }
+        $query = $test->attempts()->orderBy('id');
+        $attempts = ($lock ? $query->lockForUpdate() : $query)->get();
+        if (! $this->mcSelectionMatchesGroup($attempts, $required, $inactive) || $attempts->contains(fn ($attempt): bool => (in_array((int) $attempt->student_id, $required, true) && ! filled($attempt->access_token))
+            || (! $allowStarted && ($attempt->started_at !== null || $attempt->submitted_at !== null || $attempt->completed_at !== null || ($attempt->answers ?? []) !== [])))) {
+            return false;
+        }
+
+        return ! $this->mcSelectionReferencedElsewhere($work, $test, null, $lock);
+    }
+
+    /** @param Collection<int, mixed> $attempts
+     * @param  list<int>  $required
+     * @param  list<int>  $inactive
+     */
+    private function mcSelectionMatchesGroup(Collection $attempts, array $required, array $inactive): bool
+    {
+        $active = $attempts->filter(fn ($attempt): bool => in_array((int) $attempt->student_id, $required, true))
+            ->pluck('student_id')->map(fn ($id): int => (int) $id)->sort()->values()->all();
+        sort($required, SORT_NUMERIC);
+
+        return $active === $required && ! $attempts->contains(fn ($attempt): bool => ! in_array((int) $attempt->student_id, $required, true)
+            && ! in_array((int) $attempt->student_id, $inactive, true));
+    }
+
+    private function mcSelectionReferencedElsewhere(TeachingCourseWork $work, McTest $test, ?string $slot, bool $lock = false): bool
+    {
+        foreach ($work->status['multiple_choice_tests'] ?? [] as $key => $binding) {
+            if ($key !== $slot && (int) ($binding['test_id'] ?? 0) === (int) $test->id) {
+                return true;
+            }
+        }
+        $shared = TeachingCourseWork::query()->whereKeyNot($work->id)
+            ->whereHas('teachingCourse', fn ($query) => $query->where('school_id', $work->teachingCourse->school_id)
+                ->where('schoolyear_id', $work->teachingCourse->schoolyear_id)->where('user_id', $work->teachingCourse->user_id))
+            ->where(function ($query) use ($test): void {
+                $query->whereRaw('JSON_CONTAINS(JSON_EXTRACT(status, ?), ?)', ['$.multiple_choice_tests.*.test_id', json_encode((int) $test->id, JSON_THROW_ON_ERROR)])
+                    ->orWhereRaw('JSON_CONTAINS(JSON_EXTRACT(status, ?), ?)', ['$.multiple_choice_tests.*.test_id', json_encode((string) $test->id, JSON_THROW_ON_ERROR)]);
+            });
+
+        return ($lock ? $shared->lockForUpdate() : $shared)->exists();
+    }
+
+    /** @param array<string, mixed> $data
+     * @return array<string, mixed>
+     */
+    private function updateMcSelection(TeachingCourseWork $courseWork, User $actor, array $data): array
+    {
+        if (($data['mc_selection'] ?? null) === 'yes' && isset($data['catalog_id'])) {
+            return $this->updateMcCatalogSelection($courseWork, $actor, $data);
+        }
+
+        return DB::transaction(function () use ($courseWork, $actor, $data): array {
+            $work = TeachingCourseWork::query()->with('teachingCourse')->lockForUpdate()->findOrFail($courseWork->id);
+            $this->authorizeTeachingCourseAccess($work->teachingCourse, $actor);
+            $slot = $this->mcSelectionSlot($work, $data['date'] ?? null);
+            $status = $work->status ?? [];
+            $binding = $status['multiple_choice_tests'][$slot] ?? null;
+            abort_if($binding !== null && (! is_array($binding) || (int) ($binding['work_id'] ?? 0) !== (int) $work->id
+                || ! is_numeric($binding['test_id'] ?? null)), 409, 'Die vorhandene MC-Zuordnung ist nicht eindeutig.');
+            $currentId = $binding === null ? null : (int) $binding['test_id'];
+            $expectedId = $data['expected_test_id'] === null ? null : (int) $data['expected_test_id'];
+            abort_unless($currentId === $expectedId, 409, 'Die MC-Zuordnung wurde inzwischen geändert. Bitte den Dialog neu öffnen.');
+            $newId = $data['mc_selection'] === 'yes' && $data['test_id'] !== null ? (int) $data['test_id'] : null;
+            abort_if($data['mc_selection'] === 'yes' && $newId === null || $data['mc_selection'] === 'no' && $data['test_id'] !== null,
+                422, 'Bitte einen vorhandenen MC-Test auswählen oder „Nein“ wählen.');
+            $query = McTest::query()->where('school_id', $work->teachingCourse->school_id)
+                ->where('schoolyear_id', $work->teachingCourse->schoolyear_id)->where('owner_id', $work->teachingCourse->user_id);
+            $current = $currentId ? (clone $query)->lockForUpdate()->find($currentId) : null;
+            abort_if($currentId && ! $current, 409, 'Der zugeordnete MC-Test ist nicht eindeutig zugänglich.');
+            if ($newId !== $currentId) {
+                $configuration = app(TeachingWorkMultipleChoice::class)->configuration($work, $actor, $data['date'] ?? null, [], true);
+                abort_if($configuration['locked'], 409, $configuration['message'] ?? 'Der Bereitstellungsstand konnte nicht bestätigt werden.');
+                abort_if(! empty($status['student_distribution']['prepared_at']) || ! empty($status['student_distribution']['published_at']),
+                    409, 'Die Aufgabenbereitstellung wurde bereits vorbereitet. Die MC-Zuordnung kann nicht geändert werden.');
+                if ($current) {
+                    $attempts = $current->attempts()->lockForUpdate()->get();
+                    abort_if($current->starts_at !== null || $attempts->contains(fn ($attempt): bool => $attempt->started_at !== null || $attempt->submitted_at !== null || $attempt->completed_at !== null || ($attempt->answers ?? []) !== []),
+                        409, 'Der zugeordnete MC-Test wurde bereits begonnen. Seine Zuordnung bleibt zum Schutz der Versuche erhalten.');
+                }
+                if ($newId !== null) {
+                    $test = (clone $query)->lockForUpdate()->find($newId);
+                    $required = $this->mcSelectionStudents($work, $slot);
+                    $inactive = app(TeachingWorkStudentDistribution::class)->verifiedInactiveMcGroupAccounts($work, $slot, true);
+                    abort_unless($test && $this->mcSelectionEligible($work, $test, $required, $inactive, true), 422,
+                        'Der Test ist nicht vorbereitet, gehört einer anderen Arbeit oder seine Teilnehmenden passen nicht genau zur Prüfungsgruppe.');
+                    $status['multiple_choice_tests'][$slot] = ['work_id' => (int) $work->id, 'test_id' => $newId];
+                    $current = $test;
+                } else {
+                    unset($status['multiple_choice_tests'][$slot]);
+                    $current = null;
+                }
+                $work->status = $status;
+                $work->save();
+            }
+
+            return ['linked_test_id' => $newId, 'linked_test_title' => $current?->title, 'expected_test_id' => $newId,
+                'work' => app(TeachingCourseWorkEntrySyncService::class)->serializeWork($work->load('teachingCourseWorkGroupStudents'))];
+        });
+    }
+
+    /** @param array<string, mixed> $data
+     * @return array<string, mixed>
+     */
+    private function updateMcCatalogSelection(TeachingCourseWork $courseWork, User $actor, array $data): array
+    {
+        return DB::transaction(function () use ($courseWork, $actor, $data): array {
+            $work = TeachingCourseWork::query()->with('teachingCourse')->lockForUpdate()->findOrFail($courseWork->id);
+            $this->authorizeTeachingCourseAccess($work->teachingCourse, $actor);
+            $slot = $this->mcSelectionSlot($work, $data['date'] ?? null);
+            $status = $work->status ?? [];
+            $binding = $status['multiple_choice_tests'][$slot] ?? null;
+            abort_if($binding !== null && (! is_array($binding) || (int) ($binding['work_id'] ?? 0) !== (int) $work->id
+                || ! is_numeric($binding['test_id'] ?? null)), 409, 'Die vorhandene MC-Zuordnung ist nicht eindeutig.');
+            $currentId = $binding === null ? null : (int) $binding['test_id'];
+            $expectedId = $data['expected_test_id'] === null ? null : (int) $data['expected_test_id'];
+            $selectedId = $data['test_id'] === null ? null : (int) $data['test_id'];
+            $catalogId = (int) $data['catalog_id'];
+            $query = McTest::query()->where('school_id', $work->teachingCourse->school_id)
+                ->where('schoolyear_id', $work->teachingCourse->schoolyear_id)->where('owner_id', $work->teachingCourse->user_id);
+            $current = $currentId ? (clone $query)->lockForUpdate()->find($currentId) : null;
+            abort_if($currentId && ! $current, 409, 'Der zugeordnete MC-Test ist nicht eindeutig zugänglich.');
+            $same = $current && (int) $current->catalog_id === $catalogId && ($selectedId === null || $selectedId === $currentId);
+            abort_unless($currentId === $expectedId || ($same && $expectedId === null), 409,
+                'Die MC-Zuordnung wurde inzwischen geändert. Bitte den Dialog neu öffnen.');
+            if ($same) {
+                return ['linked_test_id' => $currentId, 'linked_test_title' => $current->title,
+                    'linked_catalog_id' => $catalogId, 'expected_test_id' => $currentId,
+                    'action' => 'unchanged', 'test' => $this->mcSelectionTestDetails($current),
+                    'work' => app(TeachingCourseWorkEntrySyncService::class)->serializeWork($work->load('teachingCourseWorkGroupStudents'))];
+            }
+            $configuration = app(TeachingWorkMultipleChoice::class)->configuration($work, $actor, $data['date'] ?? null, [], true);
+            abort_if($configuration['locked'], 409, $configuration['message'] ?? 'Der Bereitstellungsstand konnte nicht bestätigt werden.');
+            abort_if(! empty($status['student_distribution']['prepared_at']) || ! empty($status['student_distribution']['published_at']),
+                409, 'Die Aufgabenbereitstellung wurde bereits vorbereitet. Die MC-Zuordnung kann nicht geändert werden.');
+            if ($current) {
+                $attempts = $current->attempts()->lockForUpdate()->get();
+                abort_if($current->starts_at !== null || $attempts->contains(fn ($attempt): bool => $attempt->started_at !== null
+                    || $attempt->submitted_at !== null || $attempt->completed_at !== null || ($attempt->answers ?? []) !== []),
+                    409, 'Der zugeordnete MC-Test wurde bereits begonnen. Seine Zuordnung bleibt zum Schutz der Versuche erhalten.');
+            }
+            $catalog = McCatalog::query()->where('school_id', $work->teachingCourse->school_id)
+                ->where('owner_id', $work->teachingCourse->user_id)->lockForUpdate()->find($catalogId);
+            abort_unless($catalog, 404, 'Der gewählte MC-Katalog ist für diesen Kurs nicht verfügbar.');
+            $required = $this->mcSelectionStudents($work, $slot, true);
+            $inactive = app(TeachingWorkStudentDistribution::class)->verifiedInactiveMcGroupAccounts($work, $slot, true);
+            $candidates = $this->mcCatalogCandidates($work, $data['date'] ?? null, $catalogId)['candidates'];
+            if ($selectedId === null && count($candidates) > 1) {
+                abort(409, 'Mehrere Tests sind dieser Durchführung zuordenbar. Bitte den passenden Test auswählen.');
+            }
+            $selectedId ??= $candidates[0]['id'] ?? null;
+            if ($selectedId !== null) {
+                abort_unless(collect($candidates)->contains('id', $selectedId), 409,
+                    'Der gewählte Test ist dieser Durchführung nicht eindeutig zugeordnet. Bitte erneut prüfen.');
+                $test = (clone $query)->lockForUpdate()->find($selectedId);
+                abort_unless($test && $this->mcSelectionEligible($work, $test, $required, $inactive, true, allowStarted: true), 409,
+                    'Der gewählte Test oder seine Teilnehmer haben sich geändert. Bitte erneut prüfen.');
+                $action = 'reused';
+            } else {
+                abort_unless($work->finish_until_date !== null, 422,
+                    'Bitte zuerst das Enddatum der Arbeit festlegen. Ohne Uhrzeit gilt 23:59 Uhr.');
+                $deadline = CarbonImmutable::parse($work->finish_until_date->format('Y-m-d').' '.($work->finish_until_time ?: '23:59:00'), 'Europe/Vienna');
+                abort_unless($deadline->isFuture(), 422, 'Das Enddatum der Arbeit muss für den individuellen MC-Test in der Zukunft liegen.');
+                $settings = $this->validateNewMcCatalogTestSettings($data, $catalog);
+                $test = McTest::query()->create(['school_id' => $work->teachingCourse->school_id,
+                    'schoolyear_id' => $work->teachingCourse->schoolyear_id, 'owner_id' => $work->teachingCourse->user_id,
+                    'catalog_id' => $catalogId, 'title' => app(TeachingWorkMultipleChoice::class)->newTestTitle($work, $data['date'] ?? null),
+                    'status' => 'draft', 'question_count' => $settings['question_count'], 'total_points' => $settings['total_points'],
+                    'duration_seconds' => (int) $settings['duration_minutes'] * 60,
+                    'lead_seconds' => 30, 'start_mode' => 'individual', 'closes_at' => $deadline,
+                    'exam_mode' => false, 'balance_types' => true, 'shuffle_questions' => true, 'shuffle_options' => true]);
+                $test = app(McTestService::class)->prepare($test, $required, true, $work, $slot);
+                $snapshot = $test->snapshot;
+                $snapshot['schooltool_work'] = ['work_id' => (int) $work->id, 'course_id' => (int) $work->teaching_course_id, 'slot' => $slot];
+                $test->forceFill(['snapshot' => $snapshot])->save();
+                $action = 'created';
+            }
+            $status['multiple_choice_tests'][$slot] = ['work_id' => (int) $work->id, 'test_id' => $test->id];
+            $work->status = $status;
+            $work->save();
+
+            return ['linked_test_id' => $test->id, 'linked_test_title' => $test->title, 'linked_catalog_id' => $catalogId,
+                'expected_test_id' => $test->id, 'action' => $action, 'test' => $this->mcSelectionTestDetails($test),
+                'work' => app(TeachingCourseWorkEntrySyncService::class)->serializeWork($work->load('teachingCourseWorkGroupStudents'))];
+        }, 3);
+    }
+
+    /** @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    private function validateNewMcCatalogTestSettings(array $data, McCatalog $catalog): array
+    {
+        $defaults = $this->mcSelectionDefaults();
+        $settings = Validator::make(array_intersect_key($data, $defaults) + $defaults, [
+            'question_count' => ['required', 'integer', 'min:1', 'max:2000'],
+            'total_points' => ['required', 'numeric', 'min:0.01', 'max:100000', 'decimal:0,2'],
+            'duration_minutes' => ['required', 'integer', 'min:1', 'max:1440'],
+        ], [
+            'question_count.*' => 'Bitte eine ganze Fragenanzahl zwischen 1 und 2.000 eingeben.',
+            'total_points.*' => 'Bitte Testpunkte zwischen 0,01 und 100.000 mit höchstens zwei Nachkommastellen eingeben.',
+            'duration_minutes.*' => 'Bitte eine ganze Bearbeitungszeit zwischen 1 und 1.440 Minuten eingeben.',
+        ])->validate();
+        $available = count($catalog->questionsForTesting());
+        if ($settings['question_count'] > $available) {
+            throw ValidationException::withMessages(['question_count' => "Es sind zu wenige aktive, geprüfte Fragen vorhanden (verfügbar: {$available})."]);
+        }
+
+        return $settings;
+    }
+
     public function prepareExercise(Request $request, TeachingCourseWork $course_work, TeachingWorkAiExport $export, TeachingWorkMultipleChoice $multipleChoice, TeachingWorkExerciseGeneration $generation): JsonResponse
     {
         $actor = $this->userHasRole(['admin', 'teaching_admin', 'teacher']);
         abort_unless($actor && $course_work->teachingCourse, 403);
         $this->authorizeTeachingCourseAccess($course_work->teachingCourse, $actor);
+        if ($request->has('mc_selection')) {
+            $data = $request->validate(['mc_selection' => ['required', Rule::in(['yes', 'no'])],
+                'date' => ['nullable', 'date_format:Y-m-d'], 'test_id' => ['present', 'nullable', 'integer', 'min:1'],
+                'expected_test_id' => ['present', 'nullable', 'integer', 'min:1'],
+                'catalog_id' => ['nullable', 'integer', 'min:1']]);
+            $data += $request->only(array_keys($this->mcSelectionDefaults()));
+
+            return response()->json($this->updateMcSelection($course_work, $actor, $data))
+                ->header('Cache-Control', 'private, no-store');
+        }
         $data = $request->validate([
             'date' => ['nullable', 'date_format:Y-m-d'], 'mc_mode' => ['required_unless:execution,openai', 'nullable', 'in:existing,module'],
             'execution' => ['sometimes', 'in:openai'],
@@ -159,6 +530,7 @@ class CourseWorkController extends Controller
             'total_points' => ['required_if:mc_mode,new', 'nullable', 'numeric', 'min:0.01', 'max:100000', 'decimal:0,2'],
             'duration_minutes' => ['required_if:mc_mode,module', 'nullable', 'integer', 'min:1', 'max:1440'],
             'catalog_fingerprint' => ['required_if:mc_mode,module', 'nullable', 'string', 'size:64'],
+            'template_points_snapshot' => ['nullable', 'numeric', 'min:0', 'max:100000', 'decimal:0,2'],
             'mc_points' => ['required_with:mc_mode', 'numeric', 'min:0.01', 'max:100000', 'decimal:0,2'],
             'other_points' => ['sometimes', 'required', 'numeric', 'min:0', 'max:100000', 'decimal:0,2'],
             'expected_maximum_points' => ['required_with:mc_mode', 'numeric', 'min:0.01', 'max:100000', 'decimal:0,2'],
@@ -175,6 +547,18 @@ class CourseWorkController extends Controller
             if (empty($data['mc_mode'])) {
                 return $preview;
             }
+            $modules = app(DropboxModuleLinks::class);
+            $link = $modules->current($work);
+            $connection = $link ? DropboxConnection::query()->where('user_id', $actor->id)->whereNull('revoked_at')
+                ->find($link->dropbox_connection_id) : null;
+            abort_unless($link && $connection && $link->account_id === $connection->account_id, 422,
+                'Der bisherige MC-Ablauf ist nur für einen online bestätigten alten Prüfungsordner verfügbar.');
+            $legacyExercise = $modules->exercise($connection, $work, $link, $data['date'] ?? null, refresh: true, initial: false);
+            abort_unless(($legacyExercise['status'] ?? null) === 'found' && array_key_exists('preparation', $legacyExercise)
+                && $legacyExercise['preparation'] === null && is_string($legacyExercise['folder']['id'] ?? null)
+                && $legacyExercise['folder']['id'] !== '', 422,
+                'Der bisherige MC-Ablauf ist nur für einen online bestätigten alten Prüfungsordner verfügbar.');
+            $this->assessmentSource($work, $actor, $data['template_points_snapshot'] ?? null);
             $catalog = null;
             if ($data['mc_mode'] === 'existing') {
                 $linkedTest = $multipleChoice->linkedModuleTest($work, $actor, $data['date'] ?? null, true);
@@ -191,7 +575,7 @@ class CourseWorkController extends Controller
             $mcData = array_diff_key($data, array_flip(['execution', 'email_form_policy', 'instructions']));
             $test = $multipleChoice->prepare($work, $actor, $mcData, $preview['context']['course_roster']['participants'], $preview['context']['work'], $catalog);
 
-            return $export->buildExercise($work, $actor, true, $data['date'] ?? null, $test);
+            return $export->buildLegacyExercise($work, $actor, $data['date'] ?? null, $test, $legacyExercise['folder']);
         });
         $result = ['data' => $prepared];
         if (($data['execution'] ?? null) === 'openai') {
@@ -244,12 +628,14 @@ class CourseWorkController extends Controller
         $actor = $this->userHasRole(['admin', 'teaching_admin', 'teacher']);
         abort_unless($actor, 403);
         $data = $request->validate(['purpose' => ['sometimes', 'in:exercise,email_preparation,email_dispatch,submission_collection,evaluation'],
-            'include_mc' => ['required_if:purpose,exercise', 'nullable', 'boolean'],
+            'include_mc' => ['nullable', 'boolean'],
             'address_form' => ['required_if:purpose,email_preparation', 'nullable', Rule::in(['du', 'sie'])],
             'delivery_mode' => ['required_if:purpose,email_dispatch', 'nullable', Rule::in(['live', 'test'])],
             'collection_mode' => ['required_if:purpose,submission_collection', 'nullable', Rule::in(['collect', 'repeat'])],
             'evaluation_mode' => ['required_if:purpose,evaluation', 'nullable', Rule::in(['grade', 'repeat'])],
-            'date' => ['nullable', 'date_format:Y-m-d']]);
+            'date' => ['nullable', 'date_format:Y-m-d'],
+            'template_points_snapshot' => ['required_with:template_points_target', 'nullable', 'numeric', 'min:0', 'max:100000', 'decimal:0,2'],
+            'template_points_target' => ['nullable', 'numeric', 'min:0', 'max:100000', 'multiple_of:0.5']]);
 
         return DB::transaction(function () use ($course_work, $actor, $export, $data): JsonResponse {
             $work = TeachingCourseWork::query()->with('teachingCourse')->findOrFail($course_work->id);
@@ -279,26 +665,33 @@ class CourseWorkController extends Controller
                     ->header('Cache-Control', 'private, no-store');
             }
 
-            $mc = null;
-            if ($exercise && (bool) $data['include_mc']) {
-                $test = app(TeachingWorkMultipleChoice::class)->linkedModuleTest($work, $actor, $data['date'] ?? null);
-                abort_unless($test && is_array($test->snapshot) && is_array($test->snapshot['questions'] ?? null), 409,
-                    'Für diese Arbeit ist kein vorbereiteter MC-Test aus dem verknüpften Lernmodul bestätigt.');
-                $slot = $data['date'] ?? $work->date_for_all_groups?->format('Y-m-d') ?? 'all';
-                $ready = $test->status === 'published' && $test->access_links_disabled_at === null;
-                $mc = ['test_id' => $test->id, 'catalog_id' => $test->catalog_id, 'title' => $test->title,
-                    'points_plan' => $work->status['multiple_choice_tests'][$slot]['points_plan'] ?? null,
-                    'status' => $test->status, 'question_count' => $test->question_count, 'total_points' => $test->total_points,
-                    'duration_seconds' => $test->duration_seconds, 'start_mode' => $test->start_mode,
-                    'closes_at' => $test->closes_at?->toIso8601String(), 'question_pool' => $test->snapshot['questions'],
-                    'access_links_ready' => $ready, 'exercise_export_url' => $ready
-                        ? route('admin.multiple-choice.tests.exercise-export', ['test' => $test->id]) : null];
+            $assessment = $exercise ? $this->assessmentSource($work, $actor, $data['template_points_snapshot'] ?? null) : null;
+            if ($exercise && isset($data['template_points_target'])) {
+                $assessment['target'] = (float) $data['template_points_target'];
             }
 
-            return response()->json(['data' => $exercise ? $export->buildExercise($work, $actor, (bool) $data['include_mc'], $data['date'] ?? null, $mc)
+            return response()->json(['data' => $exercise ? $export->buildExercise($work, $actor, false, $data['date'] ?? null, null, $assessment)
                 : $export->build($work, $actor)])
                 ->header('Cache-Control', 'private, no-store');
         });
+    }
+
+    /** @return array{verified: bool, points: ?float} */
+    private function assessmentSource(TeachingCourseWork $work, User $actor, mixed $expectedPoints = null): array
+    {
+        $link = app(DropboxModuleLinks::class)->current($work);
+        $result = ['verified' => false, 'points' => null];
+        try {
+            if ($link) {
+                $result = ['verified' => true, 'points' => app(McModuleTemplateSource::class)->assessmentPoints($actor, $link)];
+            }
+        } catch (Throwable) {
+        }
+        abort_if($expectedPoints !== null && ($result['points'] === null
+            || round((float) $expectedPoints, 2) !== round($result['points'], 2)), 409,
+            'Die Punkte der Prüfungsvorlage konnten nicht erneut bestätigt werden oder haben sich geändert. Bitte den Dialog erneut öffnen.');
+
+        return $result;
     }
 
     public function importJson(Request $request, TeachingCourseWork $course_work, TeachingWorkJsonImport $importer, TeachingWorkFolderImport $folderImporter, TeachingWorkDispatchImport $dispatchImporter): JsonResponse
@@ -743,6 +1136,7 @@ class CourseWorkController extends Controller
         $this->appendMaximumPlusGradeRule($gradeRules, $maximumPlus);
         $rules = $this->workValidationRules($typeRules, false, $course, $gradeRules);
         $rules = $this->preserveStoredFeedbackRules($request, $course_work, $rules);
+        $titleOnly = count($request->all()) === 1 && $request->exists('title');
         $validated = $request->validate($rules, [
             'groups.*.comment.max' => 'Neue oder geänderte Rückmeldungen dürfen höchstens 2048 Zeichen enthalten.',
             'groups.*.comments.*.comment.max' => 'Neue oder geänderte Rückmeldungen dürfen höchstens 2048 Zeichen enthalten.',
@@ -797,6 +1191,9 @@ class CourseWorkController extends Controller
         unset($validated['automation_enabled']);
 
         $validated = $workService->prepareWorkData($validated, $course, (int) $auth_user->school_id, $course_work->is_group_work);
+        if ($titleOnly) {
+            $validated = ['title' => $validated['title']];
+        }
 
         $deadlineWork = clone $course_work;
         foreach (['finish_until_date', 'finish_until_time'] as $field) {
@@ -806,8 +1203,50 @@ class CourseWorkController extends Controller
         }
         $studentDeadline = $course_work->communicatedDeadline();
         $deadlineWork->setStudentDeadline($studentDeadline['date'] ?? null, $studentDeadline['time'] ?? null);
-        $course_work->update($validated);
-        $entrySyncService->syncWork($course_work->fresh());
+        if (array_key_exists('title', $validated)) {
+            try {
+                $course_work = DB::transaction(function () use ($course_work, $validated, $auth_user, $entrySyncService, $titleOnly): TeachingCourseWork {
+                    $locked = TeachingCourseWork::query()->with('teachingCourse')->lockForUpdate()->findOrFail($course_work->id);
+                    abort_unless($locked->title === $course_work->getOriginal('title'), 409,
+                        'Der Titel wurde inzwischen geändert. Bitte die Arbeit erneut öffnen.');
+                    if ($validated['title'] !== $locked->title) {
+                        try {
+                            $renamed = app(DropboxModuleLinks::class)->renamePreparedExamFolders($locked, $auth_user, $validated['title'], $validated);
+                            if ($renamed !== []) {
+                                $folder = TeachingWorkDropboxFolder::query()->where('teaching_course_work_id', $locked->id)->lockForUpdate()->first();
+                                if ($folder && isset($renamed[$folder->folder_id])) {
+                                    $folder->update(['folder_name' => $renamed[$folder->folder_id]]);
+                                }
+                            }
+                        } catch (HttpExceptionInterface $exception) {
+                            throw $exception;
+                        } catch (Throwable $exception) {
+                            report($exception);
+                            app(DropboxModuleLinks::class)->forgetExerciseCache($locked, $auth_user);
+                            app(TeachingWorkCollectionStatus::class)->forget($locked);
+                            abort(409, 'Der Titel konnte nicht vollständig gespeichert werden. Ein Prüfungsordner wurde möglicherweise bereits umbenannt. Bitte denselben Titel erneut speichern und den Stand prüfen.');
+                        }
+                    }
+                    $locked->update($validated);
+                    if (! $titleOnly) {
+                        $entrySyncService->syncWork($locked->fresh());
+                    }
+
+                    return $locked;
+                });
+            } catch (HttpExceptionInterface $exception) {
+                throw $exception;
+            } catch (Throwable $exception) {
+                report($exception);
+                app(DropboxModuleLinks::class)->forgetExerciseCache($course_work, $auth_user);
+                app(TeachingWorkCollectionStatus::class)->forget($course_work);
+                abort(409, 'Der Titel konnte nicht vollständig gespeichert werden. Ein Prüfungsordner wurde möglicherweise bereits umbenannt. Bitte denselben Titel erneut speichern und den Stand prüfen.');
+            }
+            app(DropboxModuleLinks::class)->forgetExerciseCache($course_work, $auth_user);
+        } else {
+            $course_work->update($validated);
+            $entrySyncService->syncWork($course_work->fresh());
+        }
 
         return response()->json(['data' => $entrySyncService->serializeWork($course_work->fresh('teachingCourseWorkGroupStudents'))]);
     }

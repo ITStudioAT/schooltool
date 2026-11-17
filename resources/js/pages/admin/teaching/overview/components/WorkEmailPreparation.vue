@@ -51,7 +51,7 @@
             <v-card-title class="text-wrap">{{ sending ? 'E-Mails versenden' : 'E-Mails vorbereiten' }} · {{ work.title }}</v-card-title>
             <v-card-text>
                 <v-alert v-if="ready" type="success" variant="tonal" class="mb-3">Versandbereit – noch nicht versandt.</v-alert>
-                <p v-if="preparation?.message" class="text-body-2 mb-3">{{ preparation.message }}</p>
+                <p v-if="!modernPrepared && preparation?.message" class="text-body-2 mb-3">{{ preparation.message }}</p>
                 <template v-if="sending">
                     <p class="text-body-2 mb-3">Gespeicherte E-Mails verwenden: Versandart wählen und den Auftrag an die KI übergeben.</p>
                     <v-btn-toggle v-model="deliveryMode" color="primary" divided :disabled="disabled" aria-label="Versandart für die E-Mails">
@@ -63,15 +63,15 @@
                     <p class="text-caption mt-2">Der Auftrag gibt die gewählte Versandart frei. Das Kopieren allein sendet nichts.</p>
                 </template>
                 <template v-else>
-                    <p class="text-body-2 mb-3">Den Vorbereitungsauftrag kopieren und an die KI übergeben. Sie bereitet Empfänger, persönliche Links, Nachrichtentexte und ausgewählte Anhänge zur Prüfung vor.</p>
-                    <p class="text-caption mb-3">Die Vorbereitung sendet keine E-Mails. Mit „Erneut prüfen“ wird anschließend der gespeicherte Vorbereitungsstand gelesen.</p>
-                    <p class="text-body-2 mb-2">Wie sollen die Schüler:innen angesprochen werden?</p>
-                    <v-btn-toggle v-model="addressForm" color="primary" divided :disabled="loading" aria-label="Anredeform für die E-Mails">
+                    <p class="text-body-2 mb-3">{{ modernPrepared ? 'Den Vorbereitungsauftrag kopieren und an die KI übergeben. Sie bereitet die persönlichen E-Mails und Anhänge zur sichtbaren Prüfung vor.' : 'Den Vorbereitungsauftrag kopieren und an die KI übergeben. Sie bereitet Empfänger, persönliche Links, Nachrichtentexte und ausgewählte Anhänge zur Prüfung vor.' }}</p>
+                    <p class="text-caption mb-3">{{ modernPrepared ? 'Die Vorbereitung erfolgt in der Sie-Form und sendet keine E-Mails. MC-Aufgaben bleiben in Schooltool. Eine Versandbereitschaft wird in Schooltool derzeit nicht geprüft.' : 'Die Vorbereitung sendet keine E-Mails. Mit „Erneut prüfen“ wird anschließend der gespeicherte Vorbereitungsstand gelesen.' }}</p>
+                    <p v-if="!modernPrepared" class="text-body-2 mb-2">Wie sollen die Schüler:innen angesprochen werden?</p>
+                    <v-btn-toggle v-if="!modernPrepared" v-model="addressForm" color="primary" divided :disabled="loading" aria-label="Anredeform für die E-Mails">
                         <v-btn value="du">Du-Form</v-btn>
                         <v-btn value="sie">Sie-Form</v-btn>
                     </v-btn-toggle>
                 </template>
-                <p v-if="preparation?.prepared_at" class="text-caption mb-3">Vorbereitet: {{ preparedTime }}</p>
+                <p v-if="!modernPrepared && preparation?.prepared_at" class="text-caption mb-3">Vorbereitet: {{ preparedTime }}</p>
                 <p v-if="loading" role="status" class="text-body-2 mt-3">KI-Auftrag wird geladen …</p>
                 <v-alert v-if="error" type="error" variant="tonal" role="alert">{{ error }}</v-alert>
                 <p v-if="message" role="status" class="text-body-2 mt-3">{{ message }}</p>
@@ -100,7 +100,7 @@ import { workNeedsPreparation } from '@/helpers/workOverview'
 import { workHasProgress } from '@/helpers/workProgress'
 import { workDropboxKey, workDropboxStates, workExerciseCheck } from '@/helpers/workDropbox'
 
-const props = defineProps({ work: Object, state: Object, date: { type: String, default: '' }, disabled: Boolean, statusOnly: Boolean, action: { type: String, default: '' }, size: { type: [Number, String], default: 30 } })
+const props = defineProps({ work: Object, state: Object, date: { type: String, default: '' }, disabled: Boolean, statusOnly: Boolean, modernPrepared: Boolean, action: { type: String, default: '' }, size: { type: [Number, String], default: 30 } })
 const admin = useAdminStore()
 const opened = ref(false)
 const infoOpened = ref(false)
@@ -121,13 +121,13 @@ let sequence = 0
 let controller = null
 let emailPreviewSequence = 0
 let emailPreviewController = null
-const available = computed(() => workAutomationEnabled(props.work) && workNeedsPreparation(props.work)
+const available = computed(() => workAutomationEnabled(props.work) && (props.modernPrepared || workNeedsPreparation(props.work))
     && props.state?.status === 'found' && props.state.userId === admin.config?.user?.id
     && String(props.state.workId) === String(props.work?.id)
     && String(props.state.courseId) === String(props.work?.teaching_course_id) && props.state.date === props.date
-    && Boolean(props.state.folder?.id))
+    && Boolean(props.state.folder?.id) && (props.modernPrepared || props.state.preparation?.status !== 'ready'))
 const preparation = computed(() => props.state?.emailPreparation)
-const ready = computed(() => preparation.value?.status === 'ready')
+const ready = computed(() => !props.modernPrepared && preparation.value?.status === 'ready')
 const canInspect = computed(() => available.value && ready.value && !props.disabled)
 const sent = computed(() => {
     const key = workDropboxKey(admin.config?.user?.id, props.work)
@@ -230,9 +230,10 @@ function openDialog(selectedMode) {
     if (!available.value || props.disabled || (selectedMode === 'send' && !ready.value)) return
     clear()
     mode.value = selectedMode
-    addressForm.value = null
+    addressForm.value = props.modernPrepared ? 'sie' : null
     deliveryMode.value = null
     opened.value = true
+    if (props.modernPrepared && selectedMode === 'prepare') loadPreparation()
 }
 
 async function loadPreparation() {
@@ -305,12 +306,12 @@ async function copyPreparation() {
     }
 }
 
-watch(() => [available.value, admin.config?.user?.id, admin.config?.user?.email, props.work?.id, props.work?.teaching_course_id, props.date, props.state?.folder?.id,
+watch(() => [available.value, props.modernPrepared, admin.config?.user?.id, admin.config?.user?.email, props.work?.id, props.work?.teaching_course_id, props.date, props.state?.folder?.id,
     preparation.value?.status, preparation.value?.prepared_at], () => { clear(); opened.value = false; infoOpened.value = false })
 watch(opened, value => { if (!value) clear() })
 watch(infoOpened, value => { if (!value) clearEmailPreview() })
 watch(addressForm, () => {
-    if (sending.value) return
+    if (sending.value || props.modernPrepared) return
     if (opened.value && ['du', 'sie'].includes(addressForm.value)) loadPreparation()
     else clear()
 })

@@ -138,6 +138,76 @@ test('an inactive account outside the work group remains an unexpected attempt',
     $this->actingAs($this->teacher, 'web')->getJson($this->publishUrl.'-preview')->assertUnprocessable();
 });
 
+test('task preparation excludes an inactive group member but preserves their existing MC attempt', function (): void {
+    $this->work->update(['groups' => [['student_ids' => [$this->student->id, $this->peer->id]]]]);
+    $test = studentTaskMcFixture($this->work, $this->teacher, [$this->student, $this->peer]);
+    $oldAttempt = $test->attempts()->where('student_id', $this->peer->id)->sole();
+    $before = $oldAttempt->getRawOriginal();
+    $this->peer->forceFill(['is_active' => false])->save();
+    $groups = $this->work->fresh()->groups;
+
+    $preview = $this->actingAs($this->teacher, 'web')->getJson($this->publishUrl.'-preview')->assertOk()->json('data.tests.0');
+    $choices = json_encode([['id' => $test->id, 'expected_version' => $preview['version'], 'start_mode' => 'individual']], JSON_THROW_ON_ERROR);
+    $this->postJson($this->publishUrl, ($this->payload)(['release_now' => false, 'mc_tests' => $choices]))->assertOk()
+        ->assertJsonPath('data.status.student_distribution.student_ids', [$this->student->id]);
+
+    expect($test->fresh()->attempts()->count())->toBe(2)
+        ->and($oldAttempt->fresh()->getRawOriginal())->toBe($before)
+        ->and($this->work->fresh()->groups)->toEqual($groups)
+        ->and($this->peer->fresh()->is_active)->toBeFalsy();
+});
+
+test('null activity remains eligible and unrelated inactive MC attempts still block task preparation', function (): void {
+    $this->peer->forceFill(['is_active' => null])->save();
+    $this->work->update(['groups' => [['student_ids' => [$this->student->id, $this->peer->id]]]]);
+    $test = studentTaskMcFixture($this->work, $this->teacher, [$this->student, $this->peer]);
+    $service = app(TeachingWorkStudentDistribution::class);
+    expect($service->recipients($this->work->fresh()))->toEqualCanonicalizing([$this->student->id, $this->peer->id]);
+    $foreign = User::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->year->id])->assignRole('student');
+    $token = hash('sha256', 'unrelated-inactive-fixture');
+    McAttempt::query()->create(['test_id' => $test->id, 'student_id' => $foreign->id, 'student_name' => 'Fixture',
+        'email' => $foreign->email, 'questions' => [], 'answers' => [], 'access_token' => $token, 'access_token_hash' => hash('sha256', $token)]);
+    $foreign->forceFill(['is_active' => false])->save();
+
+    $this->actingAs($this->teacher, 'web')->getJson($this->publishUrl.'-preview')->assertUnprocessable();
+    expect($test->fresh()->attempts()->count())->toBe(3);
+});
+
+test('a started inactive attempt still prevents changing an existing MC start mode', function (): void {
+    $this->work->update(['groups' => [['student_ids' => [$this->student->id, $this->peer->id]]]]);
+    $test = studentTaskMcFixture($this->work, $this->teacher, [$this->student, $this->peer]);
+    $oldAttempt = $test->attempts()->where('student_id', $this->peer->id)->sole();
+    $oldAttempt->update(['started_at' => now()]);
+    $before = $oldAttempt->fresh()->getRawOriginal();
+    $this->peer->forceFill(['is_active' => false])->save();
+
+    $preview = $this->actingAs($this->teacher, 'web')->getJson($this->publishUrl.'-preview')->assertOk()->json('data.tests.0');
+    expect($preview['mode_editable'])->toBeFalse();
+    $choices = json_encode([['id' => $test->id, 'expected_version' => $preview['version'], 'start_mode' => 'common']], JSON_THROW_ON_ERROR);
+    $this->postJson($this->publishUrl, ($this->payload)(['release_now' => false, 'mc_tests' => $choices]))->assertUnprocessable();
+    expect($oldAttempt->fresh()->getRawOriginal())->toBe($before);
+});
+
+test('a student sees only their released work test across a verified school-year change', function (): void {
+    $import = Import116::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->year->id,
+        'user_id' => $this->student->id]);
+    $this->course->teachingCourseStudents()->where('user_id', $this->student->id)->firstOrFail()->update(['import116_id' => $import->id]);
+    $this->student->forceFill(['schoolyear_id' => null, 'import116_id' => $import->id])->save();
+    $test = studentTaskMcFixture($this->work, $this->teacher, [$this->student], 'published');
+    $status = $this->work->fresh()->status;
+    $status['student_distribution'] = ['prepared_at' => now()->toIso8601String(), 'published_at' => null];
+    $this->work->update(['status' => $status]);
+    $this->actingAs($this->student, 'web')->getJson('/api/multiple-choice/attempts')->assertOk()->assertJsonCount(0, 'attempts');
+    $status['student_distribution']['published_at'] = now()->toIso8601String();
+    $status['student_distribution']['student_ids'] = [$this->student->id];
+    $this->work->update(['status' => $status]);
+    $this->getJson('/api/multiple-choice/attempts')->assertOk()->assertJsonCount(1, 'attempts')
+        ->assertJsonPath('attempts.0.test_id', $test->id);
+    $this->actingAs($this->peer, 'web')->getJson('/api/multiple-choice/attempts')->assertOk()->assertJsonCount(0, 'attempts');
+    $this->student->removeRole('student');
+    $this->actingAs($this->student, 'web')->getJson('/api/multiple-choice/attempts')->assertUnauthorized();
+});
+
 test('new task preparation defaults to locked access until an explicit release', function (): void {
     $payload = ($this->payload)(['files' => [UploadedFile::fake()->createWithContent('Aufgabe.pdf', '%PDF-1.4 task')]]);
     unset($payload['release_now']);

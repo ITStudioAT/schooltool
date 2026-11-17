@@ -106,6 +106,41 @@ class DropboxWorkImport
         return in_array('files.content.write', $connection->credentials['scopes'] ?? [], true);
     }
 
+    /** @return array<string, mixed> */
+    public function moveExamFolder(DropboxConnection $connection, string $folderId, string $expectedPath, string $targetPath): array
+    {
+        abort_unless($this->canWrite($connection), 409, 'Für die Umbenennung fehlt die Dropbox-Schreibfreigabe.');
+        abort_unless(preg_match('/\Aid:[A-Za-z0-9_-]+\z/', $folderId) === 1
+            && str_starts_with($expectedPath, '/') && str_starts_with($targetPath, '/')
+            && dirname(mb_strtolower($expectedPath)) === dirname(mb_strtolower($targetPath))
+            && mb_strtolower($expectedPath) !== mb_strtolower($targetPath), 409, 'Die Ordnerumbenennung ist nicht eindeutig.');
+        $before = $this->metadata($connection, $folderId);
+        abort_unless(($before['id'] ?? null) === $folderId
+            && $before['path_lower'] === mb_strtolower($expectedPath)
+            && $before['name'] === basename($expectedPath), 409,
+            'Der Prüfungsordner wurde inzwischen verschoben. Bitte erneut prüfen.');
+        $parent = $this->metadata($connection, dirname($before['path_lower']));
+        $moveException = null;
+        try {
+            $this->api($connection, 'files/move_v2', ['from_path' => $folderId, 'to_path' => $targetPath,
+                'autorename' => false, 'allow_shared_folder' => false, 'allow_ownership_transfer' => false], moveErrors: true);
+        } catch (\Throwable $exception) {
+            // A lost response can follow a successful move; the stable folder ID resolves the actual outcome.
+            $moveException = $exception;
+        }
+        $after = $this->metadata($connection, $folderId);
+        $afterParent = $this->metadata($connection, dirname($after['path_lower']));
+        if (($after['id'] ?? null) !== $folderId || $after['path_lower'] !== mb_strtolower($targetPath)
+            || $after['name'] !== basename($targetPath) || $afterParent['id'] !== $parent['id']) {
+            if ($moveException instanceof DropboxMoveException) {
+                throw $moveException;
+            }
+            abort(409, 'Der Prüfungsordner konnte nicht sicher umbenannt werden. Bitte erneut speichern und den Dropbox-Stand prüfen.');
+        }
+
+        return $after;
+    }
+
     public function connectionStatus(User $user, bool $verify = false): array
     {
         $installed = $this->installed();
@@ -853,7 +888,7 @@ class DropboxWorkImport
         return $responses;
     }
 
-    private function api(DropboxConnection $connection, string $endpoint, array $parameters, bool $download = false): Response
+    private function api(DropboxConnection $connection, string $endpoint, array $parameters, bool $download = false, bool $moveErrors = false): Response
     {
         try {
             $client = Http::withToken($this->accessToken($connection))->connectTimeout(5)->timeout(20)
@@ -864,6 +899,13 @@ class DropboxWorkImport
                 : $client->post('https://api.dropboxapi.com/2/'.$endpoint, $parameters);
         } catch (ConnectionException) {
             $this->fail('Dropbox ist momentan nicht erreichbar. Bitte später erneut versuchen oder einen Ordner hochladen.');
+        }
+
+        if ($moveErrors && ! $response->successful() && $response->status() !== 401 && $response->status() !== 429) {
+            $summary = $response->json('error_summary');
+            $code = is_string($summary) && strlen($summary) <= 120 && preg_match('/\A[a-z_]+(?:\/[a-z_]+)*\/?\z/', $summary) === 1
+                ? ' ('.rtrim($summary, '/').')' : '';
+            throw new DropboxMoveException('Dropbox hat die Ordnerumbenennung abgelehnt'.$code.'.');
         }
 
         return $this->checkResponse($connection, $response);

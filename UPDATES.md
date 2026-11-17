@@ -1,5 +1,11 @@
 # UPDATES
 
+## 3.54.9 !!!
+
+### Students
+
+- Schüler:innen müssen jedenfalls die Rolle student haben
+
 ## 3.54.8
 
 ### Kurse
@@ -23,7 +29,7 @@
 
 ### Spiele
 
-- Aus einem Kurs entfrenen
+- Aus einem Kurs entfernen
 
 ### Unterricht
 

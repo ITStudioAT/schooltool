@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Services\DropboxModuleLinks;
 use App\Services\DropboxWorkImport;
 use App\Services\ModuleHandshake;
+use App\Services\TeachingCourseWorkEntrySyncService;
 use App\Services\TeachingWorkDeadlineSync;
 use App\Support\SchooltoolAssessmentJson;
 use GuzzleHttp\Promise\Promise;
@@ -89,13 +90,43 @@ function fakeModuleDropbox(object $context): void
 
             return Http::response($context->remoteContents);
         }
+        if (str_ends_with($request->url(), '/files/move_v2')) {
+            $context->moveCount = ($context->moveCount ?? 0) + 1;
+            $source = collect($context->online)->firstWhere('id', $request['from_path']);
+            if (! $source || ($context->moveFails ?? false) || ($context->failMoveAt ?? 0) === $context->moveCount) {
+                return Http::response(['error_summary' => 'from_lookup/not_found/'], 409);
+            }
+            $target = $request['to_path'];
+            if (collect($context->online)->contains(fn (array $entry): bool => ($entry['path_lower'] ?? null) === mb_strtolower($target))) {
+                return Http::response(['error_summary' => 'to/conflict/'], 409);
+            }
+            foreach ($context->online as &$entry) {
+                if (($entry['path_display'] ?? '') === $source['path_display'] || str_starts_with($entry['path_display'] ?? '', $source['path_display'].'/')) {
+                    $entry['path_display'] = $target.substr($entry['path_display'], strlen($source['path_display']));
+                    $entry['path_lower'] = mb_strtolower($entry['path_display']);
+                    if ($entry['id'] === $source['id']) {
+                        $entry['name'] = basename($target);
+                    }
+                }
+            }
+            unset($entry);
+
+            if ($context->moveLosesResponse ?? false) {
+                return Http::response([], 503);
+            }
+
+            return Http::response(['metadata' => collect($context->online)->firstWhere('id', $source['id'])]);
+        }
         if (str_ends_with($request->url(), '/files/get_metadata')) {
             if ($request['path'] === '/schule2020_2027/materialien/lerninhalte') {
                 return Http::response(['.tag' => 'folder', 'id' => 'id:materialsroot', 'name' => 'Lerninhalte',
                     'path_lower' => $request['path'], 'path_display' => '/schule2020_2027/Materialien/Lerninhalte']);
             }
             foreach ($context->online as $entry) {
-                if ($entry['id'] === $request['path'] || $entry['path_lower'] === $request['path']) {
+                if ($entry['id'] === $request['path'] || $entry['path_lower'] === mb_strtolower($request['path'])) {
+                    if (($context->varyParentCaseForId ?? null) === $request['path'] && isset($entry['path_display'])) {
+                        $entry['path_display'] = mb_strtolower(dirname($entry['path_display'])).'/'.$entry['name'];
+                    }
                     if (($context->changedExerciseRevision ?? false) && $entry['name'] === 'Anlage_und_Quellen.json') {
                         $entry['rev'] = 'changed-revision';
                     }
@@ -303,6 +334,360 @@ function linkExerciseFixture(object $context): void
     test()->postJson($context->url.'/folder', ['filename' => 'handshake.json', 'handshake' => $context->handshake, 'proof' => $proof])->assertOk();
     $context->work->update(['date_for_all_groups' => '2026-10-06']);
 }
+
+function addModernExerciseFixture(object $context, bool $withMc = false, string $date = '2026-10-06'): string
+{
+    $context->course->update(['title' => 'INF - 3B - 2', 'classes' => ['3B']]);
+    $context->work->update(['title' => 'Word', 'groups' => [['date' => '2026-10-06', 'student_ids' => [123]]]]);
+    $module = dirname($context->online[0]['path_display']);
+    $path = $module.'/Leistungsfeststellungen/'.$date.' – 3B_Gruppe-2 – Word';
+    foreach ([$module.'/Leistungsfeststellungen', $path, $path.'/Kandidaten', $path.'/Kandidaten/Person',
+        $path.'/Kandidaten/Person/Angaben', $path.'/Kandidaten/Person/Abgaben', $path.'/Kandidaten/Person/Auswertung'] as $folder) {
+        $context->online[] = ['.tag' => 'folder', 'id' => 'id:folder'.hash('sha256', $folder), 'name' => basename($folder),
+            'path_lower' => mb_strtolower($folder), 'path_display' => $folder];
+    }
+    foreach (['Beurteilung.md', 'Beurteilung.pdf', 'Kandidaten/Person/Angaben/Aufgaben.pdf'] as $file) {
+        addEmailPreparationFile($context, $path.'/'.$file, '%PDF-1.4 test content');
+    }
+    if ($withMc) {
+        addEmailPreparationFile($context, $path.'/Kandidaten/Person/Angaben/MC.pdf', 'test MC content');
+    }
+    foreach ($context->online as &$entry) {
+        if (($entry['name'] ?? null) === 'Aufgaben.pdf') {
+            $entry['content_hash'] = hash('sha256', 'test content identity');
+        }
+    }
+    unset($entry);
+    $record = ['schema_version' => 1, 'kind' => 'leistungsfeststellung.status',
+        'schooltool' => ['work_id' => $context->work->id, 'course_id' => $context->course->id],
+        'folder_group' => '3B_Gruppe-2', 'scheduled_date' => $date, 'prepared' => true,
+        'components' => ['aufgabenblatt' => ['included' => true, 'points' => 35],
+            'multiple_choice' => ['included' => $withMc, 'points' => $withMc ? 2 : null]],
+        'total_points' => $withMc ? 37 : 35];
+    addEmailPreparationFile($context, $path.'/status.json', json_encode($record, JSON_THROW_ON_ERROR));
+
+    return $path;
+}
+
+test('modern preparation status is confirmed read only for the matching work', function (bool $withMc): void {
+    linkExerciseFixture($this);
+    addModernExerciseFixture($this, $withMc);
+    $before = $this->work->fresh()->getAttributes();
+    $this->postJson($this->url.'/refresh', ['status_only' => true, 'date' => '2026-10-06',
+        'finish_until_date' => '2026-10-20', 'finish_until_time' => null, 'expected' => ['date' => null, 'time' => null]])
+        ->assertOk()->assertJsonPath('exercise.status', 'found')->assertJsonPath('exercise.preparation.status', 'ready')
+        ->assertJsonPath('exercise.preparation.components.multiple_choice.included', $withMc)
+        ->assertJsonPath('exercise.preparation.total_points', $withMc ? 37 : 35);
+    expect($this->work->fresh()->getAttributes())->toEqual($before);
+    $candidateIds = collect($this->online)->filter(fn (array $entry): bool => ($entry['.tag'] ?? null) === 'folder'
+        && str_contains($entry['path_lower'] ?? '', '/kandidaten'))->pluck('id')->all();
+    Http::assertNotSent(fn (Request $request): bool => str_ends_with($request->url(), '/files/list_folder')
+        && in_array($request['path'] ?? null, $candidateIds, true));
+    Http::assertNotSent(fn (Request $request): bool => preg_match('#/files/(upload|delete|move|create)#', $request->url()) === 1);
+})->with([false, true]);
+
+test('the new preparation exposes only the verified common PDF for read-only preview', function (): void {
+    linkExerciseFixture($this);
+    addModernExerciseFixture($this);
+    $params = '?contents=1&exercise=1&verify_exercise=1&section=Angaben&date=2026-10-06';
+    $response = $this->getJson($this->url.'/folders'.$params)->assertOk()
+        ->assertJsonPath('shared_assignment', true)->assertJsonPath('root.name', 'Angaben')
+        ->assertJsonPath('root.path', null)->assertJsonCount(1, 'entries')
+        ->assertJsonPath('entries.0.name', 'Aufgaben.pdf');
+    expect($response->getContent())->not->toContain('Person');
+    $id = $response->json('entries.0.id');
+    $this->get($this->url.'/folders'.$params.'&pdf=1&file_id='.$id)->assertOk()->assertHeader('Content-Type', 'application/pdf');
+    expect($this->get($this->url.'/folders'.$params.'&pdf=1&file_id='.$id)->getContent())->toStartWith('%PDF-');
+    Http::assertNotSent(fn (Request $request): bool => preg_match('#/files/(upload|delete|move|create)#', $request->url()) === 1);
+});
+
+test('personal MC PDFs are never selected as a shared assignment', function (): void {
+    linkExerciseFixture($this);
+    addModernExerciseFixture($this, true);
+    $this->getJson($this->url.'/folders?contents=1&exercise=1&verify_exercise=1&section=Angaben&date=2026-10-06')
+        ->assertStatus(409)->assertJsonPath('message', 'Das gemeinsame Aufgabenblatt konnte nicht eindeutig aus den persönlichen Angaben bestätigt werden. Bitte ein Aufgaben-PDF auswählen.');
+});
+
+test('modern preparation refuses missing conflicting incomplete or invalid status', function (string $case): void {
+    linkExerciseFixture($this);
+    $path = addModernExerciseFixture($this);
+    $file = collect($this->online)->firstWhere('name', 'status.json');
+    $record = json_decode($this->exerciseDocuments['rev:'.$file['rev']], true, flags: JSON_THROW_ON_ERROR);
+    match ($case) {
+        'work' => $record['schooltool']['work_id']++,
+        'course' => $record['schooltool']['course_id']++,
+        'date' => $record['scheduled_date'] = '2026-10-07',
+        'group' => $record['folder_group'] = '3B_Gruppe-3',
+        'unfinished' => $record['prepared'] = false,
+        'points' => $record['total_points'] = 100,
+        default => null,
+    };
+    if ($case === 'missing') {
+        $this->online = array_values(array_filter($this->online, fn (array $entry): bool => ($entry['name'] ?? null) !== 'status.json'));
+    } else {
+        $json = json_encode($record, JSON_THROW_ON_ERROR);
+        addEmailPreparationFile($this, $path.'/status.json', $case === 'duplicate' ? str_replace('"prepared":true', '"prepared":true,"prepared":true', $json) : $json);
+    }
+    $this->getJson($this->url.'?include_exercise=1&refresh=1&date=2026-10-06')
+        ->assertOk()->assertJsonPath('exercise.status', 'unknown')->assertJsonMissingPath('exercise.preparation.status');
+})->with(['missing', 'work', 'course', 'date', 'group', 'unfinished', 'points', 'duplicate']);
+
+test('the status check trusts the preparation receipt without scanning personal documents', function (): void {
+    linkExerciseFixture($this);
+    addModernExerciseFixture($this);
+    $this->online = array_values(array_filter($this->online, fn (array $entry): bool => ($entry['name'] ?? null) !== 'Beurteilung.pdf'));
+    $this->getJson($this->url.'?include_exercise=1&refresh=1&date=2026-10-06')
+        ->assertOk()->assertJsonPath('exercise.preparation.status', 'ready');
+    $candidateIds = collect($this->online)->filter(fn (array $entry): bool => ($entry['.tag'] ?? null) === 'folder'
+        && str_contains($entry['path_lower'] ?? '', '/kandidaten'))->pluck('id')->all();
+    Http::assertNotSent(fn (Request $request): bool => str_ends_with($request->url(), '/files/list_folder')
+        && in_array($request['path'] ?? null, $candidateIds, true));
+});
+
+test('modern MC dispatch check distinguishes no dispatch from an incomplete or unavailable dispatch', function (string $case): void {
+    linkExerciseFixture($this);
+    $path = addModernExerciseFixture($this);
+    if ($case === 'incomplete') {
+        foreach ([$path.'/Versand', $path.'/Versand/Aufgaben', $path.'/Versand/Aufgaben/Versand_01'] as $folder) {
+            $this->online[] = ['.tag' => 'folder', 'id' => 'id:folder'.hash('sha256', $folder), 'name' => basename($folder),
+                'path_lower' => mb_strtolower($folder), 'path_display' => $folder];
+        }
+    }
+    if ($case === 'case') {
+        $folder = $path.'/VERSAND';
+        $this->online[] = ['.tag' => 'folder', 'id' => 'id:folder'.hash('sha256', $folder), 'name' => basename($folder),
+            'path_lower' => mb_strtolower($folder), 'path_display' => $folder];
+    }
+    if ($case === 'offline') {
+        $this->exerciseOffline = true;
+    }
+    $service = app(DropboxModuleLinks::class);
+    $work = $this->work->fresh();
+    $result = $service->preparedExerciseDispatch($this->connection, $work, $service->current($work), '2026-10-06');
+    expect($result['status'])->toBe($case === 'missing' ? 'missing' : 'unknown');
+    $candidateIds = collect($this->online)->filter(fn (array $entry): bool => ($entry['.tag'] ?? null) === 'folder'
+        && str_contains($entry['path_lower'] ?? '', '/kandidaten'))->pluck('id')->all();
+    Http::assertNotSent(fn (Request $request): bool => str_ends_with($request->url(), '/files/list_folder')
+        && in_array($request['path'] ?? null, $candidateIds, true));
+})->with(['missing', 'incomplete', 'offline', 'case']);
+
+test('a prepared exam cannot be renamed without Dropbox write permission', function (): void {
+    linkExerciseFixture($this);
+    addModernExerciseFixture($this);
+    $before = $this->work->fresh()->getAttributes();
+    $this->putJson('/api/admin/teaching/course_works/'.$this->work->id, ['title' => 'Anderer Titel'])
+        ->assertStatus(409)->assertJsonPath('message', 'Für die Umbenennung des Prüfungsordners fehlt die Dropbox-Schreibfreigabe.');
+    expect($this->work->fresh()->getAttributes())->toEqual($before);
+    $this->getJson($this->url.'?include_exercise=1&refresh=1&date=2026-10-06')->assertOk()
+        ->assertJsonPath('exercise.preparation.status', 'ready');
+    Http::assertNotSent(fn (Request $request): bool => preg_match('#/files/(upload|delete|move|create)#', $request->url()) === 1);
+});
+
+test('a confirmed modern exam folder is renamed with the work and remains discoverable', function (): void {
+    linkExerciseFixture($this);
+    $oldPath = addModernExerciseFixture($this);
+    $credentials = $this->connection->credentials;
+    $credentials['scopes'][] = 'files.content.write';
+    $this->connection->update(['credentials' => $credentials]);
+    $folderId = collect($this->online)->firstWhere('path_display', $oldPath)['id'];
+    TeachingWorkDropboxFolder::query()->create(['dropbox_connection_id' => $this->connection->id,
+        'teaching_course_work_id' => $this->work->id, 'folder_id' => $folderId, 'folder_name' => basename($oldPath)]);
+    $this->partialMock(TeachingCourseWorkEntrySyncService::class)->shouldNotReceive('syncWork');
+
+    $this->putJson('/api/admin/teaching/course_works/'.$this->work->id, ['title' => 'Word-lokal'])->assertOk()->assertJsonPath('data.title', 'Word-lokal');
+    expect($this->work->fresh()->title)->toBe('Word-lokal')
+        ->and(TeachingWorkDropboxFolder::query()->where('teaching_course_work_id', $this->work->id)->value('folder_name'))
+        ->toBe('2026-10-06 – 3B_Gruppe-2 – Word-lokal');
+    $this->getJson($this->url.'?include_exercise=1&refresh=1&date=2026-10-06')->assertOk()
+        ->assertJsonPath('exercise.folder.id', $folderId)->assertJsonPath('exercise.preparation.status', 'ready');
+    expect(Http::recorded(fn (Request $request): bool => str_ends_with($request->url(), '/files/move_v2'))->count())->toBe(1);
+});
+
+test('a lost Dropbox move response is resolved using the original folder id', function (): void {
+    linkExerciseFixture($this);
+    $path = addModernExerciseFixture($this);
+    $credentials = $this->connection->credentials;
+    $credentials['scopes'][] = 'files.content.write';
+    $this->connection->update(['credentials' => $credentials]);
+    $id = collect($this->online)->firstWhere('path_display', $path)['id'];
+    $this->moveLosesResponse = true;
+    $this->putJson('/api/admin/teaching/course_works/'.$this->work->id, ['title' => 'Word-lokal'])->assertOk();
+    $this->getJson($this->url.'?include_exercise=1&refresh=1&date=2026-10-06')->assertOk()
+        ->assertJsonPath('exercise.folder.id', $id)->assertJsonPath('exercise.preparation.status', 'ready');
+});
+
+test('folder rename accepts differing parent path case from Dropbox while checking the original id and final name', function (): void {
+    linkExerciseFixture($this);
+    $path = addModernExerciseFixture($this);
+    $credentials = $this->connection->credentials;
+    $credentials['scopes'][] = 'files.content.write';
+    $this->connection->update(['credentials' => $credentials]);
+    $id = collect($this->online)->firstWhere('path_display', $path)['id'];
+    $this->varyParentCaseForId = $id;
+    $this->putJson('/api/admin/teaching/course_works/'.$this->work->id, ['title' => 'Word-local'])->assertOk();
+    $this->getJson($this->url.'?include_exercise=1&refresh=1&date=2026-10-06')->assertOk()
+        ->assertJsonPath('exercise.folder.id', $id)->assertJsonPath('exercise.preparation.status', 'ready');
+});
+
+test('a rejected Dropbox move reports the safe error code and keeps the title', function (): void {
+    linkExerciseFixture($this);
+    addModernExerciseFixture($this);
+    $credentials = $this->connection->credentials;
+    $credentials['scopes'][] = 'files.content.write';
+    $this->connection->update(['credentials' => $credentials]);
+    $this->moveFails = true;
+    $this->putJson('/api/admin/teaching/course_works/'.$this->work->id, ['title' => 'Word-local'])->assertStatus(409)
+        ->assertJsonPath('message', 'Dropbox hat die Ordnerumbenennung abgelehnt (from_lookup/not_found). Einzelne Ordner können bereits umbenannt sein. Bitte denselben Titel erneut speichern und den Stand prüfen.');
+    expect($this->work->fresh()->title)->toBe('Word');
+});
+
+test('a database failure after the folder move can be safely resumed with the same title', function (): void {
+    linkExerciseFixture($this);
+    $path = addModernExerciseFixture($this);
+    $credentials = $this->connection->credentials;
+    $credentials['scopes'][] = 'files.content.write';
+    $this->connection->update(['credentials' => $credentials]);
+    $id = collect($this->online)->firstWhere('path_display', $path)['id'];
+    $this->partialMock(TeachingCourseWorkEntrySyncService::class)->shouldReceive('syncWork')->once()->andThrow(new RuntimeException('simulated failure'));
+    $this->putJson('/api/admin/teaching/course_works/'.$this->work->id, ['title' => 'Word-lokal', 'groups' => $this->work->groups])->assertStatus(409)
+        ->assertJsonPath('message', 'Der Titel konnte nicht vollständig gespeichert werden. Ein Prüfungsordner wurde möglicherweise bereits umbenannt. Bitte denselben Titel erneut speichern und den Stand prüfen.');
+    expect($this->work->fresh()->title)->toBe('Word');
+    $this->app->forgetInstance(TeachingCourseWorkEntrySyncService::class);
+    $this->getJson($this->url.'?include_exercise=1&date=2026-10-06')->assertOk()->assertJsonPath('exercise.status', 'unknown');
+    $this->putJson('/api/admin/teaching/course_works/'.$this->work->id, ['title' => 'Word-anders'])->assertStatus(409);
+    $this->putJson('/api/admin/teaching/course_works/'.$this->work->id, ['title' => 'Word-lokal'])->assertOk();
+    expect(Http::recorded(fn (Request $request): bool => str_ends_with($request->url(), '/files/move_v2'))->count())->toBe(1);
+    $this->getJson($this->url.'?include_exercise=1&refresh=1&date=2026-10-06')->assertOk()->assertJsonPath('exercise.folder.id', $id);
+});
+
+test('a conflicting target is not overwritten or renamed automatically', function (): void {
+    linkExerciseFixture($this);
+    $path = addModernExerciseFixture($this);
+    $credentials = $this->connection->credentials;
+    $credentials['scopes'][] = 'files.content.write';
+    $this->connection->update(['credentials' => $credentials]);
+    $this->online[] = ['.tag' => 'folder', 'id' => 'id:collision', 'name' => '2026-10-06 – 3B_Gruppe-2 – Word-lokal',
+        'path_display' => $path.'-lokal', 'path_lower' => mb_strtolower($path.'-lokal')];
+    $this->putJson('/api/admin/teaching/course_works/'.$this->work->id, ['title' => 'Word-lokal'])->assertStatus(409);
+    expect($this->work->fresh()->title)->toBe('Word');
+    Http::assertNotSent(fn (Request $request): bool => str_ends_with($request->url(), '/files/move_v2'));
+});
+
+test('changing a saved exam date together with its title stops before moving any folder', function (): void {
+    linkExerciseFixture($this);
+    addModernExerciseFixture($this);
+    $credentials = $this->connection->credentials;
+    $credentials['scopes'][] = 'files.content.write';
+    $this->connection->update(['credentials' => $credentials]);
+    $this->putJson('/api/admin/teaching/course_works/'.$this->work->id,
+        ['title' => 'Word-lokal', 'date_for_all_groups' => '2026-10-09', 'groups' => []])->assertStatus(409)
+        ->assertJsonPath('message', 'Bitte Durchführungstermine und Titel getrennt ändern, damit die vorhandenen Prüfungsordner zugeordnet bleiben.');
+    expect($this->work->fresh()->title)->toBe('Word');
+    Http::assertNotSent(fn (Request $request): bool => str_ends_with($request->url(), '/files/move_v2'));
+});
+
+test('a case-only title change is stopped before touching the Dropbox folder', function (): void {
+    linkExerciseFixture($this);
+    addModernExerciseFixture($this);
+    $credentials = $this->connection->credentials;
+    $credentials['scopes'][] = 'files.content.write';
+    $this->connection->update(['credentials' => $credentials]);
+    $this->putJson('/api/admin/teaching/course_works/'.$this->work->id, ['title' => 'WORD'])->assertStatus(409)
+        ->assertJsonPath('message', 'Eine Änderung nur der Groß- und Kleinschreibung wird von Dropbox nicht unterstützt.');
+    expect($this->work->fresh()->title)->toBe('Word');
+    Http::assertNotSent(fn (Request $request): bool => str_ends_with($request->url(), '/files/move_v2'));
+});
+
+test('each dated modern exam folder is renamed and remains discoverable', function (): void {
+    linkExerciseFixture($this);
+    addModernExerciseFixture($this);
+    addModernExerciseFixture($this, date: '2026-10-07');
+    $students = User::factory()->count(2)->create(['school_id' => $this->course->school_id, 'schoolyear_id' => $this->course->schoolyear_id]);
+    foreach ($students as $student) {
+        $this->course->teachingCourseStudents()->create(['user_id' => $student->id]);
+    }
+    $this->work->update(['groups' => [['date' => '2026-10-06', 'student_ids' => [$students[0]->id]], ['date' => '2026-10-07', 'student_ids' => [$students[1]->id]]]]);
+    $credentials = $this->connection->credentials;
+    $credentials['scopes'][] = 'files.content.write';
+    $this->connection->update(['credentials' => $credentials]);
+    $this->putJson('/api/admin/teaching/course_works/'.$this->work->id, ['title' => 'Word-lokal'])->assertOk();
+    foreach (['2026-10-06', '2026-10-07'] as $date) {
+        $this->getJson($this->url.'?include_exercise=1&refresh=1&date='.$date)->assertOk()
+            ->assertJsonPath('exercise.folder.name', $date.' – 3B_Gruppe-2 – Word-lokal')->assertJsonPath('exercise.preparation.status', 'ready');
+    }
+    expect(Http::recorded(fn (Request $request): bool => str_ends_with($request->url(), '/files/move_v2'))->count())->toBe(2);
+});
+
+test('a partially completed multi-date rename resumes without another move of the completed folder', function (): void {
+    linkExerciseFixture($this);
+    addModernExerciseFixture($this);
+    addModernExerciseFixture($this, date: '2026-10-07');
+    $students = User::factory()->count(2)->create(['school_id' => $this->course->school_id, 'schoolyear_id' => $this->course->schoolyear_id]);
+    foreach ($students as $student) {
+        $this->course->teachingCourseStudents()->create(['user_id' => $student->id]);
+    }
+    $this->work->update(['groups' => [['date' => '2026-10-06', 'student_ids' => [$students[0]->id]], ['date' => '2026-10-07', 'student_ids' => [$students[1]->id]]]]);
+    $credentials = $this->connection->credentials;
+    $credentials['scopes'][] = 'files.content.write';
+    $this->connection->update(['credentials' => $credentials]);
+    $this->failMoveAt = 2;
+    $this->putJson('/api/admin/teaching/course_works/'.$this->work->id, ['title' => 'Word-lokal'])->assertStatus(409)
+        ->assertJsonPath('message', 'Dropbox hat die Ordnerumbenennung abgelehnt (from_lookup/not_found). Einzelne Ordner können bereits umbenannt sein. Bitte denselben Titel erneut speichern und den Stand prüfen.');
+    expect($this->work->fresh()->title)->toBe('Word');
+    $this->getJson($this->url.'?include_exercise=1&date=2026-10-06')->assertOk()->assertJsonPath('exercise.status', 'unknown');
+    $this->failMoveAt = 0;
+    $this->putJson('/api/admin/teaching/course_works/'.$this->work->id, ['title' => 'Word-lokal'])->assertOk();
+    foreach (['2026-10-06', '2026-10-07'] as $date) {
+        $this->getJson($this->url.'?include_exercise=1&refresh=1&date='.$date)->assertOk()
+            ->assertJsonPath('exercise.folder.name', $date.' – 3B_Gruppe-2 – Word-lokal');
+    }
+    expect($this->moveCount)->toBe(3);
+});
+
+test('a title remains editable when the linked module has no exam folder', function (): void {
+    linkExerciseFixture($this);
+    $this->putJson('/api/admin/teaching/course_works/'.$this->work->id, ['title' => 'Neuer Titel'])->assertOk()
+        ->assertJsonPath('data.title', 'Neuer Titel');
+    expect($this->work->fresh()->title)->toBe('Neuer Titel');
+    Http::assertNotSent(fn (Request $request): bool => preg_match('#/files/(upload|delete|move|create)#', $request->url()) === 1);
+});
+
+test('description changes do not inspect or alter the exam folder', function (): void {
+    linkExerciseFixture($this);
+    addModernExerciseFixture($this);
+    $requests = Http::recorded()->count();
+    $this->putJson('/api/admin/teaching/course_works/'.$this->work->id, ['description' => 'Ergänzte Beschreibung'])->assertOk();
+    expect($this->work->fresh()->description)->toBe('Ergänzte Beschreibung')
+        ->and(Http::recorded()->count())->toBe($requests);
+});
+
+test('a title change fails closed when Dropbox cannot be checked', function (): void {
+    linkExerciseFixture($this);
+    addModernExerciseFixture($this);
+    $before = $this->work->fresh()->getAttributes();
+    $this->exerciseOffline = true;
+    $this->putJson('/api/admin/teaching/course_works/'.$this->work->id, ['title' => 'Anderer Titel'])
+        ->assertStatus(409);
+    expect($this->work->fresh()->getAttributes())->toEqual($before);
+});
+
+test('a title change is blocked when an older possible exam has incomplete identifiers', function (): void {
+    linkExerciseFixture($this);
+    addExerciseFixture($this, override: ['Schooltool_Arbeit_ID' => null]);
+    $before = $this->work->fresh()->getAttributes();
+    $this->putJson('/api/admin/teaching/course_works/'.$this->work->id, ['title' => 'Anderer Titel'])
+        ->assertStatus(409)->assertJsonPath('message', 'Der Titel kann nicht geändert werden: Ein älterer Prüfungsordner ist nicht eindeutig zugeordnet.');
+    expect($this->work->fresh()->getAttributes())->toEqual($before);
+});
+
+test('a failed modern status refresh does not reuse a prior prepared result', function (): void {
+    linkExerciseFixture($this);
+    addModernExerciseFixture($this);
+    $url = $this->url.'?include_exercise=1&refresh=1&date=2026-10-06';
+    $this->getJson($url)->assertOk()->assertJsonPath('exercise.preparation.status', 'ready');
+    $this->exerciseOffline = true;
+    $this->getJson($url)->assertOk()->assertJsonPath('exercise.status', 'unknown')->assertJsonMissingPath('exercise.preparation.status');
+});
 
 test('the actual externally created exercise folder is read only and confirmed for this work and module', function (): void {
     linkExerciseFixture($this);

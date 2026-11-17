@@ -13,6 +13,28 @@ const stubs = {
     'v-dialog': { props: ['modelValue'], template: '<section v-if="modelValue" role="dialog"><slot /></section>' },
 }
 
+it('previews the server-verified shared assignment regardless of its original PDF name', async () => {
+    const work = { id: 12, student_distribution_version: 'a'.repeat(64), status: {} }
+    const get = vi.fn().mockResolvedValueOnce({ data: { data: work } })
+        .mockResolvedValueOnce({ data: { root: { name: 'Angaben' }, shared_assignment: true,
+            entries: [{ id: 'id:pdf', type: 'file', name: 'Leistungsfeststellung_Word.pdf' }], cursor: null } })
+        .mockResolvedValueOnce({ data: new Blob(['%PDF-1.4 test'], { type: 'application/pdf' }) })
+    const post = vi.fn()
+    vi.stubGlobal('axios', { get, post })
+    const wrapper = mount(WorkStudentDistribution, { props: { available: true, work, deferAssignment: true }, global: { stubs } })
+    try {
+        await wrapper.get('button').trigger('click')
+        await flushPromises()
+        expect(get).toHaveBeenCalledTimes(1)
+        expect(wrapper.text()).toContain('Aufgaben-PDF bei Bedarf laden')
+        await wrapper.findAll('button').find(button => button.text() === 'Aufgaben-PDF laden')!.trigger('click')
+        await flushPromises()
+        expect(wrapper.text()).toContain('Leistungsfeststellung_Word.pdf')
+        expect(wrapper.text()).toContain('Pausiert vorbereiten')
+        expect(post).not.toHaveBeenCalled()
+    } finally { wrapper.unmount() }
+})
+
 it('checks off real loading steps only after each response and the complete paginated PDF search', async () => {
     const responses = Array.from({ length: 5 }, () => {
         let complete: (value: unknown) => void = () => {}

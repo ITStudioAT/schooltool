@@ -260,13 +260,41 @@ describe('CourseTable manual work completion', () => {
             await flushPromises()
             expect(statuses.getComponent({ name: 'WorkDeliveryStatus' }).props('disabled')).toBe(false)
             expect(statuses.getComponent({ name: 'WorkDeliveryStatus' }).props('exerciseReady')).toBe(true)
+            ;(wrapper.vm as any).workDialogExerciseStatus.assignmentStatus = 'unknown'
+            ;(wrapper.vm as any).workDialogExerciseStatus.preparation = { status: 'ready' }
+            await flushPromises()
+            expect(statuses.getComponent({ name: 'WorkDeliveryStatus' }).props('disabled')).toBe(false)
+            expect(statuses.getComponent({ name: 'WorkDeliveryStatus' }).props('exerciseReady')).toBe(true)
+            ;(wrapper.vm as any).workDialogExerciseStatus.status = 'unknown'
+            await flushPromises()
+            expect(statuses.getComponent({ name: 'WorkDeliveryStatus' }).props('disabled')).toBe(true)
+            expect(statuses.getComponent({ name: 'WorkDeliveryStatus' }).props('exerciseReady')).toBe(false)
         } finally { wrapper.unmount(); clearWorkDropboxStates() }
+    })
+
+    it('checks the exercise folder before opening it and blocks an unconfirmed result', async () => {
+        const recheck = vi.fn().mockResolvedValue(undefined)
+        const open = vi.fn()
+        const context = { $refs: { workExerciseExport: { recheck }, workDialogExerciseFolderBrowser: { open } },
+            $nextTick: vi.fn().mockResolvedValue(undefined), workDialogExerciseStatus: { status: 'found' } }
+        const handler = (CourseTable as any).methods.openCheckedExerciseFolder
+        await handler.call(context)
+        expect(recheck).toHaveBeenCalledOnce()
+        expect(open).toHaveBeenCalledOnce()
+        context.workDialogExerciseStatus.status = 'unknown'
+        await handler.call(context)
+        expect(recheck).toHaveBeenCalledTimes(2)
+        expect(open).toHaveBeenCalledOnce()
     })
 
     it('opens LF creation from its red status icon without an extra action button', async () => {
         clearWorkDropboxStates()
         const status = vi.fn().mockResolvedValue({ data: { connected: true, module_link: { folder: { id: 'id:module' } }, exercise: { status: 'missing' } } })
-        vi.stubGlobal('axios', { get: status, post: status })
+        vi.stubGlobal('axios', { get: vi.fn((url, options) => {
+            if (options?.params?.mc_selection === 'template_points') return Promise.resolve({ data: { assessment_points: 35 } })
+            if (options?.params?.mc_selection === 'current') return Promise.resolve({ data: { linked_test_id: null } })
+            return status(url, options)
+        }), post: status })
         const { wrapper, works, first } = mountCompletionTable()
         try {
             useAdminStore().config = { user: { id: 7 } } as never
@@ -279,7 +307,11 @@ describe('CourseTable manual work completion', () => {
             const icon = form.getComponent({ name: 'WorkExerciseStatus' })
             expect(icon.get('v-icon').attributes('color')).toBe('error')
             await icon.get('[role="button"]').trigger('click')
-            expect(form.getComponent({ name: 'WorkExerciseExport' }).text()).toContain('Übergabetext für die Erstellung der Leistungsfeststellung erzeugen.')
+            await flushPromises()
+            const dialog = form.getComponent({ name: 'WorkExerciseExport' })
+            expect(dialog.text()).toContain('Übergabetext für die Erstellung der Leistungsfeststellung erzeugen.')
+            expect((dialog.get('input[aria-label="Multiple-Choice-Teil: Nein"]').element as HTMLInputElement).checked).toBe(true)
+            expect(dialog.find('input[aria-label="Fragenanzahl"]').exists()).toBe(false)
         } finally { wrapper.unmount(); clearWorkDropboxStates(); vi.unstubAllGlobals() }
     })
 

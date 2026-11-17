@@ -42,6 +42,7 @@ export function workNeedsPreparation(work, folderState) {
 
 export function workPreparationLabel(checked) {
     if (checked.status === 'found') {
+        if (checked.data?.exercise?.preparation?.status === 'ready') return 'Aufgaben bereitstellen'
         if (checked.data?.exercise?.email_dispatch?.status === 'sent') return 'Abgaben einsammeln'
         if (checked.data?.exercise?.assignment_status === 'missing') return 'Aufgabenstellung fehlt'
         const preparation = checked.data?.exercise?.email_preparation
