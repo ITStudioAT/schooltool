@@ -279,7 +279,7 @@ describe('CourseTable manual work completion', () => {
             const icon = form.getComponent({ name: 'WorkExerciseStatus' })
             expect(icon.get('v-icon').attributes('color')).toBe('error')
             await icon.get('[role="button"]').trigger('click')
-            expect(form.getComponent({ name: 'WorkExerciseExport' }).text()).toContain('Direkt über die OpenAI-API')
+            expect(form.getComponent({ name: 'WorkExerciseExport' }).text()).toContain('Übergabetext für die Erstellung der Leistungsfeststellung erzeugen.')
         } finally { wrapper.unmount(); clearWorkDropboxStates(); vi.unstubAllGlobals() }
     })
 
