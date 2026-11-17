@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Services\DropboxModuleLinks;
 use App\Services\DropboxWorkImport;
 use App\Services\MultipleChoice\McModuleTemplateSource;
+use App\Services\TeachingCourseStudentActivity;
 use App\Services\TeachingCourseStudentEntryService;
 use App\Services\TeachingCourseWorkEntrySyncService;
 use App\Services\TeachingCourseWorkService;
@@ -837,6 +838,9 @@ class CourseWorkController extends Controller
     {
         $maximumGroupSize = $course->teachingCourseStudents()
             ->whereNull('canceled_at')
+            ->with(['user', 'import116.user'])
+            ->get()
+            ->filter(fn ($membership): bool => app(TeachingCourseStudentActivity::class)->active($membership, $course))
             ->count();
 
         $rules = [

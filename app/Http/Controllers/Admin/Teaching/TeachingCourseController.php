@@ -18,6 +18,7 @@ use App\Services\PdfTableGenerator;
 use App\Services\TeachingClassHeadEmailService;
 use App\Services\TeachingCourseDateService;
 use App\Services\TeachingCourseService;
+use App\Services\TeachingCourseStudentActivity;
 use App\Services\TeachingCourseWorkEntrySyncService;
 use App\Services\TeachingHolidaySyncService;
 use App\Services\TeachingService;
@@ -195,7 +196,9 @@ class TeachingCourseController extends Controller
         $courseStudents = TeachingCourseStudent::query()
             ->where('teaching_course_id', $course->id)
             ->whereNull('canceled_at')
-            ->get();
+            ->with(['user', 'import116.user'])
+            ->get()
+            ->filter(fn (TeachingCourseStudent $membership): bool => app(TeachingCourseStudentActivity::class)->active($membership, $course));
         $userIds = $courseStudents->pluck('user_id')->filter()->unique()->values();
         $importIds = $courseStudents->pluck('import116_id')->filter()->unique()->values();
         $studentsById = User::query()
@@ -628,6 +631,8 @@ class TeachingCourseController extends Controller
         );
 
         $courseStudents = $course->teachingCourseStudentsWithTrashed;
+        $courseStudents->load(['user', 'import116.user']);
+        $course->teachingCourseStudents->load(['user', 'import116.user']);
         $userIds = $courseStudents
             ->pluck('user_id')
             ->filter()
@@ -645,8 +650,8 @@ class TeachingCourseController extends Controller
         $importsById = $importIds->isEmpty() && $userIds->isEmpty()
             ? collect()
             : Import116::query()
-                ->where('school_id', $auth_user->school_id)
-                ->where('schoolyear_id', $auth_user->schoolyear_id)
+                ->where('school_id', $course->school_id)
+                ->where('schoolyear_id', $course->schoolyear_id)
                 ->where(fn ($query) => $query
                     ->whereIn('id', $importIds)
                     ->orWhereIn('user_id', $userIds))
@@ -668,6 +673,7 @@ class TeachingCourseController extends Controller
         foreach ($course->teachingCourseStudents as $courseStudent) {
             $payload = $this->serializeCourseStudent(
                 $courseStudent,
+                $course,
                 $studentsById,
                 $importsById,
                 $classImportsByUserId,
@@ -690,6 +696,7 @@ class TeachingCourseController extends Controller
 
             $payload = $this->serializeCourseStudent(
                 $courseStudent,
+                $course,
                 $studentsById,
                 $importsById,
                 $classImportsByUserId,
@@ -1084,6 +1091,7 @@ class TeachingCourseController extends Controller
 
     private function serializeCourseStudent(
         TeachingCourseStudent $courseStudent,
+        TeachingCourse $course,
         Collection $studentsById,
         Collection $importsById,
         Collection $classImportsByUserId,
@@ -1122,6 +1130,12 @@ class TeachingCourseController extends Controller
                 'schoolclass' => $import->class,
                 'class' => $import->class,
             ];
+        }
+
+        $activityUser = app(TeachingCourseStudentActivity::class)->resolve($courseStudent, $course);
+        $payload['is_active'] = $activityUser?->is_active === null ? null : (bool) $activityUser->is_active;
+        if ($source === 'import') {
+            $payload['resolved_user_id'] = $activityUser?->id;
         }
 
         $payload['sex'] = $payload['sex'] ?? $import?->sex;

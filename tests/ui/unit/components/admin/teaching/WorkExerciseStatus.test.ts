@@ -221,6 +221,20 @@ it('shows saved deadline times and uses active course members when no groups exi
     wrapper.unmount()
 })
 
+it.each([true, false])('excludes inactive accounts from participant counts with groups: %s', async grouped => {
+    const roster = { ...course, students_info: [
+        { id: 1, user_id: 101, is_active: false },
+        { id: 2, user_id: 102, is_active: null },
+        { id: 3, user_id: null, resolved_user_id: 103, is_active: true },
+    ] }
+    const wrapper = render('found', { course: roster, work: { ...savedWork,
+        groups: grouped ? [{ date: state.date, student_ids: [101, 102, 103] }] : [] } })
+    try {
+        await wrapper.get('[role="button"]').trigger('click')
+        expect(info(wrapper)['Teilnehmer:innen aktuell']).toBe('2')
+    } finally { wrapper.unmount() }
+})
+
 it('never mixes another course or missing date assignment into the LF information', async () => {
     const wrapper = render('found', { course: { ...course, id: 3 }, work: savedWork })
     await wrapper.get('[role="button"]').trigger('click')

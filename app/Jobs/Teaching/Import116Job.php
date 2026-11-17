@@ -8,10 +8,12 @@ use App\Models\Import116;
 use App\Models\Import116Run;
 use App\Models\Import116RunChange;
 use App\Models\SchoolTool;
+use App\Models\TeachingCourseStudent;
 use App\Models\User;
 use App\Models\UserGroupMember;
 use App\Services\StudentsTimetables\StudentTimetablesStudentOverviewService;
 use App\Services\StudentsTimetables\StudentTimetableStudySelectionRefreshService;
+use App\Services\TeachingCourseStudentRole;
 use Carbon\Carbon;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -1097,6 +1099,7 @@ class Import116Job implements ShouldQueue
                 $this->mergeReportCounts($counts, $batchReport['counts']);
                 $this->storeRunChanges($run, $batchReport['changes'], $schoolId, $schoolyearId);
             });
+
     }
 
     private function syncImport116ReferencesToCurrentRecord(int $schoolId, Import116 $record): void
@@ -1250,6 +1253,11 @@ class Import116Job implements ShouldQueue
                         'deleted_at' => ($sourceIsActive || $targetIsActive) ? null : $targetRow->deleted_at,
                     ]));
             });
+
+        $studentRole = app(TeachingCourseStudentRole::class);
+        foreach (TeachingCourseStudent::query()->where('import116_id', $record->id)->whereNull('canceled_at')->get() as $membership) {
+            $studentRole->assign($membership);
+        }
     }
 
     private function mergedTeachingCourseStudentPayload(object $primaryRow, object $secondaryRow, array $overrides): array

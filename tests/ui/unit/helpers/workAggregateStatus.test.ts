@@ -103,6 +103,21 @@ describe('Shared work status and personal deviations', () => {
         expect(workAggregateStatuses(work, roster, now).map(item => [item.count, item.total])).toEqual([[3, 3], [3, 3], [3, 3], [3, 3]])
     })
 
+    it('excludes inactive accounts and resolves linked imports without changing the roster', () => {
+        const roster = [
+            { id: 1, user_id: 101, is_active: false },
+            { id: 2, user_id: 102, is_active: null },
+            { id: 3, user_id: null, resolved_user_id: 103, is_active: true },
+            { id: 4, user_id: null, resolved_user_id: 104, is_active: false },
+        ]
+        const snapshot = structuredClone(roster)
+        expect(workParticipantIds({ groups: [{ student_ids: [101, 102, 103, 104] }] }, roster)).toEqual(['102', '103'])
+        expect(workParticipantIds({ groups: [{ student_ids: [3] }] }, roster)).toEqual(['103'])
+        const collision = [...roster, { id: 3, user_id: 3, is_active: true }]
+        expect(workParticipantIds({ groups: [{ student_ids: [3] }] }, collision)).toEqual([])
+        expect(roster).toEqual(snapshot)
+    })
+
     it('shows a completed collection action green while only missing submissions remain red in person cells', () => {
         const work = fixture([13, 14])
         const aggregate = mount(WorkCellStatus, { props: { work, students, now, aggregate: true, nativeTitle: true } })

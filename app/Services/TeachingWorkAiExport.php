@@ -187,6 +187,15 @@ class TeachingWorkAiExport
             $person['course_assignments'] = array_values(array_filter($person['course_assignments'], fn (array $assignment): bool => $assignment['cancelled_at'] === null));
         }
         unset($person);
+        $activeGroupIds = array_map('strval', array_filter(array_map(
+            fn (array $person) => $person['schooltool_person_id'] ?? $person['import116_id'], $participants
+        ), fn ($id): bool => $id !== null));
+        $context['work']['groups'] = array_map(function (array $group) use ($activeGroupIds): array {
+            $group['schooltool_student_ids'] = array_values(array_filter($group['schooltool_student_ids'],
+                fn ($id): bool => in_array((string) $id, $activeGroupIds, true)));
+
+            return $group;
+        }, $groups);
         $context['purpose'] = 'create-exercise';
         $context['include_multiple_choice'] = $includeMc;
         if ($includeMc && $multipleChoice !== null) {
@@ -459,10 +468,10 @@ class TeachingWorkAiExport
     {
         $people = [];
         $rows = $course->teachingCourseStudents()->select(['id', 'teaching_course_id', 'user_id', 'import116_id', 'canceled_at'])
-            ->with(['user:id,school_id,schoolyear_id,import116_id,first_name,last_name,schoolclass,email,sex', 'user.import116:id,school_id,schoolyear_id,user_id,first_name,last_name,class,email,sex', 'import116:id,school_id,schoolyear_id,user_id,first_name,last_name,class,email,sex'])->orderBy('id')->get();
+            ->with(['user:id,school_id,schoolyear_id,import116_id,first_name,last_name,schoolclass,email,sex,is_active', 'user.import116:id,school_id,schoolyear_id,user_id,first_name,last_name,class,email,sex', 'import116:id,school_id,schoolyear_id,user_id,first_name,last_name,class,email,sex'])->orderBy('id')->get();
         $linkedUsers = User::query()->whereIn('id', $rows->pluck('import116.user_id')->filter())
             ->with('import116:id,school_id,schoolyear_id,user_id,first_name,last_name,class,email,sex')
-            ->get(['id', 'school_id', 'schoolyear_id', 'import116_id', 'first_name', 'last_name', 'schoolclass', 'email', 'sex'])->keyBy('id');
+            ->get(['id', 'school_id', 'schoolyear_id', 'import116_id', 'first_name', 'last_name', 'schoolclass', 'email', 'sex', 'is_active'])->keyBy('id');
         foreach ($rows as $row) {
             $user = $row->user ?? $linkedUsers->get($row->import116?->user_id);
             $import = $row->import116;
@@ -495,7 +504,8 @@ class TeachingWorkAiExport
                 || $people[$key]['class_name'] !== ($import ? $import->class : $user->schoolclass)) {
                 throw ValidationException::withMessages(['roster' => 'Doppelte Kurszuordnungen enthalten widersprüchliche Identitäten. Bitte vor dem Export klären.']);
             }
-            $people[$key]['active'] = $people[$key]['active'] || $row->canceled_at === null;
+            $people[$key]['active'] = $people[$key]['active'] || ($row->canceled_at === null
+                && (! $user || $user->is_active === null || (bool) $user->is_active));
             $people[$key]['import116_id'] ??= $import?->id;
             $people[$key]['email'] ??= $email;
             if (filled($import?->sex)) {

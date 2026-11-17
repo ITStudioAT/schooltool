@@ -132,14 +132,17 @@ class TeachingCourseService
     /**
      * @return array<int, array<string, mixed>>
      */
-    public function resolveCourseStudentEntries($value, int $schoolId, ?int $schoolyearId = null): array
+    public function resolveCourseStudentEntries($value, int $schoolId, ?int $schoolyearId = null, bool $allowCreation = true): array
     {
         $items = $this->normalizeStudentItems($value);
         $entries = [];
 
         foreach ($items as $item) {
             $data = (is_array($item) || is_object($item)) ? (array) $item : ['id' => $item];
-            $reference = $this->resolveStudentReferenceFromItem($item, $schoolId, $schoolyearId);
+            $cancelled = array_key_exists('canceled_at', $data) && $this->normalizeCanceledAt($data['canceled_at']) !== null;
+            $reference = $allowCreation && ! $cancelled
+                ? $this->resolveStudentReferenceFromItem($item, $schoolId, $schoolyearId)
+                : $this->resolveExistingStudentReference($item, $schoolId, $schoolyearId);
 
             if (! $reference) {
                 continue;
@@ -182,7 +185,7 @@ class TeachingCourseService
 
         $schoolyearId = $course->schoolyear_id ? (int) $course->schoolyear_id : null;
         $activeEntries = $this->resolveCourseStudentEntries($studentsPayload, $schoolId, $schoolyearId);
-        $deletedEntries = $this->resolveCourseStudentEntries($studentsDeletedPayload, $schoolId, $schoolyearId);
+        $deletedEntries = $this->resolveCourseStudentEntries($studentsDeletedPayload, $schoolId, $schoolyearId, false);
 
         $activeByKey = [];
         foreach ($activeEntries as $entry) {
@@ -287,6 +290,11 @@ class TeachingCourseService
             $created = $course->teachingCourseStudents()->create($this->buildCourseStudentPayload($entry));
             $created->delete();
             $createdDeleted++;
+        }
+
+        $studentRole = app(TeachingCourseStudentRole::class);
+        foreach ($course->teachingCourseStudents()->whereNull('canceled_at')->get() as $membership) {
+            $studentRole->assign($membership);
         }
     }
 
@@ -646,6 +654,49 @@ class TeachingCourseService
         $user->assignRole('student');
 
         return $user->id;
+    }
+
+    /** @return array{user_id: int|null, import116_id: int|null}|null */
+    private function resolveExistingStudentReference(mixed $item, int $schoolId, ?int $schoolyearId): ?array
+    {
+        $data = (is_array($item) || is_object($item)) ? (array) $item : (is_numeric($item) ? ['id' => $item] : ['email' => $item]);
+        $findImport = function (int $id) use ($schoolId, $schoolyearId): ?array {
+            $import = Import116::query()->where('school_id', $schoolId)
+                ->when($schoolyearId, fn ($query) => $query->where('schoolyear_id', $schoolyearId))->find($id);
+            if (! $import) {
+                return null;
+            }
+            $linked = $import->user_id ? User::query()->where('school_id', $schoolId)->find($import->user_id) : null;
+
+            return ['user_id' => $linked?->id, 'import116_id' => $import->id];
+        };
+        if (is_numeric($data['import116_id'] ?? null)) {
+            return $findImport((int) $data['import116_id']);
+        }
+        if (is_numeric($data['user_id'] ?? null)) {
+            $user = User::query()->where('school_id', $schoolId)->find((int) $data['user_id']);
+
+            return $user ? ['user_id' => $user->id, 'import116_id' => null] : null;
+        }
+        if (is_numeric($data['id'] ?? null)) {
+            $id = (int) $data['id'];
+            if (array_key_exists('class', $data) || array_key_exists('student_code', $data)) {
+                $import = $findImport($id);
+                if ($import) {
+                    return $import;
+                }
+            }
+            $user = User::query()->where('school_id', $schoolId)->find($id);
+
+            return $user ? ['user_id' => $user->id, 'import116_id' => null] : $findImport($id);
+        }
+        $email = trim((string) ($data['email'] ?? ''));
+        if ($email === '') {
+            return null;
+        }
+        $users = User::query()->where('school_id', $schoolId)->where('email', $email)->limit(2)->get();
+
+        return $users->count() === 1 ? ['user_id' => $users->first()->id, 'import116_id' => null] : null;
     }
 
     private function resolveStudentReferenceFromItem(mixed $item, int $schoolId, ?int $schoolyearId): ?array

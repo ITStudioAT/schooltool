@@ -362,6 +362,11 @@ import CourseStudentPerformance from './CourseStudentPerformance.vue'
 import { useCourseWorkStore } from '@/stores/admin/teaching/CourseWorkStore'
 import { useCourseStudentCategoryEvaluationStore } from '@/stores/admin/teaching/CourseStudentCategoryEvaluationStore'
 
+function isEffectiveStudent(student) {
+    return !student?.canceled_at && !student?.deleted_at
+        && student?.is_active !== false && student?.is_active !== 0 && student?.is_active !== '0'
+}
+
 export default {
     setup() {
         return useValidationRulesSetup()
@@ -576,7 +581,7 @@ export default {
         },
         studentItems() {
             const list = this.selected_course?.students_info || []
-            return [...list]
+            return list.filter(isEffectiveStudent)
                 .sort((a, b) => this.compareStudentsBySelectedSort(a, b))
                 .map((student) => ({
                     title: this.studentLabel(student),
@@ -584,7 +589,7 @@ export default {
                 }))
         },
         hasStudents() {
-            return (this.selected_course?.students_info || []).length > 0
+            return (this.selected_course?.students_info || []).some(isEffectiveStudent)
         },
         bulkEntryEnabled() {
             if (!this.hasStudents) return false
@@ -697,7 +702,7 @@ export default {
         sortedSelectedStudents() {
             const list = this.selected_course?.students_info || []
             return [...list]
-                .filter((student) => !this.isStudentCanceled(student))
+                .filter(isEffectiveStudent)
                 .sort((a, b) => this.compareStudentsBySelectedSort(a, b))
         },
         activeStudentsCount() {
@@ -705,8 +710,7 @@ export default {
             const activeIds = new Set()
             list.forEach((student) => {
                 if (!student?.id) return
-                if (this.isStudentCanceled(student)) return
-                if (student?.deleted_at) return
+                if (!isEffectiveStudent(student)) return
                 activeIds.add(String(student.id))
             })
             return activeIds.size
@@ -1091,8 +1095,10 @@ export default {
         async saveBulkEntry() {
             if (this.bulk_entry_saving || !this.selected_course) return
             if ((['plus', 'plus_minus', 'points'].includes(this.bulkGradeInputMode) || ['NA', 'VL', 'F'].includes(String(this.bulk_entry_form.grade ?? '').trim())) && this.validateBulkGrade(this.bulk_entry_form.grade) !== true) return
-            const allIds = (this.selected_course?.students_info || []).map((s) => s.id)
-            const targetIds = this.bulk_entry_form.student_ids.length ? this.bulk_entry_form.student_ids : allIds
+            const allIds = (this.selected_course?.students_info || []).filter(isEffectiveStudent).map((s) => s.id)
+            const allowedIds = new Set(allIds.map(String))
+            const targetIds = this.bulk_entry_form.student_ids.length
+                ? this.bulk_entry_form.student_ids.filter(id => allowedIds.has(String(id))) : allIds
             if (!targetIds.length) return
 
             this.bulk_entry_saving = true
@@ -1125,7 +1131,7 @@ export default {
             }
         },
         selectAllBulkStudents() {
-            this.bulk_entry_form.student_ids = (this.selected_course?.students_info || []).map((s) => s.id)
+            this.bulk_entry_form.student_ids = (this.selected_course?.students_info || []).filter(isEffectiveStudent).map((s) => s.id)
         },
         validateBulkGrade(value) {
             const grade = String(value ?? '').trim()

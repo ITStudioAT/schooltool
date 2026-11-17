@@ -531,6 +531,24 @@ describe('CourseStudents sorting', () => {
         expect(data.bulk_entry_saving).toBe(false)
     })
 
+    it('filters inactive rows from the overview, count, and bulk selection without changing the roster', async () => {
+        const component = CourseStudents as any
+        const roster = [{ id: 1, is_active: false }, { id: 2, is_active: null }, { id: 3, is_active: true }]
+        const state: any = { ...component.methods, selected_course: { id: 1, students_info: roster },
+            compareStudentsBySelectedSort: (a: any, b: any) => a.id - b.id,
+            bulk_entry_form: { student_ids: [1, 2], type: 'M', grade: '1', description: '' },
+            bulkGradeInputMode: 'fixed', entryStore: { store: vi.fn().mockResolvedValue(true) }, cancelBulkEntry: vi.fn() }
+        expect(component.computed.sortedSelectedStudents.call(state).map((s: any) => s.id)).toEqual([2, 3])
+        expect(component.computed.activeStudentsCount.call(state)).toBe(2)
+        component.methods.selectAllBulkStudents.call(state)
+        expect(state.bulk_entry_form.student_ids).toEqual([2, 3])
+        state.bulk_entry_form.student_ids = [1, 2]
+        await component.methods.saveBulkEntry.call(state)
+        expect(state.entryStore.store).toHaveBeenCalledTimes(1)
+        expect(state.entryStore.store).toHaveBeenCalledWith(expect.objectContaining({ user_id: 2 }))
+        expect(roster).toHaveLength(3)
+    })
+
     it('does not include canceled students in the overview list', () => {
         const ctx = {
             selected_course: {

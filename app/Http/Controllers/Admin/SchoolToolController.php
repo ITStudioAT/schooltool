@@ -7,6 +7,7 @@ use App\Http\Requests\Admin\SchoolToolSaveModuleStatusesRequest;
 use App\Http\Resources\Admin\SchoolToolResource;
 use App\Models\SchoolTool;
 use App\Services\SchoolToolModuleStatusService;
+use App\Services\TeachingCourseStudentRole;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -106,7 +107,12 @@ class SchoolToolController extends Controller
             abort(404, 'SchoolTool nicht gefunden');
         }
 
-        $schoolTool->update(['active_schoolyear_id' => $validated['schoolyear_id']]);
+        DB::transaction(function () use ($schoolTool, $validated): void {
+            $locked = SchoolTool::query()->whereKey($schoolTool->id)->lockForUpdate()->firstOrFail();
+            $locked->update(['active_schoolyear_id' => $validated['schoolyear_id']]);
+            app(TeachingCourseStudentRole::class)->assignForSchoolYear((int) $locked->school_id, (int) $validated['schoolyear_id']);
+        }, 3);
+        $schoolTool->refresh();
 
         return response()->json(new SchoolToolResource($schoolTool), 200);
     }

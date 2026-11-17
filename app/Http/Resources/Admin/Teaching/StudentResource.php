@@ -23,6 +23,7 @@ class StudentResource extends JsonResource
             'first_name' => $this->first_name,
             'last_name' => $this->last_name,
             'sex' => $this->sex,
+            'is_active' => $this->is_active === null ? null : (bool) $this->is_active,
             'schoolclass' => $this->schoolclass,
             'email' => $isPlaceholder ? null : $this->email,
             'email_is_placeholder' => $isPlaceholder,

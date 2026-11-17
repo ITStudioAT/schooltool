@@ -50,7 +50,7 @@ class TeachingWorkStudentDistribution
             $test = $item['test'];
             $choice = $choices->get((int) $test->id);
             abort_unless(hash_equals($this->mcVersion($item), $choice['expected_version']), 409, 'Der MC-Test wurde inzwischen geändert. Bitte den Dialog erneut öffnen.');
-            $this->assertMcReady($test, $item['attempts']);
+            $this->assertMcReady($test, $item['active_attempts']);
             if (! $releaseNow) {
                 $this->assertMcNotShared($work, $test);
             }
@@ -84,23 +84,19 @@ class TeachingWorkStudentDistribution
         if ($lock) {
             $work->teachingCourse->teachingCourseStudentsWithTrashed()->orderBy('id')->lockForUpdate()->get(['id']);
         }
-        $active = $this->recipients($work, $lock);
         $expected = [];
+        $inactive = [];
         foreach ($bindings as $slot => $binding) {
             if (! is_array($binding) || (int) ($binding['work_id'] ?? 0) !== (int) $work->id || ! is_numeric($binding['test_id'] ?? null)) {
                 throw ValidationException::withMessages(['mc_tests' => 'Die MC-Zuordnung ist unvollständig. Bitte die Arbeit prüfen.']);
             }
             $testId = (int) $binding['test_id'];
-            foreach ($work->groups ?? [] as $group) {
-                $date = $group['date'] ?? $work->date_for_all_groups?->format('Y-m-d');
-                if ($slot !== 'all' && $slot !== $date) {
-                    continue;
-                }
-                foreach ($group['student_ids'] ?? [] as $studentId) {
-                    if (in_array((int) $studentId, $active, true)) {
-                        $expected[$testId][(int) $studentId] = (int) $studentId;
-                    }
-                }
+            $group = $this->mcGroupAccounts($work, (string) $slot, $lock);
+            foreach ($group['active'] as $studentId) {
+                $expected[$testId][$studentId] = $studentId;
+            }
+            foreach ($group['inactive'] as $studentId) {
+                $inactive[$testId][$studentId] = $studentId;
             }
             if (empty($expected[$testId])) {
                 throw ValidationException::withMessages(['mc_tests' => 'Dem verknüpften MC-Test sind für diese Arbeit keine aktiven Schüler:innen zugeordnet.']);
@@ -117,23 +113,21 @@ class TeachingWorkStudentDistribution
             }
             $attemptQuery = $test->attempts()->orderBy('id');
             $attempts = ($lock ? $attemptQuery->lockForUpdate() : $attemptQuery)->get();
-            $assigned = $attempts->pluck('student_id')->map(fn (mixed $studentId): int => (int) $studentId)->sort()->values()->all();
             $required = array_values($studentIds);
             sort($required, SORT_NUMERIC);
-            if ($assigned !== $required) {
+            $activeAttempts = $attempts->filter(fn (McAttempt $attempt): bool => in_array((int) $attempt->student_id, $required, true))->values();
+            $assigned = $activeAttempts->pluck('student_id')->map(fn (mixed $studentId): int => (int) $studentId)->sort()->values()->all();
+            $inactiveIds = array_values($inactive[$id] ?? []);
+            $unexpected = $attempts->filter(fn (McAttempt $attempt): bool => ! in_array((int) $attempt->student_id, $required, true)
+                && ! in_array((int) $attempt->student_id, $inactiveIds, true));
+            if ($assigned !== $required || $unexpected->isNotEmpty()) {
                 throw ValidationException::withMessages(['mc_tests' => 'Die Teilnehmenden des MC-Tests stimmen nicht genau mit der zugeordneten Gruppe überein. Bitte die Zuordnung prüfen.']);
             }
-            $studentQuery = User::query()->whereIn('id', $required)->where('school_id', $work->teachingCourse->school_id)
-                ->where('schoolyear_id', $work->teachingCourse->schoolyear_id)->where(fn ($query) => $query->where('is_active', true)->orWhereNull('is_active'))
-                ->role('student')->orderBy('id');
-            if (($lock ? $studentQuery->lockForUpdate() : $studentQuery)->get(['id'])->count() !== count($required)) {
-                throw ValidationException::withMessages(['mc_tests' => 'Nicht alle Teilnehmenden haben ein aktives Schülerkonto dieser Schule und dieses Schuljahres.']);
-            }
-            $this->assertMcReady($test, $attempts);
+            $this->assertMcReady($test, $activeAttempts);
             if ($test->status !== 'published') {
                 $this->assertMcNotShared($work, $test);
             }
-            $items[] = ['test' => $test, 'attempts' => $attempts];
+            $items[] = ['test' => $test, 'attempts' => $attempts, 'active_attempts' => $activeAttempts];
         }
 
         return $items;
@@ -233,13 +227,98 @@ class TeachingWorkStudentDistribution
     }
 
     /** @return list<int> */
-    public function recipients(TeachingCourseWork $work, bool $lock = false): array
+    public function recipients(TeachingCourseWork $work, bool $lock = false, ?array $groups = null): array
     {
-        $assigned = collect($work->groups ?? [])->flatMap(fn (array $group): array => $group['student_ids'] ?? [])->map(fn (mixed $id): int => (int) $id)->unique();
+        $assigned = collect($groups ?? $work->groups ?? [])->flatMap(fn (array $group): array => $group['student_ids'] ?? [])->map(fn (mixed $id): int => (int) $id)->unique();
 
-        $query = $work->teachingCourse->teachingCourseStudents()->whereNull('canceled_at')->whereIn('user_id', $assigned);
+        $query = $work->teachingCourse->teachingCourseStudents()->whereNull('canceled_at')->whereIn('user_id', $assigned)
+            ->with('user:id,is_active');
+        $memberships = ($lock ? $query->lockForUpdate() : $query)->get(['id', 'user_id']);
+        $directIds = $memberships->pluck('user_id')->map(fn (mixed $id): int => (int) $id)->all();
+        $ids = $memberships->filter(fn ($membership): bool => $membership->user
+            && ($membership->user->is_active === null || (bool) $membership->user->is_active))
+            ->pluck('user_id')->map(fn (mixed $id): int => (int) $id)->all();
+        $importsQuery = $work->teachingCourse->teachingCourseStudents()->whereNull('canceled_at')->whereNull('user_id')
+            ->whereIn('import116_id', $assigned)->with('import116.user.roles');
+        $seenImports = [];
+        foreach (($lock ? $importsQuery->lockForUpdate() : $importsQuery)->get() as $membership) {
+            $sourceId = (int) $membership->import116_id;
+            if (in_array($sourceId, $directIds, true) || in_array($sourceId, $seenImports, true)) {
+                throw ValidationException::withMessages(['students' => 'Eine Gruppenkennung ist nicht eindeutig einem Schülerkonto zugeordnet.']);
+            }
+            $seenImports[] = $sourceId;
+            $import = $membership->import116;
+            $user = $import?->user;
+            if (! $user || (int) $import->school_id !== (int) $work->teachingCourse->school_id
+                || (int) $import->schoolyear_id !== (int) $work->teachingCourse->schoolyear_id
+                || (int) $user->school_id !== (int) $work->teachingCourse->school_id) {
+                throw ValidationException::withMessages(['students' => 'Eine Gruppenkennung ist nicht eindeutig einem Schülerkonto zugeordnet.']);
+            }
+            if ($user->is_active === null || (bool) $user->is_active) {
+                if (! $user->hasRole('student', 'web')) {
+                    throw ValidationException::withMessages(['students' => 'Für eine Person der Prüfungsgruppe fehlt die Schülerrolle.']);
+                }
+                $ids[] = (int) $user->id;
+            }
+        }
 
-        return ($lock ? $query->lockForUpdate() : $query)->pluck('user_id')->map(fn (mixed $id): int => (int) $id)->all();
+        return array_values(array_unique($ids));
+    }
+
+    /** @return array{active: list<int>, inactive: list<int>} */
+    private function mcGroupAccounts(TeachingCourseWork $work, string $slot, bool $lock = false): array
+    {
+        $course = $work->teachingCourse;
+        $groupIds = collect($work->groups ?? [])->filter(fn (array $group): bool => $slot === 'all'
+            || ($group['date'] ?? $work->date_for_all_groups?->format('Y-m-d')) === $slot)
+            ->flatMap(fn (array $group): array => $group['student_ids'] ?? [])->unique()->values()->all();
+        $membershipQuery = $course->teachingCourseStudentsWithTrashed()->with(['user.roles', 'import116.user.roles'])->orderBy('id');
+        $memberships = ($lock ? $membershipQuery->lockForUpdate() : $membershipQuery)->get();
+        $ids = [];
+        $inactive = [];
+        foreach ($groupIds as $groupId) {
+            if (! is_numeric($groupId) || (int) $groupId <= 0) {
+                throw ValidationException::withMessages(['mc_selection' => 'Eine Person der Prüfungsgruppe ist nicht eindeutig zugeordnet.']);
+            }
+            $matches = $memberships->filter(fn ($membership): bool => (int) $membership->user_id === (int) $groupId
+                || ($membership->user_id === null && (int) $membership->import116_id === (int) $groupId));
+            if ($matches->count() !== 1) {
+                throw ValidationException::withMessages(['mc_selection' => 'Eine Person der Prüfungsgruppe ist nicht eindeutig der Kursliste zugeordnet.']);
+            }
+            $membership = $matches->first();
+            if ($membership->canceled_at !== null || $membership->deleted_at !== null) {
+                continue;
+            }
+            $import = $membership->import116;
+            $user = $membership->user ?? $import?->user;
+            if (! $user || (int) $user->school_id !== (int) $course->school_id) {
+                throw ValidationException::withMessages(['mc_selection' => 'Für eine Person der Prüfungsgruppe fehlt ein aktives, zur Schule gehörendes Schülerkonto.']);
+            }
+            $verifiedImport = $import && (int) $import->school_id === (int) $course->school_id
+                && (int) $import->schoolyear_id === (int) $course->schoolyear_id
+                && (int) $import->user_id === (int) $user->id;
+            if ($import && ! $verifiedImport) {
+                throw ValidationException::withMessages(['mc_selection' => 'Der Schülerlistenbeleg einer Person widerspricht der Kurs- oder Kontozuordnung.']);
+            }
+            if ($user->is_active !== null && ! (bool) $user->is_active) {
+                $inactive[] = (int) $user->id;
+
+                continue;
+            }
+            if (! $user->hasRole('student', 'web')) {
+                throw ValidationException::withMessages(['mc_selection' => 'Für '.trim($user->first_name.' '.$user->last_name).' fehlt die Schülerrolle des zugeordneten Kontos. Bitte die Kontoberechtigung prüfen.']);
+            }
+            if ((int) $user->schoolyear_id !== (int) $course->schoolyear_id && ! $verifiedImport) {
+                throw ValidationException::withMessages(['mc_selection' => 'Das Schülerkonto einer Person ist für dieses Kurs-Schuljahr nicht eindeutig belegt.']);
+            }
+            $ids[] = (int) $user->id;
+        }
+        $ids = array_values(array_unique($ids));
+        sort($ids, SORT_NUMERIC);
+        $inactive = array_values(array_unique($inactive));
+        sort($inactive, SORT_NUMERIC);
+
+        return ['active' => $ids, 'inactive' => $inactive];
     }
 
     public function visibleTo(TeachingCourseWork $work, User $student): bool
@@ -248,7 +327,7 @@ class TeachingWorkStudentDistribution
 
         return ! empty($release['published_at']) && empty($release['withdrawn_at'])
             && in_array((int) $student->id, $release['student_ids'] ?? [], true)
-            && collect($work->groups ?? [])->contains(fn (array $group): bool => in_array((int) $student->id, array_map('intval', $group['student_ids'] ?? []), true));
+            && in_array((int) $student->id, $this->recipients($work), true);
     }
 
     public function mcAccessAllowed(McAttempt $attempt): bool
@@ -313,7 +392,7 @@ class TeachingWorkStudentDistribution
     /** @return array<string, mixed> */
     public function forStudent(TeachingCourseWork $work, User $student): array
     {
-        $groups = collect($work->groups ?? [])->filter(fn (array $group): bool => in_array((int) $student->id, array_map('intval', $group['student_ids'] ?? []), true));
+        $groups = collect($work->groups ?? [])->filter(fn (array $group): bool => in_array((int) $student->id, $this->recipients($work, false, [$group]), true));
         $group = $groups->first();
         $date = $group['date'] ?? $work->date_for_all_groups?->format('Y-m-d');
         $dates = $groups->map(fn (array $group): ?string => $group['date'] ?? $work->date_for_all_groups?->format('Y-m-d'))->filter()->unique()->all();

@@ -3028,6 +3028,13 @@ describe('store', function () {
         $courseStudents->each(fn (User $student) => $this->course->teachingCourseStudents()->create([
             'user_id' => $student->id,
         ]));
+        $courseStudents->first()->forceFill(['is_active' => null])->save();
+        $inactive = User::factory()->create(['school_id' => $this->school->id, 'is_active' => false]);
+        $inactiveImportUser = User::factory()->create(['school_id' => $this->school->id, 'is_active' => false]);
+        $import = Import116::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $inactiveImportUser->id]);
+        $this->course->teachingCourseStudents()->create(['user_id' => $inactive->id]);
+        $this->course->teachingCourseStudents()->create(['import116_id' => $import->id]);
 
         $this->postJson('/api/admin/teaching/course_works', [
             'teaching_course_id' => $this->course->id,

@@ -327,6 +327,22 @@ test('exercise handoff respects explicit MC selection and exports only active sa
     Http::assertNothingSent();
 })->with([false, true]);
 
+test('exercise handoff excludes inactive accounts while retaining historical null activity as active', function (): void {
+    $this->student->forceFill(['is_active' => false])->save();
+    $nullActivity = User::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->year->id, 'is_active' => null]);
+    TeachingCourseStudent::query()->create(['teaching_course_id' => $this->course->id, 'user_id' => $nullActivity->id, 'canceled_at' => null]);
+    $this->work->update(['groups' => [['date' => '2026-10-20', 'student_ids' => [$this->student->id, $nullActivity->id]]]]);
+    $before = $this->work->fresh()->getAttributes();
+
+    $data = $this->getJson($this->url.'?purpose=exercise&include_mc=0&date=2026-10-20')->assertOk()->json('data');
+
+    expect($data['participants_count'])->toBe(1)
+        ->and(array_column($data['context']['course_roster']['participants'], 'schooltool_person_id'))->toBe([(string) $nullActivity->id])
+        ->and(array_map('strval', $data['context']['work']['groups'][0]['schooltool_student_ids']))->toBe([(string) $nullActivity->id])
+        ->and($this->work->fresh()->getAttributes())->toBe($before)
+        ->and($this->student->fresh()->is_active)->toBeFalsy();
+});
+
 test('exercise handoff excludes cancelled memberships and does not revive a cancelled assigned candidate', function (): void {
     $this->membership->update(['canceled_at' => now()]);
     $other = User::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->year->id]);

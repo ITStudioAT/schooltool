@@ -57,15 +57,39 @@ export function workCellStatuses(work, studentId, now = Date.now()) {
     ]
 }
 
-function activeStudentIds(students = []) {
-    return [...new Set(students.filter(student => !student.canceled_at && !student.deleted_at)
-        .map(student => Object.prototype.hasOwnProperty.call(student, 'user_id') ? student.user_id : student.id)
+function activeStudents(students) {
+    return students.filter(student => !student.canceled_at && !student.deleted_at
+        && student.is_active !== false && student.is_active !== 0 && student.is_active !== '0')
+}
+
+function accountId(student) {
+    return student.user_id ?? student.resolved_user_id
+        ?? (Object.prototype.hasOwnProperty.call(student, 'user_id') ? null : student.id)
+}
+
+export function activeStudentIds(students = []) {
+    return [...new Set(activeStudents(students)
+        .map(accountId)
         .filter(Boolean).map(String))]
 }
 
 export function workParticipantIds(work, students = []) {
     const assigned = new Set((work?.groups || []).flatMap(group => group.student_ids || []).map(String))
-    return activeStudentIds(students).filter(id => assigned.has(id))
+    const aliases = new Map()
+    for (const student of students) {
+        const id = accountId(student)
+        if (!id) continue
+        for (const alias of [id, ...(student.resolved_user_id ? [student.id] : [])]) {
+            const key = String(alias)
+            if (!aliases.has(key)) aliases.set(key, new Set())
+            aliases.get(key).add(String(id))
+        }
+    }
+    const selected = new Set([...assigned].flatMap(alias => {
+        const accounts = aliases.get(alias)
+        return accounts?.size === 1 ? [...accounts] : []
+    }))
+    return activeStudentIds(students).filter(id => selected.has(id))
 }
 
 export function workAggregateStatuses(work, students = [], now = Date.now()) {

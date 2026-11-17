@@ -44,7 +44,7 @@ import { useAdminStore } from '@/stores/admin/AdminStore'
 import { workAutomationEnabled } from '@/helpers/workAutomation'
 import { workLinkedMcTestTitle, workNeedsPreparation } from '@/helpers/workOverview'
 import { workDropboxKey, workDropboxStates, workExerciseCheck } from '@/helpers/workDropbox'
-import { workParticipantIds } from '@/helpers/workCellStatus'
+import { activeStudentIds, workParticipantIds } from '@/helpers/workCellStatus'
 import { workHasProgress } from '@/helpers/workProgress'
 import WorkExercisePdf from './WorkExercisePdf.vue'
 import WorkEvaluationPdf from './WorkEvaluationPdf.vue'
@@ -102,8 +102,7 @@ const participants = computed(() => {
         if (!groups.value.length) return null
         return workParticipantIds({ groups: groups.value }, course.value.students_info).length
     }
-    return new Set(course.value.students_info.filter(student => !student.canceled_at && !student.deleted_at)
-        .map(student => Object.prototype.hasOwnProperty.call(student, 'user_id') ? student.user_id : student.id).filter(Boolean).map(String)).size
+    return activeStudentIds(course.value.students_info).length
 })
 const details = computed(() => {
     const work = props.work

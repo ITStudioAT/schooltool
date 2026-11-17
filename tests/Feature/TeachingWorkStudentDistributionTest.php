@@ -1,6 +1,7 @@
 <?php
 
 use App\Jobs\FinalizeMultipleChoiceTest;
+use App\Models\Import116;
 use App\Models\McAttempt;
 use App\Models\McCatalog;
 use App\Models\McTest;
@@ -79,6 +80,63 @@ function studentTaskMcFixture(TeachingCourseWork $work, User $teacher, array $st
 
     return $test;
 }
+
+test('a linked import-only group uses the verified account for tasks and MC', function (): void {
+    $import = Import116::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->year->id,
+        'user_id' => $this->student->id]);
+    $this->course->teachingCourseStudents()->where('user_id', $this->student->id)->firstOrFail()
+        ->update(['user_id' => null, 'import116_id' => $import->id]);
+    $this->work->update(['date_for_all_groups' => '2026-10-27', 'groups' => [['date' => '2026-10-28', 'student_ids' => [$import->id]]]]);
+    studentTaskMcFixture($this->work, $this->teacher, [$this->student]);
+    expect(app(TeachingWorkStudentDistribution::class)->recipients($this->work->fresh()))->toBe([$this->student->id]);
+    $this->actingAs($this->teacher, 'web')->getJson($this->publishUrl.'-preview')->assertOk();
+    $work = $this->work->fresh();
+    $work->status = [...$work->status, 'student_distribution' => ['instructions' => 'Test', 'file_ids' => [], 'published_at' => now()->toIso8601String()]];
+    expect(app(TeachingWorkStudentDistribution::class)->forStudent($work, $this->student)['date'])->toBe('2026-10-28');
+    $this->student->forceFill(['is_active' => false])->save();
+    expect(app(TeachingWorkStudentDistribution::class)->recipients($this->work->fresh()))->toBe([]);
+});
+
+test('an ambiguous group identifier does not select an import account', function (): void {
+    $import = Import116::factory()->create(['id' => $this->peer->id, 'school_id' => $this->school->id,
+        'schoolyear_id' => $this->year->id, 'user_id' => $this->student->id]);
+    $this->course->teachingCourseStudents()->where('user_id', $this->student->id)->firstOrFail()
+        ->update(['user_id' => null, 'import116_id' => $import->id]);
+    $this->work->update(['groups' => [['student_ids' => [$import->id]]]]);
+    expect(fn () => app(TeachingWorkStudentDistribution::class)->recipients($this->work->fresh()))
+        ->toThrow(ValidationException::class);
+});
+
+test('an inactive import-linked account retains its existing MC attempt', function (): void {
+    $import = Import116::factory()->create(['id' => 88001, 'school_id' => $this->school->id,
+        'schoolyear_id' => $this->year->id, 'user_id' => $this->peer->id]);
+    $this->course->teachingCourseStudents()->where('user_id', $this->peer->id)->firstOrFail()
+        ->update(['user_id' => null, 'import116_id' => $import->id]);
+    $this->peer->forceFill(['is_active' => false])->save();
+    $this->work->update(['groups' => [['student_ids' => [$this->student->id, $import->id]]]]);
+    $test = studentTaskMcFixture($this->work, $this->teacher, [$this->student, $this->peer]);
+    $before = $test->attempts()->orderBy('id')->get()->map->getRawOriginal()->all();
+    $this->actingAs($this->teacher, 'web')->getJson($this->publishUrl.'-preview')->assertOk();
+    expect(app(TeachingWorkStudentDistribution::class)->recipients($this->work->fresh()))->toBe([$this->student->id])
+        ->and($test->attempts()->orderBy('id')->get()->map->getRawOriginal()->all())->toBe($before);
+});
+
+test('inactive group accounts keep historical attempts without receiving new work', function (): void {
+    $this->peer->forceFill(['is_active' => false])->save();
+    $this->student->forceFill(['is_active' => null])->save();
+    $this->work->update(['groups' => [['student_ids' => [$this->student->id, $this->peer->id]]]]);
+    $test = studentTaskMcFixture($this->work, $this->teacher, [$this->student, $this->peer]);
+    $before = $test->attempts()->orderBy('id')->get()->map->getRawOriginal()->all();
+    $this->actingAs($this->teacher, 'web')->getJson($this->publishUrl.'-preview')->assertOk();
+    expect(app(TeachingWorkStudentDistribution::class)->recipients($this->work->fresh()))->toBe([$this->student->id])
+        ->and($test->attempts()->orderBy('id')->get()->map->getRawOriginal()->all())->toBe($before);
+});
+
+test('an inactive account outside the work group remains an unexpected attempt', function (): void {
+    $this->peer->forceFill(['is_active' => false])->save();
+    studentTaskMcFixture($this->work, $this->teacher, [$this->student, $this->peer]);
+    $this->actingAs($this->teacher, 'web')->getJson($this->publishUrl.'-preview')->assertUnprocessable();
+});
 
 test('new task preparation defaults to locked access until an explicit release', function (): void {
     $payload = ($this->payload)(['files' => [UploadedFile::fake()->createWithContent('Aufgabe.pdf', '%PDF-1.4 task')]]);

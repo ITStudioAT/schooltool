@@ -487,6 +487,30 @@ describe('index', function () {
             ->assertJsonPath('data.0.title', 'Mathematik');
     });
 
+    test('keeps historical course rows and exposes activity for linked import accounts', function () {
+        $this->actingAs($this->admin, 'sanctum');
+        $course = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->teacher->id, 'classes' => ['5A'],
+        ]);
+        $student = User::factory()->create(['school_id' => $this->school->id, 'is_active' => false]);
+        $import = Import116::factory()->create([
+            'school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id,
+            'import_user_id' => $this->teacher->id, 'user_id' => $student->id,
+        ]);
+        $membership = TeachingCourseStudent::query()->create([
+            'teaching_course_id' => $course->id, 'user_id' => null, 'import116_id' => $import->id,
+        ]);
+
+        $this->getJson("/api/admin/teaching/courses/{$course->id}")
+            ->assertOk()->assertJsonCount(1, 'data.students')
+            ->assertJsonPath('data.students.0.id', $import->id)
+            ->assertJsonPath('data.students.0.user_id', null)
+            ->assertJsonPath('data.students.0.resolved_user_id', $student->id)
+            ->assertJsonPath('data.students.0.is_active', false);
+        expect($membership->fresh()->import116_id)->toBe($import->id);
+    });
+
     test('prefers import student data when a course student row contains a collided user id', function () {
         $this->actingAs($this->admin, 'sanctum');
 
@@ -494,6 +518,7 @@ describe('index', function () {
 
         User::factory()->create([
             'id' => $collisionId,
+            'is_active' => false,
             'school_id' => $this->school->id,
             'schoolyear_id' => $this->schoolyear->id,
             'email' => 'clara.foetschl@test.invalid',
@@ -532,6 +557,8 @@ describe('index', function () {
             ->assertOk()
             ->assertJsonPath('data.students.0.id', $import->id)
             ->assertJsonPath('data.students.0.user_id', null)
+            ->assertJsonPath('data.students.0.resolved_user_id', null)
+            ->assertJsonPath('data.students.0.is_active', null)
             ->assertJsonPath('data.students.0.import116_id', $import->id)
             ->assertJsonPath('data.students.0.first_name', 'Alina')
             ->assertJsonPath('data.students.0.last_name', 'Husic')
@@ -1231,6 +1258,7 @@ describe('course overview pdf', function () {
             'last_name' => 'Beispiel',
             'first_name' => 'Anna',
             'schoolclass' => '2A',
+            'is_active' => null,
         ]);
         $studentB = User::factory()->create([
             'school_id' => $this->school->id,
@@ -1254,6 +1282,12 @@ describe('course overview pdf', function () {
             'first_name' => 'Clara',
             'schoolclass' => '3C',
         ]);
+        $inactiveStudent = User::factory()->create(['school_id' => $this->school->id, 'is_active' => false,
+            'last_name' => 'InaktivDirekt', 'first_name' => 'David']);
+        $inactiveLinked = User::factory()->create(['school_id' => $this->school->id, 'is_active' => false]);
+        $inactiveImport = Import116::factory()->create(['school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id, 'import_user_id' => $this->admin->id,
+            'user_id' => $inactiveLinked->id, 'last_name' => 'InaktivImport', 'first_name' => 'Eva']);
 
         TeachingCourseStudent::query()->create([
             'teaching_course_id' => $course->id,
@@ -1272,6 +1306,8 @@ describe('course overview pdf', function () {
             'user_id' => $canceledStudent->id,
             'canceled_at' => now(),
         ]);
+        TeachingCourseStudent::query()->create(['teaching_course_id' => $course->id, 'user_id' => $inactiveStudent->id]);
+        TeachingCourseStudent::query()->create(['teaching_course_id' => $course->id, 'import116_id' => $inactiveImport->id]);
         collect([
             '2026-11-19',
             '2026-09-10',
@@ -1341,6 +1377,8 @@ describe('course overview pdf', function () {
             ->and($pdfText)->not->toContain('PDF-Testzeile')
             ->and($pdfText)->not->toContain('DOCUMENT')
             ->and($pdfText)->not->toContain('Abgemeldet')
+            ->and($pdfText)->not->toContain('InaktivDirekt')
+            ->and($pdfText)->not->toContain('InaktivImport')
             ->and($pages[0]->getText())->toContain('Mathematik')
             ->and($pages[0]->getText())->toContain('Übersicht Unterricht')
             ->and($pages[0]->getText())->toContain('CHRISTIAN-DOPPLER-GYMNASIUM SALZBURG')
