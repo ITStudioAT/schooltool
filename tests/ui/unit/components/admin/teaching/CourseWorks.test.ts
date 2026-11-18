@@ -124,6 +124,7 @@ describe('New work overview and assessment mode', () => {
 
             const confirmation = wrapper.get('[data-testid="work-delete-confirmation"]')
             expect(confirmation.text()).toContain(work.title)
+            expect(confirmation.text()).toContain('Prüfungsordner in Dropbox und Online-MC-Tests')
             expect(confirmation.text()).not.toContain('Noch nicht gespeicherter Titel')
             expect(vm.courseWorkStore.destroy).not.toHaveBeenCalled()
 

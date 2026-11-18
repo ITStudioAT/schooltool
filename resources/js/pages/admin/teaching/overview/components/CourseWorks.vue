@@ -851,7 +851,7 @@
                 <v-card-title class="text-subtitle-1 font-weight-bold">Arbeit löschen</v-card-title>
                 <v-card-text>
                     Die Arbeit <strong>{{ delete_work_dialog.work?.title || delete_work_dialog.work?.type || 'Arbeit' }}</strong> und ihre verknüpften Einträge wirklich löschen?
-                    <div class="mt-2 text-caption">Die Dateien in Dropbox bleiben erhalten.</div>
+                    <div class="mt-2 text-caption">Zugeordnete Prüfungsordner in Dropbox und Online-MC-Tests mit ihren Ergebnissen werden ebenfalls gelöscht. Unklare oder gemeinsam genutzte Zuordnungen stoppen die Löschung.</div>
                 </v-card-text>
                 <v-card-actions class="flex-wrap justify-end ga-2">
                     <v-btn data-testid="work-delete-cancel" :disabled="is_deleting_work" variant="text" @click="closeDeleteWorkDialog">Abbrechen</v-btn>

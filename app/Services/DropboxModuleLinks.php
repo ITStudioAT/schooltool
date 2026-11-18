@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\DropboxConnection;
+use App\Models\McCatalog;
 use App\Models\TeachingCourseWork;
 use App\Models\TeachingWorkDropboxFolder;
 use App\Models\TeachingWorkModuleLink;
@@ -498,8 +499,10 @@ class DropboxModuleLinks
         return $names;
     }
 
-    /** @param list<string> $permittedFolderIds */
-    public function assertTitleChangeSafe(TeachingCourseWork $work, User $actor, array $permittedFolderIds = []): void
+    /**
+     * @param  list<string>  $permittedFolderIds
+     */
+    public function assertTitleChangeSafe(TeachingCourseWork $work, User $actor, array $permittedFolderIds = [], bool $allowMissingBoundFolder = false, array $permittedMissingFolderIds = []): void
     {
         $link = $this->current($work);
         $folder = TeachingWorkDropboxFolder::query()->where('teaching_course_work_id', $work->id)->first();
@@ -511,10 +514,17 @@ class DropboxModuleLinks
         abort_unless($connection && (! $link || $link->account_id === $connection->account_id), 409,
             'Der Titel kann nicht geändert werden: Die zugehörige Dropbox-Verbindung ist nicht verfügbar.');
         if ($folder) {
-            $bound = $this->dropbox->metadata($connection, $folder->folder_id);
-            $parent = basename(dirname($bound['path_lower']));
-            abort_if(in_array($parent, ['leistungsfeststellung', 'leistungsfeststellungen'], true) && ! in_array($bound['id'], $permittedFolderIds, true), 409,
-                'Der Titel kann nicht geändert werden: Ein Prüfungsordner ist bereits zugeordnet. Der Ordnername bleibt sonst unverändert.');
+            $bound = $allowMissingBoundFolder ? $this->dropbox->findFolderById($connection, $folder->folder_id)
+                : $this->dropbox->metadata($connection, $folder->folder_id);
+            abort_if($bound === null && ! in_array($folder->folder_id, $permittedMissingFolderIds, true), 409,
+                'Der alte zugeordnete Ordner fehlt und seine Identität konnte nicht bestätigt werden.');
+            if ($bound !== null) {
+                $parent = basename(dirname($bound['path_lower']));
+                abort_if(in_array($parent, ['leistungsfeststellung', 'leistungsfeststellungen'], true) && ! in_array($bound['id'], $permittedFolderIds, true), 409,
+                    'Der Titel kann nicht geändert werden: Ein Prüfungsordner ist bereits zugeordnet. Der Ordnername bleibt sonst unverändert.');
+                abort_if($allowMissingBoundFolder && $bound['id'] !== $link?->folder_id && ! in_array($bound['id'], $permittedFolderIds, true), 409,
+                    'Die alte Ordnerzuordnung ist nicht eindeutig. Bitte die Zuordnung prüfen.');
+            }
             abort_unless($link && $folder->dropbox_connection_id === $link->dropbox_connection_id, 409,
                 'Der Titel kann nicht geändert werden: Der zugeordnete Ordner kann nicht eindeutig als Lernmodul geprüft werden.');
         }
@@ -565,7 +575,7 @@ class DropboxModuleLinks
                 abort_if(is_array($old) && (! is_int($old['Schooltool_Arbeit_ID'] ?? null)
                     || ! is_int($old['Schooltool_Kurs_ID'] ?? null)), 409,
                     'Der Titel kann nicht geändert werden: Ein älterer Prüfungsordner ist nicht eindeutig zugeordnet.');
-                abort_if(is_array($old) && ($old['Schooltool_Arbeit_ID'] ?? null) === $work->id, 409,
+                abort_if(is_array($old) && ($old['Schooltool_Arbeit_ID'] ?? null) === $work->id && ! in_array($candidate['id'], $permittedFolderIds, true), 409,
                     'Der Titel kann nicht geändert werden: Ein Prüfungsordner ist bereits zugeordnet.');
                 if ($raw === null && $old === null) {
                     $dates = array_filter([$work->date_for_all_groups?->format('Y-m-d'), ...array_column($work->groups ?? [], 'date')]);
@@ -577,6 +587,77 @@ class DropboxModuleLinks
                 }
             }
         }
+    }
+
+    /**
+     * @return array{connection: DropboxConnection, folders: list<array{id: string, path: string}>}|null
+     */
+    public function deletionTargets(TeachingCourseWork $work, User $actor, array $permittedMissingFolderIds = []): ?array
+    {
+        $link = $this->current($work);
+        $legacy = TeachingWorkDropboxFolder::query()->where('teaching_course_work_id', $work->id)->first();
+        if (! $link && ! $legacy) {
+            abort_if(! empty($work->status['assessment_json_packages']) || ! empty($work->status['assessment_json_imports']),
+                409, 'Zu dieser Arbeit wurde eine Leistungsfeststellung importiert, aber es fehlt eine bestätigte Ordnerzuordnung. Bitte die Zuordnung vor dem Löschen prüfen.');
+
+            return null;
+        }
+        abort_unless($link !== null, 409, 'Die alte Dropbox-Ordnerzuordnung hat keine bestätigte Modulverbindung. Bitte die Zuordnung vor dem Löschen prüfen.');
+        $connection = DropboxConnection::query()->where('user_id', $actor->id)->whereNull('revoked_at')->find($link->dropbox_connection_id);
+        abort_unless($connection && $connection->account_id === $link->account_id, 409, 'Die zugehörige Dropbox-Verbindung ist nicht verfügbar.');
+        $states = [
+            $this->inspectExercises($connection, $work, $link, includeEmailStatus: false),
+            $this->inspectExercises($connection, $work, $link, includeEmailStatus: false, includePrepared: false),
+        ];
+        $folders = [];
+        $dates = [];
+        foreach ($states as $state) {
+            abort_unless(in_array($state['status'] ?? null, ['found', 'missing'], true), 409,
+                'Die Leistungsfeststellung ist nicht eindeutig oder konnte nicht geprüft werden. '.($state['message'] ?? ''));
+            foreach ($state['matches'] ?? [] as $match) {
+                $id = $match['folder']['id'] ?? null;
+                $path = $match['folder']['path'] ?? null;
+                $date = $match['date'] ?? null;
+                abort_unless(is_string($id) && is_string($path) && is_string($date), 409, 'Die Leistungsfeststellung ist nicht eindeutig zugeordnet.');
+                abort_if(isset($dates[$date]) && $dates[$date] !== $id, 409, 'Mehrere Prüfungsordner sind demselben Termin zugeordnet. Bitte die Zuordnung prüfen.');
+                $dates[$date] = $id;
+                $folders[$id] = ['id' => $id, 'path' => $path];
+            }
+        }
+        $ids = array_keys($folders);
+        abort_if($ids === [] && $permittedMissingFolderIds === []
+            && (! empty($work->status['assessment_json_packages']) || ! empty($work->status['assessment_json_imports'])), 409,
+            'Die importierte Leistungsfeststellung konnte in der verbundenen Ablage nicht eindeutig gefunden werden.');
+        try {
+            $this->assertTitleChangeSafe($work, $actor, $ids, allowMissingBoundFolder: true, permittedMissingFolderIds: $permittedMissingFolderIds);
+        } catch (ValidationException|HttpExceptionInterface $exception) {
+            abort(409, 'Die Prüfungsordner konnten nicht eindeutig für die Löschung bestätigt werden. Bitte die Zuordnung prüfen.');
+        }
+        foreach ($folders as $folder) {
+            $contents = $this->dropbox->examFolderContents($connection, $folder['id'], $folder['path']);
+            $shared = TeachingWorkDropboxFolder::query()->where('teaching_course_work_id', '!=', $work->id)->whereIn('folder_id', $contents)->exists()
+                || TeachingWorkModuleLink::query()->where('teaching_course_work_id', '!=', $work->id)->whereIn('folder_id', $contents)->exists();
+            if (! $shared && Schema::hasColumn('mc_catalogs', 'module_sources')) {
+                foreach (McCatalog::query()->whereNotNull('module_sources')->lockForUpdate()->get(['id', 'module_sources']) as $catalog) {
+                    $values = [];
+                    $sources = $catalog->module_sources;
+                    abort_unless(is_array($sources), 409, 'Eine Fragenkatalog-Zuordnung ist ungültig. Bitte die Zuordnung prüfen.');
+                    array_walk_recursive($sources, function (mixed $value) use (&$values): void {
+                        if (is_string($value)) {
+                            $values[] = $value;
+                        }
+                    });
+                    if (array_intersect($contents, $values) !== []) {
+                        $shared = true;
+                        break;
+                    }
+                }
+            }
+            abort_if($shared, 409, 'Ein Prüfungsordner oder sein Inhalt wird auch anderweitig verwendet. Bitte die Zuordnung prüfen.');
+        }
+        abort_if($folders !== [] && ! $this->dropbox->canWrite($connection), 409, 'Für das Löschen fehlt die Dropbox-Schreibfreigabe.');
+
+        return ['connection' => $connection, 'folders' => array_values($folders)];
     }
 
     private function hasUniqueJsonKeys(string $json): bool

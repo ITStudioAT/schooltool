@@ -106,6 +106,70 @@ class DropboxWorkImport
         return in_array('files.content.write', $connection->credentials['scopes'] ?? [], true);
     }
 
+    /** @return array<string, mixed>|null */
+    public function findFolderById(DropboxConnection $connection, string $folderId): ?array
+    {
+        abort_unless(preg_match('/\Aid:[A-Za-z0-9_-]+\z/', $folderId) === 1, 409, 'Die Ordnerkennung ist ungültig.');
+        try {
+            $response = Http::withToken($this->accessToken($connection))->connectTimeout(5)->timeout(20)
+                ->withOptions(['allow_redirects' => false])->post('https://api.dropboxapi.com/2/files/get_metadata', ['path' => $folderId]);
+        } catch (ConnectionException) {
+            $this->fail('Dropbox ist momentan nicht erreichbar. Bitte später erneut versuchen.');
+        }
+        if ($response->status() === 409 && str_starts_with((string) $response->json('error_summary'), 'path/not_found/')) {
+            return null;
+        }
+        $entry = $this->checkResponse($connection, $response)->json();
+        abort_unless(($entry['.tag'] ?? null) === 'folder' && ($entry['id'] ?? null) === $folderId
+            && is_string($entry['path_lower'] ?? null), 409, 'Der zugeordnete Ordner konnte nicht bestätigt werden.');
+
+        return $entry;
+    }
+
+    public function deleteExamFolder(DropboxConnection $connection, string $folderId, string $expectedPath): void
+    {
+        abort_unless($this->canWrite($connection), 409, 'Für das Löschen fehlt die Dropbox-Schreibfreigabe.');
+        $current = $this->findFolderById($connection, $folderId);
+        if ($current === null) {
+            return;
+        }
+        abort_unless($current['path_lower'] === mb_strtolower($expectedPath)
+            && in_array(basename(dirname($current['path_lower'])), ['leistungsfeststellung', 'leistungsfeststellungen'], true),
+            409, 'Der Prüfungsordner wurde verschoben. Bitte die Zuordnung erneut prüfen.');
+        $this->examFolderContents($connection, $folderId, $expectedPath);
+        $this->api($connection, 'files/delete_v2', ['path' => $folderId]);
+        abort_unless($this->findFolderById($connection, $folderId) === null, 409, 'Das Löschen des Prüfungsordners konnte nicht bestätigt werden.');
+    }
+
+    /** @return list<string> */
+    public function examFolderContents(DropboxConnection $connection, string $folderId, string $expectedPath): array
+    {
+        $root = $this->findFolderById($connection, $folderId);
+        abort_unless($root && $root['path_lower'] === mb_strtolower($expectedPath)
+            && ! isset($root['sharing_info']['shared_folder_id']), 409, 'Der Prüfungsordner ist geteilt oder wurde verschoben.');
+        $listing = $this->api($connection, 'files/list_folder', ['path' => $folderId, 'recursive' => true,
+            'include_deleted' => false, 'include_mounted_folders' => true, 'include_has_explicit_shared_members' => true, 'limit' => 200])->json();
+        $ids = [$folderId];
+        for ($page = 0; ; $page++) {
+            abort_unless(is_array($listing['entries'] ?? null) && is_bool($listing['has_more'] ?? null), 409,
+                'Der Inhalt des Prüfungsordners konnte nicht vollständig geprüft werden.');
+            foreach ($listing['entries'] as $entry) {
+                abort_unless(in_array($entry['.tag'] ?? null, ['file', 'folder'], true) && is_string($entry['id'] ?? null)
+                    && is_string($entry['path_lower'] ?? null) && str_starts_with($entry['path_lower'], $root['path_lower'].'/'),
+                    409, 'Ein Eintrag im Prüfungsordner ist nicht eindeutig.');
+                abort_if(isset($entry['sharing_info']['shared_folder_id']) || ($entry['has_explicit_shared_members'] ?? false) === true,
+                    409, 'Der Prüfungsordner enthält geteilte Daten. Bitte die Zuordnung prüfen.');
+                $ids[] = $entry['id'];
+            }
+            if (! $listing['has_more']) {
+                return $ids;
+            }
+            abort_if($page >= 49 || ! is_string($listing['cursor'] ?? null), 409,
+                'Der Inhalt des Prüfungsordners konnte nicht vollständig geprüft werden.');
+            $listing = $this->api($connection, 'files/list_folder/continue', ['cursor' => $listing['cursor']])->json();
+        }
+    }
+
     /** @return array<string, mixed> */
     public function moveExamFolder(DropboxConnection $connection, string $folderId, string $expectedPath, string $targetPath): array
     {

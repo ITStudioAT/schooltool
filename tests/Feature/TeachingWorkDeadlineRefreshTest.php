@@ -98,6 +98,9 @@ test('checking an internal deadline also validates an existing date-only student
 });
 
 test('teachers can remove the optional student deadline and ordinary work edits preserve it', function (): void {
+    $modules = app(DropboxModuleLinks::class);
+    $modules->shouldReceive('renamePreparedExamFolders')->once()->andReturn([]);
+    $modules->shouldReceive('forgetExerciseCache')->once();
     $this->work->setStudentDeadline('2026-10-22', null);
     $this->work->save();
     $base = '/api/admin/teaching/course_works/'.$this->work->id;

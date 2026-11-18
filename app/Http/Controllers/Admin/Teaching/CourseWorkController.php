@@ -14,6 +14,8 @@ use App\Models\User;
 use App\Services\DropboxModuleLinks;
 use App\Services\DropboxWorkImport;
 use App\Services\MultipleChoice\McModuleTemplateSource;
+use App\Services\MultipleChoice\McTestExchange;
+use App\Services\MultipleChoice\McTestFolder;
 use App\Services\MultipleChoice\McTestService;
 use App\Services\TeachingCourseStudentActivity;
 use App\Services\TeachingCourseStudentEntryService;
@@ -21,6 +23,7 @@ use App\Services\TeachingCourseWorkEntrySyncService;
 use App\Services\TeachingCourseWorkService;
 use App\Services\TeachingWorkAiExport;
 use App\Services\TeachingWorkCollectionStatus;
+use App\Services\TeachingWorkDeletion;
 use App\Services\TeachingWorkDispatchImport;
 use App\Services\TeachingWorkExerciseGeneration;
 use App\Services\TeachingWorkFolderImport;
@@ -1014,7 +1017,7 @@ class CourseWorkController extends Controller
             unset($validated['status']['submission_checks']);
             unset($validated['status']['communicated_deadline_at']);
             unset($validated['status']['communicated_deadline_date']);
-            unset($validated['status']['completion_override'], $validated['status']['multiple_choice_tests'], $validated['status']['student_distribution'], $validated['status']['student_task_files']);
+            unset($validated['status']['completion_override'], $validated['status']['multiple_choice_tests'], $validated['status']['student_distribution'], $validated['status']['student_task_files'], $validated['status']['deletion_receipt']);
             foreach (self::ManualCompletionFields as $field) {
                 unset($validated['status'][$field]);
             }
@@ -1148,7 +1151,7 @@ class CourseWorkController extends Controller
             $validated['status']['dispatch_notifications'] = $course_work->status['dispatch_notifications'] ?? [];
             $validated['status']['dispatch_attempts'] = $course_work->status['dispatch_attempts'] ?? [];
             $validated['status']['folder_import_sources'] = $course_work->status['folder_import_sources'] ?? [];
-            foreach (['student_distribution', 'student_task_files', 'assessment_json_imports', 'assessment_json_packages', 'submission_checks', 'provision_events', 'provision_imports', 'communicated_deadline_at', 'communicated_deadline_date', 'completion_override', 'multiple_choice_tests', ...self::ManualCompletionFields] as $field) {
+            foreach (['student_distribution', 'student_task_files', 'assessment_json_imports', 'assessment_json_packages', 'submission_checks', 'provision_events', 'provision_imports', 'communicated_deadline_at', 'communicated_deadline_date', 'completion_override', 'multiple_choice_tests', 'deletion_receipt', ...self::ManualCompletionFields] as $field) {
                 if (isset($course_work->status[$field])) {
                     $validated['status'][$field] = $course_work->status[$field];
                 } else {
@@ -1207,6 +1210,8 @@ class CourseWorkController extends Controller
             try {
                 $course_work = DB::transaction(function () use ($course_work, $validated, $auth_user, $entrySyncService, $titleOnly): TeachingCourseWork {
                     $locked = TeachingCourseWork::query()->with('teachingCourse')->lockForUpdate()->findOrFail($course_work->id);
+                    abort_if(isset($locked->status['deletion_receipt']), 409,
+                        'Die Löschung ist noch nicht abgeschlossen. Bitte die Zuordnung prüfen und erneut löschen.');
                     abort_unless($locked->title === $course_work->getOriginal('title'), 409,
                         'Der Titel wurde inzwischen geändert. Bitte die Arbeit erneut öffnen.');
                     if ($validated['title'] !== $locked->title) {
@@ -1244,8 +1249,15 @@ class CourseWorkController extends Controller
             }
             app(DropboxModuleLinks::class)->forgetExerciseCache($course_work, $auth_user);
         } else {
-            $course_work->update($validated);
-            $entrySyncService->syncWork($course_work->fresh());
+            $course_work = DB::transaction(function () use ($course_work, $validated, $entrySyncService): TeachingCourseWork {
+                $locked = TeachingCourseWork::query()->lockForUpdate()->findOrFail($course_work->id);
+                abort_if(isset($locked->status['deletion_receipt']), 409,
+                    'Die Löschung ist noch nicht abgeschlossen. Bitte die Zuordnung prüfen und erneut löschen.');
+                $locked->update($validated);
+                $entrySyncService->syncWork($locked->fresh());
+
+                return $locked;
+            });
         }
 
         return response()->json(['data' => $entrySyncService->serializeWork($course_work->fresh('teachingCourseWorkGroupStudents'))]);
@@ -1264,8 +1276,50 @@ class CourseWorkController extends Controller
 
         $this->authorizeTeachingCourseAccess($course, $auth_user);
 
-        $entrySyncService->deleteForWork($course_work);
-        $course_work->delete();
+        $actor = $this->teachingCourseActor($auth_user, $course);
+        DB::transaction(function () use ($course_work, $actor): void {
+            $work = TeachingCourseWork::query()->lockForUpdate()->findOrFail($course_work->id);
+            app(TeachingWorkDeletion::class)->prepare($work, $actor, createReceipt: true);
+        });
+        $filesMayHaveChanged = false;
+        try {
+            DB::transaction(function () use ($course_work, $entrySyncService, $actor, &$filesMayHaveChanged): void {
+                $work = TeachingCourseWork::query()->lockForUpdate()->findOrFail($course_work->id);
+                $plan = app(TeachingWorkDeletion::class)->prepare($work, $actor, createReceipt: false);
+                $tests = $plan['tests'];
+                $testFolders = app(McTestFolder::class);
+                $modules = app(DropboxModuleLinks::class);
+                $targets = $plan['targets'];
+                if ($targets && $targets['folders'] !== []) {
+                    $modules->forgetExerciseCache($work, $actor);
+                    app(TeachingWorkCollectionStatus::class)->forget($work);
+                    foreach ($targets['folders'] as $folder) {
+                        $filesMayHaveChanged = true;
+                        app(DropboxWorkImport::class)->deleteExamFolder($targets['connection'], $folder['id'], $folder['path']);
+                    }
+                }
+                foreach ($plan['history'] as $file) {
+                    $filesMayHaveChanged = true;
+                    app(McTestExchange::class)->deleteHistoryFile($file);
+                }
+                foreach ($plan['bindings'] as $binding) {
+                    $filesMayHaveChanged = true;
+                    $testFolders->deleteBinding($binding);
+                }
+                foreach ($tests as $test) {
+                    $test->attempts()->delete();
+                    $test->delete();
+                }
+                $entrySyncService->deleteForWork($work);
+                $work->delete();
+            });
+        } catch (Throwable $exception) {
+            if ($filesMayHaveChanged) {
+                report($exception);
+                abort(409, 'Das Löschen konnte nicht vollständig bestätigt werden. Einzelne Prüfungsordner oder MC-Dateien können bereits entfernt sein. Bitte den Stand von Arbeit und MC-Test prüfen und gegebenenfalls erneut löschen.');
+            }
+            throw $exception;
+        }
 
         return response()->json(null, 204);
     }

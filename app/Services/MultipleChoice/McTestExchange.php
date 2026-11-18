@@ -27,6 +27,53 @@ class McTestExchange
             $test->attempts()->orderBy('access_token_hash')->pluck('access_token_hash')->all()]);
     }
 
+    /** @return list<array{path: string, hash: string}> */
+    public function historyForDeletion(McTest $test, User $actor): array
+    {
+        abort_unless((int) $test->school_id === (int) $actor->school_id && (int) $test->owner_id === (int) $actor->id, 409);
+        $directory = "multiple-choice/exchange-history/{$test->school_id}/{$test->owner_id}/{$test->id}";
+        $storage = Storage::disk('local');
+        abort_if(is_link($storage->path($directory)) || $storage->directories($directory) !== [], 409,
+            'Die MC-Ergebnissicherungen enthalten eine unklare Ordnerstruktur.');
+        $files = [];
+        $identity = null;
+        foreach ($storage->files($directory) as $path) {
+            abort_unless(dirname($path) === $directory
+                && preg_match('/\A[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.json\.enc\z/i', basename($path)) === 1
+                && ! is_link($storage->path($path)), 409, 'Eine MC-Ergebnissicherung ist nicht eindeutig zugeordnet.');
+            $contents = $storage->get($path);
+            abort_unless(is_string($contents), 409, 'Eine MC-Ergebnissicherung konnte nicht gelesen werden.');
+            try {
+                $backup = decrypt($contents);
+            } catch (\Throwable) {
+                abort(409, 'Eine MC-Ergebnissicherung konnte nicht bestätigt werden.');
+            }
+            abort_unless(is_array($backup), 409, 'Eine MC-Ergebnissicherung konnte nicht bestätigt werden.');
+            $document = $backup['package']['exchange'] ?? $backup['package'] ?? null;
+            $identity ??= $this->identity($test);
+            abort_unless((int) ($backup['actor'] ?? 0) === (int) $actor->id
+                && is_array($document) && ($document['identity'] ?? null) === $identity, 409,
+                'Eine MC-Ergebnissicherung gehört nicht eindeutig zu diesem Test.');
+            $files[] = ['path' => $path, 'hash' => hash('sha256', $contents)];
+        }
+
+        return $files;
+    }
+
+    /** @param array{path: string, hash: string} $file */
+    public function deleteHistoryFile(array $file): void
+    {
+        $storage = Storage::disk('local');
+        if (! $storage->exists($file['path'])) {
+            return;
+        }
+        $contents = $storage->get($file['path']);
+        abort_unless(is_string($contents) && hash_equals($file['hash'], hash('sha256', $contents))
+            && ! is_link($storage->path($file['path'])) && ! is_link(dirname($storage->path($file['path']))),
+            409, 'Eine MC-Ergebnissicherung wurde während des Löschens verändert.');
+        abort_unless($storage->delete($file['path']), 409, 'Eine MC-Ergebnissicherung konnte nicht entfernt werden.');
+    }
+
     public function export(McTest $test, ?array $previous = null): array
     {
         $identity = $this->identity($test);

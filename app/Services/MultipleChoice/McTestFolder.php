@@ -78,6 +78,39 @@ class McTestFolder
         }
     }
 
+    /** @return array{path: string, hash: string}|null */
+    public function bindingForDeletion(McTest $test, User $actor): ?array
+    {
+        abort_unless((int) $test->school_id === (int) $actor->school_id && (int) $test->owner_id === (int) $actor->id, 409);
+        $path = $this->path($test, $actor);
+        $storage = Storage::disk('local');
+        if (! $storage->exists($path)) {
+            return null;
+        }
+        abort_if(is_link($storage->path($path)) || is_link(dirname($storage->path($path))), 409,
+            'Die gespeicherte MC-Ordnerzuordnung kann nicht sicher geprüft werden.');
+        $contents = $storage->get($path);
+        $binding = is_string($contents) ? json_decode($contents, true) : null;
+        abort_unless(is_array($binding) && ($binding['identity'] ?? null) === $this->exchange->identity($test), 409,
+            'Die gespeicherte MC-Ordnerzuordnung ist nicht eindeutig. Bitte die Zuordnung prüfen.');
+
+        return ['path' => $path, 'hash' => hash('sha256', $contents)];
+    }
+
+    /** @param array{path: string, hash: string} $binding */
+    public function deleteBinding(array $binding): void
+    {
+        $storage = Storage::disk('local');
+        if (! $storage->exists($binding['path'])) {
+            return;
+        }
+        $contents = $storage->get($binding['path']);
+        abort_unless(is_string($contents) && hash_equals($binding['hash'], hash('sha256', $contents))
+            && ! is_link($storage->path($binding['path'])) && ! is_link(dirname($storage->path($binding['path']))), 409,
+            'Die MC-Ordnerzuordnung wurde während des Löschens verändert.');
+        abort_unless($storage->delete($binding['path']), 409, 'Die MC-Ordnerzuordnung konnte nicht entfernt werden.');
+    }
+
     public function suggestions(McTest $test, User $actor): array
     {
         $state = $this->status($test, $actor);

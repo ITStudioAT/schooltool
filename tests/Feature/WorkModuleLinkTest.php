@@ -1,6 +1,8 @@
 <?php
 
 use App\Models\DropboxConnection;
+use App\Models\McCatalog;
+use App\Models\McTest;
 use App\Models\School;
 use App\Models\Schoolyear;
 use App\Models\TeachingCourse;
@@ -117,6 +119,23 @@ function fakeModuleDropbox(object $context): void
 
             return Http::response(['metadata' => collect($context->online)->firstWhere('id', $source['id'])]);
         }
+        if (str_ends_with($request->url(), '/files/delete_v2')) {
+            $context->deleteCount = ($context->deleteCount ?? 0) + 1;
+            $source = collect($context->online)->firstWhere('id', $request['path']);
+            if (! $source || ($context->failDeleteAt ?? 0) === $context->deleteCount) {
+                return Http::response([], 503);
+            }
+            $context->deletedIds[] = $source['id'];
+            $context->online = array_values(array_filter($context->online,
+                fn (array $entry): bool => ($entry['path_lower'] ?? '') !== $source['path_lower']
+                    && ! str_starts_with($entry['path_lower'] ?? '', $source['path_lower'].'/')));
+
+            if (($context->loseDeleteResponseAt ?? 0) === $context->deleteCount) {
+                return Http::response([], 503);
+            }
+
+            return Http::response(['metadata' => $source]);
+        }
         if (str_ends_with($request->url(), '/files/get_metadata')) {
             if ($request['path'] === '/schule2020_2027/materialien/lerninhalte') {
                 return Http::response(['.tag' => 'folder', 'id' => 'id:materialsroot', 'name' => 'Lerninhalte',
@@ -146,6 +165,8 @@ function fakeModuleDropbox(object $context): void
                         'sharing_info' => ['parent_shared_folder_id' => '186736344']]);
                 }
             }
+
+            return Http::response(['error_summary' => 'path/not_found/'], 409);
         }
         if (str_ends_with($request->url(), '/files/list_folder')) {
             $parentFolder = collect($context->online)->firstWhere('id', $request['path']);
@@ -154,7 +175,8 @@ function fakeModuleDropbox(object $context): void
             }
             $entries = array_values(array_filter($context->online,
                 fn (array $entry): bool => ($parentFolder['.tag'] ?? null) === 'folder'
-                    ? dirname($entry['path_lower']) === $parentFolder['path_lower']
+                    ? (($request['recursive'] ?? false) ? str_starts_with($entry['path_lower'], $parentFolder['path_lower'].'/')
+                        : dirname($entry['path_lower']) === $parentFolder['path_lower'])
                     : $request['path'] === 'id:folder'.basename(dirname($entry['path_lower']))));
             $listing = ['entries' => $entries, 'has_more' => false];
             if (($context->pagedCandidateFolderId ?? null) === $request['path']) {
@@ -1752,4 +1774,210 @@ test('unlinking remains server-authorized and requires the displayed assignment 
     $this->actingAs($teacher, 'sanctum')->postJson($this->url.'/folder', ['unlink' => true, 'link_version' => $version])->assertForbidden();
     expect($legacy->fresh())->not->toBeNull();
     Http::assertNothingSent();
+});
+
+test('deleting a work removes its verified modern exam folder and preserves the module and foreign folders', function (): void {
+    linkExerciseFixture($this);
+    $path = addModernExerciseFixture($this);
+    $credentials = $this->connection->credentials;
+    $credentials['scopes'][] = 'files.content.write';
+    $this->connection->update(['credentials' => $credentials]);
+    $foreignPath = dirname($path).'/fremde Leistungsfeststellung';
+    $this->online[] = ['.tag' => 'folder', 'id' => 'id:foreign', 'name' => basename($foreignPath),
+        'path_lower' => mb_strtolower($foreignPath), 'path_display' => $foreignPath];
+    $this->deleteJson('/api/admin/teaching/course_works/'.$this->work->id)->assertNoContent();
+    expect(collect($this->online)->contains('path_lower', mb_strtolower($path)))->toBeFalse()
+        ->and(collect($this->online)->contains('id', 'id:foreign'))->toBeTrue()
+        ->and(collect($this->online)->contains('id', 'id:handshake'))->toBeTrue()
+        ->and(count($this->deletedIds))->toBe(1);
+});
+
+test('deleting a work removes a verified legacy exam folder', function (): void {
+    linkExerciseFixture($this);
+    addExerciseFixture($this);
+    $credentials = $this->connection->credentials;
+    $credentials['scopes'][] = 'files.content.write';
+    $this->connection->update(['credentials' => $credentials]);
+    $this->deleteJson('/api/admin/teaching/course_works/'.$this->work->id)->assertNoContent();
+    expect(count($this->deletedIds))->toBe(1)
+        ->and(collect($this->online)->contains('id', 'id:handshake'))->toBeTrue();
+});
+
+test('old and new exam folders are both deleted when they belong to distinct dates', function (): void {
+    linkExerciseFixture($this);
+    addExerciseFixture($this);
+    addModernExerciseFixture($this, date: '2026-10-07');
+    $students = User::factory()->count(2)->create(['school_id' => $this->course->school_id, 'schoolyear_id' => $this->course->schoolyear_id]);
+    foreach ($students as $student) {
+        $this->course->teachingCourseStudents()->create(['user_id' => $student->id]);
+    }
+    $this->work->update(['groups' => [['date' => '2026-10-06', 'student_ids' => [$students[0]->id]], ['date' => '2026-10-07', 'student_ids' => [$students[1]->id]]]]);
+    $credentials = $this->connection->credentials;
+    $credentials['scopes'][] = 'files.content.write';
+    $this->connection->update(['credentials' => $credentials]);
+    $this->deleteJson('/api/admin/teaching/course_works/'.$this->work->id)->assertNoContent();
+    expect($this->deletedIds)->toHaveCount(2)
+        ->and(collect($this->online)->contains('id', 'id:handshake'))->toBeTrue();
+});
+
+test('old and new exam folders for the same date stop the deletion as ambiguous', function (): void {
+    linkExerciseFixture($this);
+    addExerciseFixture($this);
+    addModernExerciseFixture($this);
+    $credentials = $this->connection->credentials;
+    $credentials['scopes'][] = 'files.content.write';
+    $this->connection->update(['credentials' => $credentials]);
+    $this->deleteJson('/api/admin/teaching/course_works/'.$this->work->id)->assertStatus(409);
+    expect($this->work->fresh())->not->toBeNull()->and($this->deletedIds ?? [])->toBe([]);
+});
+
+test('a shared exam folder stops deletion before any folder is removed', function (): void {
+    linkExerciseFixture($this);
+    $path = addModernExerciseFixture($this);
+    $folder = collect($this->online)->firstWhere('path_lower', mb_strtolower($path));
+    $other = TeachingCourseWork::factory()->create(['teaching_course_id' => $this->course->id]);
+    TeachingWorkDropboxFolder::factory()->create(['dropbox_connection_id' => $this->connection->id,
+        'teaching_course_work_id' => $other->id, 'folder_id' => $folder['id']]);
+    $credentials = $this->connection->credentials;
+    $credentials['scopes'][] = 'files.content.write';
+    $this->connection->update(['credentials' => $credentials]);
+    $this->deleteJson('/api/admin/teaching/course_works/'.$this->work->id)->assertStatus(409);
+    expect($this->work->fresh())->not->toBeNull()
+        ->and($this->deletedIds ?? [])->toBe([]);
+});
+
+test('a partial exam folder deletion can be retried without deleting other data', function (): void {
+    linkExerciseFixture($this);
+    $first = addModernExerciseFixture($this);
+    $second = addModernExerciseFixture($this, date: '2026-10-07');
+    $firstFolder = collect($this->online)->firstWhere('path_lower', mb_strtolower($first));
+    TeachingWorkDropboxFolder::query()->updateOrCreate(['teaching_course_work_id' => $this->work->id,
+        'dropbox_connection_id' => $this->connection->id], ['folder_id' => $firstFolder['id'], 'folder_name' => $firstFolder['name']]);
+    $catalog = McCatalog::query()->create(['school_id' => $this->course->school_id, 'owner_id' => $this->user->id, 'title' => 'MC', 'questions' => []]);
+    $test = McTest::query()->create(['school_id' => $this->course->school_id, 'schoolyear_id' => $this->course->schoolyear_id,
+        'owner_id' => $this->user->id, 'catalog_id' => $catalog->id, 'title' => 'MC', 'status' => 'draft',
+        'question_count' => 1, 'total_points' => 1, 'duration_seconds' => 300]);
+    $this->work->update(['status' => ['multiple_choice_tests' => ['all' => ['work_id' => $this->work->id, 'test_id' => $test->id]]]]);
+    $students = User::factory()->count(2)->create(['school_id' => $this->course->school_id, 'schoolyear_id' => $this->course->schoolyear_id]);
+    foreach ($students as $student) {
+        $this->course->teachingCourseStudents()->create(['user_id' => $student->id]);
+    }
+    $this->work->update(['groups' => [['date' => '2026-10-06', 'student_ids' => [$students[0]->id]], ['date' => '2026-10-07', 'student_ids' => [$students[1]->id]]]]);
+    $credentials = $this->connection->credentials;
+    $credentials['scopes'][] = 'files.content.write';
+    $this->connection->update(['credentials' => $credentials]);
+    $this->failDeleteAt = 2;
+    $url = '/api/admin/teaching/course_works/'.$this->work->id;
+    $this->deleteJson($url)->assertStatus(409);
+    expect($this->work->fresh())->not->toBeNull()
+        ->and($test->fresh())->not->toBeNull()
+        ->and($this->work->fresh()->status['deletion_receipt']['folders'])->toHaveCount(2)
+        ->and(collect($this->online)->contains('path_lower', mb_strtolower($first)))->toBeFalse()
+        ->and(collect($this->online)->contains('path_lower', mb_strtolower($second)))->toBeTrue();
+    $this->putJson($url, ['title' => 'Nicht speichern'])->assertStatus(409)
+        ->assertJsonPath('message', 'Die Löschung ist noch nicht abgeschlossen. Bitte die Zuordnung prüfen und erneut löschen.');
+    $this->failDeleteAt = 0;
+    $this->deleteJson($url)->assertNoContent();
+    expect(count($this->deletedIds))->toBe(2)
+        ->and($test->fresh())->toBeNull()
+        ->and(collect($this->online)->contains('id', 'id:handshake'))->toBeTrue();
+});
+
+test('a changed work after a partial deletion is stopped before the remaining folder is removed', function (): void {
+    linkExerciseFixture($this);
+    addModernExerciseFixture($this);
+    addModernExerciseFixture($this, date: '2026-10-07');
+    $students = User::factory()->count(2)->create(['school_id' => $this->course->school_id, 'schoolyear_id' => $this->course->schoolyear_id]);
+    foreach ($students as $student) {
+        $this->course->teachingCourseStudents()->create(['user_id' => $student->id]);
+    }
+    $this->work->update(['groups' => [['date' => '2026-10-06', 'student_ids' => [$students[0]->id]], ['date' => '2026-10-07', 'student_ids' => [$students[1]->id]]]]);
+    $credentials = $this->connection->credentials;
+    $credentials['scopes'][] = 'files.content.write';
+    $this->connection->update(['credentials' => $credentials]);
+    $this->failDeleteAt = 2;
+    $url = '/api/admin/teaching/course_works/'.$this->work->id;
+    $this->deleteJson($url)->assertStatus(409);
+    $this->work->fresh()->update(['title' => 'Verändert']);
+    $this->failDeleteAt = 0;
+    $this->deleteJson($url)->assertStatus(409)
+        ->assertJsonPath('message', 'Die Arbeit oder ihr gespeicherter Löschstand wurde seit dem letzten Versuch geändert. Bitte die Zuordnung prüfen.');
+    expect($this->deletedIds)->toHaveCount(1)->and($this->work->fresh())->not->toBeNull();
+});
+
+test('a lost Dropbox response can be retried after the exact exam folder was removed', function (): void {
+    linkExerciseFixture($this);
+    $path = addModernExerciseFixture($this);
+    $credentials = $this->connection->credentials;
+    $credentials['scopes'][] = 'files.content.write';
+    $this->connection->update(['credentials' => $credentials]);
+    $this->loseDeleteResponseAt = 1;
+    $url = '/api/admin/teaching/course_works/'.$this->work->id;
+    $this->deleteJson($url)->assertStatus(409);
+    expect($this->work->fresh())->not->toBeNull()
+        ->and(collect($this->online)->contains('path_lower', mb_strtolower($path)))->toBeFalse();
+    $this->deleteJson($url)->assertNoContent();
+    expect($this->deletedIds)->toHaveCount(1);
+});
+
+test('shared contents and an ambiguous old association stop work deletion before Dropbox changes', function (string $scenario): void {
+    linkExerciseFixture($this);
+    $path = addModernExerciseFixture($this);
+    $credentials = $this->connection->credentials;
+    $credentials['scopes'][] = 'files.content.write';
+    $this->connection->update(['credentials' => $credentials]);
+    if ($scenario === 'shared file') {
+        foreach ($this->online as &$entry) {
+            if (($entry['path_lower'] ?? '') === mb_strtolower($path.'/Beurteilung.pdf')) {
+                $entry['has_explicit_shared_members'] = true;
+            }
+        }
+        unset($entry);
+    } elseif ($scenario === 'referenced child') {
+        $folder = collect($this->online)->firstWhere('path_lower', mb_strtolower($path.'/Kandidaten'));
+        $other = TeachingCourseWork::factory()->create(['teaching_course_id' => $this->course->id]);
+        TeachingWorkDropboxFolder::factory()->create(['dropbox_connection_id' => $this->connection->id,
+            'teaching_course_work_id' => $other->id, 'folder_id' => $folder['id']]);
+    } else {
+        $file = collect($this->online)->firstWhere('path_lower', mb_strtolower($path.'/Beurteilung.pdf'));
+        McCatalog::query()->create(['school_id' => $this->course->school_id, 'owner_id' => $this->user->id,
+            'title' => 'Geteilte Quelle', 'questions' => [], 'module_sources' => [['source_file_id' => $file['id']]]]);
+    }
+    $this->deleteJson('/api/admin/teaching/course_works/'.$this->work->id)->assertStatus(409);
+    expect($this->work->fresh())->not->toBeNull()->and($this->deletedIds ?? [])->toBe([]);
+})->with(['shared file', 'referenced child', 'catalog source']);
+
+test('a legacy folder link without a module link is not guessed during deletion', function (): void {
+    TeachingWorkDropboxFolder::factory()->create(['dropbox_connection_id' => $this->connection->id,
+        'teaching_course_work_id' => $this->work->id, 'folder_id' => 'id:unknown']);
+    $this->deleteJson('/api/admin/teaching/course_works/'.$this->work->id)->assertStatus(409)
+        ->assertJsonPath('message', 'Die alte Dropbox-Ordnerzuordnung hat keine bestätigte Modulverbindung. Bitte die Zuordnung vor dem Löschen prüfen.');
+    expect($this->work->fresh())->not->toBeNull();
+    Http::assertNothingSent();
+});
+
+test('an old linked folder missing without an earlier deletion receipt blocks the work deletion', function (): void {
+    linkExerciseFixture($this);
+    TeachingWorkDropboxFolder::query()->updateOrCreate(['teaching_course_work_id' => $this->work->id,
+        'dropbox_connection_id' => $this->connection->id], ['folder_id' => 'id:missing', 'folder_name' => 'Unbekannt']);
+    $this->deleteJson('/api/admin/teaching/course_works/'.$this->work->id)->assertStatus(409);
+    expect($this->work->fresh())->not->toBeNull()->and($this->deletedIds ?? [])->toBe([]);
+});
+
+test('a test used by another work stops all exam folder deletion', function (): void {
+    linkExerciseFixture($this);
+    addModernExerciseFixture($this);
+    $credentials = $this->connection->credentials;
+    $credentials['scopes'][] = 'files.content.write';
+    $this->connection->update(['credentials' => $credentials]);
+    $catalog = McCatalog::query()->create(['school_id' => $this->course->school_id, 'owner_id' => $this->user->id, 'title' => 'MC', 'questions' => []]);
+    $test = McTest::query()->create(['school_id' => $this->course->school_id, 'schoolyear_id' => $this->course->schoolyear_id,
+        'owner_id' => $this->user->id, 'catalog_id' => $catalog->id, 'title' => 'MC', 'status' => 'draft',
+        'question_count' => 1, 'total_points' => 1, 'duration_seconds' => 300]);
+    $binding = ['all' => ['work_id' => $this->work->id, 'test_id' => $test->id]];
+    $this->work->update(['status' => ['multiple_choice_tests' => $binding]]);
+    TeachingCourseWork::factory()->create(['teaching_course_id' => $this->course->id, 'status' => ['multiple_choice_tests' => $binding]]);
+    $this->deleteJson('/api/admin/teaching/course_works/'.$this->work->id)->assertStatus(409);
+    expect($this->work->fresh())->not->toBeNull()->and($test->fresh())->not->toBeNull()
+        ->and($this->deletedIds ?? [])->toBe([]);
 });

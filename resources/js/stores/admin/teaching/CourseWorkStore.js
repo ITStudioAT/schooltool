@@ -108,7 +108,7 @@ export const useCourseWorkStore = defineStore('AdminCourseWorkStore', {
                     status: error.response?.status,
                     message: error.response?.data?.message || 'Fehler passiert.',
                     type: 'error',
-                    timeout: 3000,
+                    timeout: 12000,
                 })
                 return false
             } finally {

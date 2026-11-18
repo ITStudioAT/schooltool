@@ -80,6 +80,18 @@ describe('CourseWorkStore', () => {
         expect(store.courseWorks).toEqual([])
     })
 
+    it('shows the server explanation when work deletion is stopped', async () => {
+        axiosMock.delete.mockRejectedValue({ response: { status: 409, data: { message: 'Die Zuordnung ist nicht eindeutig.' } } })
+        const store = useCourseWorkStore()
+
+        expect(await store.destroy(10)).toBe(false)
+        expect(notifyMock).toHaveBeenCalledWith(expect.objectContaining({
+            status: 409,
+            message: 'Die Zuordnung ist nicht eindeutig.',
+            timeout: 12000,
+        }))
+    })
+
     it('update returns false if id is missing', async () => {
         const store = useCourseWorkStore()
         const result = await store.update({ title: 'No id' } as never)

@@ -325,7 +325,8 @@ describe('CourseTable manual work completion', () => {
 
             const confirmation = wrapper.get('[data-testid="work-delete-confirmation"]')
             expect(confirmation.text()).toContain(first.title)
-            expect(confirmation.text()).toContain('Die Dateien in Dropbox bleiben erhalten.')
+            expect(confirmation.text()).toContain('Prüfungsordner in Dropbox und Online-MC-Tests')
+            expect(confirmation.text()).toContain('Unklare oder gemeinsam genutzte Zuordnungen stoppen die Löschung.')
             expect(confirmation.text()).not.toContain('Noch nicht gespeicherter Titel')
             expect(works.destroy).not.toHaveBeenCalled()
 
