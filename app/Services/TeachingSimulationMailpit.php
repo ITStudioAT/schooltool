@@ -84,10 +84,10 @@ class TeachingSimulationMailpit
 
     public function findMessage(string $messageId): ?string
     {
-        abort_unless(preg_match('/\Aresult\.[a-f0-9]{64}@schooltool\.test\z/', $messageId), 422);
+        abort_unless(preg_match('/\A(?:result\.|work-)[a-f0-9]{64}@schooltool\.test\z/', $messageId), 422);
         $data = $this->request('GET', '/search', ['query' => 'message-id:'.$messageId, 'limit' => 10])->json();
         $matches = $data['messages'] ?? [];
-        abort_if(count($matches) > 1, 409, 'Die Ergebnisnachricht ist mehrfach vorhanden. Bitte den Versandlauf prüfen.');
+        abort_if(count($matches) > 1, 409, 'Die Nachricht ist mehrfach vorhanden. Bitte den Versandlauf prüfen.');
 
         return $matches[0]['ID'] ?? null;
     }

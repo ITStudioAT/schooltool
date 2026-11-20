@@ -12,50 +12,48 @@ use Tests\TestCase;
 
 uses(TestCase::class);
 
-test('internal deadlines use Vienna offsets and preserve the separate student deadline', function (string $date, string $offset): void {
+test('the final deadline uses Vienna offsets and omits the obsolete deadline', function (string $date, string $offset): void {
     $work = (new TeachingCourseWork)->forceFill(['finish_until_date' => $date, 'finish_until_time' => '14:30']);
     $source = ['MitgeteilteAbgabefrist' => null, 'unrelated' => 'preserve'];
     $result = app(TeachingWorkDeadlineSync::class)->metadata($work, $source);
     expect($result['Abgabeschluss'])->toBe($date.'T14:30:00'.$offset)
-        ->and($result['MitgeteilteAbgabefrist'])->toBeNull()
+        ->and($result)->not->toHaveKey('MitgeteilteAbgabefrist')
         ->and($result['unrelated'])->toBe('preserve');
 })->with([['2026-10-23', '+02:00'], ['2026-12-01', '+01:00']]);
 
-test('a date without a time stays incomplete and is never communicated', function (): void {
+test('a date without a time is stored as such and uses the final minute for enforcement', function (): void {
     $work = (new TeachingCourseWork)->forceFill(['finish_until_date' => '2026-10-23', 'finish_until_time' => null]);
     $result = app(TeachingWorkDeadlineSync::class)->metadata($work, ['MitgeteilteAbgabefrist' => null]);
     expect($result['Abgabeschluss'])->toBeNull()
-        ->and($result['Schooltool_Fristdaten']['main_deadline'])->toBe(['date' => '2026-10-23', 'time' => null]);
+        ->and($result['Schooltool_Fristdaten']['main_deadline'])->toBe(['date' => '2026-10-23', 'time' => null])
+        ->and($work->finalDeadlineInstant()?->format('H:i:s'))->toBe('23:59:00');
 });
 
-test('student deadline wall times keep Vienna offsets on a UTC device', function (string $date, string $offset): void {
+test('final deadline wall times keep Vienna offsets on a UTC device', function (string $date, string $offset): void {
     $original = date_default_timezone_get();
     date_default_timezone_set('UTC');
     try {
-        $work = (new TeachingCourseWork)->forceFill(['finish_until_date' => $date]);
-        $work->setStudentDeadline($date, '10:30');
-        expect($work->communicatedDeadline()['at'])->toBe($date.'T10:30:00'.$offset);
+        $work = (new TeachingCourseWork)->forceFill(['finish_until_date' => $date, 'finish_until_time' => '10:30']);
+        expect($work->finalDeadlineInstant()?->toIso8601String())->toBe($date.'T10:30:00'.$offset);
     } finally {
         date_default_timezone_set($original);
     }
 })->with([['2026-10-22', '+02:00'], ['2026-12-02', '+01:00']]);
 
-test('invalid local times and an internal deadline before the student deadline are rejected', function (array $attributes, array $metadata, string $exception): void {
+test('a nonexistent Vienna time or a time without a date is rejected', function (array $attributes): void {
     $work = (new TeachingCourseWork)->forceFill($attributes);
-    expect(fn () => app(TeachingWorkDeadlineSync::class)->metadata($work, $metadata))->toThrow($exception);
+    expect(fn () => app(TeachingWorkDeadlineSync::class)->metadata($work, []))->toThrow(ValidationException::class);
 })->with([
-    [['finish_until_time' => '14:30'], [], HttpException::class],
-    [['finish_until_date' => '2026-03-29', 'finish_until_time' => '02:30'], [], HttpException::class],
-    [['finish_until_date' => '2026-10-23', 'finish_until_time' => '14:30', 'status' => ['communicated_deadline_at' => '2026-10-23T15:00:00+02:00']], ['MitgeteilteAbgabefrist' => '2026-10-23T15:00:00+02:00'], ValidationException::class],
+    [['finish_until_time' => '14:30']],
+    [['finish_until_date' => '2026-03-29', 'finish_until_time' => '02:30']],
 ]);
 
-test('a changed date-only student deadline cannot reuse an old email preparation', function (): void {
+test('only a matching final deadline can confirm current email preparation metadata', function (): void {
     $work = (new TeachingCourseWork)->forceFill(['finish_until_date' => '2026-10-23']);
-    $work->setStudentDeadline('2026-10-22', null);
-    expect(app(TeachingWorkDeadlineSync::class)->matchesStudentDeadline($work, ['MitgeteilteAbgabefrist' => null]))->toBeFalse()
-        ->and(app(TeachingWorkDeadlineSync::class)->matchesStudentDeadline($work, [
-            'MitgeteilteAbgabefrist' => null, 'Schooltool_Fristdaten' => ['communicated_deadline' => ['date' => '2026-10-22', 'time' => null]],
-        ]))->toBeTrue();
+    $sync = app(TeachingWorkDeadlineSync::class);
+    $legacy = ['MitgeteilteAbgabefrist' => '2026-10-22T12:00:00+02:00'];
+    expect($sync->matchesFinalDeadline($work, $legacy))->toBeFalse()
+        ->and($sync->matchesFinalDeadline($work, $legacy + ['Schooltool_Fristdaten' => ['main_deadline' => ['date' => '2026-10-23', 'time' => null]]]))->toBeTrue();
 });
 
 function deadlineSyncFixture(string $readyHash = '', bool $failOrder = false): array
@@ -96,7 +94,7 @@ function deadlineSyncFixture(string $readyHash = '', bool $failOrder = false): a
     return [new TeachingWorkDeadlineSync($dropbox), $connection, $work, ['id' => 'id:folder', 'path' => $path], $files, $path];
 }
 
-test('only internal metadata and its current preparation references change', function (): void {
+test('current Dropbox metadata changes without certifying previously prepared mail', function (): void {
     [$service, $connection, $work, $folder, $files, $path] = deadlineSyncFixture();
     $before = json_decode($files->values[$path.'/Schooltool-Versandvorbereitung.json'], true);
     expect($service->sync($connection, $work, $folder)['changed'])->toBeTrue();
@@ -106,10 +104,10 @@ test('only internal metadata and its current preparation references change', fun
         ->and($metadata['unrelated'])->toBe('preserve')
         ->and($ready['Empfaenger'])->toBe($before['Empfaenger'])
         ->and($ready['Quellen'][1])->toBe($before['Quellen'][1])
-        ->and($ready['Quellen'][0]['SHA256'])->toBe(hash('sha256', $files->values[$path.'/Anlage_und_Quellen.json']))
-        ->and($files->writes)->toHaveCount(3);
+        ->and($ready['Quellen'][0]['SHA256'])->toBe($before['Quellen'][0]['SHA256'])
+        ->and($files->writes)->toHaveCount(2);
     expect($service->sync($connection, $work, $folder)['changed'])->toBeFalse()
-        ->and($files->writes)->toHaveCount(3);
+        ->and($files->writes)->toHaveCount(2);
 });
 
 test('an already stale email preparation is not silently certified again', function (): void {

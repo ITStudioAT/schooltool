@@ -51,7 +51,7 @@ class TeachingCourseEvaluationService
         return $boundaries;
     }
 
-    public function report(TeachingCourse $course, int $semester): array
+    public function report(TeachingCourse $course, int $semester, bool $studentView = false): array
     {
         abort_unless($course->calculationsEnabled(), 403, 'Berechnungen sind ausgeschaltet.');
 
@@ -64,6 +64,9 @@ class TeachingCourseEvaluationService
             ->where('school_id', $course->school_id)->where('schoolyear_id', $course->schoolyear_id)
             ->where('teaching_entry_area_id', $course->teaching_entry_area_id)->get();
         $entries = TeachingCourseStudentEntry::query()->with('teachingCourseWork')->where('teaching_course_id', $course->id)->orderBy('date')->orderBy('id')->get();
+        if ($studentView) {
+            $entries = $entries->filter(fn (TeachingCourseStudentEntry $entry): bool => $entry->visibleInStudentResults());
+        }
         $unprocessedWorkIds = $entries->where('source', 'course_work')->groupBy('teaching_course_work_id')
             ->filter(fn (Collection $workEntries): bool => $workEntries->first()->teachingCourseWork !== null
                 && $this->isUnprocessedWork($workEntries->first()->teachingCourseWork, $workEntries))->keys()->all();

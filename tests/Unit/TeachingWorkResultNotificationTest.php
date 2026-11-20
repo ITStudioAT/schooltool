@@ -85,6 +85,14 @@ function fakeResultNotificationMailpit(object $mailpit, array &$payloads, bool $
     });
 }
 
+test('hidden work grades bar notifications even from an earlier complete result', function (): void {
+    [$service, $mailpit, $work, $actor] = resultNotificationFixture();
+    $work->status = [...$work->status, 'grade_visibility' => ['visible' => false]];
+    $mailpit->shouldNotReceive('send');
+    expect(fn () => $service->preview($work, $actor))->toThrow(HttpException::class, 'Bitte zuerst die Bewertungen');
+    Http::assertNothingSent();
+});
+
 test('result preview excludes unfinished and unavailable results and shows complete personal messages without sending', function (): void {
     [$service, $mailpit, $work, $actor] = resultNotificationFixture();
     $before = $work->getAttributes();

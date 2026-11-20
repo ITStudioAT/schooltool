@@ -353,7 +353,7 @@ async function waitForProject(project, main, output) {
     assert.fail(`The matching owned services did not start: ${output().slice(-3000)}`);
 }
 
-test('starts all four worker groups using the configured database connection', () => {
+test('starts the local worker groups including the dedicated assessment queue', () => {
     const fixture = ownedFixture();
     try {
         fs.writeFileSync(path.join(fixture.project, '.env'), 'QUEUE_CONNECTION=database\n');
@@ -368,10 +368,10 @@ echo json_encode(['connection'=>$connection, 'queue'=>$queue]);`);
             assert.equal(result.status, 0, result.stdout + result.stderr);
             return JSON.parse(result.stdout);
         });
-        assert.equal(workers.length, 4);
+        assert.equal(workers.length, 5);
         assert.ok(workers.every(worker => worker.connection === 'database'));
         assert.deepEqual([...new Set(workers.map(worker => worker.queue))].sort(), [
-            '--queue=critical,notifications', '--queue=default', '--queue=imports', '--queue=materials,maintenance',
+            '--queue=critical,notifications', '--queue=default', '--queue=imports', '--queue=materials,maintenance', '--queue=teaching-assessments',
         ]);
     } finally {
         fixture.cleanup();

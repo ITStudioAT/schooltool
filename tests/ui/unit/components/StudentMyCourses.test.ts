@@ -6,29 +6,32 @@ import { useCourseStore } from '@/stores/student/CourseStore'
 
 const wrappers: ReturnType<typeof mount>[] = []
 
-async function mountCourses(courses = [
+const twoCourses = [
     { id: 18, title: 'Digitale Grundbildung', teacher: 'Anna Müller', classes: ['3B'], students_count: 15 },
     { id: 22, title: 'Mathematik', teacher: 'Max Berger', classes: ['4A'], students_count: 20 },
-]) {
+]
+
+async function mountCourses(courses = twoCourses, query: Record<string, string> = { school: 'CDGym' }) {
     const pinia = createTestingPinia({
         createSpy: vi.fn,
         initialState: { StudentCourseStore: { courses } },
     })
     vi.mocked(useCourseStore(pinia).getCourses).mockResolvedValue(true)
     const push = vi.fn()
+    const replace = vi.fn()
     const wrapper = mount(MyCourses, {
         global: {
             plugins: [pinia],
             mocks: {
-                $router: { push },
-                $route: { query: { school: 'CDGym' } },
+                $router: { push, replace },
+                $route: { query },
             },
         },
     })
     wrappers.push(wrapper)
     await flushPromises()
 
-    return { wrapper, push }
+    return { wrapper, push, replace }
 }
 
 afterEach(() => {
@@ -44,6 +47,19 @@ describe('student subject navigation', () => {
         await courseButton.trigger('click')
 
         expect(push).toHaveBeenCalledWith({ path: '/student/course/18', query: { school: 'CDGym' } })
+    })
+
+    it('returns directly to the tasks tab of the named course when the learner belongs to it', async () => {
+        const { replace } = await mountCourses(undefined, { panel: 'tasks', course: '22' })
+        expect(replace).toHaveBeenCalledWith({ path: '/student/course/22', query: { panel: 'tasks' } })
+    })
+
+    it.each([{}, { course: '99' }])('falls back to a choice of enrolled courses for an unknown course %j', async query => {
+        const { wrapper, push, replace } = await mountCourses(undefined, { panel: 'tasks', ...query })
+        expect(replace).not.toHaveBeenCalled()
+        expect(wrapper.get('h2').text()).toContain('Meine Aufgaben')
+        await wrapper.get('button[aria-label="Aufgaben für Mathematik öffnen"]').trigger('click')
+        expect(push).toHaveBeenCalledWith({ path: '/student/course/22', query: { panel: 'tasks' } })
     })
 
     it.each([

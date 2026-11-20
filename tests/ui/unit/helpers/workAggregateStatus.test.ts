@@ -273,7 +273,7 @@ describe('Work card status placement', () => {
         } finally { wrapper.unmount() }
     })
 
-    it.each([['works', CourseWorks], ['table', CourseTable]])('retains both independent deadline rows in existing manual %s cards', async (_, component) => {
+    it.each([['works', CourseWorks], ['table', CourseTable]])('hides obsolete optional deadlines in existing manual %s cards', async (_, component) => {
         const work = fixture()
         work.automation_enabled = false
         work.communicated_deadline = null
@@ -287,25 +287,23 @@ describe('Work card status placement', () => {
         try {
             await flushPromises()
             let header = await refresh()
-            expect(header.findAll('[data-work-deadline]').map(row => row.attributes('data-work-deadline'))).toEqual(['first', 'second'])
+            expect(header.findAll('[data-work-deadline]').map(row => row.attributes('data-work-deadline'))).toEqual(['second'])
             expect(header.findAll('[data-work-deadline] [role="img"]').map(label => [label.attributes('aria-label'), label.attributes('title')]))
-                .toEqual([['1. Frist', '1. Frist'], ['2. Frist', '2. Frist']])
-            expect(header.get('[data-work-deadline="first"]').text()).toBe('1. —')
-            expect(header.get('[data-work-deadline="second"]').text()).toContain('2.').toContain('07.10.').toContain('12:00')
+                .toEqual([['Endgültige Abgabefrist', 'Endgültige Abgabefrist']])
+            expect(header.get('[data-work-deadline="second"]').text()).toContain('07.10.').toContain('12:00')
             work.communicated_deadline = { at: '2026-10-06T09:45:00Z', date: '2026-10-06', time: '11:45' }
             work.status.dispatch_logs = []
             work.status.dispatch_notifications = []
             work.status.dispatch_attempts = [{ student_id: 12, mode: 'scheduled', planned_at: '2026-10-06T09:00:00Z' }]
             header = await refresh()
-            expect(header.get('[data-work-deadline="first"]').text()).toContain('1.').toContain('06.10.').toContain('11:45')
             expect(header.get('[data-work-deadline="second"]').text()).toContain('07.10.').toContain('12:00')
-            expect(header.text()).not.toContain('abgelaufen').not.toContain('Beurteilung abgeschlossen').not.toContain('Fertig bis')
+            expect(header.text()).not.toContain('11:45').not.toContain('abgelaufen').not.toContain('Beurteilung abgeschlossen').not.toContain('Fertig bis')
             expect(header.findAll('[data-work-status], [data-submission-state]')).toHaveLength(0)
             work.communicated_deadline = null
             work.finish_until_date = null
             work.finish_until_time = null
             header = await refresh()
-            expect(header.findAll('[data-work-deadline]').map(row => row.text())).toEqual(['1. —', '2. —'])
+            expect(header.findAll('[data-work-deadline]').map(row => row.text())).toEqual(['—'])
         } finally { wrapper.unmount() }
     })
 

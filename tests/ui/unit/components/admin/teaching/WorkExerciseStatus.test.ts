@@ -1,5 +1,5 @@
 import { expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { createTestingPinia } from '@pinia/testing'
 import WorkExerciseStatus from '@/pages/admin/teaching/overview/components/WorkExerciseStatus.vue'
 import { useAdminStore } from '@/stores/admin/AdminStore'
@@ -7,13 +7,15 @@ import { workDropboxStates } from '@/helpers/workDropbox'
 
 const work = { id: 65, teaching_course_id: 2 }
 it('opens creation from the missing LF icon with mouse and keyboard without claiming an existing folder', async () => {
-    const wrapper = render('missing', { canCreate: true })
+    const recheck = vi.fn()
+    const wrapper = render('missing', { canCreate: true, recheck })
     try {
         const icon = wrapper.get('[role="button"]')
         await icon.trigger('click')
         await icon.trigger('keydown', { key: 'Enter' })
         await icon.trigger('keydown', { key: ' ' })
         expect(wrapper.emitted('create')).toHaveLength(3)
+        expect(recheck).not.toHaveBeenCalled()
         expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
         await wrapper.setProps({ disabled: true })
         await wrapper.get('[aria-disabled="true"]').trigger('click')
@@ -29,22 +31,121 @@ it('does not offer creation from an unchecked or foreign LF state', async () => 
     } finally { wrapper.unmount() }
 })
 const state = { userId: 7, workId: 65, courseId: 2, date: '2026-10-20', assignmentStatus: 'ready', folder: { id: 'id:exercise', name: 'Bestätigter Ordner', path: '/Materialien/Prüfung' } }
-function render(status = 'checking', props = {}) {
+function render(status = 'checking', props = {}, stubExercisePdf = true) {
     return mount(WorkExerciseStatus, { props: { work, date: state.date, state: { ...state, status }, ...props }, global: {
         plugins: [createTestingPinia({ createSpy: vi.fn, initialState: { AdminAdminStore: { config: { user: { id: 7 } } } } })],
         stubs: {
             'v-dialog': { name: 'VDialog', props: { persistent: Boolean }, template: '<section role="dialog"><slot /></section>' },
             'v-btn': { template: '<button><slot /></button>' },
-            WorkExercisePdf: { name: 'WorkExercisePdf', props: { work: Object, date: String, section: String },
+            WorkExercisePdf: stubExercisePdf && { name: 'WorkExercisePdf', props: { work: Object, date: String, section: String },
                 template: '<button>{{ section }} (PDF)</button>' },
         },
     } })
 }
 
-it('checks again before opening a prepared exercise and distinguishes its points from the school scale', async () => {
+it.each([
+    ['Angaben', 'LF_Word.pdf'],
+    ['Bewertungskriterien', 'Beurteilung.pdf'],
+])('downloads the prepared %s from its dialog button without closing the dialog', async (section, filename) => {
+    const preparedState = { ...state, status: 'found', preparation: { status: 'ready',
+        components: { aufgabenblatt: { points: 35 }, multiple_choice: { included: false } },
+        total_points: 35, document_sections: ['Angaben', 'Bewertungskriterien'] } }
+    let finish!: (response: unknown) => void
+    const get = vi.fn(() => new Promise(resolve => { finish = resolve }))
+    vi.stubGlobal('axios', { get })
+    const createObjectURL = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:schooltool-pdf')
+    const download = vi.fn()
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+        download(this.download, this.href)
+    })
+    const wrapper = render('found', { state: preparedState }, false)
+    try {
+        await wrapper.get('[role="button"]').trigger('click')
+        const dialog = wrapper.get('[role="dialog"]')
+        await dialog.findAll('button').find(button => button.text() === `${section} (PDF)`)!.trigger('click')
+        expect(get).toHaveBeenCalledExactlyOnceWith(expect.stringContaining('/folders'), expect.objectContaining({
+            params: { contents: 1, exercise: 1, section, date: state.date, download_prepared: 1 }, responseType: 'blob',
+        }))
+
+        await wrapper.setProps({ state: { ...preparedState, folder: { ...preparedState.folder } } })
+        expect(wrapper.get('[role="dialog"]').exists()).toBe(true)
+        finish({ data: new Blob(['%PDF-1.7'], { type: 'application/pdf' }),
+            headers: { 'content-disposition': `attachment; filename*=utf-8''${filename}` } })
+        await flushPromises()
+        expect(download).toHaveBeenCalledExactlyOnceWith(filename, 'blob:schooltool-pdf')
+        expect(wrapper.get('[role="dialog"]').exists()).toBe(true)
+    } finally { wrapper.unmount(); click.mockRestore(); createObjectURL.mockRestore(); vi.unstubAllGlobals() }
+})
+
+it('keeps the prepared LF dialog open and shows the server error when a PDF cannot be downloaded', async () => {
+    const get = vi.fn().mockRejectedValue({ response: { data: new Blob([JSON.stringify({ message: 'Die PDF fehlt.' })],
+        { type: 'application/json' }) } })
+    vi.stubGlobal('axios', { get })
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click')
+    const wrapper = render('found', { state: { ...state, status: 'found', preparation: { status: 'ready',
+        components: { aufgabenblatt: { points: 35 }, multiple_choice: { included: false } }, total_points: 35 } } }, false)
+    try {
+        await wrapper.get('[role="button"]').trigger('click')
+        await wrapper.get('[role="dialog"]').findAll('button').find(button => button.text() === 'Angaben (PDF)')!.trigger('click')
+        await flushPromises()
+        expect(wrapper.get('[role="dialog"]').get('[role="alert"]').text()).toBe('Die PDF fehlt.')
+        expect(click).not.toHaveBeenCalled()
+    } finally { wrapper.unmount(); click.mockRestore(); vi.unstubAllGlobals() }
+})
+
+it('shows the saved title inside the confirmed assessment dialog', async () => {
+    const wrapper = render('found', { work: { ...work, title: 'Bisheriger Titel' } })
+    try {
+        await wrapper.get('[role="button"]').trigger('click')
+        expect(wrapper.get('[role="dialog"]').text()).toContain('Bisheriger Titel')
+    } finally { wrapper.unmount() }
+})
+
+it('keeps a confirmed assessment accessible when grades already exist', async () => {
+    const wrapper = render('found', { work: { ...work, title: 'Prüfung', groups: [{ grade: '1' }] } })
+    try {
+        await wrapper.get('[role="button"]').trigger('click')
+        expect(wrapper.get('[role="dialog"]').text()).toContain('Prüfung')
+    } finally { wrapper.unmount() }
+})
+
+it('lets a reopened assessment retry a pending deletion after explicit confirmation', async () => {
+    const result = { type: 'result', data: { deleted: true } }
+    const remove = vi.fn().mockResolvedValue({ data: `${JSON.stringify(result)}\n` })
+    vi.stubGlobal('axios', { delete: remove })
+    workDropboxStates.set('7:2:65', { module_link: { folder: { id: 'id:module' } } })
+    const wrapper = render('found', { canCreate: true, work: { ...work, type: 'A5' },
+        state: { ...state, status: 'found', deletionPending: true } })
+    try {
+        await wrapper.get('[role="button"]').trigger('click')
+        const dialog = wrapper.get('[role="dialog"]')
+        expect(dialog.text()).toContain('Die LF-Löschung ist noch nicht bestätigt.')
+        expect(dialog.find('[aria-label="Prüfungsunterlagen"]').exists()).toBe(false)
+        const press = (label: string) => dialog.findAll('button').find(button => button.text() === label)!.trigger('click')
+        await press('Leistungsfeststellung löschen')
+        expect(remove).not.toHaveBeenCalled()
+        await press('Löschen bestätigen')
+        await flushPromises()
+        expect(remove).toHaveBeenCalledExactlyOnceWith(expect.stringContaining('/exercise'),
+            expect.objectContaining({ data: { folder_id: state.folder.id, date: state.date } }))
+    } finally { wrapper.unmount() }
+})
+
+it('shows a prepared exercise, its available documents and the saved order without rechecking or recreating it', async () => {
     const preparation = { status: 'ready', components: { aufgabenblatt: { included: true, points: 35 },
-        multiple_choice: { included: false, points: null } }, total_points: 35 }
+        multiple_choice: { included: false, points: null } }, total_points: 35, document_sections: ['Angaben', 'Musterlösungen'] }
     const recheck = vi.fn().mockResolvedValue(undefined)
+    const get = vi.fn().mockResolvedValue({ data: { run: { state: 'completed', date: state.date,
+        generation: { deadline: { date: '2026-10-21', time: '15:30' }, participants: [{ name: 'Anna Beispiel' }, { name: 'Ben Test' }], points: 35 },
+        result: { participants_count: 2, folder: { path: '/Gespeicherter Prüfungsordner' } } } } })
+    let finish!: (response: unknown) => void
+    let notify!: (event: unknown) => void
+    const remove = vi.fn((_url, options) => {
+        notify = options.onDownloadProgress
+        return new Promise(resolve => { finish = resolve })
+    })
+    vi.stubGlobal('axios', { get, delete: remove })
+    workDropboxStates.set('7:2:65', { module_link: { folder: { id: 'id:module' } } })
     const wrapper = render('found', { canCreate: true, recheck, work: { ...work, type: 'A5' },
         course: { id: 2, teaching_entry_area: { entry_definitions: [{ category: 'Benotung', short_name: 'A5', maximum_points: 5 }] } },
         state: { ...state, status: 'found', assignmentStatus: 'unknown', preparation } })
@@ -52,21 +153,94 @@ it('checks again before opening a prepared exercise and distinguishes its points
         expect(wrapper.get('v-icon').attributes('color')).toBe('success')
         expect(wrapper.get('v-icon').attributes('aria-label')).toBe('Leistungsfeststellung vorbereitet')
         await wrapper.get('[role="button"]').trigger('click')
-        expect(recheck).toHaveBeenCalledOnce()
+        expect(recheck).not.toHaveBeenCalled()
+        expect(get).not.toHaveBeenCalled()
         const dialog = wrapper.get('[role="dialog"]')
-        for (const value of ['Leistungsfeststellung vorbereitet', 'Prüfungspunkte gesamt', '35', 'Schooltool-Bewertungsskala', '5', 'Nicht einbezogen']) {
+        for (const value of ['Leistungsfeststellung vorbereitet', 'Prüfungspunkte gesamt', 'Nicht einbezogen']) {
             expect(dialog.text()).toContain(value)
         }
-        expect(dialog.text()).not.toContain('Aufgabenstellung ist noch nicht bestätigt')
-        await dialog.findAll('button').find(item => item.text() === 'Leistungsfeststellung erstellen')!.trigger('click')
-        expect(wrapper.emitted('create')).toHaveLength(1)
+        expect(dialog.get('[role="img"]').findAll('span').map(item => item.text())).toEqual(['35 Punkte', '↓', '5 Punkte'])
+        expect(dialog.text()).toContain('Angaben (PDF)')
+        expect(dialog.text()).toContain('Musterlösungen (PDF)')
+        expect(dialog.text()).not.toContain('Bewertungskriterien (PDF)')
+        expect(dialog.text().indexOf('/Materialien/Prüfung')).toBeGreaterThan(dialog.text().indexOf('Musterlösungen (PDF)'))
+        expect(dialog.text()).not.toContain('Leistungsfeststellung erstellen')
+        const press = (label: string) => wrapper.get('[role="dialog"]').findAll('button').find(button => button.text() === label)!.trigger('click')
+        await press('Erstellungsauftrag anzeigen')
+        await flushPromises()
+        expect(dialog.text()).toContain('Erstellungsauftrag · Ohne Titel')
+        expect(dialog.text()).toContain('Anlage abgeschlossen')
+        expect(dialog.text()).toContain('2 Kandidat:innen')
+        expect(dialog.text()).toContain('Anna Beispiel')
+        expect(dialog.text()).toContain('Ben Test')
+        expect(dialog.text()).toContain('21.10.2026, 15:30 Uhr')
+        expect(dialog.text()).toContain('35 Punkte')
+        expect(dialog.text()).toContain('/Gespeicherter Prüfungsordner')
+        expect(dialog.text()).not.toContain('Leistungsfeststellung löschen')
+        expect(get).toHaveBeenCalledExactlyOnceWith(expect.stringContaining('/exercise-run'),
+            expect.objectContaining({ params: { date: state.date } }))
+        await press('Zurück zur Leistungsfeststellung')
+        await press('Leistungsfeststellung löschen')
+        expect(dialog.text()).toContain('Prüfungsordner, Verknüpfung und Arbeit bleiben erhalten.')
+        expect(remove).not.toHaveBeenCalled()
+        await press('Löschen bestätigen')
+        expect(remove).toHaveBeenCalledExactlyOnceWith(expect.stringContaining('/exercise'),
+            expect.objectContaining({ params: { stream_progress: 1 }, data: { folder_id: state.folder.id, date: state.date } }))
+        const steps = ['exercise_delete_check', 'exercise_delete_contents', 'exercise_delete_reset', 'exercise_delete_verify']
+        const active = { state: 'running', steps, completed: [steps[0]], active: steps[1], detail: '1 von 3 Einträgen gelöscht' }
+        const chunk = `${JSON.stringify({ type: 'progress', data: active })}\n`
+        notify({ event: { target: { responseText: chunk } } })
+        await flushPromises()
+        const progress = dialog.get('[aria-label="Fortschritt der Löschung"]')
+        expect(progress.text()).toContain('Unterlagen und Kandidatenordner löschen')
+        expect(progress.text()).toContain('1 von 3 Einträgen gelöscht')
+        expect(progress.text()).toContain('Wird ausgeführt')
+        expect(wrapper.emitted('deleted')).toBeUndefined()
+        const failed = { ...active, state: 'failed' }
+        const failure = [{ type: 'progress', data: failed }, { type: 'error', data: { status: 422, body: { message: 'Dropbox nicht erreichbar.' } } }]
+        finish({ data: chunk + failure.map(event => JSON.stringify(event)).join('\n') + '\n' })
+        await flushPromises()
+        expect(progress.text()).toContain('Nicht abgeschlossen')
+        expect(dialog.text()).toContain('Dropbox nicht erreichbar.')
+        expect(wrapper.emitted('deleted')).toBeUndefined()
+
+        await press('Löschen erneut versuchen')
+        const done = { state: 'done', steps, completed: steps, active: null }
+        finish({ data: JSON.stringify({ type: 'result', data: { deleted: true, progress: done } }) + '\n' })
+        await flushPromises()
+        expect(progress.text()).toContain('Löschung abgeschlossen')
+        expect(dialog.text()).toContain('Prüfungsordner, Verknüpfung und Arbeit sind erhalten.')
+        expect(wrapper.emitted('deleted')).toBeUndefined()
+        await press('Schließen')
+        expect(wrapper.emitted('deleted')).toHaveLength(1)
+        expect(wrapper.emitted('create')).toBeUndefined()
+    } finally { wrapper.unmount(); workDropboxStates.delete('7:2:65'); vi.unstubAllGlobals() }
+})
+
+it('shows both point scales when known and leaves only the assessment total when the work scale is missing', async () => {
+    const preparation = { status: 'ready', components: { aufgabenblatt: { included: true, points: 30 },
+        multiple_choice: { included: true, points: 10 } }, total_points: 40 }
+    const course = { id: 2, teaching_entry_area: { entry_definitions: [{ category: 'Benotung', short_name: 'A5', maximum_points: 40 }] } }
+    const wrapper = render('found', { work: { ...work, type: 'A5' }, course,
+        state: { ...state, status: 'found', preparation } })
+    try {
+        await wrapper.get('[role="button"]').trigger('click')
+        const dialog = wrapper.get('[role="dialog"]')
+        expect(dialog.get('[role="img"]').findAll('span').map(item => item.text())).toEqual(['40 Punkte', '↓', '40 Punkte'])
+        await wrapper.setProps({ course: { ...course, teaching_entry_area: { entry_definitions: [
+            { category: 'Benotung', short_name: 'A5', maximum_points: 35 },
+        ] } } })
+        expect(dialog.get('[role="img"]').findAll('span').map(item => item.text())).toEqual(['40 Punkte', '↓', '35 Punkte'])
+        await wrapper.setProps({ course: { ...course, teaching_entry_area: { entry_definitions: [] } } })
+        expect(dialog.find('[role="img"]').exists()).toBe(false)
+        expect(info(wrapper)['Prüfungspunkte gesamt']).toBe('40 Punkte')
     } finally { wrapper.unmount() }
 })
 
-it('does not open creation when a recheck of a previously missing status becomes unknown', async () => {
+it('does not open a confirmed exercise when its recheck becomes unknown', async () => {
     let wrapper: ReturnType<typeof render>
     const recheck = vi.fn(async () => wrapper.setProps({ state: { ...state, status: 'unknown' } }))
-    wrapper = render('missing', { canCreate: true, recheck })
+    wrapper = render('found', { canCreate: true, recheck })
     try {
         await wrapper.get('[role="button"]').trigger('click')
         expect(recheck).toHaveBeenCalledOnce()
@@ -176,7 +350,7 @@ it('opens the completed LF as persistent read-only information for the selected 
     expect(wrapper.getComponent({ name: 'VDialog' }).props('persistent')).toBe(true)
     expect(info(wrapper)).toMatchObject({ Titel: 'E-Mails', Typ: 'A5 · Auftrag', Kurs: 'DGB · Gruppe 1', Klasse: '3B',
         Durchführung: '20.10.2026', Arbeitsform: 'Einzelarbeit',
-        'Teilnehmer:innen aktuell': '2', 'Maximale Punkte': '5', Hauptfrist: '23.10.2026', 'Mitgeteilte Frist': 'Nicht mitgeteilt' })
+        'Teilnehmer:innen aktuell': '2', 'Maximale Punkte': '5', 'Endgültige Abgabefrist': '23.10.2026' })
     expect(wrapper.text()).toContain('/Materialien/Prüfung')
     expect(wrapper.text()).toContain(savedWork.description)
     expect(info(wrapper).Prüfungsgruppe).toBeUndefined()
@@ -250,8 +424,7 @@ it('shows saved deadline times and uses active course members when no groups exi
     const wrapper = render('found', { course, work: { ...savedWork, groups: [], finish_until_time: '00:00:00',
         communicated_deadline: { date: '2026-10-22', time: '15:45:00' } } })
     await wrapper.get('[role="button"]').trigger('click')
-    expect(info(wrapper)).toMatchObject({ 'Teilnehmer:innen aktuell': '3', Hauptfrist: '23.10.2026, 00:00 Uhr',
-        'Mitgeteilte Frist': '22.10.2026, 15:45 Uhr' })
+    expect(info(wrapper)).toMatchObject({ 'Teilnehmer:innen aktuell': '3', 'Endgültige Abgabefrist': '23.10.2026, 00:00 Uhr' })
     wrapper.unmount()
 })
 

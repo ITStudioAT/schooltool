@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Admin\Teaching;
 
+use App\Exceptions\TeachingWorkDeletionConflict;
 use App\Http\Controllers\Controller;
 use App\Models\DropboxConnection;
 use App\Models\Import116;
@@ -17,12 +18,15 @@ use App\Services\MultipleChoice\McModuleTemplateSource;
 use App\Services\MultipleChoice\McTestExchange;
 use App\Services\MultipleChoice\McTestFolder;
 use App\Services\MultipleChoice\McTestService;
+use App\Services\TeachingAssessmentRuns;
 use App\Services\TeachingCourseStudentActivity;
 use App\Services\TeachingCourseStudentEntryService;
 use App\Services\TeachingCourseWorkEntrySyncService;
 use App\Services\TeachingCourseWorkService;
+use App\Services\TeachingDirectAssessment;
 use App\Services\TeachingWorkAiExport;
 use App\Services\TeachingWorkCollectionStatus;
+use App\Services\TeachingWorkDeadlineSync;
 use App\Services\TeachingWorkDeletion;
 use App\Services\TeachingWorkDispatchImport;
 use App\Services\TeachingWorkExerciseGeneration;
@@ -32,8 +36,8 @@ use App\Services\TeachingWorkMarkdownImport;
 use App\Services\TeachingWorkMultipleChoice;
 use App\Services\TeachingWorkRefreshProgress;
 use App\Services\TeachingWorkStudentDistribution;
-use Carbon\CarbonImmutable;
 use Closure;
+use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -54,7 +58,31 @@ class CourseWorkController extends Controller
         abort_unless($actor && $course_work->teachingCourse, 403);
         $this->authorizeTeachingCourseAccess($course_work->teachingCourse, $actor);
 
-        return response()->json(['data' => ['tests' => $distribution->mcReleasePreview($course_work)]])->header('Cache-Control', 'private, no-store');
+        return response()->json(['data' => ['tests' => $distribution->mcReleasePreview($course_work, (int) $actor->id),
+            'server_now' => now()->toIso8601String()]])->header('Cache-Control', 'private, no-store');
+    }
+
+    public function studentDistributionTestAction(Request $request, TeachingCourseWork $course_work, TeachingWorkStudentDistribution $distribution, TeachingCourseWorkEntrySyncService $entries): JsonResponse
+    {
+        $actor = $this->userHasRole(['admin', 'teaching_admin', 'teacher']);
+        abort_unless($actor && $course_work->teachingCourse, 403);
+        $this->authorizeTeachingCourseAccess($course_work->teachingCourse, $actor);
+        $data = $request->validate(['action' => ['required', 'in:countdown,pause,resume,reset,stop,delete'], 'test_id' => ['required', 'integer', 'min:1'],
+            'expected_version' => ['required', 'string', 'size:64'], 'expected_test_version' => ['required', 'string', 'size:64'],
+            'confirmed' => ['sometimes', 'boolean']]);
+
+        $result = DB::transaction(function () use ($course_work, $actor, $data, $distribution, $entries): array {
+            $work = TeachingCourseWork::query()->with('teachingCourse')->lockForUpdate()->findOrFail($course_work->id);
+            $this->authorizeTeachingCourseAccess($work->teachingCourse, $actor);
+            abort_unless(hash_equals($distribution->version($work), $data['expected_version']), 409, 'Die Arbeit wurde inzwischen geändert. Bitte den Stand neu laden.');
+
+            $tests = $distribution->runMcManagementAction($work, (int) $actor->id, (int) $data['test_id'], $data['action'],
+                $data['expected_test_version'], (bool) ($data['confirmed'] ?? false));
+
+            return ['tests' => $tests] + ($data['action'] === 'delete' ? ['work' => $entries->serializeWork($work->load('teachingCourseWorkGroupStudents'))] : []);
+        }, 3);
+
+        return response()->json(['data' => $result + ['server_now' => now()->toIso8601String()]])->header('Cache-Control', 'private, no-store');
     }
 
     public function studentDistribution(Request $request, TeachingCourseWork $course_work, TeachingWorkStudentDistribution $distribution, TeachingCourseWorkEntrySyncService $entries): JsonResponse
@@ -62,10 +90,12 @@ class CourseWorkController extends Controller
         $actor = $this->userHasRole(['admin', 'teaching_admin', 'teacher']);
         abort_unless($actor && $course_work->teachingCourse, 403);
         $this->authorizeTeachingCourseAccess($course_work->teachingCourse, $actor);
-        $data = $request->validate(['publish' => ['required', 'boolean'], 'release_now' => ['sometimes', 'boolean'], 'instructions' => ['nullable', 'string', 'max:20000'],
+        $data = $request->validate(['publish' => ['required', 'boolean'], 'release_now' => ['sometimes', 'boolean'], 'release_saved' => ['sometimes', 'boolean'],
+            'retain_paused_release' => ['sometimes', 'boolean'], 'instructions' => ['nullable', 'string', 'max:20000'],
             'files' => ['sometimes', 'array', 'max:5'], 'files.*' => ['file', 'extensions:pdf', 'mimetypes:application/pdf', 'max:8192'],
             'retained_file_ids' => ['sometimes', 'array', 'max:5'], 'retained_file_ids.*' => ['required', 'uuid', 'distinct'],
-            'expected_version' => ['required', 'string', 'size:64'], 'mc_tests' => ['nullable', 'string', 'max:65536']]);
+            'expected_version' => ['required', 'string', 'size:64'], 'mc_tests' => ['nullable', 'string', 'max:65536'],
+            'expected_test_versions' => ['sometimes', 'array', 'min:1', 'max:2000'], 'expected_test_versions.*' => ['required', 'string', 'size:64']]);
         $createdPaths = [];
         $committed = false;
         try {
@@ -81,14 +111,15 @@ class CourseWorkController extends Controller
                     if (! $releaseNow && ! empty($work->status['student_distribution']['published_at']) && empty($work->status['student_distribution']['withdrawn_at'])) {
                         throw ValidationException::withMessages(['release_now' => 'Diese Aufgabe wurde bereits freigegeben. Bitte die bestehende Freigabe bewusst aktualisieren oder zurücknehmen.']);
                     }
-                    $distribution->publishMcTests($work, $data['mc_tests'] ?? null, $releaseNow);
-                    $distribution->publish($work, $data['instructions'] ?? '', $request->file('files', []), $createdPaths, $data['retained_file_ids'] ?? [], $releaseNow);
-                } else {
-                    $status = $work->status ?? [];
-                    if (isset($status['student_distribution'])) {
-                        $status['student_distribution']['withdrawn_at'] = now()->toIso8601String();
-                        $work->update(['status' => $status]);
+                    if (! empty($data['release_saved'])) {
+                        $distribution->releaseSavedWithScheduledTest($work, $releaseNow, $createdPaths);
+                    } else {
+                        $distribution->publishMcTests($work, $data['mc_tests'] ?? null, $releaseNow);
+                        $distribution->publish($work, $data['instructions'] ?? '', $request->file('files', []), $createdPaths,
+                            $data['retained_file_ids'] ?? [], $releaseNow, (bool) ($data['retain_paused_release'] ?? false));
                     }
+                } else {
+                    $distribution->pauseStudentRelease($work, (int) $actor->id, $data['expected_test_versions'] ?? null);
                 }
 
                 return $entries->serializeWork($work->load('teachingCourseWorkGroupStudents'));
@@ -102,6 +133,25 @@ class CourseWorkController extends Controller
             Storage::disk('local')->delete($createdPaths);
             throw $exception;
         }
+
+        return response()->json(['data' => $result]);
+    }
+
+    public function deleteStudentDistributionPreparation(Request $request, TeachingCourseWork $course_work, TeachingWorkStudentDistribution $distribution, TeachingCourseWorkEntrySyncService $entries): JsonResponse
+    {
+        $actor = $this->userHasRole(['admin', 'teaching_admin', 'teacher']);
+        abort_unless($actor && $course_work->teachingCourse, 403);
+        $this->authorizeTeachingCourseAccess($course_work->teachingCourse, $actor);
+        $data = $request->validate(['expected_version' => ['required', 'string', 'size:64']]);
+
+        $result = DB::transaction(function () use ($course_work, $actor, $data, $distribution, $entries): array {
+            $work = TeachingCourseWork::query()->with('teachingCourse')->lockForUpdate()->findOrFail($course_work->id);
+            $this->authorizeTeachingCourseAccess($work->teachingCourse, $actor);
+            abort_unless(hash_equals($distribution->version($work), $data['expected_version']), 409, 'Die Arbeit wurde inzwischen geändert. Bitte neu öffnen.');
+            $distribution->deletePreparation($work);
+
+            return $entries->serializeWork($work->load('teachingCourseWorkGroupStudents'));
+        });
 
         return response()->json(['data' => $result]);
     }
@@ -252,8 +302,8 @@ class CourseWorkController extends Controller
                 && ($proof['course_id'] ?? null) === (int) $work->teaching_course_id
                 && ($proof['slot'] ?? null) === $slot && $this->mcSelectionEligible($work, $test, $required, $inactive, allowStarted: true)) {
                 $candidates[] = $this->mcSelectionTestDetails($test);
-            } elseif (! $completeProof && $work->finish_until_date !== null && $test->start_mode === 'individual'
-                && $test->closes_at?->equalTo(CarbonImmutable::parse($work->finish_until_date->format('Y-m-d').' '.($work->finish_until_time ?: '23:59:00'), 'Europe/Vienna'))
+            } elseif (! $completeProof && ($deadline = $work->finalDeadlineInstant()) !== null && $test->start_mode === 'individual'
+                && $test->closes_at?->equalTo($deadline)
                 && $test->snapshot !== null && ! $this->mcSelectionReferencedElsewhere($work, $test, $slot)
                 && $this->mcSelectionMatchesGroup($test->attempts()->get(['id', 'student_id']), $required, $inactive)) {
                 $unconfirmed = true;
@@ -343,10 +393,10 @@ class CourseWorkController extends Controller
     /** @param array<string, mixed> $data
      * @return array<string, mixed>
      */
-    private function updateMcSelection(TeachingCourseWork $courseWork, User $actor, array $data): array
+    private function updateMcSelection(TeachingCourseWork $courseWork, User $actor, array $data, ?Closure $onStep = null): array
     {
         if (($data['mc_selection'] ?? null) === 'yes' && isset($data['catalog_id'])) {
-            return $this->updateMcCatalogSelection($courseWork, $actor, $data);
+            return $this->updateMcCatalogSelection($courseWork, $actor, $data, $onStep);
         }
 
         return DB::transaction(function () use ($courseWork, $actor, $data): array {
@@ -401,9 +451,10 @@ class CourseWorkController extends Controller
     /** @param array<string, mixed> $data
      * @return array<string, mixed>
      */
-    private function updateMcCatalogSelection(TeachingCourseWork $courseWork, User $actor, array $data): array
+    private function updateMcCatalogSelection(TeachingCourseWork $courseWork, User $actor, array $data, ?Closure $onStep = null): array
     {
-        return DB::transaction(function () use ($courseWork, $actor, $data): array {
+        return DB::transaction(function () use ($courseWork, $actor, $data, $onStep): array {
+            $onStep?->__invoke('mc_check');
             $work = TeachingCourseWork::query()->with('teachingCourse')->lockForUpdate()->findOrFail($courseWork->id);
             $this->authorizeTeachingCourseAccess($work->teachingCourse, $actor);
             $slot = $this->mcSelectionSlot($work, $data['date'] ?? null);
@@ -428,10 +479,11 @@ class CourseWorkController extends Controller
                     'action' => 'unchanged', 'test' => $this->mcSelectionTestDetails($current),
                     'work' => app(TeachingCourseWorkEntrySyncService::class)->serializeWork($work->load('teachingCourseWorkGroupStudents'))];
             }
-            $configuration = app(TeachingWorkMultipleChoice::class)->configuration($work, $actor, $data['date'] ?? null, [], true);
+            $addOnly = (bool) ($data['mc_add_only'] ?? false);
+            abort_if($addOnly && $currentId !== null, 409, 'Es ist inzwischen ein Multiple-Choice-Test verknüpft.');
+            $configuration = app(TeachingWorkMultipleChoice::class)->configuration($work, $actor, $data['date'] ?? null, [], true,
+                allowUnreleasedPreparation: $addOnly);
             abort_if($configuration['locked'], 409, $configuration['message'] ?? 'Der Bereitstellungsstand konnte nicht bestätigt werden.');
-            abort_if(! empty($status['student_distribution']['prepared_at']) || ! empty($status['student_distribution']['published_at']),
-                409, 'Die Aufgabenbereitstellung wurde bereits vorbereitet. Die MC-Zuordnung kann nicht geändert werden.');
             if ($current) {
                 $attempts = $current->attempts()->lockForUpdate()->get();
                 abort_if($current->starts_at !== null || $attempts->contains(fn ($attempt): bool => $attempt->started_at !== null
@@ -447,6 +499,7 @@ class CourseWorkController extends Controller
             if ($selectedId === null && count($candidates) > 1) {
                 abort(409, 'Mehrere Tests sind dieser Durchführung zuordenbar. Bitte den passenden Test auswählen.');
             }
+            $onStep?->__invoke('mc_prepare');
             $selectedId ??= $candidates[0]['id'] ?? null;
             if ($selectedId !== null) {
                 abort_unless(collect($candidates)->contains('id', $selectedId), 409,
@@ -456,10 +509,13 @@ class CourseWorkController extends Controller
                     'Der gewählte Test oder seine Teilnehmer haben sich geändert. Bitte erneut prüfen.');
                 $action = 'reused';
             } else {
-                abort_unless($work->finish_until_date !== null, 422,
-                    'Bitte zuerst das Enddatum der Arbeit festlegen. Ohne Uhrzeit gilt 23:59 Uhr.');
-                $deadline = CarbonImmutable::parse($work->finish_until_date->format('Y-m-d').' '.($work->finish_until_time ?: '23:59:00'), 'Europe/Vienna');
-                abort_unless($deadline->isFuture(), 422, 'Das Enddatum der Arbeit muss für den individuellen MC-Test in der Zukunft liegen.');
+                if ($work->finish_until_date === null) {
+                    throw ValidationException::withMessages(['finish_until_date' => 'Bitte zuerst das Enddatum der Arbeit festlegen. Ohne Uhrzeit gilt 23:59 Uhr.']);
+                }
+                $deadline = $work->finalDeadlineInstant();
+                if (! $deadline?->isFuture()) {
+                    throw ValidationException::withMessages(['finish_until_date' => 'Die Abgabefrist muss für den individuellen MC-Test in der Zukunft liegen.']);
+                }
                 $settings = $this->validateNewMcCatalogTestSettings($data, $catalog);
                 $test = McTest::query()->create(['school_id' => $work->teachingCourse->school_id,
                     'schoolyear_id' => $work->teachingCourse->schoolyear_id, 'owner_id' => $work->teachingCourse->user_id,
@@ -471,9 +527,11 @@ class CourseWorkController extends Controller
                 $test = app(McTestService::class)->prepare($test, $required, true, $work, $slot);
                 $snapshot = $test->snapshot;
                 $snapshot['schooltool_work'] = ['work_id' => (int) $work->id, 'course_id' => (int) $work->teaching_course_id, 'slot' => $slot];
+                $snapshot['work_deadline_inherited'] = true;
                 $test->forceFill(['snapshot' => $snapshot])->save();
                 $action = 'created';
             }
+            $onStep?->__invoke('mc_assign');
             $status['multiple_choice_tests'][$slot] = ['work_id' => (int) $work->id, 'test_id' => $test->id];
             $work->status = $status;
             $work->save();
@@ -482,6 +540,42 @@ class CourseWorkController extends Controller
                 'expected_test_id' => $test->id, 'action' => $action, 'test' => $this->mcSelectionTestDetails($test),
                 'work' => app(TeachingCourseWorkEntrySyncService::class)->serializeWork($work->load('teachingCourseWorkGroupStudents'))];
         }, 3);
+    }
+
+    /** @param array<string, mixed> $data */
+    private function streamMcSelection(Request $request, TeachingCourseWork $work, User $actor, array $data): StreamedResponse
+    {
+        $stream = app(TeachingWorkRefreshProgress::class);
+
+        return $stream->stream($request, function () use ($stream, $work, $actor, $data): JsonResponse {
+            $progress = ['state' => 'running', 'active' => null, 'completed' => [], 'skipped' => [],
+                'steps' => ['mc_check', 'mc_prepare', 'mc_assign']];
+            $onStep = function (string $step) use ($stream, &$progress): void {
+                if ($step === 'mc_check') {
+                    $progress['completed'] = [];
+                } elseif ($progress['active'] !== null) {
+                    $progress['completed'][] = $progress['active'];
+                }
+                $progress['active'] = $step;
+                $stream->save(null, $progress);
+            };
+            try {
+                $result = $this->updateMcSelection($work, $actor, $data, $onStep);
+                if ($progress['active'] !== null) {
+                    $progress['completed'][] = $progress['active'];
+                }
+                $progress['state'] = 'done';
+                $progress['active'] = null;
+                $progress['skipped'] = array_values(array_diff($progress['steps'], $progress['completed']));
+                $stream->save(null, $progress);
+
+                return response()->json($result);
+            } catch (Throwable $exception) {
+                $progress['state'] = 'failed';
+                $stream->save(null, $progress);
+                throw $exception;
+            }
+        });
     }
 
     /** @param  array<string, mixed>  $data
@@ -507,7 +601,7 @@ class CourseWorkController extends Controller
         return $settings;
     }
 
-    public function prepareExercise(Request $request, TeachingCourseWork $course_work, TeachingWorkAiExport $export, TeachingWorkMultipleChoice $multipleChoice, TeachingWorkExerciseGeneration $generation): JsonResponse
+    public function prepareExercise(Request $request, TeachingCourseWork $course_work, TeachingWorkAiExport $export, TeachingWorkMultipleChoice $multipleChoice, TeachingWorkExerciseGeneration $generation, TeachingDirectAssessment $direct): JsonResponse|StreamedResponse
     {
         $actor = $this->userHasRole(['admin', 'teaching_admin', 'teacher']);
         abort_unless($actor && $course_work->teachingCourse, 403);
@@ -516,10 +610,65 @@ class CourseWorkController extends Controller
             $data = $request->validate(['mc_selection' => ['required', Rule::in(['yes', 'no'])],
                 'date' => ['nullable', 'date_format:Y-m-d'], 'test_id' => ['present', 'nullable', 'integer', 'min:1'],
                 'expected_test_id' => ['present', 'nullable', 'integer', 'min:1'],
-                'catalog_id' => ['nullable', 'integer', 'min:1']]);
+                'catalog_id' => ['nullable', 'integer', 'min:1'], 'mc_add_only' => ['sometimes', 'boolean']]);
             $data += $request->only(array_keys($this->mcSelectionDefaults()));
 
+            if ($request->boolean('mc_add_only') && $request->boolean('stream_progress')
+                && $data['mc_selection'] === 'yes' && isset($data['catalog_id'])) {
+                return $this->streamMcSelection($request, $course_work, $actor, $data);
+            }
+
             return response()->json($this->updateMcSelection($course_work, $actor, $data))
+                ->header('Cache-Control', 'private, no-store');
+        }
+        if ($request->input('execution') === 'direct') {
+            $data = $request->validate(['execution' => ['required', 'in:direct'], 'date' => ['nullable', 'date_format:Y-m-d'],
+                'template_points_snapshot' => ['required', 'numeric', 'min:0', 'max:100000', 'decimal:0,2'],
+                'template_points_target' => ['nullable', 'numeric', 'min:0', 'max:100000', 'multiple_of:0.5'],
+                'preview_mode' => ['sometimes', 'in:summary'],
+                'expected_test_id' => ['present', 'nullable', 'integer', 'min:1']]);
+            abort_if(isset($data['template_points_target']) && (float) $data['template_points_target'] !== (float) $data['template_points_snapshot'],
+                422, 'Eine abweichende Punkteverteilung kann derzeit nicht automatisch erstellt werden. Bitte die Vorlagenpunkte unverändert verwenden.');
+
+            if ($request->boolean('stream_progress') && ! $request->attributes->get('direct_preview_stream')) {
+                $request->attributes->set('direct_preview_stream', true);
+
+                return app(TeachingWorkRefreshProgress::class)->stream($request,
+                    fn (): JsonResponse => $this->prepareExercise($request, $course_work, $export, $multipleChoice, $generation, $direct));
+            }
+            if ($request->attributes->get('direct_preview_stream')) {
+                $service = app(TeachingWorkRefreshProgress::class);
+                $progress = ['state' => 'running', 'active' => 'assessment_candidates', 'completed' => [], 'skipped' => [],
+                    'steps' => ['assessment_candidates', 'assessment_assignment', 'assessment_criteria', 'assessment_target']];
+                $service->save(null, $progress);
+                $report = function (string $event, ?string $step = null) use ($service, &$progress): void {
+                    if ($event === 'start') {
+                        $progress['active'] = $step;
+                    } elseif ($event === 'completed') {
+                        $progress['completed'][] = $step;
+                        $progress['active'] = null;
+                    }
+                    $service->save(null, $progress);
+                };
+                try {
+                    $result = $direct->preview($course_work, $actor, $data['date'] ?? null,
+                        (float) $data['template_points_snapshot'], isset($data['expected_test_id']) ? (int) $data['expected_test_id'] : null,
+                        ($data['preview_mode'] ?? null) === 'summary', $report);
+                    $progress['state'] = 'done';
+                    $progress['active'] = null;
+                    $service->save(null, $progress);
+
+                    return response()->json(['generation' => $result])->header('Cache-Control', 'private, no-store');
+                } catch (Throwable $exception) {
+                    $progress['state'] = 'failed';
+                    $service->save(null, $progress);
+                    throw $exception;
+                }
+            }
+
+            return response()->json(['generation' => $direct->preview($course_work, $actor, $data['date'] ?? null,
+                (float) $data['template_points_snapshot'], isset($data['expected_test_id']) ? (int) $data['expected_test_id'] : null,
+                ($data['preview_mode'] ?? null) === 'summary')])
                 ->header('Cache-Control', 'private, no-store');
         }
         $data = $request->validate([
@@ -589,41 +738,21 @@ class CourseWorkController extends Controller
         return response()->json($result)->header('Cache-Control', 'private, no-store');
     }
 
-    public function storeExercise(Request $request, TeachingCourseWork $course_work, TeachingWorkExerciseGeneration $generation): JsonResponse
+    public function storeExercise(Request $request, TeachingCourseWork $course_work, TeachingWorkExerciseGeneration $generation, TeachingAssessmentRuns $runs): JsonResponse
     {
         $actor = $this->userHasRole(['admin', 'teaching_admin', 'teacher']);
         abort_unless($actor && $course_work->teachingCourse, 403);
         $this->authorizeTeachingCourseAccess($course_work->teachingCourse, $actor);
-        $data = $request->validate(['generation_id' => ['required', 'uuid'], 'approved' => ['required', 'accepted']]);
+        $data = $request->validate(['generation_id' => ['required', 'uuid'], 'approved' => ['required', 'accepted'], 'kind' => ['sometimes', 'in:direct']]);
+
+        if (($data['kind'] ?? null) === 'direct') {
+            return response()->json(['run' => $runs->start($course_work, $actor, $data['generation_id'], [
+                'generation_id' => $data['generation_id'], 'date' => null,
+            ])], 202)->header('Cache-Control', 'private, no-store');
+        }
 
         return response()->json(['data' => $generation->store($course_work, $actor, $data['generation_id'])])
             ->header('Cache-Control', 'private, no-store');
-    }
-
-    public function studentDeadline(Request $request, TeachingCourseWork $course_work, TeachingCourseWorkEntrySyncService $entries): JsonResponse
-    {
-        $actor = $this->userHasRole(['admin', 'teaching_admin', 'teacher']);
-        abort_unless($actor && $course_work->teachingCourse, 403);
-        $this->authorizeTeachingCourseAccess($course_work->teachingCourse, $actor);
-        $data = $request->validate([
-            'date' => ['present', 'nullable', 'date_format:Y-m-d'],
-            'time' => ['present', 'nullable', 'date_format:H:i'],
-            'expected' => ['required', 'array:date,time'],
-            'expected.date' => ['present', 'nullable', 'date_format:Y-m-d'],
-            'expected.time' => ['present', 'nullable', 'date_format:H:i'],
-        ]);
-
-        return DB::transaction(function () use ($course_work, $data, $entries, $actor): JsonResponse {
-            $work = TeachingCourseWork::query()->with('teachingCourse')->lockForUpdate()->findOrFail($course_work->id);
-            $this->authorizeTeachingCourseAccess($work->teachingCourse, $actor);
-            $current = $work->communicatedDeadline();
-            abort_unless(($current['date'] ?? null) === $data['expected']['date'] && ($current['time'] ?? null) === $data['expected']['time'],
-                409, 'Die Schülerfrist wurde inzwischen geändert. Bitte den Dialog neu öffnen.');
-            $work->setStudentDeadline($data['date'], $data['time']);
-            $work->save();
-
-            return response()->json(['data' => $entries->serializeWork($work->load('teachingCourseWorkGroupStudents'))]);
-        });
     }
 
     public function aiExport(Request $request, TeachingCourseWork $course_work, TeachingWorkAiExport $export): JsonResponse
@@ -761,7 +890,7 @@ class CourseWorkController extends Controller
                     $preview['can_import'] = $preview['can_import'] && $dispatchPreview['can_import'];
                 }
                 $preview['provisions'] = $provisionPreviews;
-                $preview['deadline_update'] = $dispatchBundle['deadline'] ?? null;
+                $preview['deadline_update'] = $deadlineFields === [] ? null : ($dispatchBundle['deadline'] ?? null);
                 foreach ($provisionPreviews as $provisionPreview) {
                     $preview['can_import'] = $preview['can_import'] && $provisionPreview['can_import'];
                     if ($bundle !== null) {
@@ -1000,6 +1129,13 @@ class CourseWorkController extends Controller
         $course = TeachingCourse::findOrFail($request->input('teaching_course_id'));
         $this->authorizeTeachingCourseAccess($course, $auth_user);
 
+        $request->validate(['creation_request_id' => ['sometimes', 'uuid']]);
+        $creationRequestId = $request->input('creation_request_id');
+        $creationRequestHash = $creationRequestId === null ? null : hash('sha256', json_encode([
+            'user_id' => $auth_user->id,
+            'payload' => $request->except('creation_request_id'),
+        ], JSON_THROW_ON_ERROR));
+
         $allowedTypes = $entryService->allowedGradingTypesForCourse(
             $this->teachingCourseActor($auth_user, $course),
             $course
@@ -1014,11 +1150,12 @@ class CourseWorkController extends Controller
         $this->appendMaximumPlusGradeRule($gradeRules, $maximumPlus);
         $validated = $request->validate($this->workValidationRules($typeRules, true, $course, $gradeRules));
         if (isset($validated['status'])) {
+            unset($validated['status']['creation_receipt']);
             unset($validated['status']['submission_checks']);
             unset($validated['status']['communicated_deadline_at']);
             unset($validated['status']['communicated_deadline_date']);
             unset($validated['status']['completion_override'], $validated['status']['multiple_choice_tests'], $validated['status']['student_distribution'], $validated['status']['student_task_files'], $validated['status']['deletion_receipt']);
-            foreach (self::ManualCompletionFields as $field) {
+            foreach ([...self::ManualCompletionFields, ...TeachingCourseWork::ManagedWorkflowFields] as $field) {
                 unset($validated['status'][$field]);
             }
             unset($validated['status']['provision_events'], $validated['status']['provision_imports']);
@@ -1027,12 +1164,31 @@ class CourseWorkController extends Controller
         $validated['maximum_plus'] = $maximumPlus;
         $validated['finish_until_date'] ??= $validated['date_for_all_groups'] ?? null;
         $validated['status']['automation_enabled'] = (bool) ($validated['automation_enabled'] ?? true);
+        $validated['status']['grade_visibility'] = ['visible' => false];
         unset($validated['automation_enabled']);
 
         $validated = $workService->prepareWorkData($validated, $course, (int) $auth_user->school_id);
+        app(TeachingWorkDeadlineSync::class)->validate(new TeachingCourseWork($validated));
 
-        $work = TeachingCourseWork::create($validated);
-        $entrySyncService->syncWork($work);
+        $work = DB::transaction(function () use ($course, $auth_user, $validated, $entrySyncService, $creationRequestId, $creationRequestHash): TeachingCourseWork {
+            if ($creationRequestId !== null) {
+                TeachingCourse::query()->whereKey($course->id)->lockForUpdate()->firstOrFail();
+                $existing = TeachingCourseWork::query()->where('teaching_course_id', $course->id)
+                    ->where('status->creation_receipt->id', $creationRequestId)->first();
+                if ($existing) {
+                    abort_unless(($existing->status['creation_receipt']['user_id'] ?? null) === $auth_user->id
+                        && hash_equals($existing->status['creation_receipt']['hash'] ?? '', $creationRequestHash),
+                        409, 'Dieser Anlageversuch gehört zu anderen Angaben. Bitte einen neuen Vorgang beginnen.');
+
+                    return $existing;
+                }
+                $validated['status']['creation_receipt'] = ['id' => $creationRequestId, 'user_id' => $auth_user->id, 'hash' => $creationRequestHash];
+            }
+            $work = TeachingCourseWork::create($validated);
+            $entrySyncService->syncWork($work);
+
+            return $work;
+        });
 
         return response()->json(['data' => $entrySyncService->serializeWork($work->fresh('teachingCourseWorkGroupStudents'))], 201);
     }
@@ -1151,7 +1307,7 @@ class CourseWorkController extends Controller
             $validated['status']['dispatch_notifications'] = $course_work->status['dispatch_notifications'] ?? [];
             $validated['status']['dispatch_attempts'] = $course_work->status['dispatch_attempts'] ?? [];
             $validated['status']['folder_import_sources'] = $course_work->status['folder_import_sources'] ?? [];
-            foreach (['student_distribution', 'student_task_files', 'assessment_json_imports', 'assessment_json_packages', 'submission_checks', 'provision_events', 'provision_imports', 'communicated_deadline_at', 'communicated_deadline_date', 'completion_override', 'multiple_choice_tests', 'deletion_receipt', ...self::ManualCompletionFields] as $field) {
+            foreach (['creation_receipt', 'student_distribution', 'student_task_files', 'assessment_json_imports', 'assessment_json_packages', 'submission_checks', 'provision_events', 'provision_imports', 'communicated_deadline_at', 'communicated_deadline_date', 'final_deadline_saved', 'final_deadline_sync_pending', 'completion_override', 'multiple_choice_tests', 'deletion_receipt', ...self::ManualCompletionFields, ...TeachingCourseWork::ManagedWorkflowFields] as $field) {
                 if (isset($course_work->status[$field])) {
                     $validated['status'][$field] = $course_work->status[$field];
                 } else {
@@ -1194,21 +1350,15 @@ class CourseWorkController extends Controller
         unset($validated['automation_enabled']);
 
         $validated = $workService->prepareWorkData($validated, $course, (int) $auth_user->school_id, $course_work->is_group_work);
+        $expectedDeadline = $validated['expected_final_deadline'] ?? null;
+        unset($validated['expected_final_deadline']);
         if ($titleOnly) {
             $validated = ['title' => $validated['title']];
         }
 
-        $deadlineWork = clone $course_work;
-        foreach (['finish_until_date', 'finish_until_time'] as $field) {
-            if (array_key_exists($field, $validated)) {
-                $deadlineWork->{$field} = $validated[$field];
-            }
-        }
-        $studentDeadline = $course_work->communicatedDeadline();
-        $deadlineWork->setStudentDeadline($studentDeadline['date'] ?? null, $studentDeadline['time'] ?? null);
         if (array_key_exists('title', $validated)) {
             try {
-                $course_work = DB::transaction(function () use ($course_work, $validated, $auth_user, $entrySyncService, $titleOnly): TeachingCourseWork {
+                $course_work = DB::transaction(function () use ($course_work, $validated, $auth_user, $entrySyncService, $titleOnly, $expectedDeadline): TeachingCourseWork {
                     $locked = TeachingCourseWork::query()->with('teachingCourse')->lockForUpdate()->findOrFail($course_work->id);
                     abort_if(isset($locked->status['deletion_receipt']), 409,
                         'Die Löschung ist noch nicht abgeschlossen. Bitte die Zuordnung prüfen und erneut löschen.');
@@ -1232,14 +1382,14 @@ class CourseWorkController extends Controller
                             abort(409, 'Der Titel konnte nicht vollständig gespeichert werden. Ein Prüfungsordner wurde möglicherweise bereits umbenannt. Bitte denselben Titel erneut speichern und den Stand prüfen.');
                         }
                     }
-                    $locked->update($validated);
+                    app(TeachingWorkDeadlineSync::class)->saveWorkWithDeadline($locked, $validated, expected: $expectedDeadline);
                     if (! $titleOnly) {
                         $entrySyncService->syncWork($locked->fresh());
                     }
 
                     return $locked;
                 });
-            } catch (HttpExceptionInterface $exception) {
+            } catch (HttpExceptionInterface|ValidationException $exception) {
                 throw $exception;
             } catch (Throwable $exception) {
                 report($exception);
@@ -1249,21 +1399,31 @@ class CourseWorkController extends Controller
             }
             app(DropboxModuleLinks::class)->forgetExerciseCache($course_work, $auth_user);
         } else {
-            $course_work = DB::transaction(function () use ($course_work, $validated, $entrySyncService): TeachingCourseWork {
+            $course_work = DB::transaction(function () use ($course_work, $validated, $entrySyncService, $expectedDeadline): TeachingCourseWork {
                 $locked = TeachingCourseWork::query()->lockForUpdate()->findOrFail($course_work->id);
                 abort_if(isset($locked->status['deletion_receipt']), 409,
                     'Die Löschung ist noch nicht abgeschlossen. Bitte die Zuordnung prüfen und erneut löschen.');
-                $locked->update($validated);
+                app(TeachingWorkDeadlineSync::class)->saveWorkWithDeadline($locked, $validated, expected: $expectedDeadline);
                 $entrySyncService->syncWork($locked->fresh());
 
                 return $locked;
             });
         }
 
-        return response()->json(['data' => $entrySyncService->serializeWork($course_work->fresh('teachingCourseWorkGroupStudents'))]);
+        $response = [];
+        if (($course_work->status['final_deadline_sync_pending'] ?? false) && $request->hasAny(['finish_until_date', 'finish_until_time'])) {
+            try {
+                app(TeachingWorkDeadlineSync::class)->syncLinkedFolders($course_work, $auth_user);
+            } catch (Throwable $exception) {
+                report($exception);
+                $response['deadline_sync_warning'] = 'Schooltool hat die Abgabefrist gespeichert. Die Dropbox-Fristdateien konnten nicht vollständig aktualisiert werden.';
+            }
+        }
+
+        return response()->json(['data' => $entrySyncService->serializeWork($course_work->fresh('teachingCourseWorkGroupStudents'))] + $response);
     }
 
-    public function destroy(TeachingCourseWork $course_work, TeachingCourseWorkEntrySyncService $entrySyncService)
+    public function destroy(Request $request, TeachingCourseWork $course_work, TeachingCourseWorkEntrySyncService $entrySyncService)
     {
         if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
             abort(403, 'Sie haben keine Berechtigung');
@@ -1276,49 +1436,111 @@ class CourseWorkController extends Controller
 
         $this->authorizeTeachingCourseAccess($course, $auth_user);
 
-        $actor = $this->teachingCourseActor($auth_user, $course);
-        DB::transaction(function () use ($course_work, $actor): void {
-            $work = TeachingCourseWork::query()->lockForUpdate()->findOrFail($course_work->id);
-            app(TeachingWorkDeletion::class)->prepare($work, $actor, createReceipt: true);
-        });
-        $filesMayHaveChanged = false;
-        try {
-            DB::transaction(function () use ($course_work, $entrySyncService, $actor, &$filesMayHaveChanged): void {
-                $work = TeachingCourseWork::query()->lockForUpdate()->findOrFail($course_work->id);
-                $plan = app(TeachingWorkDeletion::class)->prepare($work, $actor, createReceipt: false);
-                $tests = $plan['tests'];
-                $testFolders = app(McTestFolder::class);
-                $modules = app(DropboxModuleLinks::class);
-                $targets = $plan['targets'];
-                if ($targets && $targets['folders'] !== []) {
-                    $modules->forgetExerciseCache($work, $actor);
-                    app(TeachingWorkCollectionStatus::class)->forget($work);
-                    foreach ($targets['folders'] as $folder) {
-                        $filesMayHaveChanged = true;
-                        app(DropboxWorkImport::class)->deleteExamFolder($targets['connection'], $folder['id'], $folder['path']);
-                    }
+        if ($request->boolean('stream_progress') && ! $request->attributes->get('work_deletion_stream')) {
+            $request->attributes->set('work_deletion_stream', true);
+
+            return app(TeachingWorkRefreshProgress::class)->stream($request, function () use ($request, $course_work, $entrySyncService): JsonResponse {
+                $response = $this->destroy($request, $course_work, $entrySyncService);
+                if ($response->getStatusCode() === 204) {
+                    return response()->json(['deleted' => true]);
                 }
-                foreach ($plan['history'] as $file) {
-                    $filesMayHaveChanged = true;
-                    app(McTestExchange::class)->deleteHistoryFile($file);
+                if ($response->getStatusCode() === 200) {
+                    return $response;
                 }
-                foreach ($plan['bindings'] as $binding) {
-                    $filesMayHaveChanged = true;
-                    $testFolders->deleteBinding($binding);
-                }
-                foreach ($tests as $test) {
-                    $test->attempts()->delete();
-                    $test->delete();
-                }
-                $entrySyncService->deleteForWork($work);
-                $work->delete();
+                throw new HttpResponseException($response);
             });
+        }
+
+        $actor = $this->teachingCourseActor($auth_user, $course);
+        $progressService = app(TeachingWorkRefreshProgress::class);
+        $progress = ['state' => 'running', 'active' => 'delete_check', 'completed' => [], 'skipped' => [],
+            'steps' => ['delete_check', 'delete_folders', 'delete_mc_files', 'delete_records']];
+        $progressService->save(null, $progress);
+        $filesMayHaveChanged = false;
+        $skippedReason = null;
+        $deleteWorkOnly = function (TeachingCourseWork $work, TeachingWorkDeletionConflict $exception) use ($entrySyncService, $progressService, &$progress, &$skippedReason): void {
+            $skippedReason = $exception->getMessage();
+            $progress['completed'] = ['delete_check'];
+            $progress['skipped'] = ['delete_folders', 'delete_mc_files'];
+            $progress['active'] = 'delete_records';
+            $progressService->save(null, $progress);
+            $entrySyncService->deleteForWork($work);
+            $work->delete();
+        };
+        try {
+            DB::transaction(function () use ($course_work, $actor, $deleteWorkOnly): void {
+                $work = TeachingCourseWork::query()->lockForUpdate()->findOrFail($course_work->id);
+                try {
+                    app(TeachingWorkDeletion::class)->prepare($work, $actor, createReceipt: true);
+                } catch (TeachingWorkDeletionConflict $exception) {
+                    $deleteWorkOnly($work, $exception);
+                }
+            });
+            if ($skippedReason === null) {
+                DB::transaction(function () use ($course_work, $entrySyncService, $actor, $progressService, $deleteWorkOnly, &$progress, &$filesMayHaveChanged): void {
+                    $work = TeachingCourseWork::query()->lockForUpdate()->findOrFail($course_work->id);
+                    try {
+                        $plan = app(TeachingWorkDeletion::class)->prepare($work, $actor, createReceipt: false);
+                    } catch (TeachingWorkDeletionConflict $exception) {
+                        $deleteWorkOnly($work, $exception);
+
+                        return;
+                    }
+                    $tests = $plan['tests'];
+                    $testFolders = app(McTestFolder::class);
+                    $modules = app(DropboxModuleLinks::class);
+                    $targets = $plan['targets'];
+                    $progress['completed'][] = 'delete_check';
+                    $progress['active'] = 'delete_folders';
+                    $progressService->save(null, $progress);
+                    if ($targets && $targets['folders'] !== []) {
+                        $modules->forgetExerciseCache($work, $actor);
+                        app(TeachingWorkCollectionStatus::class)->forget($work);
+                        foreach ($targets['folders'] as $folder) {
+                            $filesMayHaveChanged = true;
+                            app(DropboxWorkImport::class)->deleteExamFolder($targets['connection'], $folder['id'], $folder['path']);
+                        }
+                    }
+                    $progress[$targets && $targets['folders'] !== [] ? 'completed' : 'skipped'][] = 'delete_folders';
+                    $progress['active'] = 'delete_mc_files';
+                    $progressService->save(null, $progress);
+                    foreach ($plan['history'] as $file) {
+                        $filesMayHaveChanged = true;
+                        app(McTestExchange::class)->deleteHistoryFile($file);
+                    }
+                    foreach ($plan['bindings'] as $binding) {
+                        $filesMayHaveChanged = true;
+                        $testFolders->deleteBinding($binding);
+                    }
+                    $progress[$plan['history'] !== [] || $plan['bindings'] !== [] ? 'completed' : 'skipped'][] = 'delete_mc_files';
+                    $progress['active'] = 'delete_records';
+                    $progressService->save(null, $progress);
+                    foreach ($tests as $test) {
+                        $test->attempts()->delete();
+                        $test->delete();
+                    }
+                    $entrySyncService->deleteForWork($work);
+                    $work->delete();
+                });
+            }
+            $progress['completed'][] = 'delete_records';
+            $progress['active'] = null;
+            $progress['state'] = 'done';
+            $progressService->save(null, $progress);
         } catch (Throwable $exception) {
+            $progress['state'] = 'failed';
+            $progressService->save(null, $progress);
             if ($filesMayHaveChanged) {
                 report($exception);
                 abort(409, 'Das Löschen konnte nicht vollständig bestätigt werden. Einzelne Prüfungsordner oder MC-Dateien können bereits entfernt sein. Bitte den Stand von Arbeit und MC-Test prüfen und gegebenenfalls erneut löschen.');
             }
             throw $exception;
+        }
+
+        if ($skippedReason !== null) {
+            return response()->json(['deleted' => true, 'skipped_unverified' => true,
+                'message' => 'Arbeit gelöscht. Prüfungsordner und MC-Tests wurden bei diesem Vorgang erhalten, weil Zuordnungen unklar, geteilt oder nicht überprüfbar waren. '.$skippedReason])
+                ->header('Cache-Control', 'private, no-store');
         }
 
         return response()->json(null, 204);
@@ -1370,6 +1592,9 @@ class CourseWorkController extends Controller
             $rules['teaching_course_id'] = 'required|integer|exists:teaching_courses,id';
         } else {
             $rules['completion_override'] = 'sometimes|boolean';
+            $rules['expected_final_deadline'] = 'sometimes|required|array:date,time';
+            $rules['expected_final_deadline.date'] = 'present_with:expected_final_deadline|nullable|date_format:Y-m-d';
+            $rules['expected_final_deadline.time'] = 'present_with:expected_final_deadline|nullable|date_format:H:i';
             foreach (self::ManualCompletionFields as $field) {
                 $rules[$field] = 'sometimes|boolean';
             }

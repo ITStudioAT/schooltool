@@ -11,7 +11,17 @@ import { formatViennaDateTime } from '@/helpers/date'
 import WorkEvaluationImport from '@/pages/admin/teaching/overview/components/WorkEvaluationImport.vue'
 import WorkEvaluationPdf from '@/pages/admin/teaching/overview/components/WorkEvaluationPdf.vue'
 import WorkDispatchLog from '@/pages/admin/teaching/overview/components/WorkDispatchLog.vue'
+import WorkTitleEditor from '@/pages/admin/teaching/overview/components/WorkTitleEditor.vue'
+import WorkExerciseExport from '@/pages/admin/teaching/overview/components/WorkExerciseExport.vue'
 import { clearWorkDropboxStates, loadWorkExercise, workDropboxStates } from '@/helpers/workDropbox'
+
+vi.mock('vue-filepond/dist/vue-filepond.js', () => ({ default: () => ({
+    name: 'FilePond', props: ['disabled'], emits: ['updatefiles'], template: '<div />',
+}) }))
+vi.mock('@/pages/admin/teaching/overview/components/WorkSubmissionMethod.vue', () => ({ default: { template: '<span />' } }))
+vi.mock('@/pages/admin/teaching/overview/components/WorkQueueProgress.vue', () => ({ default: { template: '<span />' } }))
+vi.mock('@/pages/admin/teaching/overview/components/WorkGradeVisibility.vue', () => ({ default: { template: '<span />' } }))
+vi.mock('@/pages/admin/teaching/overview/components/WorkAssignmentMail.vue', () => ({ default: { template: '<span />' } }))
 
 describe('New work overview and assessment mode', () => {
     afterEach(() => { clearWorkDropboxStates(); vi.unstubAllGlobals() })
@@ -34,8 +44,9 @@ describe('New work overview and assessment mode', () => {
         } finally { wrapper.unmount() }
     })
 
-    function mountOverview(work, folderState = { folder: null }) {
+    function mountOverview(work, folderState = { folder: null }, simpleButtons = false) {
         if (folderState) workDropboxStates.set('7:2:65', folderState)
+        const buttonStub = { props: ['disabled'], template: '<button :disabled="disabled"><slot /></button>' }
         return mount(CourseWorks, { global: {
             plugins: [createTestingPinia({ createSpy: vi.fn, initialState: {
                 AdminAdminStore: { action: '', config: { user: { id: 7, teaching_active_semester: 1 } } },
@@ -46,18 +57,195 @@ describe('New work overview and assessment mode', () => {
             } }), createVuetify({ components: { VBtn, VBtnToggle } })],
             components: { 'v-btn': VBtn, 'v-btn-toggle': VBtnToggle },
             stubs: { ItsGridBox: { template: '<div><slot name="header-actions" /><slot /></div>' },
-                'v-btn': false, VBtn: false, 'v-btn-toggle': false, VBtnToggle: false,
+                'v-btn': simpleButtons ? buttonStub : false, VBtn: simpleButtons ? buttonStub : false, 'v-btn-toggle': false, VBtnToggle: false,
                 'v-divider': true, 'v-switch': true, 'v-checkbox': true, 'v-textarea': true, 'v-date-input': true,
                 'v-dialog': { props: ['modelValue'], template: '<div v-if="modelValue"><slot /></div>' },
                 WorkImportActions: true, WorkEvaluationPdf: true, WorkDispatchStatus: true, WorkEvaluationImport: true,
-                WorkAiExport: true, WorkDispatchLog: true, WorkStudentDistribution: { name: 'WorkStudentDistribution', props: ['work', 'available'], template: '<div />' } },
+                WorkAiExport: true, WorkDispatchLog: true, WorkStudentDistribution: { name: 'WorkStudentDistribution', props: ['work', 'available'], template: '<slot name="activator" :active="false" :available="false" />' } },
         } })
     }
+
+    it('opens the connection before the saved LF from the separate works editor', async () => {
+        const work = { id: 65, teaching_course_id: 2, type: 'A5', title: 'Fiktive Arbeit', groups: [], status: {} }
+        const data = { connected: true, folder: null, link_version: 'a'.repeat(64),
+            module_link: { folder: { id: 'id:module', name: 'Fiktives Modul', path: '/Fiktiv/Modul' } },
+            exercise: { status: 'found', checked_at: '2026-11-20T12:00:00Z', folder: { id: 'id:exercise', name: 'Prüfung' },
+                preparation: { status: 'ready', components: { aufgabenblatt: { points: 35 },
+                    multiple_choice: { included: false, points: null } }, total_points: 35 } } }
+        const post = vi.fn()
+        vi.stubGlobal('axios', { get: vi.fn().mockResolvedValue({ data }), post })
+        const wrapper = mountOverview(work, null, true)
+        try {
+            await flushPromises()
+            await wrapper.get('.work-row').trigger('click')
+            await flushPromises()
+            const workflow = wrapper.get('[aria-label="Ablauf der Arbeit"]')
+            const actions = workflow.findAll('button').filter(button => [
+                'Verbindung verwalten', 'Leistungsfeststellung verwalten',
+            ].includes(button.text()))
+            expect(actions.map(button => button.text())).toEqual(['Verbindung verwalten', 'Leistungsfeststellung verwalten'])
+            await actions[0].trigger('click')
+            const connection = workflow.get('.folder-browser-card')
+            expect(connection.text()).toContain('Lernmodulordner · Fiktive Arbeit')
+            expect(connection.get('[aria-label="Dropbox-Ordnerpfad"]').text()).toBe('/Fiktiv/Modul')
+            await connection.findAll('button').find(button => button.text() === 'Schließen')!.trigger('click')
+            await actions[1].trigger('click')
+            expect(workflow.text()).toContain('Leistungsfeststellung vorbereitet · Fiktive Arbeit')
+            expect(post).not.toHaveBeenCalled()
+        } finally { wrapper.unmount() }
+    })
+
+    it('keeps the work editor open while the LF component is busy and allows closing afterwards', async () => {
+        const work = { id: 65, teaching_course_id: 2, type: 'A5', title: 'Beispiel', groups: [], status: {}, date_for_all_groups: '2026-10-20' }
+        const status = vi.fn().mockResolvedValue({ data: { connected: true, module_link: { folder: { id: 'id:module' } }, exercise: { status: 'missing' } } })
+        vi.stubGlobal('axios', { get: status, post: vi.fn() })
+        const wrapper = mountOverview(work, null)
+        const vm = wrapper.vm as any
+        try {
+            await flushPromises()
+            await wrapper.get('.work-row').trigger('click')
+            await flushPromises()
+            const child = wrapper.findAllComponents(WorkExerciseExport).at(-1)!
+            child.vm.$emit('busy', true)
+            await flushPromises()
+            const cancel = wrapper.findAll('button').find(item => item.text() === 'Abbruch')!
+            expect(cancel.attributes('disabled')).toBeDefined()
+            vm.abortEdit()
+            expect(vm.action).toBe('edit_course_work')
+            child.vm.$emit('busy', false)
+            await flushPromises()
+            expect(cancel.attributes('disabled')).toBeUndefined()
+            vm.abortEdit()
+            expect(vm.action).not.toBe('edit_course_work')
+        } finally { wrapper.unmount() }
+    })
+
+    it('opens a work without refreshing Dropbox and starts LF creation from the labelled action', async () => {
+        const work = { id: 65, teaching_course_id: 2, type: 'A5', title: 'Beispiel', groups: [], status: {}, date_for_all_groups: '2026-10-20' }
+        const status = vi.fn().mockResolvedValue({ data: { connected: true, module_link: { folder: { id: 'id:module' } }, exercise: { status: 'missing' } } })
+        const templateCheck = vi.fn().mockResolvedValue({ data: { assessment_points: 35 } })
+        const post = vi.fn()
+        vi.stubGlobal('axios', { get: vi.fn((url, options) => {
+            if (url.endsWith('/exercise-run')) return Promise.resolve({ data: { run: null } })
+            if (options?.params?.mc_selection === 'template_points') return templateCheck(url, options)
+            if (options?.params?.mc_selection === 'current') return Promise.resolve({ data: { linked_test_id: null } })
+            return status(url, options)
+        }), post })
+        const wrapper = mountOverview(work, null, true)
+        try {
+            await flushPromises()
+            await wrapper.get('.work-row').trigger('click')
+            await flushPromises()
+            expect((wrapper.vm as any).work_form.id).toBe(work.id)
+            expect(wrapper.text()).not.toContain('Prüfungsvorlage, Kandidaten und Zielordner prüfen')
+            expect(templateCheck).not.toHaveBeenCalled()
+            expect(post).not.toHaveBeenCalled()
+            ;(wrapper.vm as any).abortEdit()
+            await flushPromises()
+            await wrapper.get('.work-row').trigger('click')
+            await flushPromises()
+            expect((wrapper.vm as any).work_form.id).toBe(work.id)
+            expect(templateCheck).not.toHaveBeenCalled()
+            expect(post).not.toHaveBeenCalled()
+            await wrapper.get('[aria-label="Leistungsfeststellung erstellen"]').trigger('click')
+            await flushPromises()
+            expect(wrapper.text()).toContain('Prüfungsvorlage, Kandidaten und Zielordner prüfen')
+            expect(templateCheck).toHaveBeenCalledOnce()
+            expect(post).not.toHaveBeenCalled()
+        } finally { wrapper.unmount() }
+    })
+
+    it('keeps the LF creation icon out of the work overview card', async () => {
+        const work = { id: 65, teaching_course_id: 2, type: 'A5', title: 'Beispiel', groups: [], status: { other: 'saved' }, date_for_all_groups: '2026-10-20' }
+        const status = vi.fn().mockResolvedValue({ data: { connected: true, module_link: { folder: { id: 'id:module' } }, exercise: { status: 'missing' } } })
+        vi.stubGlobal('axios', { get: status, post: vi.fn() })
+        const wrapper = mountOverview(work, null)
+        try {
+            await flushPromises()
+            expect(wrapper.get('.work-row').find('[aria-label="Leistungsfeststellung erstellen"]').exists()).toBe(false)
+        } finally { wrapper.unmount() }
+    })
+
+    it.each([false, true])('creates once and continues or retries a partial folder in the work view: %s', async partial => {
+        const handshake = JSON.stringify({ schema_version: 1, module_id: 'a263b873-4f27-4167-90f0-7d94ea0f67fa' })
+        const work = { id: 65, teaching_course_id: 2, type: 'A5', title: 'Beispiel', groups: [], status: {} }
+        const connection = { connected: true, configured: true, installed: true, module_link: null }
+        let finishCreate!: (value: unknown) => void
+        const post = vi.fn().mockImplementation((url, data) => {
+            if (url === '/api/admin/teaching/course_works') return new Promise(resolve => { finishCreate = resolve })
+            if (data.resolve) return Promise.resolve({ data: { can_link: true, proof: 'proof', module_id: 'module',
+                candidate: { folder_path: '/Materialien/Beispiel' }, message: 'Online geprüft.' } })
+            return Promise.resolve({ data: { connected: true, module_link: { folder: { id: 'id:module' } }, link_preparation: partial && data.proof ? { status: 'partial', message: 'Ordnerprüfung fehlgeschlagen' } : { status: 'initialized' } } })
+        })
+        vi.stubGlobal('axios', { get: vi.fn().mockResolvedValue({ data: connection }), post })
+        const wrapper = mountOverview(work, null, true)
+        try {
+            const vm = wrapper.vm as any
+            vm.newWork()
+            vm.work_form.type = 'A5'
+            vm.work_form.title = 'Beispiel'
+            await flushPromises()
+            wrapper.getComponent({ name: 'FilePond' }).vm.$emit('updatefiles', [{ file: {
+                name: 'handshake.json', size: handshake.length, text: async () => handshake,
+            } }])
+            await flushPromises()
+            expect(post).not.toHaveBeenCalled()
+            const create = wrapper.findAll('button').find(button => button.text() === 'Arbeit und Prüfungsordner anlegen')
+            expect(create).toBeDefined()
+            expect(wrapper.findAll('button').some(button => button.text() === 'Verknüpfen und Prüfungsordner anlegen')).toBe(false)
+            await create!.trigger('click')
+            await flushPromises()
+            expect(create!.attributes('disabled')).toBeDefined()
+            await create!.trigger('click')
+            expect(post.mock.calls.filter(([url]) => url === '/api/admin/teaching/course_works')).toHaveLength(1)
+            finishCreate({ data: { data: work } })
+            await flushPromises()
+            expect(post.mock.calls.filter(([url]) => url === '/api/admin/teaching/course_works')).toHaveLength(1)
+            expect(post.mock.calls.filter(([url]) => url.endsWith('/dropbox/folder')).map(([, data]) => data)).toEqual([
+                { handshake, filename: 'handshake.json', resolve: true },
+                { handshake, filename: 'handshake.json', proof: 'proof' },
+            ])
+            if (partial) {
+                expect(wrapper.text()).toContain('Ordnerprüfung fehlgeschlagen')
+                expect(vm.handshakeNotice).toContain('Lernmodul ist verknüpft')
+                await wrapper.findAll('button').find(button => button.text() === 'Prüfungsordner erneut anlegen')!.trigger('click')
+                await flushPromises()
+                expect(post.mock.calls.at(-1)?.[1]).toEqual({ retry_preparation: true })
+                expect(post.mock.calls.filter(([url]) => url === '/api/admin/teaching/course_works')).toHaveLength(1)
+            }
+            expect(wrapper.find('[data-testid="work-module-inline"]').exists()).toBe(false)
+            expect(vm.handshakeNotice).toBe('')
+            expect(wrapper.findAll('button').some(button => button.text() === 'Verknüpfen und Prüfungsordner anlegen')).toBe(false)
+        } finally { wrapper.unmount() }
+    })
+
+    it.each([
+        { label: 'ohne Leistungsfeststellung', status: {} },
+        { label: 'mit Leistungsfeststellung', status: { folder_imported_at: '2026-10-20T10:00:00Z' } },
+    ])('keeps the title of a saved work locked with a separate editor: $label', async ({ status }) => {
+        const work = { id: 65, teaching_course_id: 2, type: 'A5', title: 'Word-lokal', groups: [], status }
+        vi.stubGlobal('axios', { get: vi.fn().mockResolvedValue({ data: { connected: false } }), post: vi.fn() })
+        const wrapper = mountOverview(work, null, true)
+        try {
+            const vm = wrapper.vm as any
+            vm.config = { user: { id: 7 }, roles: ['teacher'], selected_school: { id: 1 }, selected_schoolyear: { id: 2 } }
+            vm.selected_course = { ...vm.selected_course, school_id: 1, schoolyear_id: 2, user_id: 7 }
+            vm.editWork(work)
+            vm.startDetailsEdit()
+            await flushPromises()
+            const editor = wrapper.getComponent(WorkTitleEditor)
+            expect(editor.props('title')).toBe('Word-lokal')
+            expect(editor.props('canEdit')).toBe(true)
+            expect(editor.find('[title="Titel bearbeiten"]').exists()).toBe(true)
+            expect(editor.find('input').exists()).toBe(false)
+            expect(wrapper.findAll('v-text-field').some(field => field.attributes('label') === 'Titel')).toBe(false)
+        } finally { wrapper.unmount() }
+    })
 
     it('offers student distribution only when the exercise assignment is confirmed', async () => {
         const work = { id: 65, teaching_course_id: 2, type: 'A5', title: 'E-Mails', groups: [], status: {} }
         const state = { connected: true, module_link: { folder: { id: 'id:module' } },
-            exercise: { status: 'found', folder: { id: 'id:exercise' }, assignment_status: 'missing' } }
+            exercise: { status: 'found', checked_at: '2026-11-02T12:00:00Z', folder: { id: 'id:exercise', name: 'LF' }, assignment_status: 'missing' } }
         const get = vi.fn().mockResolvedValue({ data: state })
         vi.stubGlobal('axios', { get, post: get })
         const wrapper = mountOverview(work)
@@ -65,7 +253,7 @@ describe('New work overview and assessment mode', () => {
             await flushPromises()
             await wrapper.get('.work-row').trigger('click')
             expect(wrapper.getComponent({ name: 'WorkDeliveryStatus' }).props('exerciseReady')).toBe(false)
-            get.mockResolvedValue({ data: { ...state, exercise: { ...state.exercise, assignment_status: 'ready' } } })
+            get.mockResolvedValue({ data: { ...state, exercise: { ...state.exercise, assignment_status: 'ready', checked_at: '2026-11-02T12:01:00Z' } } })
             await loadWorkExercise('7:2:65', work, '', true)
             await flushPromises()
             expect(wrapper.getComponent({ name: 'WorkDeliveryStatus' }).props('exerciseReady')).toBe(true)
@@ -82,19 +270,22 @@ describe('New work overview and assessment mode', () => {
         const get = vi.fn().mockResolvedValue({ data: payload })
         const post = vi.fn().mockResolvedValue({ data: payload })
         vi.stubGlobal('axios', { get, post })
-        const wrapper = mountOverview(work)
+        const wrapper = mountOverview(work, null, true)
         try {
             await flushPromises()
             expect(wrapper.get('.work-row').text()).toContain('Aufgaben bereitstellen')
             await wrapper.get('.work-row').trigger('click')
             await flushPromises()
             const delivery = wrapper.getComponent({ name: 'WorkDeliveryStatus' })
+            const provisioning = wrapper.getComponent({ name: 'WorkProvisionMethod' })
             expect(delivery.props('exerciseReady')).toBe(true)
             expect(delivery.props('disabled')).toBe(false)
             ;(wrapper.vm as any).workExerciseStatus = { userId: 7, workId: 65, courseId: 2, date: '', status: 'unknown', checkedAt: new Date(Date.now() + 1000).toISOString() }
             await flushPromises()
             expect(delivery.props('exerciseReady')).toBe(false)
-            expect(delivery.props('disabled')).toBe(true)
+            expect(provisioning.props('portalAvailable')).toBe(false)
+            expect(provisioning.text()).toContain('Bereitstellungsweg vorbereiten')
+            expect(wrapper.findAll('button, v-btn').some(button => button.text() === 'Aufgaben bereitstellen')).toBe(false)
             expect(post).not.toHaveBeenCalled()
         } finally { wrapper.unmount() }
     })
@@ -155,8 +346,12 @@ describe('New work overview and assessment mode', () => {
             await wrapper.get('[data-testid="work-delete-confirm"]').trigger('click')
             await wrapper.get('[data-testid="work-delete-confirm"]').trigger('click')
 
-            expect(vm.courseWorkStore.destroy).toHaveBeenCalledExactlyOnceWith(work.id)
+            expect(vm.courseWorkStore.destroy).toHaveBeenCalledExactlyOnceWith(work.id, expect.any(Function))
             expect(wrapper.get('[data-testid="work-delete-cancel"]').attributes('disabled')).toBeDefined()
+            vm.courseWorkStore.destroy.mock.calls[0][1]({ state: 'running', active: 'delete_check', completed: [], skipped: [],
+                steps: ['delete_check', 'delete_folders', 'delete_mc_files', 'delete_records'] })
+            await flushPromises()
+            expect(wrapper.get('[aria-label="Fortschritt der Löschung"]').text()).toContain('Zuordnungen und Daten prüfen')
 
             finishDeletion(deleted)
             await flushPromises()
@@ -172,6 +367,22 @@ describe('New work overview and assessment mode', () => {
                 expect(vm.work_form.id).toBe(work.id)
                 expect(refresh).not.toHaveBeenCalled()
             }
+        } finally { wrapper.unmount() }
+    })
+
+    it('deletes from a card with one confirmation after displaying the consequences', async () => {
+        const work = { id: 65, teaching_course_id: 2, type: 'A5', title: 'Arbeit', groups: [], status: {} }
+        const wrapper = mountOverview(work)
+        const vm = wrapper.vm as any
+        vm.courseWorkStore.destroy.mockResolvedValue(true)
+        vi.spyOn(vm, 'refreshWorks').mockResolvedValue(undefined)
+        try {
+            await wrapper.get('.work-row button').trigger('click')
+            expect(wrapper.get('[data-testid="work-delete-confirmation"]').text()).toContain('Sind Zuordnungen unklar oder gemeinsam genutzt oder kann Dropbox vor Beginn nicht geprüft werden, wird die Arbeit gelöscht und die Prüfungsordner und MC-Tests bleiben erhalten.')
+            await wrapper.get('[data-testid="work-delete-confirm"]').trigger('click')
+            await flushPromises()
+            expect(vm.courseWorkStore.destroy).toHaveBeenCalledExactlyOnceWith(work.id, expect.any(Function))
+            expect(wrapper.find('[data-testid="work-delete-confirmation"]').exists()).toBe(false)
         } finally { wrapper.unmount() }
     })
 
@@ -203,12 +414,13 @@ describe('New work overview and assessment mode', () => {
 
             await card.get('button').trigger('click')
             expect((wrapper.vm as any).action).toBe('')
-            expect(card.text()).toContain('Endgültig löschen')
+            expect(wrapper.get('[data-testid="work-delete-confirmation"]').text()).toContain('Sind Zuordnungen unklar oder gemeinsam genutzt oder kann Dropbox vor Beginn nicht geprüft werden, wird die Arbeit gelöscht und die Prüfungsordner und MC-Tests bleiben erhalten.')
+            await wrapper.get('[data-testid="work-delete-cancel"]').trigger('click')
             await card.get('v-icon').trigger('click')
             expect((wrapper.vm as any).action).toBe('edit_course_work')
             expect((wrapper.vm as any).work_form.id).toBe(65)
-            expect(wrapper.get('[data-testid="work-assessment-total"]').text()).toBe('0 von 1 beurteilt')
-            expect(wrapper.find('work-import-actions-stub').exists()).toBe(true)
+            expect(wrapper.get('[data-testid="work-detail-progress"]').text()).toBe('0 von 1 beurteilt')
+            expect(wrapper.find('work-import-actions-stub').exists()).toBe(!enabled)
         } finally { wrapper.unmount() }
     })
 
@@ -849,7 +1061,7 @@ describe('CourseWorks title rendering', () => {
 
         watcher.call(ctx, ctx.work_form.finish_until_date)
 
-        expect(source).toContain('v-model="work_form.finish_until_date" clearable label="Fertig bis"')
+        expect(source).toContain(':date="work_form.finish_until_date" :time="work_form.finish_until_time"')
         expect(source).toContain('<template v-if="work.finish_until_date">{{ formatDate(work.finish_until_date) }}')
         expect(ctx.work_form.finish_until_date).toBe('2026-05-20')
     })
@@ -1082,7 +1294,7 @@ describe('CourseWorks title rendering', () => {
 
         methods.newWork.call(state)
 
-        expect(source).toContain(':disabled="is_saving || is_deleting_work || isEditingExistingDetails"')
+        expect(source).toContain(':disabled="is_saving || is_deleting_work || workChecking || workExerciseBusy || isEditingExistingDetails"')
         expect(source).toContain(':style="isEditingExistingDetails ? \'pointer-events:none; opacity:0.45\' : \'\'"')
         expect(source).toContain('<template v-if="action === \'new_course_work\' || details_editable">')
         expect(source).toContain('isEditingExistingDetails()')

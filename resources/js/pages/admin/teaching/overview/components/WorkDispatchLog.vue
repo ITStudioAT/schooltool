@@ -19,11 +19,11 @@
 import { computed } from 'vue'
 import { downloadDispatch } from '@/actions/App/Http/Controllers/Admin/Teaching/CourseWorkController'
 
-const props = defineProps({ work: { type: Object, default: null } })
+const props = defineProps({ work: { type: Object, default: null }, purposes: Array })
 const logs = computed(() => props.work?.id
     ? (props.work.status?.dispatch_logs || []).filter(log => ['dispatch_import', 'provision_import'].includes(log.origin) && log.sha256)
     : [])
-const groups = computed(() => ['provision', 'tasks', 'results'].map(purpose => ({
+const groups = computed(() => ['provision', 'tasks', 'results'].filter(purpose => !props.purposes || props.purposes.includes(purpose)).map(purpose => ({
     purpose, label: purpose === 'provision' ? 'Download Bereitstellungsbeleg' : purpose === 'tasks' ? 'Download Aufgabenversand' : 'Download Ergebnisbenachrichtigung',
     icon: purpose === 'provision' ? 'mdi-file-check-outline' : purpose === 'tasks' ? 'mdi-file-send-outline' : 'mdi-email-outline',
     logs: logs.value.filter(log => (log.purpose || 'results') === purpose)

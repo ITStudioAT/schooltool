@@ -75,6 +75,23 @@ it('does not use a student-area release for a different group or date', async ()
     } finally { wrapper.unmount() }
 })
 
+it('collects the chosen mailbox after a confirmed real send and reserves online submissions for the student area', async () => {
+    const wrapper = mountCollection()
+    const receipt = { recipients: [{ state: 'accepted', accepted_at: '2026-10-16T09:00:00Z' }] }
+    try {
+        const setMethod = (channel, transport) => wrapper.setProps({ work: { ...work, status: {
+            submission_method: { channel, email: channel === 'email' ? 'schule@example.test' : null },
+            assignment_mail: { batches: { '2026-10-16': { ...receipt, transport } } },
+        } }, dispatch: { status: 'missing', confirmed_count: 0 } })
+        await setMethod('email', 'mailpit')
+        expect(wrapper.get('button').element.disabled).toBe(true)
+        await setMethod('email', 'postmark')
+        expect(wrapper.get('button').element.disabled).toBe(false)
+        await setMethod('portal', 'postmark')
+        expect(wrapper.find('button').exists()).toBe(false)
+    } finally { wrapper.unmount() }
+})
+
 it.each([false, true])('generates the correct collection order and shows a check only after copying: %s', async repeat => {
     const mode = repeat ? 'repeat' : 'collect'
     const get = vi.fn().mockResolvedValue(response(mode))

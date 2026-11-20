@@ -1,42 +1,79 @@
 <template>
     <section aria-label="Meine Aufgaben">
+        <div class="task-list-heading">
+            <h2>Meine Aufgaben</h2>
+            <div class="task-heading-actions">
+                <span v-if="!loading && !error && tasks.length" class="task-count">{{ tasks.length }} {{ tasks.length === 1 ? 'Aufgabe' : 'Aufgaben' }}</span>
+                <v-btn variant="tonal" :disabled="loading || manualReloading || !active"
+                    :aria-busy="manualReloading" @click="reloadTasks">
+                    <template #prepend>
+                        <v-icon icon="mdi-refresh" aria-hidden="true" :class="{ 'task-refresh-spinning': manualReloading }" />
+                    </template>
+                    {{ manualReloading ? 'Wird aktualisiert …' : 'Aktualisieren' }}
+                </v-btn>
+            </div>
+        </div>
         <v-progress-linear v-if="loading" indeterminate aria-label="Aufgaben werden geladen" />
-        <v-alert v-else-if="error" type="error" variant="tonal" role="alert">{{ error }} <v-btn variant="text" @click="load()">Erneut laden</v-btn></v-alert>
+        <v-alert v-else-if="error" type="error" variant="tonal" role="alert">{{ error }}</v-alert>
         <div v-else-if="!tasks.length" class="task-empty">
             <v-icon size="26" aria-hidden="true">mdi-clipboard-text-outline</v-icon>
             <div><strong>Noch keine Aufgaben</strong><p>Hier findest du die Aufgaben, die deine Lehrkraft für dich bereitstellt.</p></div>
         </div>
         <template v-else>
-            <div class="task-list-heading">
-                <div>
-                    <h2>Meine Aufgaben</h2>
-                    <p>Alle Aufgaben für dieses Fach auf einen Blick.</p>
-                </div>
-                <span class="task-count">{{ tasks.length }} {{ tasks.length === 1 ? 'Aufgabe' : 'Aufgaben' }}</span>
-            </div>
             <div class="task-list">
                 <article v-for="task in tasks" :key="task.id" class="task-card">
                     <header class="task-card-header">
                         <div class="task-title-group">
                             <span class="task-title-icon"><v-icon size="24" aria-hidden="true">mdi-clipboard-text-outline</v-icon></span>
-                            <div class="task-title-text"><span>Aufgabe</span><h3>{{ task.title || 'Leistungsfeststellung' }}</h3></div>
+                            <div class="task-title-text"><span>{{ task.has_assessment ? 'Leistungsfeststellung' : 'Aufgabe' }}</span><h3>{{ task.title || 'Leistungsfeststellung' }}</h3></div>
                         </div>
-                        <div v-if="task.deadline?.date" class="task-deadline">
-                            <v-icon size="21" aria-hidden="true">mdi-calendar-clock-outline</v-icon>
-                            <div><span>Abgabe bis</span><strong>{{ dateLabel(task.deadline.date) }} <span>· {{ task.deadline.time || '23:59' }} Uhr</span></strong></div>
-                        </div>
+                        <span v-if="pendingTaskLabels[task.status]" class="task-status">{{ pendingTaskLabels[task.status] }}</span>
+                        <span v-else class="task-status task-status--released">{{ task.status === 'email_delivery' ? 'Per E-Mail bereitgestellt' : 'Freigegeben' }}</span>
                     </header>
-                    <div v-if="task.instructions" class="task-description">
+                    <dl class="task-announcement-details">
+                        <div v-if="task.dates?.length">
+                            <dt>Durchführung</dt>
+                            <dd>{{ task.dates.map(dateLabel).join(' · ') }}</dd>
+                        </div>
+                        <div v-if="task.assignment_kind || task.has_multiple_choice">
+                            <dt>Bestandteile</dt>
+                            <dd v-if="task.assignment_kind">
+                                {{ task.assignment_kind === 'worksheet' ? 'Aufgabenblatt' : 'Arbeitsauftrag' }}<span v-if="task.assignment_points != null"> · {{ pointsLabel(task.assignment_points) }}</span>
+                            </dd>
+                            <dd v-if="task.has_multiple_choice">
+                                Multiple-Choice-Test<span v-if="task.mc_points != null"> · {{ pointsLabel(task.mc_points) }}</span>
+                            </dd>
+                        </div>
+                        <div v-if="task.assessment_points != null">
+                            <dt>Erreichbare Prüfungspunkte</dt>
+                            <dd>{{ pointsLabel(task.assessment_points) }}</dd>
+                        </div>
+                        <div v-if="task.grading_points != null">
+                            <dt>Wert der Arbeit in Schooltool</dt>
+                            <dd>{{ pointsLabel(task.grading_points) }}</dd>
+                        </div>
+                        <div v-if="task.deadline?.date">
+                            <dt>Endgültige Abgabefrist</dt>
+                            <dd>{{ dateLabel(task.deadline.date) }}<template v-if="task.deadline.time"> · {{ task.deadline.time }} Uhr</template></dd>
+                            <dd v-if="deadlineExpired(task.deadline)" class="task-deadline-expired">Abgelaufen</dd>
+                        </div>
+                    </dl>
+                    <div v-if="!pendingTaskLabels[task.status] && task.instructions" class="task-description">
                         <h4>Das ist zu tun</h4>
                         <p class="task-instructions">{{ task.instructions }}</p>
                     </div>
-                    <div v-if="task.files?.length || task.tests?.length" class="task-materials">
+                    <div v-if="!pendingTaskLabels[task.status] && (task.files?.length || task.tests?.length)" class="task-materials">
                         <h4>{{ task.files?.length && task.tests?.length ? 'Unterlagen & Test' : task.tests?.length ? 'MC-Test' : 'Unterlagen' }}</h4>
                         <div class="task-actions">
                             <v-btn v-for="file in task.files" :key="file.id" variant="outlined" class="task-action task-action--file" @click="openPdf(task, file)">
                                 <v-icon size="22" aria-hidden="true">mdi-file-pdf-box</v-icon>
                                 <span class="task-action-text"><strong>PDF öffnen</strong><span>{{ file.name }}</span></span>
                                 <v-icon size="20" aria-hidden="true">mdi-eye-outline</v-icon>
+                            </v-btn>
+                            <v-btn v-if="task.files?.length" variant="outlined" class="task-action task-action--file"
+                                @click="openPdf(task, deadlineFile)">
+                                <v-icon size="22" aria-hidden="true">mdi-calendar-clock-outline</v-icon>
+                                <span class="task-action-text"><strong>Aktuelles Fristenblatt (PDF)</strong></span>
                             </v-btn>
                             <v-btn v-for="test in task.tests" :key="test.url" :href="test.url" target="_blank" rel="noopener noreferrer" variant="flat" class="task-action task-action--test">
                                 <v-icon size="22" aria-hidden="true">mdi-clipboard-check-outline</v-icon>
@@ -45,6 +82,8 @@
                             </v-btn>
                         </div>
                     </div>
+                    <StudentWorkSubmission :task="task" :course-id="courseId" :expired="!!task.deadline && deadlineExpired(task.deadline)"
+                        @saved="task.submission_files = $event" @refresh="refreshTasks" />
                 </article>
             </div>
         </template>
@@ -52,6 +91,12 @@
             <v-card>
                 <v-card-title class="text-wrap">{{ pdfName }}</v-card-title>
                 <v-card-text>
+                    <p v-if="activePdfTask && pdfId !== deadlineFile.id" class="text-body-2 mb-3">
+                        <template v-if="activePdfTask.deadline?.date">
+                            Aktuelle Abgabefrist {{ dateLabel(activePdfTask.deadline.date) }}<template v-if="activePdfTask.deadline.time"> · {{ activePdfTask.deadline.time }} Uhr</template>
+                        </template>
+                        <template v-else>Derzeit ist keine Abgabefrist festgelegt.</template>
+                    </p>
                     <v-progress-linear v-if="pdfLoading" indeterminate aria-label="PDF wird geladen" />
                     <v-alert v-if="pdfError" type="error" variant="tonal" role="alert">{{ pdfError }}</v-alert>
                     <CurriculumPdfPreview v-if="pdfUrl" :src="pdfUrl" :document-id="pdfId" class="task-pdf-preview" />
@@ -63,13 +108,23 @@
 </template>
 
 <script setup>
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { configureEcho, echo, echoIsConfigured } from '@laravel/echo-vue'
+import { resolveAdminEchoConfig } from '@/apps/adminEchoConfig'
 import { download, index } from '@/actions/App/Http/Controllers/Student/CourseWorkTaskController'
+import { workDeadlineExpired } from '@/helpers/date'
 import CurriculumPdfPreview from '@/pages/admin/teaching/curricula/CurriculumPdfPreview.vue'
+import StudentWorkSubmission from './StudentWorkSubmission.vue'
 
-const props = defineProps({ courseId: { type: [String, Number], required: true } })
+const props = defineProps({
+    courseId: { type: [String, Number], required: true },
+    active: { type: Boolean, default: true },
+})
+const pendingTaskLabels = { not_released: 'Noch nicht freigegeben', paused: 'Pausiert' }
 const tasks = ref([])
+const deadlineNow = ref(Date.now())
 const loading = ref(false)
+const manualReloading = ref(false)
 const error = ref('')
 const pdfDialog = ref(false)
 const pdfLoading = ref(false)
@@ -77,9 +132,63 @@ const pdfError = ref('')
 const pdfUrl = ref('')
 const pdfName = ref('')
 const pdfId = ref('')
+const pdfTaskId = ref(null)
+const deadlineFile = { id: 'deadline', name: 'Fristenblatt.pdf' }
+const activePdfTask = computed(() => tasks.value.find(task => task.id === pdfTaskId.value))
 let requestNumber = 0
+let tasksRequestController
 let pdfRequestNumber = 0
 let refreshing = false
+let deadlineVersion = ''
+let deadlineChannelName = ''
+let subscribedDeadlineChannel = ''
+let deadlineSignalPending = false
+let taskRefreshTimer
+
+function leaveDeadlineChannel() {
+    if (!subscribedDeadlineChannel) return
+    echo().leaveChannel(`private-${subscribedDeadlineChannel}`)
+    subscribedDeadlineChannel = ''
+}
+
+function subscribeToDeadlines() {
+    if (!props.active || !/^user\.\d+$/.test(deadlineChannelName) || subscribedDeadlineChannel === deadlineChannelName) return
+
+    const config = resolveAdminEchoConfig(window.schooltoolEchoEnvironment ?? {})
+    if (config.broadcaster === 'null') return
+
+    try {
+        if (!echoIsConfigured()) {
+            configureEcho({
+                ...config,
+                channelAuthorization: {
+                    // The SPA login rotates the CSRF token. Axios uses the current XSRF cookie.
+                    customHandler: ({ socketId, channelName }, callback) => {
+                        axios.post(config.authEndpoint, { socket_id: socketId, channel_name: channelName }, { timeout: 3000 })
+                            .then(({ data }) => callback(null, data), failure => callback(failure, null))
+                    },
+                },
+            })
+        }
+        echo().private(deadlineChannelName).listen('.course-work.deadline-changed', () => {
+            deadlineSignalPending = true
+            flushDeadlineSignal()
+        })
+        subscribedDeadlineChannel = deadlineChannelName
+    } catch {
+        // The lightweight deadline check also works without a push connection.
+    }
+}
+
+function flushDeadlineSignal() {
+    if (!deadlineSignalPending || !canRefreshTasks()) return
+    deadlineSignalPending = false
+    void refreshDeadlines()
+}
+
+function deadlineExpired(deadline) {
+    return workDeadlineExpired({ finish_until_date: deadline.date, finish_until_time: deadline.time }, deadlineNow.value)
+}
 
 function testActionLabel(test) {
     if (test.attempt_state === 'in_progress') return 'MC-Test fortsetzen'
@@ -97,6 +206,7 @@ function clearPdf() {
 async function openPdf(task, file) {
     clearPdf()
     const request = pdfRequestNumber
+    pdfTaskId.value = task.id
     pdfName.value = file.name
     pdfId.value = file.id
     pdfError.value = ''
@@ -118,51 +228,177 @@ function dateLabel(value) {
     return new Intl.DateTimeFormat('de-AT').format(new Date(`${value}T12:00:00`))
 }
 
+const pointsFormat = new Intl.NumberFormat('de-AT', { maximumFractionDigits: 2 })
+function pointsLabel(value) {
+    return `${pointsFormat.format(value)} ${value === 1 ? 'Punkt' : 'Punkte'}`
+}
+
 async function load(preserveTasks = false) {
     const request = ++requestNumber
+    const controller = new AbortController()
+    tasksRequestController?.abort()
+    tasksRequestController = controller
     if (!preserveTasks) {
         tasks.value = []
         loading.value = true
     }
-    error.value = ''
+    if (!preserveTasks) error.value = ''
     try {
-        const response = await axios.get(index.url(props.courseId))
-        if (request === requestNumber) tasks.value = response.data.tasks || []
+        const response = await axios.get(index.url(props.courseId), { timeout: 10000, signal: controller.signal })
+        if (request !== requestNumber) return false
+        const channel = response.headers?.['x-schooltool-deadline-channel'] ?? ''
+        if (channel !== deadlineChannelName) leaveDeadlineChannel()
+        deadlineChannelName = channel
+        subscribeToDeadlines()
+        tasks.value = response.data.tasks || []
+        deadlineVersion = ''
+        deadlineNow.value = Date.now()
+        error.value = ''
+        return true
     } catch (failure) {
-        if (request === requestNumber) error.value = failure.response?.data?.message || 'Deine Aufgaben konnten nicht geladen werden.'
+        if (request === requestNumber && (!preserveTasks || [401, 403, 404].includes(failure.response?.status))) {
+            deadlineChannelName = ''
+            leaveDeadlineChannel()
+            tasks.value = []
+            error.value = failure.response?.data?.message || 'Deine Aufgaben konnten nicht geladen werden.'
+        }
+        return false
     } finally {
-        if (request === requestNumber) loading.value = false
+        if (tasksRequestController === controller) tasksRequestController = undefined
+        if (request === requestNumber) {
+            loading.value = false
+            flushDeadlineSignal()
+        }
     }
 }
 
-async function refreshOnReturn() {
-    if (document.visibilityState !== 'visible' || loading.value || refreshing) return
+async function reloadTasks() {
+    if (!props.active || loading.value || manualReloading.value) return
+    manualReloading.value = true
+    try {
+        const minimumFeedback = new Promise(resolve => window.setTimeout(resolve, 650))
+        await Promise.all([load(), minimumFeedback])
+    } finally {
+        manualReloading.value = false
+    }
+}
+
+function canRefreshTasks() {
+    if (!props.active || document.visibilityState !== 'visible') return false
+    deadlineNow.value = Date.now()
+    return !loading.value && !refreshing
+}
+
+async function refreshTasks() {
+    if (!canRefreshTasks()) return
     refreshing = true
     try {
         await load(true)
     } finally {
         refreshing = false
+        flushDeadlineSignal()
+    }
+}
+
+async function refreshDeadlines() {
+    if (!canRefreshTasks()) return
+    const request = requestNumber
+    const controller = new AbortController()
+    tasksRequestController = controller
+    refreshing = true
+    try {
+        const { data } = await axios.get(index.url(props.courseId), {
+            params: { view: 'deadlines', version: deadlineVersion }, timeout: 10000, signal: controller.signal,
+        })
+        if (request !== requestNumber || !props.active) return
+        if (Array.isArray(data.tasks)) {
+            const changed = new Map(data.tasks.map(task => [task.id, task]))
+            const needsFullReload = tasks.value.length !== changed.size || tasks.value.some(task => {
+                const saved = changed.get(task.id)
+                return saved?.status !== (task.status || 'released')
+                    || saved?.submission_method?.channel !== task.submission_method?.channel
+                    || saved?.submission_method?.email !== task.submission_method?.email
+                    || ((task.tests?.length || task.submission_method?.channel === 'portal') && (saved.deadline?.date !== task.deadline?.date || saved.deadline?.time !== task.deadline?.time))
+            })
+            if (needsFullReload) {
+                if (!await load(true)) return
+            } else {
+                tasks.value = tasks.value.map(task => {
+                    const { deadline } = changed.get(task.id)
+                    return { ...task, deadline }
+                })
+            }
+        }
+        deadlineVersion = data.version
+        deadlineNow.value = Date.now()
+    } catch (failure) {
+        if (request === requestNumber && [401, 403, 404].includes(failure.response?.status)) {
+            deadlineChannelName = ''
+            leaveDeadlineChannel()
+            tasks.value = []
+            deadlineVersion = ''
+            error.value = failure.response?.data?.message || 'Deine Aufgaben konnten nicht geladen werden.'
+        }
+    } finally {
+        if (tasksRequestController === controller) tasksRequestController = undefined
+        refreshing = false
+        flushDeadlineSignal()
     }
 }
 
 watch(pdfDialog, isOpen => { if (!isOpen) clearPdf() })
-watch(() => props.courseId, () => { pdfDialog.value = false; clearPdf(); load() }, { immediate: true })
+watch(() => [activePdfTask.value?.id, JSON.stringify(activePdfTask.value?.deadline)], ([id, deadline], [previousId, previousDeadline]) => {
+    if (!pdfDialog.value) return
+    if (!id) pdfDialog.value = false
+    else if (id === previousId && deadline !== previousDeadline && pdfId.value === deadlineFile.id) {
+        openPdf(activePdfTask.value, deadlineFile)
+    }
+})
+watch(() => props.courseId, () => {
+    deadlineVersion = ''
+    pdfDialog.value = false
+    clearPdf()
+    load()
+}, { immediate: true })
+watch(() => props.active, active => {
+    if (active) {
+        subscribeToDeadlines()
+        refreshTasks()
+    } else {
+        deadlineSignalPending = false
+        leaveDeadlineChannel()
+    }
+})
 onMounted(() => {
-    window.addEventListener('focus', refreshOnReturn)
-    document.addEventListener('visibilitychange', refreshOnReturn)
+    window.addEventListener('focus', refreshTasks)
+    document.addEventListener('visibilitychange', refreshTasks)
+    taskRefreshTimer = window.setInterval(refreshDeadlines, 2000)
 })
 onBeforeUnmount(() => {
     requestNumber++
+    tasksRequestController?.abort()
+    deadlineSignalPending = false
+    leaveDeadlineChannel()
     clearPdf()
-    window.removeEventListener('focus', refreshOnReturn)
-    document.removeEventListener('visibilitychange', refreshOnReturn)
+    window.clearInterval(taskRefreshTimer)
+    window.removeEventListener('focus', refreshTasks)
+    document.removeEventListener('visibilitychange', refreshTasks)
 })
 </script>
 
 <style scoped>
-.task-list-heading { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin: 4px 0 18px; }
+.task-list-heading { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px 16px; margin: 4px 0 18px; }
 .task-list-heading h2 { color: #18243b; font-size: 1.35rem; line-height: 1.25; font-weight: 800; }
-.task-list-heading p { margin-top: 3px; color: #63718a; font-size: .9rem; }
+.task-heading-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.task-heading-actions .v-btn[aria-busy="true"] { opacity: .85; }
+.task-refresh-spinning { animation: task-refresh-spin .6s linear infinite; }
+@media (prefers-reduced-motion: reduce) {
+    /* The student workspace suppresses motion globally. A manual refresh gets one turn. */
+    .task-refresh-spinning { animation: task-refresh-spin .6s linear 1 !important; }
+}
+@keyframes task-refresh-spin {
+    to { transform: rotate(360deg); }
+}
 .task-count { flex: none; padding: 6px 12px; color: #4056a9; background: #edf1ff; border-radius: 999px; font-size: .8rem; font-weight: 800; }
 .task-list { display: grid; gap: 16px; }
 .task-card { overflow: hidden; background: #fff; border: 1px solid #dce4f2; border-radius: 18px; box-shadow: 0 4px 16px #1b2b5010; }
@@ -170,11 +406,15 @@ onBeforeUnmount(() => {
 .task-title-group { display: flex; align-items: center; gap: 14px; min-width: 0; }
 .task-title-icon { display: grid; flex: none; place-items: center; width: 48px; height: 48px; border-radius: 14px; color: #4056d6; background: #edf1ff; }
 .task-title-text { min-width: 0; }
-.task-title-text > span, .task-deadline span { display: block; color: #64718a; font-size: .78rem; font-weight: 700; }
+.task-title-text > span { display: block; color: #64718a; font-size: .78rem; font-weight: 700; }
 .task-title-text h3 { color: #18243b; font-size: 1.2rem; line-height: 1.3; font-weight: 800; overflow-wrap: anywhere; }
-.task-deadline { display: flex; align-items: center; gap: 10px; flex: none; padding: 10px 14px; color: #4056d6; background: #f0f3ff; border: 1px solid #e1e6fc; border-radius: 12px; }
-.task-deadline strong { display: block; color: #283b86; font-size: .92rem; }
-.task-deadline strong span { display: inline; color: inherit; font-size: inherit; }
+.task-status { flex-shrink: 0; align-self: flex-start; padding: 7px 11px; border-radius: 8px; background: #fff4db; color: #714a0e; font-size: .82rem; font-weight: 700; }
+.task-status--released { color: #225c42; background: #e6f5ec; }
+.task-announcement-details { display: flex; flex-wrap: wrap; gap: 12px 24px; padding: 0 24px 22px; color: #18243b; }
+.task-announcement-details:empty { display: none; }
+.task-announcement-details dt { color: #53617a; font-size: .78rem; font-weight: 700; }
+.task-announcement-details dd { font-weight: 700; }
+.task-deadline-expired { color: #9a2525; font-size: .78rem; }
 .task-description { padding: 0 24px 22px; }
 .task-description h4, .task-materials h4 { color: #53617a; font-size: .8rem; font-weight: 800; margin-bottom: 7px; }
 .task-instructions { white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -194,7 +434,7 @@ onBeforeUnmount(() => {
 @media (max-width: 600px) {
     .task-list-heading { align-items: flex-start; }
     .task-card-header { align-items: stretch; flex-direction: column; gap: 14px; padding: 18px; }
-    .task-deadline { align-self: flex-start; }
+    .task-announcement-details { padding: 0 18px 18px; }
     .task-description { padding: 0 18px 18px; }
     .task-materials { padding: 16px 18px 18px; }
     .task-actions { flex-direction: column; }

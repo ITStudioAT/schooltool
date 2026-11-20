@@ -166,13 +166,14 @@ test('confirmed preview creates and verifies the full Dropbox package once witho
     }
     $metadata = json_decode(collect($state->writes)->firstWhere('name', 'Anlage_und_Quellen.json')['bytes'], true);
     expect($metadata['Abgabeschluss'])->toBe('2026-11-12T20:15:00+01:00');
-    expect($metadata['MitgeteilteAbgabefrist'])->toBeNull();
+    expect($metadata)->not->toHaveKey('MitgeteilteAbgabefrist');
+    expect($metadata['Schooltool_Fristdaten']['main_deadline'])->toBe(['date' => '2026-11-12', 'time' => '20:15']);
     expect($metadata['Schooltool_Arbeit_ID'])->toBe($this->work->id);
     $package = collect($state->writes)->firstWhere('name', 'Schooltool-Vorbereitung.json')['bytes'];
     expect(app(TeachingWorkDispatchImport::class)->parse($package)['mode'])->toBe('prepared');
     $pdf = collect($state->writes)->firstWhere('name', 'Aufgabenstellung_datenschutz.pdf')['bytes'];
     expect($pdf)->toStartWith('%PDF-');
-    expect((new Parser)->parseContent($pdf)->getText())->toContain('Datenschutzfälle');
+    expect((new Parser)->parseContent($pdf)->getText())->toContain('Datenschutzfälle', 'Endgültige Abgabefrist', '12.11.2026', '20:15 Uhr');
     expect($this->work->fresh()->getAttributes())->toBe($before);
     Http::assertNothingSent();
     Mail::assertNothingSent();

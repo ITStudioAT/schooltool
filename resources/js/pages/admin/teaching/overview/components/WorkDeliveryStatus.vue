@@ -1,9 +1,17 @@
 <template>
-    <span v-if="portalPending || work.local_task_copy || workAutomationEnabled(work) || workHasProgress(work)" class="d-inline-flex flex-wrap align-center ga-1" @click.stop @keydown.stop>
-        <v-btn v-if="portalRelease || portalPending" icon :size="Number(size) > 20 ? 'small' : 'x-small'" :density="Number(size) > 20 ? 'default' : 'compact'" variant="text" :color="portalPending ? 'warning' : 'success'" :disabled="disabled" :title="portalActionLabel" :aria-label="portalActionLabel" @click.stop="opened = 'preparation'">
+    <WorkStudentDistribution :key="work.id" :work="work" :date="date" :available="exerciseReady || work.local_task_copy"
+        :prepared-exercise="modernPrepared" :disabled="disabled || savingCompletion" @saved="emit('saved', $event)"
+        @tests-updated="opened === 'preparation' && portalRelease && loadStudentStatuses()">
+    <template #activator="{ open: openStudentDistribution, active: studentDistributionOpen, available: canOpenStudentDistribution, label: studentDistributionLabel, buttonProps: studentDistributionButtonProps }">
+    <slot v-if="$slots.workflow" name="workflow" :stages="stages" :open-stage="openStage"
+        :release="portalRelease" :release-prepared="portalPrepared" :release-paused="portalWithdrawn"
+        :release-available="canOpenStudentDistribution || Boolean(portalRelease)" :open-release="() => openWorkflowRelease(openStudentDistribution, canOpenStudentDistribution)"
+        :dispatch="dispatch" :legacy-mail="legacyMailAvailable" :open-legacy-mail="openLegacyMail" />
+    <span v-else-if="portalPending || work.local_task_copy || workAutomationEnabled(work) || workHasProgress(work)" class="d-inline-flex flex-wrap align-center ga-1" @click.stop @keydown.stop>
+        <v-btn v-if="portalRelease || portalPending" icon :size="Number(size) > 20 ? 'small' : 'x-small'" :density="Number(size) > 20 ? 'default' : 'compact'" variant="text" :color="portalPending ? 'warning' : 'success'" :disabled="disabled" :title="portalActionLabel" :aria-label="portalActionLabel" @click.stop="portalPending ? openStudentDistribution() : (opened = 'preparation')">
             <v-icon :size="size">mdi-account-school-outline</v-icon>
         </v-btn>
-        <v-btn v-if="!portalRelease && !portalPending" icon :size="Number(size) > 20 ? 'small' : 'x-small'" :density="Number(size) > 20 ? 'default' : 'compact'" variant="text" :color="preparation.complete ? 'success' : 'error'" :disabled="disabled" :aria-label="preparation.label" :title="preparation.label" data-workflow-stage="preparation" @click.stop="opened = 'preparation'">
+        <v-btn v-if="!portalRelease && !portalPending" icon :size="Number(size) > 20 ? 'small' : 'x-small'" :density="Number(size) > 20 ? 'default' : 'compact'" variant="text" :color="modernPrepared ? 'primary' : preparation.complete ? 'success' : 'error'" :disabled="disabled" :aria-label="preparationActionLabel" :title="preparationActionLabel" data-workflow-stage="preparation" @click.stop="opened = 'preparation'">
             <v-icon :size="size">mdi-email-edit-outline</v-icon>
         </v-btn>
         <v-btn v-if="!portalRelease && !portalPending" icon :size="Number(size) > 20 ? 'small' : 'x-small'" :density="Number(size) > 20 ? 'default' : 'compact'" variant="text" :color="sent || manuallyCompleted ? 'success' : 'error'" :disabled="disabled || sendBlocked" :aria-label="sendLabel" :title="sendBlocked ? 'Zuerst die E-Mail-Vorbereitung abschließen' : sendLabel" data-workflow-stage="send" @click.stop="opened = 'send'">
@@ -14,12 +22,12 @@
             <v-icon :size="size">{{ stage.icon }}</v-icon>
         </v-btn>
     </span>
-    <v-dialog v-model="dialog" max-width="640" scrollable :persistent="savingCompletion">
+    <v-dialog v-if="!studentDistributionOpen" v-model="dialog" max-width="640" scrollable :persistent="savingCompletion">
         <v-card>
             <v-card-title class="text-wrap">{{ opened === 'preparation' ? 'Aufgaben bereitstellen' : opened === 'send' ? 'E-Mail-Versand' : selectedStage?.title }} · {{ work.title }}</v-card-title>
             <v-card-text>
                 <v-alert v-if="completionError" type="error" variant="tonal" class="mb-3" role="alert">{{ completionError }}</v-alert>
-                <v-alert :type="opened === 'preparation' && portalPending ? 'warning' : opened === 'preparation' && portalRelease ? 'success' : opened === 'send' ? (sent || manuallyCompleted ? 'success' : 'warning') : (selectedStage?.complete ? 'success' : 'info')" variant="tonal">{{ opened === 'preparation' && portalWithdrawn ? 'Aufgabenfreigabe zurückgenommen · erneut pausiert vorbereiten' : opened === 'preparation' && portalPrepared ? 'Pausiert vorbereitet · noch nicht für Schüler:innen freigegeben' : opened === 'preparation' && portalRelease ? 'Im Schülerbereich bereitgestellt' : opened === 'send' ? sendLabel : selectedStage?.label }}</v-alert>
+                <v-alert :type="opened === 'preparation' && portalRelease ? 'success' : opened === 'send' ? (sent || manuallyCompleted ? 'success' : 'warning') : (selectedStage?.complete ? 'success' : 'info')" variant="tonal">{{ opened === 'preparation' && portalRelease ? 'Im Schülerbereich bereitgestellt' : opened === 'send' ? sendLabel : selectedStage?.label }}</v-alert>
                 <section v-if="opened === 'preparation' && portalRelease" class="student-status mt-4" aria-label="Schülerinnen und Schüler">
                     <div class="student-status__header">
                         <div>
@@ -132,14 +140,15 @@
                 </template>
                 <div v-if="(opened === 'preparation' || opened === 'send') && !portalPending" class="d-flex flex-wrap ga-2 mt-4">
                     <WorkEmailPreparation :work="work" :date="date" :state="state" :disabled="savingCompletion" :modern-prepared="modernPrepared" :action="opened === 'send' ? 'send' : 'prepare'" />
-                    <WorkStudentDistribution v-if="opened === 'preparation' && !portalRelease" :work="work" :date="date" :available="exerciseReady || work.local_task_copy" :defer-assignment="modernPrepared" :disabled="savingCompletion" @saved="emit('saved', $event)" />
+                    <v-btn v-if="opened === 'preparation' && !portalRelease && canOpenStudentDistribution" v-bind="studentDistributionButtonProps" @click.stop="openStudentDistribution">{{ studentDistributionLabel }}</v-btn>
                 </div>
                 <v-alert v-if="opened === 'preparation' && modernPrepared && !portalPending"
                     type="info" variant="tonal" class="mt-3">Die KI zeigt die vorbereiteten E-Mails zur Prüfung. Der Prüfungsstatus bestätigt keine Versandbereitschaft.</v-alert>
             </v-card-text>
             <v-card-actions class="d-flex flex-wrap ga-2" aria-label="Dialogaktionen">
-                <v-btn v-if="opened === 'preparation' && portalRelease" color="warning" variant="tonal" :disabled="savingCompletion || !!testActionBusy" @click="withdrawConfirm = true">Freigabe zurücknehmen</v-btn>
-                <WorkStudentDistribution v-if="opened === 'preparation' && (portalRelease || portalPending)" :work="work" :date="date" :available="exerciseReady" :disabled="savingCompletion" @saved="emit('saved', $event)" />
+                <v-btn v-if="opened === 'preparation' && portalRelease" color="warning" variant="tonal" prepend-icon="mdi-pause"
+                    :disabled="savingCompletion || !!testActionBusy" @click="withdrawConfirm = true">Freigabe pausieren</v-btn>
+                <v-btn v-if="opened === 'preparation' && (portalRelease || portalPending) && canOpenStudentDistribution" v-bind="studentDistributionButtonProps" @click.stop="openStudentDistribution">{{ studentDistributionLabel }}</v-btn>
                 <WorkEmailPreparation v-if="opened === 'preparation' && !portalPending" :work="work" :date="date" :state="state" :disabled="savingCompletion" :modern-prepared="modernPrepared" status-only>
                     <template #status-activator="{ open, available, label }">
                         <v-btn v-if="!modernPrepared || available" v-show="available" variant="tonal" prepend-icon="mdi-eye-outline" :title="label" @click.stop="open">Versandbereitschaft ansehen</v-btn>
@@ -154,7 +163,7 @@
                 <WorkSubmissionCollection v-if="opened === 'collection' && !selectedStage?.simulation" :work="work" :date="date" :dispatch="dispatch" :repeat="(!selectedStage?.manuallyCompleted && selectedStage?.complete) || Boolean(lastCollectionAt)" :disabled="savingCompletion" />
                 <v-btn v-if="opened === 'collection' && selectedStage?.simulation" variant="tonal" prepend-icon="mdi-flask-outline" to="/admin/teaching-tools/simulator">Simulator öffnen</v-btn>
                 <WorkGradingAction v-if="opened === 'evaluation'" :work="work" :date="date" :repeat="selectedStage?.complete && !selectedStage?.manuallyCompleted"
-                    :disabled="selectedStage?.blocked || savingCompletion || (!stages[0]?.complete && !lastCollectionAt)" />
+                    :disabled="selectedStage?.blocked || savingCompletion || (!stages[0]?.complete && !lastCollectionAt && !hasPortalSubmissions)" />
                 <v-btn v-if="opened === 'publication'" variant="tonal" prepend-icon="mdi-account-check-outline" :disabled="selectedStage?.blocked || savingCompletion" @click="emit('import', work, false, { date }); opened = null">
                     {{ selectedStage?.complete ? 'Ergebnisse erneut übernehmen' : 'Ergebnisse übernehmen' }}
                 </v-btn>
@@ -164,6 +173,8 @@
             </v-card-actions>
         </v-card>
     </v-dialog>
+    </template>
+    </WorkStudentDistribution>
     <v-dialog v-model="resetConfirmation" max-width="520" :persistent="!!testActionBusy">
         <v-card>
             <v-card-title>MC-Test zurücksetzen?</v-card-title>
@@ -174,15 +185,15 @@
     </v-dialog>
     <v-dialog v-model="withdrawConfirm" max-width="520" :persistent="withdrawing">
         <v-card>
-            <v-card-title>Aufgabenfreigabe zurücknehmen?</v-card-title>
-            <v-card-text>Die Aufgabe verschwindet aus dem Schülerbereich. Die Freigabe des MC-Tests bleibt bestehen.</v-card-text>
-            <v-card-actions><v-spacer /><v-btn :disabled="withdrawing" @click="withdrawConfirm = false">Abbrechen</v-btn><v-btn color="warning" :loading="withdrawing" @click="withdrawRelease">Freigabe zurücknehmen</v-btn></v-card-actions>
+            <v-card-title>Aufgabenfreigabe pausieren?</v-card-title>
+            <v-card-text>Die Aufgabe wird unter „Meine Aufgaben“ als pausiert angezeigt. Laufende und startbare verknüpfte MC-Tests werden mitpausiert. Countdown und Bearbeitungszeit halten an. Bei erneuter Aufgabenfreigabe bleiben die Tests pausiert.</v-card-text>
+            <v-card-actions><v-spacer /><v-btn :disabled="withdrawing" @click="withdrawConfirm = false">Abbrechen</v-btn><v-btn color="warning" :loading="withdrawing" @click="withdrawRelease">Freigabe pausieren</v-btn></v-card-actions>
         </v-card>
     </v-dialog>
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, ref, useSlots, watch } from 'vue'
 import { show, studentDistribution, update } from '@/actions/App/Http/Controllers/Admin/Teaching/CourseWorkController'
 import { showTest, pauseTest, resumeTest, controlAttempts } from '@/actions/App/Http/Controllers/Admin/MultipleChoiceController'
 import { sortedPeople } from '@/helpers/personNames'
@@ -204,6 +215,7 @@ import WorkStudentDistribution from './WorkStudentDistribution.vue'
 const props = defineProps({ work: { type: Object, required: true }, date: { type: String, default: '' }, state: { type: Object, default: null }, size: { type: [Number, String], default: 18 }, disabled: Boolean, exerciseReady: Boolean })
 const admin = useAdminStore()
 const courseStore = useCourseStore()
+const slots = useSlots()
 const emit = defineEmits(['import', 'saved'])
 const modernPrepared = computed(() => {
     const state = props.state
@@ -223,8 +235,12 @@ const portalRelease = computed(() => workStudentDistribution(props.work))
 const portalPrepared = computed(() => Boolean(props.work.status?.student_distribution?.prepared_at && !props.work.status.student_distribution.published_at))
 const portalWithdrawn = computed(() => Boolean(props.work.status?.student_distribution?.published_at && props.work.status.student_distribution.withdrawn_at))
 const portalPending = computed(() => portalPrepared.value || portalWithdrawn.value)
-const portalActionLabel = computed(() => portalWithdrawn.value ? 'Aufgabenfreigabe zurückgenommen · erneut vorbereiten'
-    : portalPrepared.value ? 'Aufgaben pausiert vorbereitet · jetzt freigeben' : 'Aufgaben im Schülerbereich bereitgestellt')
+const portalActionLabel = computed(() => portalPending.value ? 'Pausierte Aufgaben verwalten' : 'Aufgaben im Schülerbereich bereitgestellt')
+function openWorkflowRelease(openStudentDistribution, available) {
+    if (props.disabled) return
+    if (portalRelease.value) opened.value = 'preparation'
+    else if (available) openStudentDistribution()
+}
 const linkedTests = computed(() => {
     const tests = props.work.status?.multiple_choice_tests || {}
     return [...new Set([tests[props.date || props.work.date_for_all_groups], tests.all].map(test => test?.test_id).filter(Boolean))]
@@ -305,7 +321,11 @@ function studentStatus(id) {
     const matches = studentAttempts.value.filter(attempt => String(attempt.student_id) === String(id))
     if (!matches.length) return 'Kein Test zugeordnet'
     const labels = { not_started: 'Noch nicht begonnen', ready: 'Bereit', in_progress: 'In Bearbeitung', submitted: 'Abgegeben', timeout: 'Zeit abgelaufen' }
-    return matches.map(attempt => attempt.individual_paused_at ? 'Pausiert' : labels[attempt.status] || 'Status unbekannt').join(' · ')
+    return matches.map(attempt => {
+        const testPaused = studentTests.value.some(test => String(test.id) === String(attempt.test_id) && test.paused_at)
+        return !attempt.completed_at && !['submitted', 'timeout'].includes(attempt.status) && (attempt.individual_paused_at || testPaused)
+            ? 'Pausiert' : labels[attempt.status] || 'Status unbekannt'
+    }).join(' · ')
 }
 function studentTestTimedOut(id) {
     return !studentStatusLoading.value && !studentStatusError.value && studentAttempts.value.some(attempt =>
@@ -402,17 +422,33 @@ async function withdrawRelease() {
         opened.value = null
     } catch (error) {
         withdrawConfirm.value = false
-        completionError.value = error.response?.data?.message || error.message || 'Die Freigabe konnte nicht zurückgenommen werden.'
+        completionError.value = error.response?.data?.message || error.message || 'Die Freigabe konnte nicht pausiert werden.'
     } finally { withdrawing.value = false }
 }
-const stages = computed(() => workProgressStages(props.work).map(stage => !portalRelease.value && !preparation.value.complete
-    ? { ...stage, blocked: true, blockedBy: 'E-Mail-Vorbereitung' }
-    : !hasSentTasks.value ? { ...stage, blocked: true, blockedBy: 'E-Mail-Versand' } : stage))
+
+const stages = computed(() => workProgressStages(props.work).map(stage => {
+    if (slots.workflow) {
+        if (stage.complete || stage.count > 0) return { ...stage, blocked: false }
+        if (stage.key === 'evaluation' && hasPortalSubmissions.value) return { ...stage, blocked: false }
+        if (!hasSentTasks.value && !assignmentMailSent.value && !portalWithdrawn.value && !lastCollectionRunAt.value && !lastCollectionAt.value
+            && !props.work.local_task_copy) return { ...stage, blocked: true, blockedBy: 'Bereitstellung' }
+        return stage
+    }
+    if (!portalRelease.value && !preparation.value.complete) return { ...stage, blocked: true, blockedBy: 'E-Mail-Vorbereitung' }
+    return !hasSentTasks.value ? { ...stage, blocked: true, blockedBy: 'E-Mail-Versand' } : stage
+}))
 const stageLabel = stage => stage.blocked ? `${stage.label} · zuerst „${stage.blockedBy}“ abschließen`
     : stage.completedAt ? `${stage.label} · ${assessmentTimeText(stage.completedAt)}` : stage.label
 const openStage = stage => { if (!props.disabled && !stage.blocked) opened.value = stage.key }
 const lastCollectionAt = computed(() => workLastCollectionAt(props.work))
 const lastCollectionRunAt = computed(() => workLastCollectionRunAt(props.work))
+const hasPortalSubmissions = computed(() => {
+    if (!slots.workflow) return false
+    const date = props.date || props.work.date_for_all_groups
+    const students = new Set((props.work.groups || []).filter(group => !date || !group.date || group.date === date)
+        .flatMap(group => group.student_ids || []).map(String))
+    return (props.work.status?.portal_submissions || []).some(file => !file.withdrawn_at && students.has(String(file.student_id)))
+})
 const simulationEvaluation = computed(() => workSimulationEvaluation(props.work))
 const sortedSimulationRows = computed(() => sortedPeople(simulationEvaluation.value?.rows))
 const preparation = computed(() => {
@@ -429,6 +465,7 @@ const preparation = computed(() => {
     return { title: 'E-Mail-Vorbereitung', completionField: modernPrepared.value ? null : workManualCompletionFields.preparation, manuallyCompleted,
         complete: manuallyCompleted || ready, label: `E-Mail-Vorbereitung: ${manuallyCompleted ? 'manuell erledigt' : ready ? 'vorbereitet' : 'noch offen'}` }
 })
+const preparationActionLabel = computed(() => modernPrepared.value ? 'Aufgaben bereitstellen' : preparation.value.label)
 const sendBlocked = computed(() => !preparation.value.complete)
 const selectedStage = computed(() => opened.value === 'preparation' ? preparation.value : stages.value.find(stage => stage.key === opened.value))
 const nextAction = computed(() => modernPrepared.value && !portalRelease.value ? 'E-Mails vorbereiten'
@@ -456,6 +493,11 @@ const dispatch = computed(() => {
         confirmed_count: count, expected_count: students.size, sent_at: notifications[0]?.sent_at, transport: 'office_outlook' }
 })
 const sent = computed(() => !modernPrepared.value && dispatch.value.status === 'sent')
+const assignmentMailSent = computed(() => {
+    const batches = props.work.status?.assignment_mail?.batches
+    const batch = batches?.[props.date || 'all']
+    return ['partial', 'sent'].includes(batch?.state) && batch.transport === 'postmark'
+})
 const hasSentTasks = computed(() => Boolean(portalRelease.value) || (!modernPrepared.value && (manuallyCompleted.value || (['sent', 'partial'].includes(dispatch.value.status) && Number(dispatch.value.confirmed_count) > 0))))
 watch(stages, value => { if (value.find(stage => stage.key === opened.value)?.blocked) opened.value = null })
 watch(sendBlocked, blocked => { if (blocked && opened.value === 'send') opened.value = null })
@@ -464,6 +506,11 @@ const sendLabel = computed(() => modernPrepared.value ? 'E-Mail-Versand für die
     : manuallyCompleted.value ? 'E-Mail-Versand: manuell erledigt'
     : dispatch.value.status === 'partial' ? `E-Mail-Versand unvollständig: ${dispatch.value.confirmed_count} bestätigt`
         : dispatch.value.status === 'unknown' ? 'E-Mail-Versand nicht bestätigt – erneut prüfen' : 'E-Mails noch nicht versandt')
+const legacyMailAvailable = computed(() => !modernPrepared.value && !portalPending.value && workAutomationEnabled(props.work)
+    && (props.exerciseReady || preparation.value.complete || Number(dispatch.value.confirmed_count) > 0))
+function openLegacyMail() {
+    if (!props.disabled && legacyMailAvailable.value) opened.value = sendBlocked.value ? 'preparation' : 'send'
+}
 
 watch(opened, value => {
     completionError.value = ''

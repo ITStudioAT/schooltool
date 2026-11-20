@@ -5,8 +5,14 @@ import RegisterPage from '@/pages/homepage/register/Register.vue'
 import StudentPage from '@/pages/homepage/student/Student.vue'
 import ParentAccessPanel from '@/pages/homepage/student/components/ParentAccessPanel.vue'
 import StudentNavigationDrawer from '@/pages/homepage/student/components/StudentNavigationDrawer.vue'
+import { studentLoginReturn } from '@/pages/homepage/student/studentTasksNavigation'
 
 describe('code login availability guards', () => {
+    it('returns to the task selection after login without carrying the former test link', () => {
+        expect(studentLoginReturn({ panel: 'tasks', course: '22', access: 'former-test' })).toBe('/student/overview?panel=tasks&course=22')
+        expect(studentLoginReturn({ panel: 'tasks', course: '//outside.example' })).toBe('/student/overview?panel=tasks')
+    })
+
     it('register page marks code login unavailable when queue is down', () => {
         const isCodeLoginAvailable = (RegisterPage as any).computed.isCodeLoginAvailable.call({
             config: { health: { queue_working: false } },

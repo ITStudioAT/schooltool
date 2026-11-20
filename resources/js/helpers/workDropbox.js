@@ -2,6 +2,14 @@ import { shallowReactive } from 'vue'
 import { folders, show, refresh } from '@/actions/App/Http/Controllers/Admin/Teaching/WorkDropboxController'
 
 export const workDropboxStates = shallowReactive(new Map())
+
+export function workPdfFilename(disposition = '', fallback = 'Aufgaben-PDF.pdf') {
+    const encoded = disposition.match(/filename\*=utf-8''([^;]+)/i)?.[1]
+    if (encoded) {
+        try { return decodeURIComponent(encoded) } catch { /* Use the plain filename below. */ }
+    }
+    return disposition.match(/filename="([^"]+)"/i)?.[1] || disposition.match(/filename=([^;\s]+)/i)?.[1] || fallback
+}
 const pending = new Map()
 const suggestions = new Map()
 const exerciseChecks = shallowReactive(new Map())
@@ -19,7 +27,7 @@ export function workDropboxBinding(state) {
 
 function exerciseKey(key, work, date) {
     return JSON.stringify([key, date, work?.date_for_all_groups, work?.title, work?.finish_until_date,
-        work?.finish_until_time, work?.communicated_deadline, (work?.groups || []).map(group => [group.date, group.student_ids])])
+        work?.finish_until_time, (work?.groups || []).map(group => [group.date, group.student_ids])])
 }
 
 export function workExerciseCheck(key, work, date = '') {
@@ -31,7 +39,7 @@ export function workExerciseCheck(key, work, date = '') {
             const saved = JSON.parse(localStorage.getItem(exerciseStoragePrefix + cacheKey) || 'null')
             if (saved && ['found', 'missing', 'unknown'].includes(saved.status) && typeof saved.binding === 'string'
                 && Number.isFinite(Date.parse(saved.checkedAt)) && saved.data && saved.binding === workDropboxBinding(saved.data)) {
-                entry = saved
+                entry = { ...saved, restored: true }
                 exerciseChecks.set(cacheKey, entry)
             }
         } catch { /* A blocked browser cache must not prevent checking Dropbox. */ }
@@ -41,46 +49,69 @@ export function workExerciseCheck(key, work, date = '') {
 
 function saveExerciseCheck(cacheKey, entry) {
     exerciseChecks.set(cacheKey, entry)
-    try { localStorage.setItem(exerciseStoragePrefix + cacheKey, JSON.stringify(entry)) } catch { /* Keep the in-memory result. */ }
+    // The full work can contain personal submissions and addressed mails. Only persist the folder check.
+    const { saved_work, progress, collection_error, deadline_sync, ...data } = entry.data
+    try { localStorage.setItem(exerciseStoragePrefix + cacheKey, JSON.stringify({ ...entry, data })) } catch { /* Keep the in-memory result. */ }
 }
 
-export async function loadWorkExercise(key, work, date = '', fresh = false, deadlineDraft = null, refreshCollection = false, progressId = null, stream = null, statusOnly = false) {
+export function confirmCreatedWorkExercise(key, work, date, binding, folder, preparation) {
+    const state = workDropboxStates.get(key)
+    if (!state?.connected || !state.module_link?.folder?.id || workDropboxBinding(state) !== binding) return null
+
+    const checkedAt = new Date().toISOString()
+    const data = { ...state, exercise: { status: 'found', folder, preparation, checked_at: checkedAt } }
+    saveExerciseCheck(exerciseKey(key, work, date), { binding, status: 'found', data, folder, checkedAt, fromCreation: true })
+    return checkedAt
+}
+
+export async function loadWorkExercise(key, work, date = '', fresh = false, deadlineDraft = null, refreshCollection = false, progressId = null, stream = null, statusOnly = false, storedOnly = false) {
     if (!key) return null
     const cached = workExerciseCheck(key, work, date)
-    if (cached && !fresh) {
+    if (cached && !fresh && !storedOnly && !(cached.restored && cached.status === 'missing')) {
         if (!workDropboxStates.has(key)) workDropboxStates.set(key, cached.data)
         return cached.data
     }
     const cacheKey = exerciseKey(key, work, date)
     const binding = workDropboxBinding(workDropboxStates.get(key))
-    const requestKey = JSON.stringify([cacheKey, binding, fresh, deadlineDraft, refreshCollection, progressId, statusOnly])
+    const requestKey = JSON.stringify([cacheKey, binding, fresh, deadlineDraft, refreshCollection, progressId, statusOnly, storedOnly])
     if (exercisePending.has(requestKey)) return exercisePending.get(requestKey)
     const requestGeneration = generation
+    const creationConfirmedDuringCheck = () => {
+        const latest = workExerciseCheck(key, work, date)
+        return latest !== cached && latest?.fromCreation ? latest.data : null
+    }
     const request = (fresh ? axios.post(refresh.url(work.id), {
         ...(date ? { date } : {}),
         ...(statusOnly ? { status_only: true } : {}),
         finish_until_date: !statusOnly && deadlineDraft ? deadlineDraft.date || null : work.finish_until_date || null,
         finish_until_time: !statusOnly && deadlineDraft ? deadlineDraft.time || null : work.finish_until_time || null,
         expected: { date: work.finish_until_date || null, time: work.finish_until_time || null },
-        ...(refreshCollection && !statusOnly ? { refresh_collection: true } : {}),
+        ...(refreshCollection ? { refresh_collection: true } : {}),
         ...(progressId ? { progress_id: progressId } : {}),
         ...(stream ? { stream_progress: true } : {}),
     }, { timeout: 120000, ...(stream?.options || {}) }) : axios.get(show.url(work.id), { timeout: 45000,
-        params: { include_exercise: 1, ...(date ? { date } : {}) },
+        params: { include_exercise: 1, stored_only: 1, ...(date ? { date } : {}) },
     })).then(response => {
         const data = stream ? stream.result(response) : response.data
         const currentBinding = workDropboxBinding(workDropboxStates.get(key))
-        if (generation !== requestGeneration || (currentBinding !== binding && currentBinding !== workDropboxBinding(data))) {
+        const responseBinding = workDropboxBinding(data)
+        if (generation !== requestGeneration || (currentBinding !== binding && currentBinding !== responseBinding)) {
             throw new Error('Die Verbindung wurde während der Prüfung geändert.')
         }
+        const created = creationConfirmedDuringCheck()
+        if (created && responseBinding === binding && (!fresh || statusOnly)) return { ...data, exercise: created.exercise }
+        const moreRecent = workExerciseCheck(key, work, date)
+        if (storedOnly && moreRecent && moreRecent !== cached && moreRecent.binding === responseBinding) return moreRecent.data
         const status = data.connected && data.module_link?.folder?.id ? data.exercise?.status : 'missing'
-        saveExerciseCheck(exerciseKey(key, data.saved_work || work, date), { binding: workDropboxBinding(data), status: ['found', 'missing'].includes(status) ? status : 'unknown',
+        saveExerciseCheck(exerciseKey(key, data.saved_work || work, date), { binding: responseBinding, status: ['found', 'missing'].includes(status) ? status : 'unknown',
             data, folder: status === 'found' ? data.exercise?.folder : null,
-            checkedAt: Number.isFinite(Date.parse(data.exercise?.checked_at)) ? data.exercise.checked_at : new Date().toISOString() })
+            checkedAt: Number.isFinite(Date.parse(data.exercise?.checked_at)) ? data.exercise.checked_at : (storedOnly || !fresh ? null : new Date().toISOString()) })
         workDropboxStates.set(key, data)
         return data
     }).catch(error => {
-        if (generation === requestGeneration && workDropboxBinding(workDropboxStates.get(key)) === binding) {
+        if (!storedOnly && generation === requestGeneration && workDropboxBinding(workDropboxStates.get(key)) === binding) {
+            const created = creationConfirmedDuringCheck()
+            if (created && (!fresh || statusOnly)) return created
             const data = { ...workDropboxStates.get(key), exercise: { status: 'unknown', folder: null,
                 message: 'Der Anlagezustand konnte nicht geprüft werden. Bitte erneut prüfen.' } }
             saveExerciseCheck(cacheKey, { binding, status: 'unknown', data, folder: null, checkedAt: new Date().toISOString() })

@@ -9,6 +9,7 @@ use App\Models\TeachingCourse;
 use App\Models\TeachingCourseBehaviourEntry;
 use App\Models\TeachingCourseDate;
 use App\Models\TeachingCourseDateMaterialAttachment;
+use App\Models\TeachingCourseWork;
 use App\Models\TeachingSchoolHour;
 use App\Models\User;
 use App\Services\ParentStudentAccessService;
@@ -16,6 +17,7 @@ use App\Services\Teaching\TeachingExplanationCatalog;
 use App\Services\TeachingCourseDateService;
 use App\Services\TeachingHolidaySyncService;
 use App\Services\TeachingService;
+use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -44,8 +46,8 @@ class CourseController extends Controller
 
         $courses = TeachingCourse::where('school_id', $auth_user->school_id)
             ->where('schoolyear_id', $active_schoolyear_id)
-            ->whereHas('teachingCourseStudents', function ($query) use ($auth_user) {
-                $query->where('user_id', $auth_user->id)
+            ->whereHas('teachingCourseStudents', function ($query) use ($auth_user, $active_schoolyear_id) {
+                $query->forStudentAccount($auth_user, $active_schoolyear_id)
                     ->whereNull('canceled_at');
             })
             ->with('user:id,first_name,last_name,short,email,teaching_show_behaviour')
@@ -55,8 +57,8 @@ class CourseController extends Controller
                 },
             ])
             ->with([
-                'teachingCourseStudents' => function ($query) use ($auth_user) {
-                    $query->where('user_id', $auth_user->id);
+                'teachingCourseStudents' => function ($query) use ($auth_user, $active_schoolyear_id) {
+                    $query->forStudentAccount($auth_user, $active_schoolyear_id)->whereNull('canceled_at');
                 },
                 'teachingCourseDates' => function ($query) use ($today) {
                     $query->whereDate('date', '>=', $today)
@@ -236,7 +238,7 @@ class CourseController extends Controller
         }
 
         $studentData = $course->teachingCourseStudents()
-            ->where('user_id', $auth_user->id)
+            ->forStudentAccount($auth_user, $active_schoolyear_id)
             ->whereNull('canceled_at')
             ->first();
 
@@ -371,7 +373,7 @@ class CourseController extends Controller
             'behaviour_1_grade' => $showBehaviourGrade ? $studentData->behaviour_1_grade : null,
             'behaviour_2_grade' => $showBehaviourGrade ? $studentData->behaviour_2_grade : null,
             'behaviour_grade' => $showBehaviourGrade ? $studentData->behaviour_grade : null,
-            'notifications' => $notifications,
+            'notifications' => $notifications->concat($this->workResultNotices($course, $auth_user))->sortByDesc('date')->values(),
             'behaviour_entries' => $behaviourEntries,
             'show_behaviour' => $showBehaviour,
             'course_dates' => $courseDates,
@@ -381,7 +383,26 @@ class CourseController extends Controller
 
         return response()->json([
             'course' => $courseData,
-        ], 200);
+        ])->header('Cache-Control', 'private, no-store');
+    }
+
+    private function workResultNotices(TeachingCourse $course, User $student): Collection
+    {
+        return $course->teachingCourseWorks()->whereJsonContains('status->grade_visibility->student_notice->student_ids', (int) $student->id)
+            ->with(['teachingCourseStudentEntries' => fn ($entries) => $entries->where('user_id', $student->id)
+                ->where('teaching_course_id', $course->id)->select('id', 'teaching_course_work_id', 'user_id', 'grade')])
+            ->get(['id', 'title', 'groups', 'status'])
+            ->filter(fn (TeachingCourseWork $work): bool => $work->gradesVisibleToStudents()
+                && $work->teachingCourseStudentEntries->contains(fn ($entry): bool => $work->hasResultForEntry($entry)))
+            ->map(fn (TeachingCourseWork $work): array => [
+                'id' => 'work-result-'.$work->id,
+                'date' => CarbonImmutable::parse($work->status['grade_visibility']['student_notice']['changed_at'])->timezone('Europe/Vienna')->toDateString(),
+                'type' => 'Bewertung',
+                'description' => 'Deine Bewertung'.(filled($work->title) ? ' zu „'.$work->title.'“' : '').' ist unter „Leistungen“ verfügbar.',
+                'due_date' => null,
+                'done_date' => null,
+                'is_open' => true,
+            ]);
     }
 
     private function studentAttendanceStatus(

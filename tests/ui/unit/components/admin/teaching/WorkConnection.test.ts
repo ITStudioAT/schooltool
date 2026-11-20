@@ -51,6 +51,26 @@ async function chooseUnlink(wrapper: ReturnType<typeof mountConnection>['wrapper
 
 afterEach(() => { clearWorkDropboxStates(); vi.restoreAllMocks(); vi.unstubAllGlobals(); document.body.innerHTML = '' })
 
+it('keeps the folder dialog outside the chain button and treats its path as ordinary text', async () => {
+    const post = vi.fn()
+    const { wrapper, status } = mountConnection(post)
+    try {
+        await flushPromises()
+        await status.get('[role="button"]').trigger('click')
+        const dialog = status.get('[role="dialog"]')
+        expect(dialog.element.closest('[role="button"]')).toBeNull()
+        const path = dialog.get('[aria-label="Dropbox-Ordnerpfad"]')
+        const get = vi.mocked(axios.get)
+        const reads = get.mock.calls.length
+        await path.trigger('click')
+        await path.trigger('keydown.enter')
+        expect(get).toHaveBeenCalledTimes(reads)
+        expect(post).not.toHaveBeenCalled()
+        await button(status, 'Schließen').trigger('click')
+        expect(status.find('[role="dialog"]').exists()).toBe(false)
+    } finally { wrapper.unmount() }
+})
+
 it.each([
     { status: { folder_imported_at: '2026-10-13T12:54:00Z' } },
     { status: { dispatch_logs: [{ sha256: 'c'.repeat(64) }] } },
@@ -59,7 +79,7 @@ it.each([
     const { wrapper, status } = mountConnection(vi.fn(), unlinked, { ...work, ...progress })
     try {
         await flushPromises()
-        expect(button(wrapper, 'Verknüpfen')).toBeUndefined()
+        expect(button(wrapper, 'Lernmodul auswählen')).toBeUndefined()
         expect(button(wrapper, 'Ordner verknüpfen')).toBeDefined()
         await button(wrapper, 'Ordner verknüpfen').trigger('click')
         expect(wrapper.emitted('link')).toEqual([[{ ...work, ...progress }]])
@@ -67,7 +87,7 @@ it.each([
         workDropboxStates.set('7:2:65', saved)
         await flushPromises()
         expect(status.get('[role="img"]').attributes('color')).toBe('success')
-        expect(status.attributes('role')).toBe('button')
+        expect(status.get('[role="button"]').exists()).toBe(true)
     } finally { wrapper.unmount() }
 })
 
@@ -75,7 +95,7 @@ it('offers optional folder linking when the server confirms an older import with
     const { wrapper, status } = mountConnection(vi.fn(), { ...unlinked, has_import: true })
     try {
         await flushPromises()
-        expect(button(wrapper, 'Verknüpfen')).toBeUndefined()
+        expect(button(wrapper, 'Lernmodul auswählen')).toBeUndefined()
         expect(button(wrapper, 'Ordner verknüpfen')).toBeDefined()
         expect(status.find('[role="img"]').exists()).toBe(false)
     } finally { wrapper.unmount() }
@@ -86,10 +106,10 @@ it('opens the saved folder dialog and unlinks only its work while updating conte
     const { wrapper, context, status, writeText } = mountConnection(post)
     try {
         await flushPromises()
-        expect(button(wrapper, 'Verknüpfen')).toBeUndefined()
+        expect(button(wrapper, 'Lernmodul auswählen')).toBeUndefined()
         expect(button(wrapper, 'Verbindung')).toBeUndefined()
         expect(button(wrapper, 'Verbindung trennen')).toBeUndefined()
-        expect(status.attributes('tabindex')).toBe('0')
+        expect(status.get('[role="button"]').attributes('tabindex')).toBe('0')
         expect(status.get('[role="img"]').attributes('color')).toBe('success')
         await context.get('button').trigger('click')
         await flushPromises()
@@ -99,7 +119,7 @@ it('opens the saved folder dialog and unlinks only its work while updating conte
 
         expect(post).toHaveBeenCalledExactlyOnceWith('/api/admin/teaching/course_works/65/dropbox/folder', { unlink: true, link_version: saved.link_version }, { timeout: 45000 })
         expect(button(wrapper, 'Verbindung')).toBeUndefined()
-        expect(button(wrapper, 'Verknüpfen')).toBeDefined()
+        expect(button(wrapper, 'Lernmodul auswählen')).toBeDefined()
         expect(status.get('[role="img"]').attributes('color')).toBe('error')
         await context.get('button').trigger('click')
         await flushPromises()
@@ -115,7 +135,7 @@ it('keeps a saved assignment and its copied context after a rejected unlink', as
         await flushPromises()
         await chooseUnlink(status)
         expect(workDropboxStates.get('7:2:65')).toBe(saved)
-        expect(button(wrapper, 'Verknüpfen')).toBeUndefined()
+        expect(button(wrapper, 'Lernmodul auswählen')).toBeUndefined()
         expect(status.get('[role="alert"]').text()).toContain('Zuordnung wurde geändert.')
         await context.get('button').trigger('click')
         await flushPromises()
@@ -128,13 +148,50 @@ it('does not unlink merely by opening the dialog and ignores an uncommitted cand
     const { wrapper, status } = mountConnection(post, { ...unlinked, candidate: saved.module_link.folder })
     try {
         await flushPromises()
-        expect(button(wrapper, 'Verknüpfen')).toBeDefined()
+        expect(button(wrapper, 'Lernmodul auswählen')).toBeDefined()
         expect(button(wrapper, 'Verbindung')).toBeUndefined()
         workDropboxStates.set('7:2:65', saved)
         await flushPromises()
+        const get = vi.mocked((globalThis as any).axios.get)
+        get.mockClear()
         await status.get('[role="button"]').trigger('click')
         await flushPromises()
+        expect(status.get('[aria-label="Dropbox-Ordnerpfad"]').text()).toBe(saved.module_link.folder.path)
+        expect(get).not.toHaveBeenCalled()
         expect(post).not.toHaveBeenCalled()
+        await button(status, 'Schließen').trigger('click')
+        expect(status.find('[role="dialog"]').exists()).toBe(false)
+    } finally { wrapper.unmount() }
+})
+
+it('blocks known assessments and only rechecks on request before allowing an explicit unlink', async () => {
+    const post = vi.fn().mockResolvedValue({ data: unlinked })
+    const { wrapper, status } = mountConnection(post, { ...saved, exercise: { status: 'found', folder: { id: 'id:exam' } } })
+    try {
+        await flushPromises()
+        const get = vi.mocked(axios.get)
+        get.mockClear()
+        await status.get('[role="button"]').trigger('click')
+        expect(get).not.toHaveBeenCalled()
+        expect(status.text()).toContain('Zuerst „Leistungsfeststellung löschen“ bestätigen.')
+        expect(button(status, 'Verbindung trennen').attributes('disabled')).toBeDefined()
+        expect(post).not.toHaveBeenCalled()
+
+        get.mockResolvedValueOnce({ data: { ...saved, unlink_status: { status: 'unknown', message: 'Die LF-Löschung ist noch nicht bestätigt.' } } })
+        await button(status, 'LF-Stand prüfen').trigger('click')
+        await flushPromises()
+        expect(get).toHaveBeenCalledExactlyOnceWith('/api/admin/teaching/course_works/65/dropbox', { timeout: 45000, params: { include_unlink_status: 1 } })
+        expect(status.text()).toContain('Die LF-Löschung ist noch nicht bestätigt.')
+        expect(button(status, 'Verbindung trennen').attributes('disabled')).toBeDefined()
+
+        get.mockResolvedValueOnce({ data: { ...saved, unlink_status: { status: 'available' } } })
+        await button(status, 'LF-Stand prüfen').trigger('click')
+        await flushPromises()
+        expect(button(status, 'Verbindung trennen').attributes('disabled')).toBeUndefined()
+        expect(post).not.toHaveBeenCalled()
+        await button(status, 'Verbindung trennen').trigger('click')
+        await flushPromises()
+        expect(post).toHaveBeenCalledOnce()
     } finally { wrapper.unmount() }
 })
 
@@ -143,14 +200,14 @@ it('supports legacy folder associations and starts unlinked again after a fresh 
     try {
         await flushPromises()
         expect(button(wrapper, 'Verbindung')).toBeUndefined()
-        expect(button(wrapper, 'Verknüpfen')).toBeUndefined()
+        expect(button(wrapper, 'Lernmodul auswählen')).toBeUndefined()
         clearWorkDropboxStates()
         vi.stubGlobal('axios', { get: vi.fn().mockResolvedValue({ data: unlinked }) })
         wrapper.unmount()
         const fresh = mountConnection(vi.fn(), unlinked).wrapper
         try {
             await flushPromises()
-            expect(button(fresh, 'Verknüpfen')).toBeDefined()
+            expect(button(fresh, 'Lernmodul auswählen')).toBeDefined()
             expect(button(fresh, 'Verbindung')).toBeUndefined()
         } finally { fresh.unmount() }
     } finally { if (wrapper.exists()) wrapper.unmount() }
@@ -169,5 +226,19 @@ it('does not apply a delayed unlink response to a newly selected user', async ()
         await flushPromises()
         expect(workDropboxStates.get('7:2:65')).toBe(saved)
         expect(workDropboxStates.get('8:2:65')).not.toBe(unlinked)
+    } finally { wrapper.unmount() }
+})
+
+
+it.each([
+    { link_preparation: { status: 'partial' } },
+    { exercise: { status: 'missing', reusable: 'empty' } },
+])('offers an existing work a folder retry without requesting another handshake', async preparation => {
+    const { wrapper } = mountConnection(vi.fn(), { ...saved, ...preparation })
+    try {
+        await flushPromises()
+        expect(button(wrapper, 'Lernmodul auswählen')).toBeUndefined()
+        await button(wrapper, 'Prüfungsordner erneut anlegen').trigger('click')
+        expect(wrapper.emitted('link')).toEqual([[work]])
     } finally { wrapper.unmount() }
 })

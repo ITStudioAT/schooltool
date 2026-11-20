@@ -1,10 +1,11 @@
 <template>
-    <v-btn v-if="work?.id && workAutomationEnabled(work)" size="small" variant="tonal" prepend-icon="mdi-inbox-arrow-down-outline" :disabled="disabled || !hasSentTasks" @click.stop="openAction">{{ repeat ? 'Erneut einsammeln' : 'Abgaben einsammeln' }}</v-btn>
+    <v-btn v-if="work?.id && workAutomationEnabled(work) && work.status?.submission_method?.channel !== 'portal'" size="small" variant="tonal" prepend-icon="mdi-inbox-arrow-down-outline" :disabled="disabled || !hasSentTasks" @click.stop="openAction">{{ repeat ? 'Erneut einsammeln' : 'Abgaben einsammeln' }}</v-btn>
     <v-dialog v-if="opened" v-model="opened" max-width="720" scrollable :persistent="loading">
         <v-card>
             <v-card-title class="text-wrap">{{ repeat ? 'Abgaben erneut einsammeln' : 'Abgaben einsammeln' }} · {{ work.title }}</v-card-title>
             <v-card-text>
                 <p class="mb-3">KI-Auftrag kopieren und an die KI übergeben. Vorhandene Abgaben und Bewertungen bleiben erhalten.</p>
+                <p v-if="work.status?.submission_method?.email" class="text-body-2 mb-3">Abgabepostfach: {{ work.status.submission_method.email }}</p>
                 <p v-if="loading" role="status">KI-Auftrag wird geladen …</p>
                 <v-alert v-if="error" type="error" variant="tonal" class="mb-3" role="alert">{{ error }}</v-alert>
                 <template v-if="result">
@@ -33,6 +34,10 @@ const props = defineProps({ work: { type: Object, required: true }, date: { type
 const admin = useAdminStore()
 const hasSentTasks = computed(() => {
     const date = props.date || props.work.date_for_all_groups || ''
+    if (props.work.status?.submission_method?.channel === 'portal') return false
+    const batches = props.work.status?.assignment_mail?.batches || {}
+    const scoped = date ? [batches[date]] : Object.values(batches)
+    if (scoped.some(batch => batch?.transport === 'postmark' && batch.recipients?.some(row => row.state === 'accepted' && row.accepted_at))) return true
     const releaseGroups = (props.work.groups || []).filter(group => !date || (group.date || props.work.date_for_all_groups) === date)
     const releaseStudents = new Set(releaseGroups.flatMap(group => group.student_ids || []).map(String))
     const release = workStudentDistribution(props.work)

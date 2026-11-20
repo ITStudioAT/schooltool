@@ -398,7 +398,11 @@ class PersonalTeachingBackupService
         foreach ($tables['teaching_course_works'] ?? [] as $row) {
             $status = is_array($row['status'] ?? null) ? $row['status'] : json_decode($row['status'] ?? '[]', true, 512, JSON_THROW_ON_ERROR);
             $course = collect($tables['teaching_courses'])->firstWhere('id', $row['teaching_course_id']);
-            foreach (['evaluation_pdfs', 'dispatch_logs', 'student_task_files'] as $key) {
+            foreach (TeachingWorkAssignmentMail::artifactReferences($status) as $key => $file) {
+                $this->assertSafeFilePath('teaching_course_works', $row + ['school_id' => $course['school_id']], $file['file_path'], $file['storage_disk']);
+                $files[] = ['table' => 'teaching_course_works', 'id' => (int) $row['id'], 'column' => "status.{$key}.file_path", 'disk' => 'local', 'path' => $file['file_path']];
+            }
+            foreach (['evaluation_pdfs', 'dispatch_logs', 'student_task_files', 'portal_submissions'] as $key) {
                 foreach ($status[$key] ?? [] as $index => $file) {
                     $this->assertSafeFilePath('teaching_course_works', $row + ['school_id' => $course['school_id']], $file['file_path'], $file['storage_disk']);
                     $files[] = ['table' => 'teaching_course_works', 'id' => (int) $row['id'], 'column' => "status.{$key}.{$index}.file_path", 'disk' => 'local', 'path' => $file['file_path']];
@@ -447,7 +451,7 @@ class PersonalTeachingBackupService
         }
         $relative = $disk === '' && str_starts_with($path, 'app/private/') ? substr($path, 12) : $path;
         $allowed = match ($table) {
-            'teaching_course_works' => ['teaching/work_evaluations/'.$row['school_id'].'/', 'teaching/work_dispatches/'.$row['school_id'].'/', 'teaching/work_tasks/'.$row['school_id'].'/', 'teaching/synchronisation/'.$row['school_id'].'/', 'teaching/personal_restores/'],
+            'teaching_course_works' => ['teaching/work_evaluations/'.$row['school_id'].'/', 'teaching/work_dispatches/'.$row['school_id'].'/', 'teaching/work_tasks/'.$row['school_id'].'/', 'teaching/work_submissions/'.$row['school_id'].'/', 'teaching/assignment-mail/'.$row['id'].'/', 'teaching/assignment-mail/'.$row['school_id'].'/restored/', 'teaching/synchronisation/'.$row['school_id'].'/', 'teaching/personal_restores/'],
             'teaching_course_date_material_attachments' => ['teaching/course_date_materials/'.$row['teaching_course_date_material_id'].'/', 'teaching/personal_restores/'],
             'teaching_curriculum_documents' => [$row['school_id'].'/curricula/'.$row['teaching_curriculum_id'].'/', 'teaching/curriculum_unit_files/'.$row['teaching_curriculum_id'].'/', 'teaching/curriculum_imports/', 'teaching/personal_restores/'],
             default => ['teaching/imported_curricula/'],
@@ -515,7 +519,16 @@ class PersonalTeachingBackupService
                     $materials = json_decode($row['materials'], true, 512, JSON_THROW_ON_ERROR);
                     $materials['archive_path'] = $path;
                     $row['materials'] = json_encode($materials, JSON_THROW_ON_ERROR);
-                } elseif ($file['table'] === 'teaching_course_works' && preg_match('/\Astatus\.(evaluation_pdfs|dispatch_logs|student_task_files)\.(\d+)\.file_path\z/', $file['column'], $match)) {
+                } elseif ($file['table'] === 'teaching_course_works' && str_starts_with($file['column'], 'status.assignment_mail.')) {
+                    $status = is_array($row['status']) ? $row['status'] : json_decode($row['status'], true, 512, JSON_THROW_ON_ERROR);
+                    $refs = TeachingWorkAssignmentMail::artifactReferences($status);
+                    $key = substr($file['column'], strlen('status.'), -strlen('.file_path'));
+                    if (! isset($refs[$key])) {
+                        $this->invalid('Unbekannte Dateizuordnung der E-Mail-Vorbereitung.');
+                    }
+                    data_set($status, $key.'.file_path', $path);
+                    $row['status'] = json_encode($status, JSON_THROW_ON_ERROR);
+                } elseif ($file['table'] === 'teaching_course_works' && preg_match('/\Astatus\.(evaluation_pdfs|dispatch_logs|student_task_files|portal_submissions)\.(\d+)\.file_path\z/', $file['column'], $match)) {
                     $status = is_array($row['status']) ? $row['status'] : json_decode($row['status'], true, 512, JSON_THROW_ON_ERROR);
                     $status[$match[1]][(int) $match[2]]['file_path'] = $path;
                     $status[$match[1]][(int) $match[2]]['storage_disk'] = 'local';

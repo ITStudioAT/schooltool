@@ -165,6 +165,18 @@ test('the work endpoint checks its own confirmed module instead of a global cata
     $this->getJson($url)->assertConflict();
 });
 
+test('only the legacy template folder may also contain dated exam folders', function (string $name, ?float $expected): void {
+    $this->template = "# Aufgaben\nGesamtpunkte: 35 Punkte";
+    $path = $this->root.'/emails/'.mb_strtolower($name);
+    $this->entries[] = ['.tag' => 'folder', 'id' => 'id:assessment', 'name' => $name, 'path_lower' => $path];
+    $this->entries[] = ['.tag' => 'file', 'id' => 'id:assessment-file', 'name' => 'Aufgaben.md',
+        'path_lower' => $path.'/aufgaben.md', 'rev' => 'source', 'size' => strlen($this->template)];
+    $this->entries[] = ['.tag' => 'folder', 'id' => 'id:previous-exam', 'name' => '2026-10-20 – 3B',
+        'path_lower' => $path.'/2026-10-20 – 3b'];
+    fakeMcModuleSource($this);
+    expect(app(McModuleTemplateSource::class)->assessmentPoints($this->teacher, workModuleSourceLink($this)))->toBe($expected);
+})->with([['Leistungsfeststellung', 35.0], ['Prüfungsvorlage', null]]);
+
 test('module catalog checks the answer key and rejects changed options without saving', function (): void {
     $this->documents = [
         'rev:source' => "### 1. Frage?\n- [ ] A\n- [ ] B\n",

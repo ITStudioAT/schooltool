@@ -62,7 +62,7 @@
                     </v-alert>
                     <v-alert v-else-if="!json_preview.can_import" type="error" variant="tonal" density="compact" class="mt-2">Übernehmen gesperrt. Frist und Zuordnungen in den Details prüfen.</v-alert>
                     <v-alert v-if="json_preview.deadline_update" type="info" variant="tonal" density="compact" class="mt-2 mb-2">
-                        Prüfungsschluss wird aus dem Arbeitsordner übernommen: {{ assessmentTimeText(json_preview.deadline_update.at) }} (Europe/Vienna).
+                        Prüfungsschluss wird aus dem Arbeitsordner übernommen: {{ json_preview.deadline_update.at ? assessmentTimeText(json_preview.deadline_update.at) : json_preview.deadline_update.date?.split('-').reverse().join('.') }} (Europe/Vienna).
                     </v-alert>
                     <v-alert v-if="json_preview.final_download" type="warning" variant="tonal" density="compact" class="mt-2">
                         Abschlussdownload: Bestätigte Nichtabgaben werden mit 0 Punkten bewertet.

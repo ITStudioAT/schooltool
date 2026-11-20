@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Support\SafeHtml;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -58,6 +59,18 @@ class TeachingCourseStudent extends Model
     public function import116(): BelongsTo
     {
         return $this->belongsTo(Import116::class, 'import116_id');
+    }
+
+    public function scopeForStudentAccount(Builder $query, User $student, ?int $schoolyearId): Builder
+    {
+        if ($schoolyearId === null) {
+            return $query->where('user_id', $student->id);
+        }
+
+        return $query->where(fn (Builder $enrolment) => $enrolment->where('user_id', $student->id)
+            ->orWhere(fn (Builder $imported) => $imported->whereNull('user_id')
+                ->whereHas('import116', fn (Builder $account) => $account->where('user_id', $student->id)
+                    ->where('school_id', $student->school_id)->where('schoolyear_id', $schoolyearId))));
     }
 
     public function studentId(): ?int

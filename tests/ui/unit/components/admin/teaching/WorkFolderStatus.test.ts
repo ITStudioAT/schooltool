@@ -25,18 +25,18 @@ it('keeps the folder indicator visible while a published work loads its link', a
     } })
     try {
         expect(wrapper.get('[role="img"]').attributes('color')).toBe('grey')
-        expect(wrapper.attributes('title')).toContain('wird geprüft')
+        expect(wrapper.get('span[title]').attributes('title')).toContain('wird geprüft')
         finish({ data: { module_link: { folder: { id: 'id:module', name: 'Modul' } } } })
         await flushPromises()
         expect(wrapper.get('[role="img"]').attributes('color')).toBe('success')
-        expect(wrapper.attributes('title')).toContain('Ordner verknüpft')
+        expect(wrapper.get('span[title]').attributes('title')).toContain('Ordner verknüpft')
     } finally { wrapper.unmount() }
 })
 
 it('restores the confirmed folder immediately for a published work after reloading', async () => {
     const publishedWork = { ...work, status: { student_distribution: { published_at: '2026-10-29T08:00:00Z', student_ids: [1] } } }
     const data = { connected: true, module_link: { folder: { id: 'id:module', name: 'Modul', path: '/Modul' } },
-        exercise: { status: 'found', folder: { id: 'id:exercise', name: 'Prüfung' } } }
+        exercise: { status: 'found', checked_at: '2026-10-29T08:00:00Z', folder: { id: 'id:exercise', name: 'Prüfung' } } }
     const get = vi.fn().mockResolvedValue({ data })
     vi.stubGlobal('axios', { get })
     await loadWorkExercise('7:2:65', publishedWork, '', false)
@@ -48,7 +48,7 @@ it('restores the confirmed folder immediately for a published work after reloadi
     try {
         await flushPromises()
         expect(wrapper.get('[role="img"]').attributes('color')).toBe('success')
-        expect(wrapper.attributes('title')).toBe('Ordner verknüpft: /Modul')
+        expect(wrapper.get('span[title]').attributes('title')).toBe('Ordner verknüpft: /Modul')
         expect(get).not.toHaveBeenCalled()
     } finally { wrapper.unmount() }
 })
@@ -63,12 +63,12 @@ it('shows the assigned folder even before the first import and updates when the 
     const wrapper = mountStatus()
 
     expect(wrapper.get('[role="img"]').attributes('color')).toBe('success')
-    expect(wrapper.attributes('title')).toBe('Ordner verknüpft · Lernmodulordner öffnen')
+    expect(wrapper.get('span[title]').attributes('title')).toBe('Ordner verknüpft · Lernmodulordner öffnen')
 
     workDropboxStates.set('7:2:65', { folder: null })
     await flushPromises()
     expect(wrapper.get('[role="img"]').attributes('color')).toBe('error')
-    expect(wrapper.attributes('title')).toBe('Kein Ordner mit dieser Arbeit verknüpft')
+    expect(wrapper.get('span[title]').attributes('title')).toBe('Kein Ordner mit dieser Arbeit verknüpft')
     wrapper.unmount()
 })
 
@@ -86,11 +86,34 @@ it('displays a saved handshake module link and makes its folder accessible by ke
     const wrapper = mountStatus()
 
     expect(wrapper.get('[role="img"]').attributes('color')).toBe('success')
-    expect(wrapper.attributes('title')).toBe('Ordner verknüpft: /Materialien/Modul')
-    expect(wrapper.attributes('tabindex')).toBe('0')
-    expect(wrapper.attributes('role')).toBe('button')
+    expect(wrapper.get('span[title]').attributes('title')).toBe('Ordner verknüpft: /Materialien/Modul')
+    expect(wrapper.get('[role="button"]').attributes('tabindex')).toBe('0')
     expect(wrapper.find('button').exists()).toBe(false)
     wrapper.unmount()
+})
+
+it('keeps the folder dialog outside the clickable chain trigger', async () => {
+    const open = vi.fn()
+    workDropboxStates.set('7:2:65', { folder: { id: 'id:folder', name: 'Modul' } })
+    const wrapper = mount(WorkFolderStatus, {
+        props: { work },
+        global: {
+            plugins: [createTestingPinia({ createSpy: vi.fn, initialState: {
+                AdminAdminStore: { config: { user: { id: 7 } } },
+            } })],
+            stubs: { WorkFolderBrowser: {
+                setup: (_, { expose }) => { expose({ open }) },
+                template: '<div role="dialog">Verknüpfung OK</div>',
+            } },
+        },
+    })
+    try {
+        await wrapper.get('[role="button"]').trigger('click')
+        expect(open).toHaveBeenCalledTimes(1)
+        expect(wrapper.get('[role="dialog"]').element.closest('[role="button"]')).toBeNull()
+        await wrapper.get('[role="dialog"]').trigger('click')
+        expect(open).toHaveBeenCalledTimes(1)
+    } finally { wrapper.unmount() }
 })
 
 it('loads the saved assignment and keeps another user or work separate', async () => {
@@ -102,7 +125,7 @@ it('loads the saved assignment and keeps another user or work separate', async (
 
     expect(wrapper.get('[role="img"]').attributes('color')).toBe('grey')
     await flushPromises()
-    expect(wrapper.attributes('title')).toBe('Ordner verknüpft · Lernmodulordner öffnen')
+    expect(wrapper.get('span[title]').attributes('title')).toBe('Ordner verknüpft · Lernmodulordner öffnen')
 
     useAdminStore().config.user.id = 8
     await flushPromises()
@@ -117,6 +140,6 @@ it('keeps a failed lookup distinct from a missing folder', async () => {
 
     await flushPromises()
     expect(wrapper.get('[role="img"]').attributes('color')).toBe('grey')
-    expect(wrapper.attributes('title')).toBe('Ordnerverknüpfung konnte nicht geprüft werden')
+    expect(wrapper.get('span[title]').attributes('title')).toBe('Ordnerverknüpfung konnte nicht geprüft werden')
     wrapper.unmount()
 })

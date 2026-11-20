@@ -6,6 +6,8 @@ use App\Models\McCatalog;
 use App\Models\McTest;
 use App\Models\School;
 use App\Models\Schoolyear;
+use App\Models\TeachingCourse;
+use App\Models\TeachingCourseWork;
 use App\Models\User;
 use App\Services\MultipleChoice\McTestService;
 use Carbon\CarbonImmutable;
@@ -170,6 +172,24 @@ test('results and solutions are released separately and only for the personal at
         ->assertJsonPath('attempt.result.question_results.0.correct', true)
         ->assertJsonPath('attempt.result.solutions_released', true)
         ->assertJsonPath('attempt.result.question_results.0.correct_option_ids.0', 'a');
+});
+
+test('withdrawing work grades hides even a separately released test result on the student and personal link', function (): void {
+    $test = $this->service->startCountdown($this->test);
+    $this->travelTo($test->starts_at);
+    $this->service->saveAnswers($this->attempt, ['q1' => ['a'], 'q2' => ['a'], 'q3' => ['a', 'b']]);
+    $this->service->submit($this->attempt);
+    $test->update(['schoolyear_id' => $this->student->schoolyear_id, 'results_released_at' => now(), 'solutions_released_at' => now()]);
+    $course = TeachingCourse::factory()->create(['school_id' => $test->school_id, 'schoolyear_id' => $test->schoolyear_id, 'user_id' => $test->owner_id]);
+    $work = TeachingCourseWork::factory()->create(['teaching_course_id' => $course->id]);
+    $binding = ['multiple_choice_tests' => ['default' => ['work_id' => $work->id, 'test_id' => $test->id]]];
+    $work->update(['status' => $binding + ['grade_visibility' => ['visible' => false]]]);
+    $this->actingAs($this->student)->getJson($this->url)->assertOk()->assertJsonPath('attempt.result', null);
+    Auth::logout();
+    $this->withHeader('X-MC-Access', $this->attempt->access_token)->getJson('/api/multiple-choice/access')
+        ->assertOk()->assertJsonPath('attempt.result', null);
+    $work->update(['status' => $binding + ['grade_visibility' => ['visible' => true]]]);
+    $this->getJson('/api/multiple-choice/access')->assertOk()->assertJsonPath('attempt.result.score', '10.00');
 });
 
 test('the owning teacher can preview a personal link without entering or changing the student attempt', function (): void {

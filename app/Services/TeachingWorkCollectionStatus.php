@@ -18,12 +18,22 @@ class TeachingWorkCollectionStatus
 
     public function cached(TeachingCourseWork $work): ?array
     {
-        return Cache::store('file')->get($this->key($work));
+        $key = $this->key($work);
+        $checks = Cache::store('database');
+        $run = $checks->get($key);
+        if ($run === null) {
+            // Preserve earlier file-based evidence without overwriting a concurrent fresh check.
+            $checks->add($key, Cache::store('file')->get($key) ?? false, now()->addYears(5));
+            $run = $checks->get($key);
+        }
+
+        return is_array($run) ? $run : null;
     }
 
     public function forget(TeachingCourseWork $work): void
     {
         Cache::store('file')->forget($this->key($work));
+        Cache::store('database')->forever($this->key($work), false);
     }
 
     /** @param (callable(string): void)|null $onProgress */
@@ -69,14 +79,15 @@ class TeachingWorkCollectionStatus
         }
         $run = $this->read($connection, $work, $folderId);
         if (! $run) {
-            Cache::store('file')->forget($this->key($work));
+            $this->forget($work);
             if ($onProgress) {
                 $onProgress('collection');
             }
 
             return;
         }
-        Cache::store('file')->forever($this->key($work), $run);
+        Cache::store('database')->forever($this->key($work), $run);
+        Cache::store('file')->forget($this->key($work));
         if ($onProgress) {
             $onProgress('collection');
         }

@@ -2,7 +2,6 @@
 
 namespace App\Services;
 
-use App\Models\DropboxConnection;
 use App\Models\TeachingCourseWork;
 use App\Models\User;
 use App\Support\SchooltoolAssessmentJson;
@@ -57,7 +56,7 @@ class TeachingSimulation
             }
             $folderId = $folder['id'] ?? $context['folder_binding']['dropbox_folder_id'] ?? null;
             abort_unless(is_string($folderId), 422, 'Zuerst den bestehenden Leistungsfeststellungsordner bestätigen.');
-            $task = $this->assignment($connection, $folderId);
+            $task = $this->folders->assignment($connection, $folderId);
         }
         $assignment = (new Parser)->parseContent($task['bytes'])->getText();
         $variants = $this->answers->generate($assignment);
@@ -536,31 +535,6 @@ class TeachingSimulation
         }
 
         return $disk->path($target);
-    }
-
-    private function assignment(DropboxConnection $connection, string $folderId): array
-    {
-        $root = $this->folders->read($connection, $folderId);
-        abort_if($root['cursor'], 422, 'Der Aufgabenordner ist für eine begrenzte Prüfung zu groß.');
-        $locations = [$root];
-        foreach ($root['entries'] as $entry) {
-            if ($entry['type'] === 'folder' && in_array(mb_strtolower($entry['name']), ['angaben', 'quellunterlagen'], true)) {
-                $locations[] = $this->folders->read($connection, $folderId, $entry['id']);
-            }
-        }
-        $tasks = [];
-        foreach ($locations as $location) {
-            abort_if($location['cursor'], 422, 'Die Aufgabenquelle ist nicht vollständig aufgelistet.');
-            foreach ($location['entries'] as $entry) {
-                if ($entry['type'] === 'file' && preg_match('/\A(?:Aufgabenstellung|Leistungsfeststellung).*\.pdf\z/ui', $entry['name'])) {
-                    $tasks[] = ['entry' => $entry, 'folder' => $location['current']['id']];
-                }
-            }
-        }
-        abort_unless(count($tasks) === 1, 422, 'Bitte genau ein eindeutiges Aufgabenblatt im bestehenden Leistungsfeststellungsordner bereitstellen.');
-        abort_if(($tasks[0]['entry']['size'] ?? PHP_INT_MAX) > 5 * 1024 * 1024, 422, 'Das Aufgabenblatt überschreitet 5 MB.');
-
-        return $this->folders->pdf($connection, $tasks[0]['folder'], $tasks[0]['entry']['id']);
     }
 
     private function version(array $run, array $row, int $number, string $scenario, CarbonImmutable $deadline): array

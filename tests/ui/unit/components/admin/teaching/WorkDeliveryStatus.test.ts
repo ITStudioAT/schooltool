@@ -1,5 +1,5 @@
-import { afterEach, expect, it, vi } from 'vitest'
-import { flushPromises, mount } from '@vue/test-utils'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { config, flushPromises, mount } from '@vue/test-utils'
 import { createTestingPinia } from '@pinia/testing'
 import { createVuetify } from 'vuetify'
 import { VBtn } from 'vuetify/components'
@@ -9,7 +9,15 @@ import { clearWorkDropboxStates, workDropboxStates } from '@/helpers/workDropbox
 import { workManualCompletionFields } from '@/helpers/workProgress'
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
 
-afterEach(() => { clearWorkDropboxStates(); vi.unstubAllGlobals() })
+const defaultStubs = config.global.stubs
+beforeEach(() => {
+    config.global.stubs = { ...defaultStubs, 'v-textarea': true, 'v-file-input': true, 'v-checkbox': true }
+})
+afterEach(() => {
+    config.global.stubs = defaultStubs
+    clearWorkDropboxStates()
+    vi.unstubAllGlobals()
+})
 
 it('opens task preparation for a local copy without a Dropbox connection or an existing release', async () => {
     const wrapper = mount(WorkDeliveryStatus, { props: { disabled: false, exerciseReady: false,
@@ -17,7 +25,6 @@ it('opens task preparation for a local copy without a Dropbox connection or an e
     }, global: { plugins: [createTestingPinia({ createSpy: vi.fn })], stubs: {
         'v-btn': { props: ['disabled'], template: '<button :disabled="disabled"><slot /></button>' },
         'v-dialog': { props: ['modelValue'], template: '<section v-if="modelValue" role="dialog"><slot /></section>' },
-        WorkStudentDistribution: { props: ['available'], template: '<button v-if="available">Im Schülerbereich bereitstellen</button>' },
     } } })
     try {
         const action = wrapper.get('[data-workflow-stage="preparation"]')
@@ -30,38 +37,135 @@ it('opens task preparation for a local copy without a Dropbox connection or an e
     } finally { wrapper.unmount() }
 })
 
+it('replaces the delivery dialog while the PDF loads and returns to it on cancel', async () => {
+    const work = { id: 91, title: 'Dateimanagement', student_distribution_version: 'a'.repeat(64), status: {} }
+    let finishLookup: (response: unknown) => void = () => {}
+    const get = vi.fn().mockResolvedValueOnce({ data: { data: work } })
+        .mockImplementationOnce(() => new Promise(resolve => { finishLookup = resolve }))
+        .mockResolvedValueOnce({ data: new Blob(['%PDF-1.4 test'], { type: 'application/pdf' }) })
+    vi.stubGlobal('axios', { get })
+    const wrapper = mount(WorkDeliveryStatus, { props: { work, exerciseReady: true }, global: {
+        plugins: [createTestingPinia({ createSpy: vi.fn })], stubs: {
+            'v-btn': { props: ['disabled'], template: '<button :disabled="disabled"><slot /></button>' },
+            'v-dialog': { props: ['modelValue'], template: '<section v-if="modelValue" role="dialog"><slot /></section>' },
+        },
+    } })
+    try {
+        await wrapper.get('[data-workflow-stage="preparation"]').trigger('click')
+        expect(wrapper.get('[role="dialog"]').text()).toContain('Aufgaben bereitstellen · Dateimanagement')
+        await wrapper.findAll('button').find(button => button.text() === 'Im Schülerbereich bereitstellen')!.trigger('click')
+        await flushPromises()
+        expect(wrapper.findAll('[role="dialog"]')).toHaveLength(1)
+        const editor = wrapper.get('[role="dialog"]')
+        expect(editor.text()).toContain('Aufgaben im Schülerbereich · Dateimanagement')
+        expect(editor.text()).toContain('Vorbereitung wird geladen')
+        expect(editor.get('.assignment-load-running').text()).toContain('Aufgaben-PDF im Prüfungsordner suchen')
+        finishLookup({ data: { root: { name: 'Angaben' }, shared_assignment: true, entries: [{ id: 'id:pdf', type: 'file', name: 'Angaben.pdf' }] } })
+        await flushPromises()
+        expect(wrapper.findAll('[role="dialog"]')).toHaveLength(1)
+        expect(wrapper.get('[role="dialog"]').element).toBe(editor.element)
+        expect(editor.text()).toContain('Angaben.pdf')
+        expect(editor.text()).toContain('Pausiert vorbereiten')
+        await editor.findAll('button').find(button => button.text() === 'Abbrechen')!.trigger('click')
+        expect(wrapper.findAll('[role="dialog"]')).toHaveLength(1)
+        expect(wrapper.get('[role="dialog"]').text()).toContain('Aufgaben bereitstellen · Dateimanagement')
+    } finally { wrapper.unmount() }
+})
+
+it('keeps task preparation as the only dialog after a load error and allows retry and return', async () => {
+    const work = { id: 91, title: 'Dateimanagement', local_task_copy: true, student_distribution_version: 'a'.repeat(64), status: {} }
+    const get = vi.fn().mockRejectedValueOnce(new Error('Offline')).mockResolvedValueOnce({ data: { data: work } })
+    vi.stubGlobal('axios', { get })
+    const wrapper = mount(WorkDeliveryStatus, { props: { work }, global: {
+        plugins: [createTestingPinia({ createSpy: vi.fn })], stubs: {
+            'v-btn': { props: ['disabled'], template: '<button :disabled="disabled"><slot /></button>' },
+            'v-dialog': { props: ['modelValue'], template: '<section v-if="modelValue" role="dialog"><slot /></section>' },
+        },
+    } })
+    const click = (label: string) => wrapper.get('[role="dialog"]').findAll('button').find(button => button.text() === label)!.trigger('click')
+    try {
+        await wrapper.get('[data-workflow-stage="preparation"]').trigger('click')
+        await click('Im Schülerbereich bereitstellen')
+        await flushPromises()
+        expect(wrapper.findAll('[role="dialog"]')).toHaveLength(1)
+        expect(wrapper.get('[role="dialog"]').text()).toContain('Der aktuelle Stand konnte nicht geladen werden.')
+        await click('Erneut laden')
+        await flushPromises()
+        expect(wrapper.findAll('[role="dialog"]')).toHaveLength(1)
+        expect(wrapper.get('[role="dialog"]').text()).toContain('Pausiert vorbereiten')
+        await click('Abbrechen')
+        expect(wrapper.findAll('[role="dialog"]')).toHaveLength(1)
+        expect(wrapper.get('[role="dialog"]').text()).toContain('Aufgaben bereitstellen · Dateimanagement')
+    } finally { wrapper.unmount() }
+})
+
 it('shows a paused preparation and its release control without requiring Dropbox or an email step', async () => {
+    const work = { id: 91, student_distribution_version: 'a'.repeat(64), status: { automation_enabled: false,
+        student_distribution: { prepared_at: '2026-10-30T08:00:00Z', published_at: null, student_ids: [1],
+            instructions: 'Lies das Aufgabenblatt.', file_ids: ['pdf'] },
+        student_task_files: [{ id: 'pdf', name: 'Aufgabe.pdf' }], multiple_choice_tests: { all: { test_id: 4 } },
+    } }
+    const get = vi.fn().mockResolvedValueOnce({ data: { data: work } }).mockResolvedValueOnce({ data: { data: { tests: [{
+        id: 4, title: 'MC-Test', status: 'published', start_mode: 'individual', paused_at: '2026-10-30T08:00:00Z',
+        management_action: 'resume', version: 'b'.repeat(64),
+    }] } } })
+    const post = vi.fn()
+    vi.stubGlobal('axios', { get, post })
     const wrapper = mount(WorkDeliveryStatus, { props: { exerciseReady: false,
-        work: { id: 91, status: { automation_enabled: false,
-            student_distribution: { prepared_at: '2026-10-30T08:00:00Z', published_at: null, student_ids: [1] } } },
+        work,
     }, global: { plugins: [createTestingPinia({ createSpy: vi.fn })], stubs: {
         'v-btn': { props: ['disabled'], template: '<button :disabled="disabled"><slot /></button>' },
         'v-dialog': { props: ['modelValue'], template: '<section v-if="modelValue" role="dialog"><slot /></section>' },
-        WorkStudentDistribution: { template: '<button>Pausierte Aufgaben verwalten</button>' },
     } } })
     try {
-        await wrapper.get('[aria-label="Aufgaben pausiert vorbereitet · jetzt freigeben"]').trigger('click')
-        expect(wrapper.get('[role="dialog"]').text()).toContain('noch nicht für Schüler:innen freigegeben')
-        expect(wrapper.get('[role="dialog"]').text()).toContain('Pausierte Aufgaben verwalten')
+        await wrapper.get('[aria-label="Pausierte Aufgaben verwalten"]').trigger('click')
+        await flushPromises()
+        const dialog = wrapper.get('[role="dialog"]')
+        expect(wrapper.findAll('[role="dialog"]')).toHaveLength(1)
+        for (const label of ['noch nicht für Schüler:innen freigegeben', '1 Aufgaben-PDF', 'Vorbereitung bearbeiten', 'Jetzt freigeben', 'MC-Test fortsetzen']) {
+            expect(dialog.text()).toContain(label)
+        }
+        expect(dialog.find('fieldset').exists()).toBe(false)
+        expect(get).toHaveBeenCalledTimes(2)
+        expect(post).not.toHaveBeenCalled()
         expect(wrapper.find('[data-workflow-stage="send"]').exists()).toBe(false)
         expect(wrapper.get('[data-workflow-stage="collection"]').attributes('disabled')).toBeDefined()
     } finally { wrapper.unmount() }
 })
 
-it('keeps a withdrawn task accessible for paused preparation without an email step', async () => {
+it('offers removal of a paused release directly in the delivery dialog and requires confirmation', async () => {
+    const version = 'a'.repeat(64)
+    const saved = { id: 90, status: { student_distribution: { deleted_at: '2026-10-31T08:00:00Z' } } }
+    const remove = vi.fn().mockResolvedValue({ data: { data: saved } })
+    const work = { id: 90, student_distribution_version: version, status: { automation_enabled: false,
+        student_distribution: { published_at: '2026-10-29T08:00:00Z', withdrawn_at: '2026-10-30T08:00:00Z', student_ids: [1], instructions: 'Aufgabe' } } }
+    vi.stubGlobal('axios', { delete: remove, get: vi.fn().mockResolvedValue({ data: { data: work } }) })
     const wrapper = mount(WorkDeliveryStatus, { props: { exerciseReady: false,
-        work: { id: 90, status: { automation_enabled: false,
-            student_distribution: { published_at: '2026-10-29T08:00:00Z', withdrawn_at: '2026-10-30T08:00:00Z', student_ids: [1] } } },
+        work,
     }, global: { plugins: [createTestingPinia({ createSpy: vi.fn })], stubs: {
         'v-btn': { props: ['disabled'], template: '<button :disabled="disabled"><slot /></button>' },
         'v-dialog': { props: ['modelValue'], template: '<section v-if="modelValue" role="dialog"><slot /></section>' },
-        WorkStudentDistribution: { template: '<button>Erneut pausiert vorbereiten</button>' },
     } } })
     try {
-        await wrapper.get('[aria-label="Aufgabenfreigabe zurückgenommen · erneut vorbereiten"]').trigger('click')
-        expect(wrapper.get('[role="dialog"]').text()).toContain('erneut pausiert vorbereiten')
+        await wrapper.get('[aria-label="Pausierte Aufgaben verwalten"]').trigger('click')
+        await flushPromises()
+        expect(wrapper.get('[role="dialog"]').text()).toContain('Die Aufgabenfreigabe ist pausiert')
+        expect(wrapper.get('[role="dialog"]').text()).toContain('Jetzt freigeben')
         expect(wrapper.find('[data-workflow-stage="send"]').exists()).toBe(false)
         expect(wrapper.get('[data-workflow-stage="collection"]').attributes('disabled')).toBeDefined()
+        const click = async (label: string) => wrapper.findAll('button').find(button => button.text() === label)!.trigger('click')
+        await click('Verteilung zurücknehmen')
+        expect(remove).not.toHaveBeenCalled()
+        await click('Abbrechen')
+        expect(remove).not.toHaveBeenCalled()
+        await click('Verteilung zurücknehmen')
+        await click('Zurücknehmen bestätigen')
+        await flushPromises()
+        expect(remove).toHaveBeenCalledExactlyOnceWith('/api/admin/teaching/course_works/90/student-distribution/preparation', {
+            data: { expected_version: version },
+        })
+        expect(wrapper.emitted('saved')).toEqual([[saved]])
+        expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
     } finally { wrapper.unmount() }
 })
 
@@ -80,7 +184,6 @@ it('shows released students and their actual MC test status in the preparation d
         } } }, global: { plugins: [pinia], stubs: {
         'v-btn': { template: '<button><slot /></button>' },
         'v-dialog': { props: ['modelValue'], template: '<section v-if="modelValue" role="dialog"><slot /></section>' },
-        WorkStudentDistribution: { template: '<button>Freigabe verwalten</button>' },
     } } })
     try {
         await wrapper.get('[aria-label="Aufgaben im Schülerbereich bereitgestellt"]').trigger('click')
@@ -105,15 +208,15 @@ it('withdraws the release only after confirmation and a fresh version check', as
         plugins: [createTestingPinia({ createSpy: vi.fn })], stubs: {
             'v-btn': { template: '<button><slot /></button>' },
             'v-dialog': { props: ['modelValue'], template: '<section v-if="modelValue" role="dialog"><slot /></section>' },
-            WorkStudentDistribution: { template: '<button>Freigabe verwalten</button>' },
         },
     } })
     try {
         await wrapper.get('[aria-label="Aufgaben im Schülerbereich bereitgestellt"]').trigger('click')
-        await wrapper.findAll('button').find(button => button.text() === 'Freigabe zurücknehmen')!.trigger('click')
+        await wrapper.findAll('button').find(button => button.text() === 'Freigabe pausieren')!.trigger('click')
         expect(post).not.toHaveBeenCalled()
-        const confirmation = wrapper.findAll('[role="dialog"]').find(dialog => dialog.text().includes('Aufgabenfreigabe zurücknehmen?'))!
-        await confirmation.findAll('button').find(button => button.text() === 'Freigabe zurücknehmen')!.trigger('click')
+        const confirmation = wrapper.findAll('[role="dialog"]').find(dialog => dialog.text().includes('Aufgabenfreigabe pausieren?'))!
+        expect(confirmation.text()).toContain('Laufende und startbare verknüpfte MC-Tests werden mitpausiert')
+        await confirmation.findAll('button').find(button => button.text() === 'Freigabe pausieren')!.trigger('click')
         await flushPromises()
         expect((post.mock.calls[0][1] as FormData).get('publish')).toBe('0')
         expect((post.mock.calls[0][1] as FormData).get('expected_version')).toBe('a'.repeat(64))
@@ -135,7 +238,6 @@ it('offers the test-wide pause before any student has started', async () => {
         plugins: [createTestingPinia({ createSpy: vi.fn })], stubs: {
             'v-btn': { template: '<button><slot /></button>' },
             'v-dialog': { props: ['modelValue'], template: '<section v-if="modelValue" role="dialog"><slot /></section>' },
-            WorkStudentDistribution: { template: '<button>Freigabe verwalten</button>' },
         },
     } })
     try {
@@ -166,7 +268,6 @@ it('offers individual controls and requires confirmation before resetting all at
     const wrapper = mount(WorkDeliveryStatus, { props: { work }, global: { plugins: [pinia], stubs: {
         'v-btn': { props: ['disabled', 'ariaLabel'], template: '<button :disabled="disabled" :aria-label="ariaLabel"><slot /></button>' },
         'v-dialog': { props: ['modelValue'], template: '<section v-if="modelValue" role="dialog"><slot /></section>' },
-        WorkStudentDistribution: { template: '<span />' },
     } } })
     try {
         await wrapper.get('[aria-label="Aufgaben im Schülerbereich bereitgestellt"]').trigger('click'); await flushPromises()
@@ -318,12 +419,14 @@ it('opens the modern preparation step without sending or publishing', async () =
             folder: { id: 'id:exercise' }, preparation: { status: 'ready' }, emailPreparation: { status: 'ready' }, emailDispatch: { status: 'sent' } },
     }, global: {
         plugins: [createTestingPinia({ createSpy: vi.fn, initialState: { AdminAdminStore: { config: { user: { id: 7 } } } } })],
-        stubs: { WorkStudentDistribution: { props: ['available'], template: '<button v-if="available">Im Schülerbereich bereitstellen</button>' },
+        stubs: {
             'v-btn': { props: ['disabled'], template: '<button :disabled="disabled"><slot /></button>' },
             'v-dialog': { props: ['modelValue'], template: '<section v-if="modelValue" role="dialog"><slot /></section>' } },
     } })
     try {
-        await wrapper.get('[data-workflow-stage="preparation"]').trigger('click')
+        const next = wrapper.get('[data-workflow-stage="preparation"][aria-label="Aufgaben bereitstellen"]')
+        expect(next.attributes('disabled')).toBeUndefined()
+        await next.trigger('click')
         expect(wrapper.get('[role="dialog"]').text()).toContain('Aufgaben bereitstellen')
         expect(wrapper.get('[role="dialog"]').text()).toContain('Im Schülerbereich bereitstellen')
         expect(wrapper.get('[role="dialog"]').text()).toContain('Der Prüfungsstatus bestätigt keine Versandbereitschaft')

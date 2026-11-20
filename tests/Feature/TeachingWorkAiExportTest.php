@@ -585,22 +585,21 @@ test('AI export includes student email addresses without personal assessment or 
         ->not->toContain('mother@example.test')->not->toContain('father@example.test');
     expect($data['context']['work']['scheduled_date'])->toBe('2026-10-20');
     expect($data['context']['work']['main_deadline'])->toBe(['date' => '2026-10-21', 'time' => '20:15']);
-    expect($data['context']['work']['communicated_deadline'])->toBeNull();
+    expect($data['context']['work'])->not->toHaveKey('communicated_deadline');
     expect($data['context']['work']['maximum_points'])->toEqual(5);
     expect($this->work->fresh()->getAttributes())->toBe($before);
     Http::assertNothingSent();
 });
 
-test('AI export keeps the optional first deadline separate without claiming communication', function () {
+test('AI export uses the final deadline and omits historical optional values', function () {
     $this->work->update(['status' => ['communicated_deadline_at' => '2026-10-20T20:00:00+02:00']]);
     $before = $this->work->fresh()->getAttributes();
 
     $data = $this->getJson($this->url)->assertOk()->json('data');
 
-    expect($data['context']['work']['communicated_deadline'])->toBe([
-        'at' => '2026-10-20T20:00:00+02:00', 'date' => '2026-10-20', 'time' => '20:00',
-    ])->and($data['context']['work']['main_deadline'])->toBe(['date' => '2026-10-21', 'time' => '20:15'])
-        ->and($data['text'])->toContain('kein Nachweis einer tatsächlichen Mitteilung')
+    expect($data['context']['work'])->not->toHaveKey('communicated_deadline')
+        ->and($data['context']['work']['main_deadline'])->toBe(['date' => '2026-10-21', 'time' => '20:15'])
+        ->and($data['text'])->toContain('endgültige Abgabefrist')
         ->and($this->work->fresh()->getAttributes())->toBe($before);
 });
 

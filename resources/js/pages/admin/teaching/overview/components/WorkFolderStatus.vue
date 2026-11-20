@@ -1,16 +1,20 @@
 <template>
-    <span v-if="workAutomationEnabled(work) && (linked || needsPreparation || !state)" class="d-inline-flex" :class="{ 'cursor-pointer': linked }"
-        :role="linked ? 'button' : undefined" :tabindex="linked ? 0 : undefined" :aria-label="tooltip" :title="tooltip"
-        @click.stop="openFolder" @keydown.enter.stop.prevent="openFolder" @keydown.space.stop.prevent="openFolder">
-        <v-icon
-            :size="size"
-            :color="color"
-            :aria-label="tooltip"
-            :aria-hidden="false"
-            role="img">
-            mdi-link-variant
-        </v-icon>
-        <v-tooltip activator="parent" location="top" :text="tooltip" :open-delay="200" :max-width="420" />
+    <span v-if="workAutomationEnabled(work) && (linked || needsPreparation || !state)" class="d-inline-flex">
+        <v-btn v-if="labelled && linked" size="small" min-height="44" variant="tonal" prepend-icon="mdi-link-variant"
+            :disabled="disabled" @click.stop="openFolder">Verbindung verwalten</v-btn>
+        <span v-else-if="!labelled" class="d-inline-flex" :class="{ 'cursor-pointer': linked }"
+            :role="linked ? 'button' : undefined" :tabindex="linked ? 0 : undefined" :aria-label="tooltip" :title="tooltip"
+            @click.stop="openFolder" @keydown.enter.stop.prevent="openFolder" @keydown.space.stop.prevent="openFolder">
+            <v-icon
+                :size="size"
+                :color="color"
+                :aria-label="tooltip"
+                :aria-hidden="false"
+                role="img">
+                mdi-link-variant
+            </v-icon>
+            <v-tooltip activator="parent" location="top" :text="tooltip" :open-delay="200" :max-width="420" />
+        </span>
         <WorkFolderBrowser ref="browser" :work="work" :date="date" module />
     </span>
 </template>
@@ -23,7 +27,7 @@ import { useAdminStore } from '@/stores/admin/AdminStore'
 import { loadWorkDropbox, loadWorkExercise, workDropboxKey, workDropboxStates, workExerciseCheck } from '@/helpers/workDropbox'
 import WorkFolderBrowser from './WorkFolderBrowser.vue'
 
-const props = defineProps({ work: { type: Object, required: true }, size: { type: [Number, String], default: 13 }, date: { type: String, default: '' } })
+const props = defineProps({ work: { type: Object, required: true }, size: { type: [Number, String], default: 13 }, date: { type: String, default: '' }, labelled: Boolean, disabled: Boolean })
 const admin = useAdminStore()
 const loadError = ref(false)
 const browser = ref(null)
@@ -41,14 +45,14 @@ const tooltip = computed(() => {
 })
 
 function openFolder() {
-    if (linked.value) browser.value?.open()
+    if (linked.value && !props.disabled) browser.value?.open()
 }
 
 watch(() => [key.value, workAutomationEnabled(props.work)], async ([value, enabled]) => {
     loadError.value = false
     if (!enabled) return
     try {
-        if (workExerciseCheck(value, props.work, props.date)) await loadWorkExercise(value, props.work, props.date)
+        if (!props.labelled && workExerciseCheck(value, props.work, props.date)) await loadWorkExercise(value, props.work, props.date)
         else await loadWorkDropbox(value, props.work.id)
     } catch {
         if (key.value === value) loadError.value = true

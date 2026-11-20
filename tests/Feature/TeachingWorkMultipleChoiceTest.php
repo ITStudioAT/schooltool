@@ -217,6 +217,41 @@ test('catalog selection prepares one individual test and repeats without duplica
     Http::assertNothingSent();
 });
 
+test('adding a test to a prepared worksheet keeps the student release and requires that it has never gone live', function (string $state): void {
+    workMcFixture($this);
+    $release = ['prepared_at' => now()->toIso8601String(), 'instructions' => 'Aufgabenblatt ist vorbereitet'];
+    if ($state === 'paused') {
+        $release += ['published_at' => now()->toIso8601String(), 'withdrawn_at' => now()->toIso8601String()];
+    }
+    $status = ['automation_enabled' => true, 'student_distribution' => $release];
+    if ($state === 'mail') {
+        $status['assignment_mail'] = ['batches' => ['2026-10-20' => [
+            'transport' => 'postmark', 'recipients' => [['state' => 'queued']],
+        ]]];
+    }
+    $this->work->update(['groups' => [['date' => '2026-10-20', 'student_ids' => [$this->student->id]]], 'status' => $status]);
+    $payload = ['mc_selection' => 'yes', 'mc_add_only' => true, 'catalog_id' => $this->catalog->id,
+        'test_id' => null, 'expected_test_id' => null, 'date' => '2026-10-20'];
+    if ($state === 'prepared') {
+        $response = $this->postJson($this->base.'/prepare-exercise', $payload + ['stream_progress' => true])
+            ->assertOk()->assertHeader('Content-Type', 'application/x-ndjson');
+        $events = collect(explode("\n", trim($response->streamedContent())))->map(fn (string $event): array => json_decode($event, true, flags: JSON_THROW_ON_ERROR));
+        expect($events->where('type', 'progress')->pluck('data.active')->all())->toBe(['mc_check', 'mc_prepare', 'mc_assign', null]);
+        expect($events->where('type', 'progress')->last()['data']['completed'])->toBe(['mc_check', 'mc_prepare', 'mc_assign']);
+        $result = $events->last();
+        expect($result['type'])->toBe('result')->and($result['data']['action'])->toBe('created');
+        expect(McTest::query()->sole()->status)->toBe('draft');
+        $this->postJson($this->base.'/prepare-exercise', $payload)
+            ->assertOk()->assertJsonPath('linked_test_id', $result['data']['linked_test_id']);
+    } else {
+        $this->postJson($this->base.'/prepare-exercise', $payload)->assertConflict();
+        expect(McTest::query()->count())->toBe(0);
+    }
+    expect($this->work->fresh()->status['student_distribution'])->toBe($release);
+    Mail::assertNothingSent();
+    Http::assertNothingSent();
+})->with(['prepared', 'paused', 'mail']);
+
 test('catalog selection creates a new individual test using the requested settings', function (): void {
     workMcFixture($this);
     $this->partialMock(TeachingWorkMultipleChoice::class)->shouldReceive('configuration')->andReturn(['locked' => false]);
@@ -360,10 +395,13 @@ test('catalog selection fails without valid prerequisites and does not leave tes
     $response = $this->postJson($this->base.'/prepare-exercise', ['mc_selection' => 'yes', 'catalog_id' => $this->catalog->id,
         'test_id' => null, 'expected_test_id' => null, 'date' => '2026-10-20'])->assertUnprocessable();
     expect(json_encode($response->json(), JSON_UNESCAPED_UNICODE))->toContain(match ($problem) {
-        'unknown' => 'nicht eindeutig', 'deadline', 'past_deadline' => 'Enddatum', 'questions' => 'zu wenige aktive, geprüfte Fragen',
+        'unknown' => 'nicht eindeutig', 'deadline' => 'Enddatum', 'past_deadline' => 'in der Zukunft', 'questions' => 'zu wenige aktive, geprüfte Fragen',
     });
     if ($problem === 'questions') {
         $response->assertJsonValidationErrors('question_count');
+    }
+    if (in_array($problem, ['deadline', 'past_deadline'], true)) {
+        $response->assertJsonValidationErrors('finish_until_date');
     }
     expect(McTest::query()->count())->toBe(0)->and(McAttempt::query()->count())->toBe(0);
     Http::assertNothingSent();
@@ -579,7 +617,7 @@ test('an already bound test can use a small reviewed catalog', function (): void
         ->assertOk()->assertJsonPath('data.context.multiple_choice_test.question_count', 4);
 });
 
-test('work responses show only the titles of tests actually bound to the work and its school year', function (): void {
+test('work responses show details only for tests bound to the work and its school year', function (): void {
     workMcBoundModuleFixture($this);
     $this->partialMock(DropboxModuleLinks::class)->shouldReceive('exercise')->andReturn(['status' => 'found', 'folder' => ['id' => 'id:legacy'],
         'preparation' => null, 'email_dispatch' => ['status' => 'missing']]);
@@ -602,10 +640,18 @@ test('work responses show only the titles of tests actually bound to the work an
 
     $this->getJson($this->base)->assertOk()
         ->assertJsonPath('data.multiple_choice_test_titles.'.$id, $test->title)
+        ->assertJsonPath('data.multiple_choice_test_details.'.$id.'.title', $test->title)
+        ->assertJsonPath('data.multiple_choice_test_details.'.$id.'.points', (int) $test->total_points)
+        ->assertJsonPath('data.multiple_choice_test_details.'.$id.'.question_count', $test->question_count)
+        ->assertJsonPath('data.multiple_choice_test_details.'.$id.'.duration_seconds', $test->duration_seconds)
+        ->assertJsonMissingPath('data.multiple_choice_test_details.'.$foreign->id)
+        ->assertJsonMissingPath('data.multiple_choice_test_details.'.$notBound->id)
         ->assertJsonMissingPath('data.multiple_choice_test_titles.'.$foreign->id)
         ->assertJsonMissingPath('data.multiple_choice_test_titles.'.$notBound->id);
     $this->getJson('/api/admin/teaching/course_works?course_id='.$this->course->id)->assertOk()
         ->assertJsonPath('data.0.multiple_choice_test_titles.'.$id, $test->title)
+        ->assertJsonPath('data.0.multiple_choice_test_details.'.$id.'.question_count', $test->question_count)
+        ->assertJsonMissingPath('data.0.multiple_choice_test_details.'.$foreign->id)
         ->assertJsonMissingPath('data.0.multiple_choice_test_titles.'.$foreign->id);
 });
 

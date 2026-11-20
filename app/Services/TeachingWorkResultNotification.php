@@ -45,6 +45,7 @@ class TeachingWorkResultNotification
     public function preview(TeachingCourseWork $work, User $actor, array $input = []): array
     {
         abort_unless($work->automationEnabled(), 422, 'Automatik ist für diese Arbeit ausgeschaltet.');
+        abort_unless($work->gradesVisibleToStudents(), 409, 'Bitte zuerst die Bewertungen für den Schülerbereich freigeben.');
         $source = $this->snapshot($work, $actor);
         $local = app()->isLocal();
         $previewOnly = (bool) ($input['teacher_preview'] ?? false);

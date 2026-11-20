@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createTestingPinia } from '@pinia/testing'
 import WorkFolderBrowser from '@/pages/admin/teaching/overview/components/WorkFolderBrowser.vue'
-import { clearWorkDropboxStates, workDropboxStates } from '@/helpers/workDropbox'
+import { clearWorkDropboxStates, confirmCreatedWorkExercise, workDropboxBinding, workDropboxStates } from '@/helpers/workDropbox'
 
 const work = { id: 65, teaching_course_id: 2, title: 'E-Mails' }
 const version = 'a'.repeat(64)
@@ -101,25 +101,53 @@ it('requests the confirmed exercise folder when opened from the LF name', async 
     wrapper.unmount()
 })
 
-it('opens the learning module explicitly instead of following its exercise automatically', async () => {
-    const get = vi.fn().mockResolvedValueOnce({ data: saved }).mockResolvedValueOnce({ data: listing })
-        .mockResolvedValueOnce({ data: { ...listing, current: { ...child, path: '/Materialien/Testordner/Angaben' }, entries: [file] } })
-        .mockResolvedValueOnce({ data: listing })
-    const wrapper = mountBrowser(get, undefined, { module: true })
+it('shows the saved learning module without checking Dropbox or listing its contents', async () => {
+    const get = vi.fn()
+    const wrapper = mountBrowser(get, undefined, { module: true, date: '2026-10-12' })
+    workDropboxStates.set('7:2:65', { ...saved, module_link: { folder }, folder: { id: 'id:exercise', name: 'Prüfung' } })
+    confirmCreatedWorkExercise('7:2:65', work, '2026-10-12', workDropboxBinding(workDropboxStates.get('7:2:65')),
+        { id: 'id:exam', name: '2026-10-12 – 5L1_Gruppe-1 – E-Mails' }, null)
+    const assignment = workDropboxStates.get('7:2:65')
+    clearWorkDropboxStates(false)
+    workDropboxStates.set('7:2:65', assignment)
     await (wrapper.vm as any).open()
-    expect(get.mock.calls[0][1].params).toEqual({ include_folder_path: 1 })
-    expect(get.mock.calls[1][1].params).toEqual({ contents: 1, module: 1 })
     expect(wrapper.text()).toContain('Lernmodulordner · E-Mails')
     expect(wrapper.get('[aria-label="Dropbox-Ordnerpfad"]').text()).toBe('/Materialien/Testordner')
+    expect(wrapper.get('[aria-label="Dropbox-Ordnerpfad"] strong').text()).toBe('Testordner')
+    expect(wrapper.text().match(/Testordner/g)).toHaveLength(1)
+    expect(wrapper.text()).toContain('2026-10-12 – 5L1_Gruppe-1 – E-Mails')
     expect(wrapper.find('[aria-label="Ordnernavigation"]').exists()).toBe(false)
-    await wrapper.findAll('button').find(button => button.text() === 'Angaben')!.trigger('click')
-    await flushPromises()
-    expect(wrapper.get('[aria-label="Dropbox-Ordnerpfad"]').text()).toBe('/Materialien/Testordner/Angaben')
-    expect(wrapper.get('[aria-label="Ordnernavigation"]').text()).toBe('Testordner')
-    await wrapper.findAll('button').find(button => button.text() === 'Testordner')!.trigger('click')
-    await flushPromises()
-    expect(get.mock.calls[3][1].params).toMatchObject({ module: 1, folder_id: folder.id })
-    expect(wrapper.get('[aria-label="Dropbox-Ordnerpfad"]').text()).toBe('/Materialien/Testordner')
+    expect(wrapper.text()).not.toContain('Aufgabe.pdf')
+    expect(get).not.toHaveBeenCalled()
+    wrapper.unmount()
+})
+
+it('does not show a confirmed assessment folder from another date or binding', async () => {
+    const get = vi.fn()
+    const wrapper = mountBrowser(get, undefined, { module: true, date: '2026-10-13' })
+    const binding = { ...saved, module_link: { folder } }
+    workDropboxStates.set('7:2:65', binding)
+    confirmCreatedWorkExercise('7:2:65', work, '2026-10-12', workDropboxBinding(binding), { id: 'id:exam', name: 'Andere Gruppe' }, null)
+    await (wrapper.vm as any).open()
+    expect(wrapper.text()).toContain('LF-Ordner nicht bestätigt.')
+    expect(wrapper.text()).not.toContain('Andere Gruppe')
+    await wrapper.setProps({ date: '2026-10-12' })
+    workDropboxStates.set('7:2:65', { ...binding, link_version: 'b'.repeat(64) })
+    await (wrapper.vm as any).open()
+    expect(wrapper.text()).not.toContain('Andere Gruppe')
+    expect(get).not.toHaveBeenCalled()
+    wrapper.unmount()
+})
+
+it('shows an older saved folder without inventing a path or requesting one', async () => {
+    const get = vi.fn()
+    const wrapper = mountBrowser(get, undefined, { module: true })
+    workDropboxStates.set('7:2:65', { ...saved, folder: { id: 'id:old', name: 'Altordner', path: '/früher-live-geladen' } })
+    await (wrapper.vm as any).open()
+    expect(wrapper.text()).not.toContain('Altordner')
+    expect(wrapper.text()).toContain('kein Lernmodulpfad gespeichert')
+    expect(wrapper.text()).not.toContain('/früher-live-geladen')
+    expect(get).not.toHaveBeenCalled()
     wrapper.unmount()
 })
 

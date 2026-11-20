@@ -11,12 +11,13 @@
 
         <div v-if="error" class="mc-alert" role="alert">
             <p>{{ error }}</p>
+            <a :href="tasksReturnUrl" class="mc-button">Meine Aufgaben öffnen</a>
             <button class="mc-button mc-button-secondary" :disabled="retrySeconds > 0" @click="refresh(true)">{{ retrySeconds > 0 ? `Automatisch erneut verbinden in ${retrySeconds} Sekunden` : 'Erneut verbinden' }}</button>
             <a v-if="!isPublic && !attempt" href="/student" class="mc-login">Zur Schüleranmeldung</a>
         </div>
         <p v-if="loading" role="status" class="mc-empty">Deine Tests werden geladen …</p>
 
-        <section v-else-if="!attempt" aria-labelledby="mc-tests-title">
+        <section v-else-if="!attempt && (!isPublic || !error)" aria-labelledby="mc-tests-title">
             <h2 id="mc-tests-title">Deine Tests</h2>
             <p class="mc-description">Öffne einen zugewiesenen Test. Deine Fragen und gespeicherten Antworten bleiben bei jedem Einstieg erhalten.</p>
             <p v-if="!attempts.length && !error" class="mc-empty">Dir sind derzeit keine Tests zugewiesen.</p>
@@ -29,7 +30,7 @@
             </ul>
         </section>
 
-        <template v-else>
+        <template v-else-if="attempt">
             <button v-if="!isPublic && !hasPending && !saving && !submitting" class="mc-back" @click="backToTests">Alle Tests</button>
             <section class="mc-test-heading" aria-labelledby="mc-current-title">
                 <h2 id="mc-current-title">{{ attempt.title }}</h2>
@@ -46,7 +47,11 @@
                 <span v-if="fullscreen">Vollbild aktiv</span>
                 <p v-if="monitoringError" class="mc-save-warning" role="alert">{{ monitoringError }}</p>
             </div>
-            <div v-if="attempt.paused_at && !finished && !attempt.teacher_preview" class="mc-pause-banner" role="status"><strong>Der Test ist pausiert.</strong><p>Deine aktuelle Frage und Antworten bleiben erhalten. Eingaben und Restzeit sind eingefroren, bis deine Lehrperson den Test fortsetzt.</p></div>
+            <div v-if="attempt.paused_at && !finished && !attempt.teacher_preview" class="mc-pause-banner" role="status">
+                <strong>Der Test ist pausiert.</strong>
+                <p v-if="attempt.questions.length">Deine aktuelle Frage und Antworten bleiben erhalten. Die Bearbeitungszeit hält an.</p>
+                <p v-else>Warte, bis deine Lehrperson den Test fortsetzt.</p>
+            </div>
             <section v-if="attempt.teacher_preview" aria-label="Schreibgeschützte Lehrkraft-Vorschau">
                 <div class="mc-preview-banner" role="status">
                     <strong>Lehrkraft-Vorschau für {{ attempt.student_name }}</strong>
@@ -79,10 +84,16 @@
                 <p v-else-if="!neverStarted">Deine Lehrperson gibt Ergebnisse und Lösungen gesondert frei. Du kannst später hier wieder nachsehen.</p>
             </section>
 
+            <section v-else-if="attempt.paused_at && !attempt.questions.length" class="mc-waiting" aria-label="Pausierter Test">
+                <div v-if="countdownSeconds > 0" class="mc-countdown" role="timer" aria-label="Pausierter Countdown">
+                    <span>Start in</span><strong>{{ countdownSeconds }}</strong><span>Sekunden</span>
+                </div>
+            </section>
             <section v-else-if="examEnabled && !fullscreen" class="mc-fullscreen-gate" aria-labelledby="mc-fullscreen-title">
                 <h2 id="mc-fullscreen-title">Vollbild ist für diesen Test erforderlich.</h2>
                 <p>Die Prüfungsfragen werden erst im Vollbild angezeigt. Beim Verlassen des Vollbilds bleiben deine Antworten erhalten und die Fragen werden ausgeblendet.</p>
-                <p v-if="attempt.started_at">Deine Bearbeitungszeit läuft weiter. Eine Pause kann nur deine Lehrperson auslösen.</p>
+                <p v-if="attempt.paused_at">Verbleibende Bearbeitungszeit: {{ clock(remainingSeconds) }}</p>
+                <p v-else-if="attempt.started_at">Deine Bearbeitungszeit läuft weiter. Eine Pause kann nur deine Lehrperson auslösen.</p>
                 <button v-if="fullscreenAvailable" class="mc-button" @click="enterFullscreen">Vollbild starten</button>
                 <p v-else class="mc-save-warning">Dieser Browser unterstützt den benötigten Vollbildmodus nicht. Verwende einen Browser mit Vollbildunterstützung oder wende dich an deine Lehrperson.</p>
             </section>
@@ -181,6 +192,7 @@
 <script setup>
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { studentTasksUrl } from '@/pages/homepage/student/studentTasksNavigation'
 import { useStudentStore } from '@/stores/student/StudentStore'
 import StudentNavigationDrawer from '../student/components/StudentNavigationDrawer.vue'
 import McQuestionReview from '@/components/McQuestionReview.vue'
@@ -188,6 +200,7 @@ import { useMultipleChoiceSession } from './useMultipleChoiceSession'
 
 const route = useRoute()
 const router = useRouter()
+const tasksReturnUrl = computed(() => studentTasksUrl(route.query?.course))
 const { exam, retrySeconds, attempts, attempt, answers, loading, saving, submitting, error, saveError, storageUnavailable, expiredPending,
     finished, hasPending, active, canAnswer, remainingSeconds, countdownSeconds, answeredCount, isPublic,
     load, openAttempt, markReady, startAttempt, selectAnswer, flush, submitAttempt, refresh } = useMultipleChoiceSession(route)
@@ -358,6 +371,7 @@ button:focus-visible, input:focus-visible { outline: 3px solid #273bb8; outline-
 .mc-empty { padding: 44px 20px; text-align: center; color: var(--mc-muted); background: #f5f7fb; border-radius: 12px; margin: 24px 0; }
 .mc-alert { background: #fff2df; border-left: 4px solid #b97915; padding: 16px 20px; margin-bottom: 24px; }
 .mc-alert .mc-button { margin-top: 8px; }
+.mc-alert a.mc-button { display: inline-block; margin-right: 8px; text-decoration: none; }
 .mc-login { margin-left: 18px; color: #3446af; text-decoration: underline; }
 .mc-back { color: #3446af; text-decoration: underline; text-underline-offset: 4px; margin-bottom: 18px; cursor: pointer; }
 .mc-test-heading { padding-bottom: 28px; border-bottom: 1px solid #dce2ed; }

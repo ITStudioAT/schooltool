@@ -49,6 +49,12 @@ class McTest extends Model
         return $this->belongsTo(McCatalog::class, 'catalog_id');
     }
 
+    public function commonPreparationLocked(): bool
+    {
+        return $this->start_mode === 'common' && ($this->starts_at !== null || $this->ends_at !== null
+            || ($this->snapshot['work_countdown_started'] ?? false));
+    }
+
     public function attempts(): HasMany
     {
         return $this->hasMany(McAttempt::class, 'test_id');

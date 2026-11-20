@@ -1,6 +1,10 @@
 import { expect, it } from 'vitest'
 import { workNeedsPreparation } from '@/helpers/workOverview'
 
+it('does not treat a creation receipt as assessment progress', () => {
+    expect(workNeedsPreparation({ id: 86, status: { automation_enabled: true, creation_receipt: { id: 'request' } } }, { has_import: false })).toBe(true)
+})
+
 it('keeps historical evidence outside assignment preparation', () => {
     const work = { id: 64, status: { dispatch_notifications: [{ purpose: 'tasks' }] } }
     expect(workNeedsPreparation(work, { has_import: true })).toBe(false)

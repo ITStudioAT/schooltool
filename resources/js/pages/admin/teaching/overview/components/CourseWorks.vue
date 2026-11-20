@@ -11,7 +11,7 @@
         </template>
         <template #header-actions>
             <v-btn v-if="action !== 'new_course_work' && action !== 'edit_course_work'" icon="mdi-plus" size="small" variant="tonal" @click="newWork" :disabled="!hasStudents" />
-            <v-btn v-if="action === 'new_course_work' || action === 'edit_course_work'" icon="mdi-close" size="small" color="warning" variant="tonal" @click="abortEdit" :disabled="is_saving || is_deleting_work || isEditingExistingDetails" />
+            <v-btn v-if="action === 'new_course_work' || action === 'edit_course_work'" icon="mdi-close" size="small" color="warning" variant="tonal" @click="abortEdit" :disabled="is_saving || is_deleting_work || workChecking || workExerciseBusy || isEditingExistingDetails" />
             <v-btn v-if="action === 'new_course_work' || action === 'edit_course_work'" icon="mdi-content-save" size="small" color="success" variant="tonal" @click="saveWork(false)" :disabled="!canSaveWork" />
         </template>
         <v-card
@@ -71,11 +71,7 @@
                                     {{ workEmailPreparationLabel(work) === 'Abgeschlossen' ? 'ABGESCHLOSSEN' : workEmailPreparationLabel(work) }}
                                 </div>
                                 <div class="d-flex justify-end mt-auto">
-                                    <v-btn v-if="delete_work_id !== work.id" size="x-small" variant="text" @click.stop="delete_work_id = work.id">Löschen</v-btn>
-                                    <template v-else>
-                                        <v-btn size="x-small" variant="text" @click.stop="delete_work_id = null">Abbrechen</v-btn>
-                                        <v-btn size="x-small" variant="text" color="error" @click.stop="deleteWork(work)">Endgültig löschen</v-btn>
-                                    </template>
+                                    <v-btn size="x-small" variant="text" @click.stop="openDeleteWorkDialog(work)">Löschen</v-btn>
                                 </div>
                             </template>
                             <template v-else>
@@ -104,11 +100,8 @@
                                 <div class="text-body-2 work-title-second-line" :class="workHasAllGrades(work) ? 'text-success' : ''">
                                     {{ work.title || '—' }}
                                 </div>
-                                <div class="text-caption" data-work-deadline="first">
-                                    <span class="d-inline-flex align-center ga-1" role="img" aria-label="1. Frist" title="1. Frist"><span aria-hidden="true">1.</span><v-icon icon="mdi-calendar-clock-outline" size="12" aria-hidden="true" /></span> <template v-if="work.communicated_deadline?.date">{{ formatDate(work.communicated_deadline.date) }}<template v-if="work.communicated_deadline.time"> · {{ work.communicated_deadline.time }}</template></template><template v-else>—</template>
-                                </div>
                                 <div class="text-caption" data-work-deadline="second">
-                                    <span class="d-inline-flex align-center ga-1" role="img" aria-label="2. Frist" title="2. Frist"><span aria-hidden="true">2.</span><v-icon icon="mdi-calendar-clock-outline" size="12" aria-hidden="true" /></span> <template v-if="work.finish_until_date">{{ formatDate(work.finish_until_date) }}<template v-if="work.finish_until_time"> · {{ work.finish_until_time }}</template></template><template v-else>—</template>
+                                    <span class="d-inline-flex align-center ga-1" role="img" aria-label="Endgültige Abgabefrist" title="Endgültige Abgabefrist"><v-icon icon="mdi-calendar-clock-outline" size="12" aria-hidden="true" /></span> <template v-if="work.finish_until_date">{{ formatDate(work.finish_until_date) }}<template v-if="work.finish_until_time"> · {{ work.finish_until_time }}</template></template><template v-else>—</template>
                                 </div>
                                 <div v-if="formatImportDate(work.status?.folder_imported_at)" class="text-caption text-medium-emphasis">
                                     Zuletzt importiert: {{ formatImportDate(work.status.folder_imported_at) }}
@@ -136,11 +129,9 @@
                                 <div v-else class="work-grade-distribution-placeholder"></div>
                                 <div class="work-actions work-import-actions d-flex align-center flex-wrap ga-2">
                                     <WorkImportActions :work="work" @open="openImport" @link="openLink" />
-                                    <WorkExerciseExport :work="work" :course="selected_course" :date="work.date_for_all_groups || ''" />
+                                    <WorkExerciseExport :work="work" :course="selected_course" :date="work.date_for_all_groups || ''" :active="false" hide-activator />
                                     <WorkEvaluationPdf :work="work" />
-                                    <v-btn v-if="delete_work_id !== work.id" icon="mdi-delete" size="x-small" color="warning" variant="tonal" @click.stop="delete_work_id = work.id" />
-                                    <v-btn v-if="delete_work_id === work.id" icon="mdi-delete-off" size="x-small" color="success" variant="tonal" @click.stop="delete_work_id = null" />
-                                    <v-btn v-if="delete_work_id === work.id" icon="mdi-delete" size="x-small" color="error" variant="tonal" @click.stop="deleteWork(work)" />
+                                    <v-btn icon="mdi-delete" size="x-small" color="warning" variant="tonal" @click.stop="openDeleteWorkDialog(work)" />
                                 </div>
                             </div>
                             </template>
@@ -162,21 +153,24 @@
         <!-- NEUE/BEARBEITEN ARBEIT (TEMPLATE) -->
         <v-card tile flat color="transparent" class="w-100" v-if="action === 'new_course_work' || action === 'edit_course_work'">
             <v-form ref="form" v-model="is_valid" @submit.prevent class="mb-4">
-                <div v-if="work_form.id" class="work-import-actions d-flex align-center flex-wrap ga-2 mt-3">
-                    <WorkContextCopy v-if="courseWorks.find(work => work.id === work_form.id)" :work="courseWorks.find(work => work.id === work_form.id)"
-                        :course="selected_course" :date="work_form.date_for_all_groups || ''" />
-                    <WorkSubmissionCollection v-if="workEmailPreparationLabel(courseWorks.find(work => work.id === work_form.id)) === 'Abgaben einsammeln'" :work="courseWorks.find(work => work.id === work_form.id)" :date="work_form.date_for_all_groups || ''" />
-                    <WorkImportActions :work="courseWorks.find(work => work.id === work_form.id)" link-only @open="openImport" @link="openLink" />
-                    <WorkExerciseExport :work="courseWorks.find(work => work.id === work_form.id)" :course="selected_course" :date="work_form.date_for_all_groups || ''"
-                        :check-progress="workHasProgress(courseWorks.find(work => work.id === work_form.id))" :disabled="workChecking || is_saving"
-                        @exercise-status="workExerciseStatus = $event" @check-busy="workChecking = $event" @deadline-saved="refreshWorks" />
-                </div>
-                <div v-if="work_form.id" class="mt-2"><WorkDispatchStatus :work="work_form" aggregate /></div>
-                <span v-if="work_form.id" :inert="workChecking" :aria-disabled="workChecking" :class="{ 'work-status-checking': workChecking }">
-                    <WorkDeliveryStatus :work="courseWorks.find(work => work.id === work_form.id) || work_form" :date="work_form.date_for_all_groups || ''" :state="workExerciseStatus" :exercise-ready="workStudentDistributionAvailable(courseWorks.find(work => work.id === work_form.id) || work_form)" :disabled="is_saving || !workDeliveryAvailable(courseWorks.find(work => work.id === work_form.id) || work_form)" :size="24" @import="openImport" @saved="refreshWorks" />
-                </span>
-                <div v-if="work_form.id" class="text-caption mt-2" data-testid="work-assessment-total">
-                    {{ workAssessedCount(courseWorks.find(work => work.id === work_form.id)) }} von {{ totalCourseStudentsCount }} beurteilt
+                <div v-if="savedWorkForTitle" ref="workWorkflow" tabindex="-1" class="mt-3 px-4">
+                    <v-select v-if="workflowDates.length > 1" :model-value="workflowDate" @update:model-value="workflowSelectedDate = $event"
+                        :items="workflowDates" label="Durchführungstermin für den Ablauf"
+                        density="compact" variant="outlined" hide-details class="mb-2" :disabled="workChecking || workExerciseBusy" />
+                    <WorkWorkflowOverview :work="savedWorkForTitle" :course="selected_course" :date="workflowDate"
+                        :assessment="workflowAssessment" :exercise-ready="workStudentDistributionAvailable(savedWorkForTitle)"
+                        :disabled="workChecking || is_saving || is_deleting_work || isEditingExistingDetails" :link-pending="handshakeAwaitingLink"
+                        :link-error="work_folder_errors[workDropboxKey(config?.user?.id, savedWorkForTitle)]" :check-progress="workHasProgress(savedWorkForTitle)"
+                        :assessment-count="`${workAssessedCount(savedWorkForTitle)} von ${totalCourseStudentsCount} beurteilt`"
+                        :all-assessed="totalCourseStudentsCount > 0 && workAssessedCount(savedWorkForTitle) === totalCourseStudentsCount"
+                        :last-check="workflowLastCheck"
+                        @link="openLink" @import="openImport" @saved="workflowWorkSaved" @edit-grades="focusWorkSection('workGrading')"
+                        @exercise-status="workExerciseStatus = $event" @progress-checked="rememberWorkflowCheck"
+                        @check-busy="workChecking = $event" @busy="workExerciseBusy = $event" @deadline-saved="refreshWorks">
+                        <template #secondary-actions>
+                            <WorkContextCopy :work="savedWorkForTitle" :course="selected_course" :date="workflowDate" />
+                        </template>
+                    </WorkWorkflowOverview>
                 </div>
                 <v-card-text class="pt-2">
                     <v-card variant="outlined" class="pa-3 mb-4">
@@ -252,8 +246,13 @@
                             label="Maximale Plusanzahl" type="text" inputmode="numeric" variant="outlined"
                             hint="So viele Plus sind bei dieser Arbeit insgesamt möglich." persistent-hint
                             :error-messages="workMaximumError" :disabled="is_saving" />
+                        <div v-if="work_form.id" class="mb-3">
+                            <div class="text-caption text-medium-emphasis">Titel</div>
+                            <WorkTitleEditor :work-id="work_form.id" :title="savedWorkForTitle?.title ?? work_form.title"
+                                :can-edit="canEditWorkTitle(config, selected_course, savedWorkForTitle)" :disabled="is_saving || is_deleting_work" @saved="workTitleSaved" />
+                        </div>
                         <template v-if="action === 'new_course_work' || details_editable">
-                            <v-text-field v-model="work_form.title" label="Titel" />
+                            <v-text-field v-if="!work_form.id" v-model="work_form.title" label="Titel" />
                             <div class="text-caption text-medium-emphasis mb-2" id="work-assessment-mode-label">Beurteilung</div>
                             <v-btn-toggle v-model="work_form.automation_enabled" mandatory color="primary" variant="outlined"
                                 :disabled="is_saving" aria-labelledby="work-assessment-mode-label" class="work-assessment-mode">
@@ -263,39 +262,23 @@
                             <div class="text-caption text-medium-emphasis mt-2 mb-3">
                                 {{ work_form.automation_enabled ? 'Beurteilungen importieren; Ordner, Abgaben und Versand verfolgen.' : 'Beurteilungen direkt in Schooltool eintragen.' }}
                             </div>
+                            <WorkHandshakeDraft v-if="!work_form.id && (work_form.automation_enabled || handshakeDraft || handshakeState.error)" v-model="handshakeDraft"
+                                :disabled="is_saving || Boolean(handshakePendingCreation)" @state="handshakeState = $event" />
                             <v-date-input v-model="work_form.date_for_all_groups" label="Datum (für alle Gruppen)" />
                             <div class="d-flex flex-wrap ga-1 mt-1" v-if="nextDates.length">
                                 <v-chip v-for="date in nextDates" :key="date.id" size="x-small" variant="outlined" class="cursor-pointer" @click="selectDate(date.date)">
                                     {{ formatDateWithWeekday(date.date) }}
                                 </v-chip>
                             </div>
-                            <div class="course-works-deadline-fields d-flex ga-3">
-                                <v-date-input v-model="work_form.finish_until_date" clearable label="Fertig bis" class="mt-4"
-                                    variant="outlined" density="default" :hide-header="false" :picker-props="{ width: 360 }" :disabled="is_saving" />
-                                <WorkTimeInput v-model="work_form.finish_until_time" class="mt-4" :disabled="is_saving" />
-                            </div>
                             <v-textarea v-model="work_form.description" label="Beschreibung" rows="3" class="mt-4" />
                         </template>
 
                         <div v-else class="details-readonly">
                             <div class="details-readonly__row">
-                                <div class="details-readonly__label">Titel</div>
-                                <div class="details-readonly__value">
-                                    {{ work_form.title || '—' }}
-                                </div>
-                            </div>
-                            <div class="details-readonly__row">
                                 <div class="details-readonly__label">Datum</div>
                                 <div class="details-readonly__value d-flex align-center ga-2">
                                     <v-icon size="18" color="primary">mdi-calendar</v-icon>
                                     <span>{{ work_form.date_for_all_groups ? formatDateWithWeekday(work_form.date_for_all_groups) : '—' }}</span>
-                                </div>
-                            </div>
-                            <div class="details-readonly__row">
-                                <div class="details-readonly__label">Fertig bis</div>
-                                <div class="details-readonly__value d-flex align-center ga-2">
-                                    <v-icon size="18" color="warning">mdi-calendar-check</v-icon>
-                                    <span :class="`text-${workDeadlineColor(work_form, deadlineNow)}`">{{ work_form.finish_until_date ? formatDateWithWeekday(work_form.finish_until_date) : '—' }}<template v-if="work_form.finish_until_time"> · {{ work_form.finish_until_time }}</template></span>
                                 </div>
                             </div>
                             <div class="details-readonly__row details-readonly__row--block">
@@ -305,9 +288,20 @@
                                 </div>
                             </div>
                         </div>
+                        <WorkFinalDeadline :key="work_form.id || 'new'" class="mt-4"
+                            :date="work_form.finish_until_date" :time="work_form.finish_until_time"
+                            :color="workDeadlineColor(work_form, deadlineNow)" :disabled="is_saving"
+                            :pending="finalDeadlinePending" @change="applyFinalDeadline" />
+                        <v-alert v-if="handshakeNotice" type="warning" variant="tonal" class="mb-3">{{ handshakeNotice }}</v-alert>
+                        <v-btn v-if="handshakeNotice && !work_form.id" variant="text" @click="recoverHandshakeCreation">Frühere Anlage prüfen</v-btn>
+                        <v-btn v-if="handshakeAwaitingLink && work_form.id && !handshakeInlineStarted" variant="tonal" @click="resumeHandshakeLink()">Lernmodul prüfen</v-btn>
+                        <WorkDropboxLink v-if="handshakeAwaitingLink && work_form.id" ref="creationLink" inline :course-id="selected_course?.id"
+                            @linked="handshakeLinked" @link-saved="handshakeLinkSaved" @defer="deferHandshakeLink" @closed="handshakeInlineStarted = false" />
                     </v-card>
 
-                    <div :style="isEditingExistingDetails ? 'pointer-events:none; opacity:0.45' : ''">
+                    <div ref="workGrading" tabindex="-1" :style="isEditingExistingDetails ? 'pointer-events:none; opacity:0.45' : ''">
+                    <v-btn v-if="savedWorkForTitle" size="small" min-height="44"
+                        variant="text" prepend-icon="mdi-arrow-up" @click="focusWorkSection('workWorkflow')">Zum Ablauf</v-btn>
 
                     <div v-if="pending_group_work !== null" class="d-flex align-center ga-2 mt-2">
                         <div class="text-body-2">
@@ -829,13 +823,13 @@
                         </div>
 
                         <div class="d-flex flex-row flex-wrap align-center justify-space-between ga-2 mt-4">
-                            <v-btn color="warning" flat tile @click="abortEdit" :disabled="is_saving || is_deleting_work">Abbruch</v-btn>
+                            <v-btn color="warning" flat tile @click="abortEdit" :disabled="is_saving || is_deleting_work || workChecking || workExerciseBusy">Abbruch</v-btn>
                             <div class="d-flex flex-wrap justify-end ga-2">
                                 <v-btn v-if="work_form.id" data-testid="work-dialog-delete" color="error" variant="text"
-                                    prepend-icon="mdi-delete" :disabled="is_saving || is_deleting_work"
+                                    prepend-icon="mdi-delete" :disabled="is_saving || is_deleting_work || workChecking || workExerciseBusy"
                                     @click="openDeleteWorkDialog(work_form)">Arbeit löschen</v-btn>
-                                <v-btn color="primary" flat tile @click="saveWork(true)" :disabled="!canSaveWork" :loading="is_saving">Speichern</v-btn>
-                                <v-btn color="success" flat tile @click="saveWork(false)" :disabled="!canSaveWork" prepend-icon="mdi-content-save">Ende</v-btn>
+                                <v-btn color="primary" flat tile @click="saveWork(true)" :disabled="!canSaveWork" :loading="is_saving">{{ !work_form.id && handshakeDraft ? 'Arbeit und Prüfungsordner anlegen' : 'Speichern' }}</v-btn>
+                                <v-btn v-if="work_form.id || !handshakeDraft" color="success" flat tile @click="saveWork(false)" :disabled="!canSaveWork" prepend-icon="mdi-content-save">Ende</v-btn>
                             </div>
                         </div>
                     </div>
@@ -845,13 +839,14 @@
         </v-card>
 
         <WorkEvaluationImport ref="evaluationImport" @imported="evaluationImported" @deadline-updated="importDeadlineUpdated" />
-        <WorkDropboxLink ref="moduleLink" :course-id="selected_course?.id" />
+        <WorkDropboxLink ref="moduleLink" :course-id="selected_course?.id" @linked="handshakeLinked" />
         <v-dialog v-model="delete_work_dialog.open" persistent max-width="460">
             <v-card data-testid="work-delete-confirmation">
                 <v-card-title class="text-subtitle-1 font-weight-bold">Arbeit löschen</v-card-title>
                 <v-card-text>
                     Die Arbeit <strong>{{ delete_work_dialog.work?.title || delete_work_dialog.work?.type || 'Arbeit' }}</strong> und ihre verknüpften Einträge wirklich löschen?
-                    <div class="mt-2 text-caption">Zugeordnete Prüfungsordner in Dropbox und Online-MC-Tests mit ihren Ergebnissen werden ebenfalls gelöscht. Unklare oder gemeinsam genutzte Zuordnungen stoppen die Löschung.</div>
+                    <div class="mt-2 text-caption">Sind alle Zuordnungen sicher, werden Prüfungsordner in Dropbox und Online-MC-Tests mit ihren Ergebnissen ebenfalls gelöscht. Sind Zuordnungen unklar oder gemeinsam genutzt oder kann Dropbox vor Beginn nicht geprüft werden, wird die Arbeit gelöscht und die Prüfungsordner und MC-Tests bleiben erhalten.</div>
+                    <WorkCheckProgress v-if="workDeleteProgress" :state="workDeleteProgress" deletion />
                 </v-card-text>
                 <v-card-actions class="flex-wrap justify-end ga-2">
                     <v-btn data-testid="work-delete-cancel" :disabled="is_deleting_work" variant="text" @click="closeDeleteWorkDialog">Abbrechen</v-btn>
@@ -906,25 +901,28 @@ import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 import WorkEvaluationImport from './WorkEvaluationImport.vue'
 import WorkImportActions from './WorkImportActions.vue'
 import WorkExerciseExport from './WorkExerciseExport.vue'
+import WorkCheckProgress from './WorkCheckProgress.vue'
 import WorkDropboxLink from './WorkDropboxLink.vue'
+import WorkTitleEditor from './WorkTitleEditor.vue'
+import { canEditWorkTitle } from '@/helpers/workTitlePermission'
+import WorkHandshakeDraft from './WorkHandshakeDraft.vue'
+import { clearWorkCreation, pendingWorkCreation, workCreationRequest } from '@/helpers/workCreationReceipt'
 import WorkEvaluationPdf from './WorkEvaluationPdf.vue'
 import WorkDispatchLog from './WorkDispatchLog.vue'
 import WorkDispatchStatus from './WorkDispatchStatus.vue'
 import WorkCellStatus from './WorkCellStatus.vue'
 import WorkAiExport from './WorkAiExport.vue'
-import WorkTimeInput from './WorkTimeInput.vue'
+import WorkFinalDeadline from './WorkFinalDeadline.vue'
 import WorkContextCopy from './WorkContextCopy.vue'
-import WorkFolderStatus from './WorkFolderStatus.vue'
-import WorkDeliveryStatus from './WorkDeliveryStatus.vue'
+import WorkWorkflowOverview from './WorkWorkflowOverview.vue'
 import WorkSimulationBadge from './WorkSimulationBadge.vue'
-import WorkSubmissionCollection from './WorkSubmissionCollection.vue'
 import { workHasProgress, workManualCompletionFields, workProgressNextAction } from '@/helpers/workProgress'
 import { workAutomationEnabled } from '@/helpers/workAutomation'
 import { loadWorkDropbox, loadWorkExercise, workDropboxKey, workDropboxStates, workExerciseCheck } from '@/helpers/workDropbox'
 import { isInitialWork, workConnectionLabel, workNeedsPreparation, workPreparationLabel } from '@/helpers/workOverview'
 
 export default {
-    components: { WorkSubmissionCollection, ItsGridBox, WorkAiExport, WorkEvaluationImport, WorkImportActions, WorkExerciseExport, WorkDropboxLink, WorkEvaluationPdf, WorkDispatchLog, WorkDispatchStatus, WorkCellStatus, WorkTimeInput, WorkContextCopy, WorkFolderStatus, WorkDeliveryStatus, WorkSimulationBadge },
+    components: { ItsGridBox, WorkAiExport, WorkEvaluationImport, WorkImportActions, WorkExerciseExport, WorkCheckProgress, WorkDropboxLink, WorkTitleEditor, WorkHandshakeDraft, WorkEvaluationPdf, WorkDispatchLog, WorkDispatchStatus, WorkCellStatus, WorkFinalDeadline, WorkContextCopy, WorkWorkflowOverview, WorkSimulationBadge },
 
     async beforeMount() {
         this.adminStore = useAdminStore()
@@ -955,9 +953,9 @@ export default {
             teachingStore: null,
             activeSemester: null,
             is_valid: false,
-            delete_work_id: null,
             delete_work_dialog: { open: false, work: null },
             is_deleting_work: false,
+            workDeleteProgress: null,
             work_form: this.emptyWorkForm(),
             is_initializing_form: false,
             pending_group_work: null,
@@ -973,6 +971,12 @@ export default {
             students_sort_mode: 'last_name_first_name',
             details_editable: false,
             details_snapshot: null,
+            handshakeDraft: null,
+            handshakeState: { busy: false, error: '' },
+            handshakePendingCreation: null,
+            handshakeAwaitingLink: false,
+            handshakeInlineStarted: false,
+            handshakeNotice: '',
             group_dialog_open: false,
             group_dialog_index: null,
             group_dialog_add_students_open: false,
@@ -983,7 +987,10 @@ export default {
             comment_dialog_value: '',
             is_saving: false,
             workChecking: false,
+            workExerciseBusy: false,
             workExerciseStatus: null,
+            workflowSelectedDate: null,
+            workflowProgressCheck: null,
             is_changing_group_work_mode: false,
             work_folder_errors: {},
             deadlineNow: Date.now(),
@@ -992,6 +999,53 @@ export default {
     },
 
     computed: {
+        finalDeadlinePending() {
+            const expected = this.work_form.expected_final_deadline
+            return Boolean(expected) && ((this.normalizeDateString(this.work_form.finish_until_date) || null) !== expected.date
+                || (this.work_form.finish_until_time || null) !== expected.time)
+        },
+        savedWorkForTitle() {
+            return this.courseWorks.find(item => String(item.id) === String(this.work_form.id)
+                && String(item.teaching_course_id) === String(this.selected_course?.id)) || null
+        },
+        workflowDates() {
+            const work = this.savedWorkForTitle
+            if (work?.date_for_all_groups) return [{ title: this.normalizeDateString(work.date_for_all_groups).split('-').reverse().join('.'), value: this.normalizeDateString(work.date_for_all_groups) }]
+            return [...new Set((work?.groups || []).map(group => this.normalizeDateString(group.date)).filter(Boolean))].sort()
+                .map(date => ({ title: date.split('-').reverse().join('.'), value: date }))
+        },
+        workflowDate() {
+            return this.workflowDates.some(date => date.value === this.workflowSelectedDate)
+                ? this.workflowSelectedDate : this.workflowDates[0]?.value || ''
+        },
+        workflowAssessment() {
+            const work = this.savedWorkForTitle
+            if (!work) return null
+            const userId = this.config?.user?.id
+            const date = this.workflowDate
+            const state = this.workExerciseStatus
+            const current = state && state.userId === userId && String(state.workId) === String(work.id)
+                && String(state.courseId) === String(work.teaching_course_id) && state.date === date ? state : null
+            const checked = workExerciseCheck(workDropboxKey(userId, work), work, date)
+            if (current && (current.status === 'checking' || !checked
+                || (Date.parse(current.checkedAt) || 0) >= (Date.parse(checked.checkedAt) || 0))) return current
+            if (!checked) return null
+            const exercise = checked.data?.exercise
+            return { userId, workId: work.id, courseId: work.teaching_course_id, date, status: checked.status, folder: checked.folder,
+                preparation: exercise?.preparation, assignmentStatus: exercise?.assignment_status, emailPreparation: exercise?.email_preparation,
+                emailDispatch: exercise?.email_dispatch, deletionPending: exercise?.deletion_pending, checkedAt: checked.checkedAt }
+        },
+        workflowLastCheck() {
+            const assessment = this.workflowAssessment
+            const key = workDropboxKey(this.config?.user?.id, this.savedWorkForTitle)
+            const progress = key && this.workflowProgressCheck?.checkKey === key ? this.workflowProgressCheck : null
+            const candidates = [assessment && { checkedAt: assessment.checkedAt, completed: assessment.status !== 'unknown' }, progress]
+                .filter(check => Number.isFinite(Date.parse(check?.checkedAt)))
+                .sort((first, second) => Date.parse(second.checkedAt) - Date.parse(first.checkedAt))
+            if (!candidates.length) return ''
+            const latest = candidates[0]
+            return `${formatViennaDateTime(latest.checkedAt)}${latest.completed ? '' : ' (Prüfung nicht abgeschlossen)'}`
+        },
         workFolderRequests() {
             return (this.filteredCourseWorks || []).map(work => ({
                 work,
@@ -1087,7 +1141,7 @@ export default {
             return requiresWorkMaximumPlus(this.selected_course, this.work_form.type) ? workMaximumPlusError(this.work_form.maximum_plus) : ''
         },
         canSaveWork() {
-            return !this.is_saving && !this.is_deleting_work && !this.isEditingExistingDetails && this.hasSelectedWorkType && !this.workMaximumError
+            return !this.is_saving && !this.is_deleting_work && !this.workChecking && !this.workExerciseBusy && !this.handshakeAwaitingLink && !this.isEditingExistingDetails && this.hasSelectedWorkType && !this.workMaximumError
         },
         canChangeGroupWorkMode() {
             return this.action === 'new_course_work' && !this.work_form.id
@@ -1221,7 +1275,8 @@ export default {
                 for (const { key, work } of requests) {
                     if (!key) continue
                     const request = workNeedsPreparation(work, workDropboxStates.get(key))
-                        ? loadWorkExercise(key, work, work.date_for_all_groups || '') : loadWorkDropbox(key, work.id)
+                        ? loadWorkExercise(key, work, work.date_for_all_groups || '', false, null, false, null, null, false, true)
+                        : loadWorkDropbox(key, work.id)
                     request.then(() => {
                         delete this.work_folder_errors[key]
                     }).catch(() => {
@@ -1296,6 +1351,30 @@ export default {
     },
 
     methods: {
+        workDropboxKey,
+        rememberWorkflowCheck(check) {
+            const key = workDropboxKey(this.config?.user?.id, this.savedWorkForTitle)
+            if (key && check?.checkKey === key) this.workflowProgressCheck = check
+        },
+        workflowWorkSaved(work) {
+            const current = this.savedWorkForTitle
+            if (!work?.id || String(work.id) !== String(current?.id) || String(work.teaching_course_id) !== String(current?.teaching_course_id)) return
+            const index = this.courseWorks.indexOf(current)
+            if (index >= 0) this.courseWorks.splice(index, 1, work)
+            if (String(this.selected_courseWork?.id) === String(work.id)) this.selected_courseWork = work
+            this.work_form.status = work.status
+        },
+        focusWorkSection(section) {
+            const target = this.$refs[section]
+            target?.focus({ preventScroll: true })
+            target?.scrollIntoView?.({ block: 'start' })
+        },
+        applyFinalDeadline({ date, time }) {
+            if (this.is_saving) return
+            this.work_form.finish_until_date = this.normalizeDateString(date) || null
+            this.work_form.finish_until_time = time
+        },
+        canEditWorkTitle,
         workHasProgress,
         workAutomationEnabled,
         formatImportDate: formatViennaDateTime,
@@ -1346,6 +1425,13 @@ export default {
                 description: this.work_form.description,
             }
             this.details_editable = true
+        },
+        workTitleSaved(work) {
+            if (!work?.id || String(work.id) !== String(this.work_form.id)) return
+            this.work_form.title = work.title
+            if (this.details_snapshot) this.details_snapshot.title = work.title
+            const index = this.courseWorks.findIndex(item => String(item.id) === String(work.id))
+            if (index >= 0) this.courseWorks.splice(index, 1, work)
         },
         cancelDetailsEdit() {
             if (this.details_snapshot) {
@@ -1713,6 +1799,7 @@ export default {
             return true
         },
         newWork() {
+            this.resetHandshakeDraft?.()
             this.is_initializing_form = true
             this.work_form = this.emptyWorkForm()
             this.work_form.teaching_course_id = this.selected_course?.id || null
@@ -1735,10 +1822,13 @@ export default {
         editWork(work) {
             this.is_initializing_form = true
             this.workExerciseStatus = null
+            this.workflowSelectedDate = null
+            this.workflowProgressCheck = null
             const activeStudentIdSet = new Set(this.activeCourseStudents.map((student) => String(student.id)))
             this.work_form = {
                 ...this.emptyWorkForm(),
                 ...work,
+                expected_final_deadline: { date: this.normalizeDateString(work.finish_until_date) || null, time: work.finish_until_time || null },
                 automation_enabled: workAutomationEnabled(work),
             }
             this.work_form.is_group_work = this.toBoolean(this.work_form.is_group_work)
@@ -1833,6 +1923,8 @@ export default {
             }
         },
         abortEdit() {
+            if (this.workChecking || this.workExerciseBusy) return
+            this.resetHandshakeDraft?.()
             const shouldReturnToDatesPanel = this.shouldReturnToDatesPanel()
 
             this.action = ''
@@ -1904,6 +1996,12 @@ export default {
             this.$router.replace({ query }).catch(() => {})
         },
         async saveWork(stayOnPage = false) {
+            if (this.workChecking || this.workExerciseBusy) return
+            if (this.handshakeState?.busy || this.handshakeState?.error) return
+            if (this.handshakeDraft && !this.work_form.automation_enabled && !this.work_form.id) {
+                this.handshakeNotice = 'Für die Lernmodul-Verknüpfung bitte automatische Beurteilung wählen oder die Datei entfernen.'
+                return
+            }
             const requiresMaximum = requiresWorkMaximumPlus(this.selected_course, this.work_form.type)
             if (requiresMaximum && workMaximumPlusError(this.work_form.maximum_plus)) return
             if (!this.hasSelectedWorkType) {
@@ -1957,19 +2055,46 @@ export default {
                     finish_until_time: this.work_form.finish_until_time || null,
                     teaching_course_id: this.selected_course?.id || this.work_form.teaching_course_id,
                 }
+                if (this.work_form.id) delete payload.title
 
                 let ok = false
                 if (requiresMaximum) payload.maximum_plus = Number(this.work_form.maximum_plus)
                 else delete payload.maximum_plus
                 let savedWorkId = this.work_form.id
+                let createdWork = null
                 if (this.work_form.id) {
                     // Update existing work
                     ok = await this.courseWorkStore.update(payload)
                 } else {
                     // Create new work
-                    const result = await this.courseWorkStore.store(payload)
+                    let result
+                    if (!this.handshakeDraft && !this.handshakePendingCreation && this.config?.user?.id && payload.teaching_course_id
+                        && pendingWorkCreation(this.config.user.id, payload.teaching_course_id)) {
+                        this.handshakeNotice = 'Ein früherer Anlageversuch ist noch ungeklärt. Bitte die Arbeit in der Übersicht prüfen oder denselben Versuch mit der Handshake-Datei wiederholen.'
+                        return
+                    }
+                    if (this.handshakeDraft || this.handshakePendingCreation) {
+                        try {
+                            this.handshakePendingCreation ||= JSON.parse(JSON.stringify({ ...payload, creation_request_id: workCreationRequest(this.config?.user?.id, payload.teaching_course_id) }))
+                            const response = await axios.post('/api/admin/teaching/course_works', this.handshakePendingCreation)
+                            if (!response.data?.data?.id) throw new Error('Die Arbeitskennung fehlt. Bitte denselben Anlageversuch erneut prüfen.')
+                            result = response.data
+                            clearWorkCreation(this.config?.user?.id, payload.teaching_course_id)
+                            this.handshakePendingCreation = null
+                        } catch (exception) {
+                            if (exception.response?.status === 422) {
+                                this.handshakePendingCreation = null
+                            }
+                            this.handshakeNotice = exception.response?.status === 409
+                                ? 'Ein früherer Anlageversuch mit anderen Angaben besteht bereits. Bitte die Arbeitenübersicht prüfen.'
+                                : exception.response?.status === 422 ? exception.response.data?.message || 'Bitte die Angaben prüfen.'
+                                    : 'Die Anlage konnte nicht bestätigt werden. Erneut speichern prüft die ursprünglichen Angaben desselben Anlageversuchs.'
+                            return
+                        }
+                    } else result = await this.courseWorkStore.store(payload)
                     ok = !!result
                     if (ok && result?.data?.id) {
+                        createdWork = result.data
                         // Capture the new ID from the response
                         savedWorkId = result.data.id
                         // Update form ID so subsequent saves use update instead of store
@@ -1980,12 +2105,23 @@ export default {
                 }
 
                 if (ok) {
+                    this.deadlineNow = Date.now()
+                    if (this.handshakeDraft && savedWorkId) {
+                        this.handshakeAwaitingLink = true
+                        this.handshakeNotice = 'Die Arbeit ist angelegt. Die Lernmodul-Verknüpfung ist noch nicht abgeschlossen.'
+                    }
                     await this.refreshWorks()
                     // If the saved work is hidden by semester filter, switch to 1+2 so it is immediately visible.
                     if (savedWorkId && this.semesterCount === 2 && !this.filteredCourseWorks.find((w) => w.id === savedWorkId)) {
                         this.activeSemester = 3
                     }
-                    if (stayOnPage) {
+                    if (this.handshakeDraft && savedWorkId) {
+                        const savedWork = this.courseWorks.find((work) => work.id === savedWorkId) || createdWork
+                        if (savedWork) {
+                            this.editWork(savedWork)
+                            await this.resumeHandshakeLink(savedWork)
+                        }
+                    } else if (stayOnPage) {
                         // Find the saved work and reload it for editing
                         const savedWork = this.courseWorks.find((w) => w.id === savedWorkId)
                         if (savedWork) {
@@ -1999,8 +2135,59 @@ export default {
                 this.is_saving = false
             }
         },
+        resetHandshakeDraft() {
+            this.handshakeDraft = null
+            this.handshakeState = { busy: false, error: '' }
+            this.handshakePendingCreation = null
+            this.handshakeAwaitingLink = false
+            this.handshakeInlineStarted = false
+            this.handshakeNotice = ''
+        },
+        async resumeHandshakeLink(savedWork = null) {
+            const work = savedWork || this.courseWorks.find(item => String(item.id) === String(this.work_form.id)) || this.work_form
+            if (!work?.id) return
+            await this.$nextTick()
+            this.handshakeInlineStarted = true
+            await this.$refs.creationLink.openLink(work, this.handshakeDraft, true)
+        },
+        async recoverHandshakeCreation() {
+            const userId = this.config?.user?.id
+            const courseId = this.selected_course?.id
+            const requestId = pendingWorkCreation(userId, courseId)
+            if (!requestId || !await this.courseWorkStore.index(courseId)) return
+            const work = this.courseWorks.find(item => item.status?.creation_receipt?.id === requestId
+                && String(item.status.creation_receipt.user_id) === String(userId))
+            if (!work) {
+                this.handshakeNotice = 'Die Anlage ist noch nicht bestätigt. Bitte denselben Anlageversuch erneut speichern.'
+                return
+            }
+            clearWorkCreation(userId, courseId)
+            this.handshakePendingCreation = null
+            this.editWork(work)
+            this.handshakeAwaitingLink = true
+            this.handshakeNotice = 'Die Arbeit wurde gefunden. Bitte die Lernmodul-Verknüpfung abschließen.'
+        },
+        handshakeLinkSaved(work) {
+            if (String(work?.id) === String(this.work_form.id)) this.handshakeNotice = 'Das Lernmodul ist verknüpft. Der Prüfungsordner ist noch nicht bestätigt.'
+        },
+        handshakeLinked(work) {
+            if (String(work?.id) !== String(this.work_form.id)) return
+            this.handshakeDraft = null
+            this.handshakeAwaitingLink = false
+            this.handshakeInlineStarted = false
+            this.handshakeNotice = ''
+        },
+        deferHandshakeLink(linked = false) {
+            this.handshakeDraft = null
+            this.handshakeAwaitingLink = false
+            this.handshakeInlineStarted = false
+            this.handshakeNotice = linked ? 'Das Lernmodul ist verknüpft. Der Prüfungsordner ist noch nicht bestätigt.'
+                : 'Die Arbeit ist gespeichert. Die Lernmodul-Verknüpfung ist noch nicht bestätigt.'
+        },
         openDeleteWorkDialog(work) {
-            if (!work?.id || this.is_saving || this.is_deleting_work) return
+            if (!work?.id || this.is_saving || this.is_deleting_work || this.workChecking || this.workExerciseBusy) return
+
+            this.workDeleteProgress = null
             const savedWork = this.courseWorks.find(item => String(item.id) === String(work.id))
             if (!savedWork) return
             this.delete_work_dialog = { open: true, work: savedWork }
@@ -2012,11 +2199,14 @@ export default {
         async deleteWork(work) {
             if (!work?.id || this.is_saving || this.is_deleting_work) return
             this.is_deleting_work = true
+            this.workDeleteProgress = { state: 'running', active: null, completed: [], skipped: [], steps: ['delete_check', 'delete_folders', 'delete_mc_files', 'delete_records'] }
             try {
-                const ok = await this.courseWorkStore.destroy(work.id)
-                if (!ok) return
+                const ok = await this.courseWorkStore.destroy(work.id, progress => { this.workDeleteProgress = progress })
+                if (!ok) {
+                    if (this.workDeleteProgress?.state === 'running') this.workDeleteProgress = { ...this.workDeleteProgress, state: 'failed' }
+                    return
+                }
                 this.delete_work_dialog = { open: false, work: null }
-                this.delete_work_id = null
                 if (String(this.work_form.id) === String(work.id)) this.abortEdit()
                 await this.refreshWorks()
             } finally {
@@ -2508,25 +2698,12 @@ export default {
             return workDropboxStates.get(workDropboxKey(this.config?.user?.id, work))
         },
         workStudentDistributionAvailable(work) {
-            const state = this.workExerciseStatus
-            const checked = workExerciseCheck(workDropboxKey(this.config?.user?.id, work), work, work.date_for_all_groups || '')
-            const currentMatches = state && state.userId === this.config?.user?.id && String(state.workId) === String(work.id)
-                && String(state.courseId) === String(work.teaching_course_id) && state.date === (work.date_for_all_groups || '')
-            if (currentMatches && (state.status === 'checking'
-                || !checked || !(Date.parse(checked.checkedAt) > Date.parse(state.checkedAt || 0)))) {
-                if (state.status !== 'found') return false
-                return state.assignmentStatus === 'ready' || state.preparation?.status === 'ready'
-            }
-            if (checked?.status === 'unknown') return false
-            if (checked?.status === 'found' && (checked.data?.exercise?.assignment_status === 'ready'
-                || checked.data?.exercise?.preparation?.status === 'ready')) return true
+            const state = this.workflowAssessment
+            if (['unknown', 'checking', 'missing'].includes(state?.status)) return false
+            if (state?.status === 'found') return state.assignmentStatus === 'ready' || state.preparation?.status === 'ready'
             const status = { ...work.status }
             Object.values(workManualCompletionFields).forEach(field => { delete status[field] })
             return workHasProgress({ ...work, status }) && !workNeedsPreparation(work, this.workFolderState(work))
-        },
-        workDeliveryAvailable(work) {
-            return Boolean(this.workStudentDistributionAvailable(work) || work.local_task_copy
-                || work.status?.student_distribution?.published_at || work.status?.student_distribution?.prepared_at)
         },
         workEmailPreparationLabel(work) {
             if (workHasProgress(work)) return workProgressNextAction(work, this.deadlineNow)
@@ -2636,34 +2813,6 @@ export default {
 :deep(.its-grid-box__icon-wrap .mdi-brain) {
     color: rgb(var(--v-theme-primary));
 }
-
-.course-works-deadline-fields {
-    flex-wrap: nowrap;
-}
-
-.course-works-deadline-fields {
-    flex-wrap: wrap;
-}
-
-.course-works-deadline-fields > * {
-    flex: 1 1 220px;
-    min-width: 0;
-}
-
-.course-works-deadline-fields :deep(.v-field) {
-    min-height: 64px;
-}
-
-.course-works-deadline-fields :deep(input) {
-    font-size: 1.125rem;
-}
-
-@media (max-width: 480px) {
-    .course-works-deadline-fields {
-        flex-wrap: wrap;
-    }
-}
-
 
 .work-row {
     border: 1px solid transparent;

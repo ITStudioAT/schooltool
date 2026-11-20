@@ -14,6 +14,7 @@ use App\Services\TeachingCourseEvaluationService;
 use App\Services\TeachingCourseStudentEntryService;
 use App\Services\TeachingService;
 use App\Services\TeachingWorkMarkdownImport;
+use App\Services\TeachingWorkStudentDistribution;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class CourseStudentEntryController extends Controller
@@ -25,13 +26,14 @@ class CourseStudentEntryController extends Controller
         $yearId = SchoolTool::where('school_id', $student->school_id)->value('active_schoolyear_id') ?? $student->schoolyear_id;
         $course = $course_work->teachingCourse;
         abort_unless($course && (int) $course->id === $courseId && (int) $course->school_id === (int) $student->school_id &&
-            (int) $course->schoolyear_id === (int) $yearId && $course->teachingCourseStudents()->where('user_id', $student->id)->whereNull('canceled_at')->exists(), 403);
+            (int) $course->schoolyear_id === (int) $yearId && $course->teachingCourseStudents()->forStudentAccount($student, (int) $yearId)->whereNull('canceled_at')->exists(), 403);
         abort_unless($course_work->teachingCourseStudentEntries()->where('user_id', $student->id)->where('teaching_course_id', $courseId)->exists(), 403);
+        abort_unless($course_work->gradesVisibleToStudents(), 404);
 
         return $importer->streamPdf($course_work, $sha256, (int) $student->id, true);
     }
 
-    public function index($courseId, ParentStudentAccessService $parentAccess, TeachingCourseStudentEntryService $entryService)
+    public function index($courseId, ParentStudentAccessService $parentAccess, TeachingCourseStudentEntryService $entryService, TeachingWorkStudentDistribution $distribution)
     {
         if (! $auth_user = $parentAccess->currentStudent()) {
             abort(403, 'Sie haben keine Berechtigung');
@@ -54,7 +56,7 @@ class CourseStudentEntryController extends Controller
 
         // Check if student is enrolled in this course
         $isEnrolled = $course->teachingCourseStudents()
-            ->where('user_id', $auth_user->id)
+            ->forStudentAccount($auth_user, (int) $active_schoolyear_id)
             ->whereNull('canceled_at')
             ->exists();
 
@@ -87,11 +89,12 @@ class CourseStudentEntryController extends Controller
             ->get();
 
         $entries = $entries
+            ->filter(fn (TeachingCourseStudentEntry $entry): bool => $entry->visibleInStudentResults())
             ->filter(fn (TeachingCourseStudentEntry $entry): bool => $showBehaviour || $entryDefinitions->get($entry->type)?->category !== 'Verhalten')
             ->values();
 
         // Format entries for response
-        $formattedEntries = $entries->map(function ($entry) use ($auth_user, $entryDefinitions) {
+        $formattedEntries = $entries->map(function ($entry) use ($auth_user, $entryDefinitions, $distribution) {
             // Use teachingCourseWork title and description, or entry description
             $title = null;
             $description = null;
@@ -101,34 +104,22 @@ class CourseStudentEntryController extends Controller
 
             if ($entry->teachingCourseWork) {
                 $workObj = $entry->teachingCourseWork;
-                $taskPrepared = ! empty($workObj->status['student_distribution']['prepared_at'])
-                    && empty($workObj->status['student_distribution']['published_at']);
+                $result = $workObj->resultDetailsForStudent((int) $auth_user->id);
+                $comment = $result['comment'];
+                $taskLocked = $distribution->taskContentsLocked($workObj);
                 // If there's an associated work, use its title (or description as fallback) as the title
-                $title = $workObj->title ?? ($taskPrepared ? null : $workObj->description);
+                $title = $workObj->title ?? ($taskLocked ? null : $workObj->description);
                 // Use work description (if different from title)
-                $description = $taskPrepared ? null : $workObj->description;
+                $description = $taskLocked ? null : $workObj->description;
                 if ($description === $title) {
                     $description = null;
                 }
 
-                // Find the student's comment and group members from the work groups
+                // Find the other members of the student's own group.
                 $groups = $workObj->groups ?? [];
                 foreach ($groups as $group) {
                     $studentIds = $group['student_ids'] ?? [];
                     if (in_array($auth_user->id, $studentIds) || in_array((string) $auth_user->id, $studentIds)) {
-                        // Check individual comment first
-                        $comments = $group['comments'] ?? [];
-                        foreach ($comments as $commentObj) {
-                            if (isset($commentObj['student_id']) && ($commentObj['student_id'] == $auth_user->id)) {
-                                $comment = $commentObj['comment'] ?? null;
-                                break;
-                            }
-                        }
-                        // Fall back to group comment if no individual comment
-                        if (! $comment) {
-                            $comment = $group['comment'] ?? null;
-                        }
-
                         // Get group member names from User model
                         // Filter out current user and get other student IDs
                         $otherStudentIds = array_filter($studentIds, function ($studentId) use ($auth_user) {
@@ -163,14 +154,12 @@ class CourseStudentEntryController extends Controller
                 $work = [
                     'id' => $workObj->id,
                     'title' => $workObj->title,
-                    'description' => $taskPrepared ? null : $workObj->description,
+                    'description' => $taskLocked ? null : $workObj->description,
                     'is_group_work' => $workObj->is_group_work ?? false,
                     'group_size' => $workObj->group_size ?? null,
                     'group_members' => $groupMembers,
-                    'evaluation_pdf' => (int) $workObj->teaching_course_id === (int) $entry->teaching_course_id
-                        ? collect($workObj->status['evaluation_pdfs'] ?? [])->filter(fn (array $pdf): bool => $pdf['student_id'] !== null && (int) $pdf['student_id'] === (int) $auth_user->id)
-                            ->map(fn (array $pdf): array => ['name' => $pdf['name'], 'sha256' => $pdf['sha256']])->last()
-                        : null,
+                    'evaluation_pdf' => $result['evaluation_pdf'],
+                    'earned_points' => $result['points'],
                 ];
             } elseif ($entry->description) {
                 // If there's no work but the entry has a description, use that as comment
@@ -336,7 +325,7 @@ class CourseStudentEntryController extends Controller
             'category_evaluation_default_value' => $categoryEvaluationDefaultValue !== '' ? $categoryEvaluationDefaultValue : null,
             'type_labels' => $typeLabels,
             'points_progress' => $this->pointsProgressForStudent($course, $auth_user),
-        ], 200);
+        ])->header('Cache-Control', 'private, no-store');
     }
 
     /** @return array{course_id: int, semester_count: int, parts: list<array<string, mixed>>}|null */
@@ -347,8 +336,13 @@ class CourseStudentEntryController extends Controller
         }
 
         $evaluation = app(TeachingCourseEvaluationService::class);
-        $report = $evaluation->report($course, 3);
+        $report = $evaluation->report($course, 3, studentView: true);
         $personal = collect($report['students'])->firstWhere('user_id', $student->id);
+        if (! $personal) {
+            $membershipId = $course->teachingCourseStudents()->whereNull('canceled_at')
+                ->forStudentAccount($student, (int) $course->schoolyear_id)->value('id');
+            $personal = collect($report['students'])->firstWhere('course_student_id', $membershipId);
+        }
         $parts = [];
         foreach ($personal['semesters'] ?? [] as $semester) {
             foreach ($semester['parts'] as $part) {

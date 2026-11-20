@@ -11,13 +11,17 @@ use App\Models\Schoolyear;
 use App\Models\TeachingCourse;
 use App\Models\TeachingCourseStudentEntry;
 use App\Models\TeachingCourseWork;
+use App\Models\TeachingEntryArea;
+use App\Models\TeachingEntryDefinition;
 use App\Models\User;
+use App\Services\DropboxModuleLinks;
 use App\Services\MultipleChoice\McTestService;
 use App\Services\TeachingWorkStudentDistribution;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
@@ -25,6 +29,8 @@ use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
+use Pusher\Pusher;
+use Smalot\PdfParser\Parser;
 use Spatie\Permission\Models\Role;
 
 require_once dirname(__DIR__).'/Support/MultipleChoiceTestDatabase.php';
@@ -40,6 +46,7 @@ beforeEach(function (): void {
     Mail::fake();
     Notification::fake();
     Http::preventStrayRequests();
+    config(['broadcasting.default' => 'null']);
     $this->school = School::factory()->create();
     $this->year = Schoolyear::factory()->create(['school_id' => $this->school->id]);
     SchoolTool::factory()->create(['school_id' => $this->school->id, 'active_schoolyear_id' => $this->year->id,
@@ -81,6 +88,103 @@ function studentTaskMcFixture(TeachingCourseWork $work, User $teacher, array $st
     return $test;
 }
 
+test('portal submissions retain files and enforce the saved method, release, identity and deadline', function (): void {
+    $this->travelTo(CarbonImmutable::parse('2026-11-05 09:00', 'Europe/Vienna'));
+    $settings = route('teaching.work-submission-method.update', $this->work);
+    $uploadUrl = route('student.course-work.submissions.store', ['courseId' => $this->course->id, 'course_work' => $this->work]);
+    $file = fn () => UploadedFile::fake()->createWithContent('Mein Dokument.txt', 'Meine Übung');
+    $portal = ['channel' => 'portal', 'email' => null];
+    $email = ['channel' => 'email', 'email' => 'abgabe@example.test'];
+    $as = function (User $user) {
+        Auth::guard('sanctum')->forgetUser();
+
+        return $this->actingAs($user, 'web');
+    };
+    $as($this->teacher)->putJson($settings, ['channel' => 'email', 'expected' => null])->assertUnprocessable();
+    $this->putJson($settings, $portal + ['expected' => null])->assertOk()->assertJsonPath('data.status.submission_method', $portal);
+    $this->putJson($settings, $email + ['expected' => null])->assertConflict();
+    $this->postJson($this->publishUrl, ($this->payload)(['release_now' => false]))->assertOk();
+    $as($this->student)->postJson($uploadUrl, ['file' => $file()])->assertConflict();
+    $this->putJson($settings, $email + ['expected' => $portal])->assertForbidden();
+    $as($this->teacher)->postJson($this->publishUrl, ($this->payload)())->assertOk();
+    $as($this->peer)->postJson($uploadUrl, ['file' => $file()])->assertNotFound();
+    $as($this->student)->getJson($this->tasksUrl)->assertOk()->assertJsonPath('tasks.0.can_submit', true);
+    $releaseVersion = app(TeachingWorkStudentDistribution::class)->version($this->work->fresh());
+    $receipt = $this->postJson($uploadUrl, ['file' => $file()])->assertOk()->json('files.0');
+    expect(app(TeachingWorkStudentDistribution::class)->version($this->work->fresh()))->toBe($releaseVersion);
+    expect(array_keys($receipt))->toEqualCanonicalizing(['id', 'name', 'submitted_at', 'withdrawn_at']);
+    $record = $this->work->fresh()->status['portal_submissions'][0];
+    expect($record['sha256'])->toBe(hash('sha256', 'Meine Übung'));
+    Storage::disk('local')->assertExists($record['file_path']);
+    $this->postJson($uploadUrl, ['file' => $file()])->assertOk()->assertJsonCount(1, 'files')->assertJsonPath('files.0.id', $receipt['id']);
+    $download = route('teaching.work-submissions.download', ['course_work' => $this->work, 'fileId' => $receipt['id']]);
+    $this->get($download)->assertForbidden();
+    $otherTeacher = User::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->year->id])->assignRole('teacher');
+    $as($otherTeacher)->get($download)->assertForbidden();
+    $response = $as($this->teacher)->get($download)->assertOk()->assertDownload('Mein Dokument.txt');
+    expect($response->streamedContent())->toBe('Meine Übung');
+    $this->putJson($settings, $email + ['expected' => $portal])->assertOk();
+    $as($this->student)->getJson($this->tasksUrl)->assertJsonPath('tasks.0.submission_method', $email)
+        ->assertJsonPath('tasks.0.submission_files.0.id', $receipt['id'])->assertJsonPath('tasks.0.can_submit', false);
+    $this->postJson($uploadUrl, ['file' => $file()])->assertConflict();
+    $as($this->teacher)->putJson($settings, $portal + ['expected' => $email])->assertOk();
+    $this->postJson($this->publishUrl, ($this->payload)(['publish' => false]))->assertOk();
+    $as($this->student)->deleteJson($uploadUrl.'/'.$receipt['id'])->assertConflict();
+    $as($this->teacher)->postJson($this->publishUrl, ($this->payload)())->assertOk();
+    $as($this->student)->deleteJson($uploadUrl.'/'.$receipt['id'])->assertOk();
+    $as($this->teacher)->get($download)->assertNotFound();
+    $as($this->student)->postJson($uploadUrl, ['file' => $file()])->assertOk()->assertJsonCount(1, 'files')
+        ->assertJsonPath('files.0.withdrawn_at', null);
+    $this->travelTo(CarbonImmutable::parse('2026-11-05 12:01', 'Europe/Vienna'));
+    $this->postJson($uploadUrl, ['file' => $file()])->assertConflict();
+    $this->deleteJson($uploadUrl.'/'.$receipt['id'])->assertConflict();
+    expect($this->work->fresh()->groups[0]['grade'])->toBe('2');
+    $status = $this->work->fresh()->status;
+    $status['portal_submissions'][0]['file_path'] = 'private/unrelated-document.txt';
+    $this->work->update(['status' => $status]);
+    Storage::disk('local')->put('private/unrelated-document.txt', 'Nicht zugeordnet');
+    $as($this->teacher)->get($download)->assertNotFound();
+});
+
+test('portal submissions for mailed tasks follow personal confirmed dispatch and course membership', function (): void {
+    $this->travelTo(CarbonImmutable::parse('2026-11-05 09:00', 'Europe/Vienna'));
+    $workStatus = $this->work->status;
+    $workStatus['submission_method'] = ['channel' => 'portal', 'email' => null];
+    $batch = ['transport' => 'postmark', 'withdrawn_at' => null, 'recipients' => [
+        ['student_id' => $this->student->id, 'state' => 'accepted', 'accepted_at' => now()->toIso8601String()],
+        ['student_id' => $this->peer->id, 'state' => 'draft', 'accepted_at' => null],
+    ]];
+    $workStatus['assignment_mail']['batches']['all'] = $batch;
+    $this->work->update(['status' => $workStatus]);
+    $this->actingAs($this->student, 'web')->getJson($this->tasksUrl)
+        ->assertJsonPath('tasks.0.status', 'email_delivery')->assertJsonPath('tasks.0.can_submit', true)
+        ->assertJsonMissingPath('tasks.0.tests')->assertJsonMissingPath('tasks.0.instructions');
+    $this->getJson($this->tasksUrl.'?view=deadlines')->assertOk()->assertJsonPath('tasks.0.status', 'email_delivery');
+    $this->actingAs($this->peer, 'web')->getJson($this->tasksUrl)->assertJsonCount(0, 'tasks');
+    $url = route('student.course-work.submissions.store', ['courseId' => $this->course->id, 'course_work' => $this->work]);
+    $this->actingAs($this->student, 'web')->postJson($url, ['file' => UploadedFile::fake()->createWithContent('Lösung.txt', 'Antwort')])->assertOk();
+    $workStatus = $this->work->fresh()->status;
+    $workStatus['student_distribution'] = ['student_ids' => [$this->student->id], 'prepared_at' => now()->subHour()->toIso8601String(), 'instructions' => 'Vorbereitung'];
+    $this->work->update(['status' => $workStatus]);
+    $this->getJson($this->tasksUrl)->assertJsonPath('tasks.0.status', 'email_delivery')->assertJsonMissingPath('tasks.0.instructions');
+    $this->getJson($this->tasksUrl.'?view=deadlines')->assertJsonPath('tasks.0.status', 'email_delivery');
+    $workStatus['student_distribution']['published_at'] = now()->subMinutes(20)->toIso8601String();
+    $workStatus['student_distribution']['withdrawn_at'] = now()->toIso8601String();
+    $this->work->update(['status' => $workStatus]);
+    $this->getJson($this->tasksUrl)->assertJsonPath('tasks.0.status', 'paused')->assertJsonPath('tasks.0.can_submit', false);
+    $this->postJson($url, ['file' => UploadedFile::fake()->createWithContent('Lösung.txt', 'Antwort')])->assertConflict();
+    unset($workStatus['student_distribution']);
+    $this->work->update(['status' => $workStatus]);
+    foreach (['mailpit', 'withdrawn'] as $case) {
+        $status = $this->work->fresh()->status;
+        $status['assignment_mail']['batches']['all'] = [...$batch, ...($case === 'mailpit' ? ['transport' => 'mailpit'] : ['withdrawn_at' => now()->toIso8601String()])];
+        $this->work->update(['status' => $status]);
+        $this->getJson($this->tasksUrl)->assertJsonCount(0, 'tasks');
+        $this->getJson($this->tasksUrl.'?view=deadlines')->assertJsonCount(0, 'tasks');
+        $this->postJson($url, ['file' => UploadedFile::fake()->createWithContent('Lösung.txt', 'Antwort')])->assertNotFound();
+    }
+});
+
 test('a linked import-only group uses the verified account for tasks and MC', function (): void {
     $import = Import116::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->year->id,
         'user_id' => $this->student->id]);
@@ -93,6 +197,11 @@ test('a linked import-only group uses the verified account for tasks and MC', fu
     $work = $this->work->fresh();
     $work->status = [...$work->status, 'student_distribution' => ['instructions' => 'Test', 'file_ids' => [], 'published_at' => now()->toIso8601String()]];
     expect(app(TeachingWorkStudentDistribution::class)->forStudent($work, $this->student)['date'])->toBe('2026-10-28');
+    $work->update(['status' => [...$work->status, 'student_distribution' => [...$work->status['student_distribution'], 'student_ids' => [$this->student->id]]]]);
+    Auth::forgetGuards();
+    $this->actingAs($this->student, 'web')->getJson('/api/homepage/student/courses')->assertOk()->assertJsonFragment(['id' => $this->course->id]);
+    $this->getJson("/api/homepage/student/courses/{$this->course->id}")->assertOk();
+    $this->getJson($this->tasksUrl)->assertOk()->assertJsonPath('tasks.0.id', $work->id)->assertJsonPath('tasks.0.instructions', 'Test');
     $this->student->forceFill(['is_active' => false])->save();
     expect(app(TeachingWorkStudentDistribution::class)->recipients($this->work->fresh()))->toBe([]);
 });
@@ -209,20 +318,54 @@ test('a student sees only their released work test across a verified school-year
 });
 
 test('new task preparation defaults to locked access until an explicit release', function (): void {
-    $payload = ($this->payload)(['files' => [UploadedFile::fake()->createWithContent('Aufgabe.pdf', '%PDF-1.4 task')]]);
+    $pdf = '%PDF-1.4 task';
+    $payload = ($this->payload)(['instructions' => 'Siehe Aufgaben-PDF.', 'files' => [UploadedFile::fake()->createWithContent('LF_Dateimanagement.pdf', $pdf)]]);
     unset($payload['release_now']);
     $prepared = $this->actingAs($this->teacher, 'web')->postJson($this->publishUrl, $payload)->assertOk()
         ->assertJsonPath('data.status.student_distribution.published_at', null)->json('data.status.student_distribution');
     expect($prepared['prepared_at'])->not->toBeEmpty();
     $download = route('student.course-work.task-file', ['courseId' => $this->course->id, 'course_work' => $this->work->id, 'fileId' => $prepared['file_ids'][0]], false);
-    $this->actingAs($this->student, 'web')->getJson($this->tasksUrl)->assertOk()->assertJsonCount(0, 'tasks');
+    $this->actingAs($this->student, 'web')->getJson($this->tasksUrl)->assertOk()->assertExactJson(['tasks' => [
+        ['id' => $this->work->id, 'title' => 'Dateimanagement', 'status' => 'not_released', 'dates' => ['2026-10-28'],
+            'deadline' => ['date' => '2026-11-05', 'time' => '12:00'], 'assignment_kind' => 'worksheet'],
+    ]]);
     $this->get($download)->assertNotFound();
     $this->actingAs($this->peer, 'web')->get($download)->assertNotFound();
-    $this->actingAs($this->teacher, 'web')->postJson($this->publishUrl, ($this->payload)(['retained_file_ids' => $prepared['file_ids']]))->assertOk();
-    $this->actingAs($this->student, 'web')->getJson($this->tasksUrl)->assertOk()->assertJsonCount(1, 'tasks');
-    $this->get($download)->assertOk();
+    $this->actingAs($this->teacher, 'web')->postJson($this->publishUrl, ($this->payload)(['retained_file_ids' => $prepared['file_ids']]))->assertOk()
+        ->assertJsonCount(1, 'data.status.student_task_files');
+    $this->deleteJson($this->publishUrl.'/preparation', ['expected_version' => ($this->payload)()['expected_version']])->assertConflict();
+    $this->actingAs($this->student, 'web')->getJson($this->tasksUrl)->assertOk()->assertJsonCount(1, 'tasks')
+        ->assertJsonCount(1, 'tasks.0.files')->assertJsonPath('tasks.0.files.0.name', 'LF_Dateimanagement.pdf');
+    expect($this->get($download)->assertOk()->streamedContent())->toBe($pdf);
     Mail::assertNothingOutgoing();
     Notification::assertNothingSent();
+});
+
+test('an announcement exposes the assigned date, confirmed exam points and course grading value', function (): void {
+    $this->year->update(['concerns' => '2026/27']);
+    $scope = ['school_id' => $this->school->id, 'schoolyear_id' => $this->year->id, 'user_id' => $this->teacher->id];
+    $area = TeachingEntryArea::factory()->create($scope);
+    TeachingEntryDefinition::factory()->create($scope + ['teaching_entry_area_id' => $area->id,
+        'short_name' => 'TW', 'category' => 'Benotung', 'has_properties' => true, 'properties_mode' => 'points', 'maximum_points' => 20]);
+    $this->course->update(['teaching_entry_area_id' => $area->id]);
+    $this->work->update(['type' => 'TW', 'groups' => [['date' => '2026-10-30', 'student_ids' => [$this->student->id]]]]);
+    $this->work->update(['status' => [...$this->work->status, 'communicated_deadline_date' => '2026-11-04']]);
+    $this->mock(DropboxModuleLinks::class, function ($mock): void {
+        $mock->shouldReceive('cachedAssessmentPreparation')->once()
+            ->withArgs(fn (TeachingCourseWork $work, ?string $date): bool => $work->id === $this->work->id && $date === '2026-10-30')
+            ->andReturn(['status' => 'ready', 'total_points' => 35,
+                'components' => ['aufgabenblatt' => ['included' => true, 'points' => 25], 'multiple_choice' => ['included' => true, 'points' => 10]],
+                'pdf_files' => ['Angaben' => [['id' => 'id:private', 'name' => 'Geheim.pdf']]]]);
+    });
+    $this->actingAs($this->teacher, 'web')->postJson($this->publishUrl, ($this->payload)(['release_now' => false]))->assertOk();
+    $this->actingAs($this->student, 'web')->getJson($this->tasksUrl)->assertOk()->assertExactJson(['tasks' => [[
+        'id' => $this->work->id, 'title' => 'Dateimanagement', 'status' => 'not_released', 'dates' => ['2026-10-30'],
+        'deadline' => ['date' => '2026-11-05', 'time' => '12:00'], 'grading_points' => 20,
+        'assignment_kind' => 'worksheet', 'has_assessment' => true, 'has_multiple_choice' => true,
+        'assessment_points' => 35, 'assignment_points' => 25, 'mc_points' => 10,
+    ]]]);
+    $this->actingAs($this->peer, 'web')->getJson($this->tasksUrl)->assertOk()->assertExactJson(['tasks' => []]);
+    Http::assertNothingSent();
 });
 
 test('preparing a draft keeps its personal test locked and manual release preserves individual start', function (): void {
@@ -292,6 +435,77 @@ test('preparation preserves already started and completed attempts', function (b
     expect($attempt->fresh()->getRawOriginal())->toBe($before);
 })->with([false, true]);
 
+test('teachers can remove their prepared or paused distribution and revoke access to its materials', function (bool $released): void {
+    $this->work->update(['description' => 'Vertrauliche Aufgabenstellung',
+        'status' => [...$this->work->status, 'task_dispatch_completed' => true]]);
+    TeachingCourseStudentEntry::query()->create(['teaching_course_id' => $this->course->id,
+        'teaching_course_work_id' => $this->work->id, 'user_id' => $this->student->id, 'type' => 'TW',
+        'source' => 'course_work', 'grade' => '2']);
+    $test = studentTaskMcFixture($this->work, $this->teacher, [$this->student], 'published');
+    $attempt = $test->attempts()->sole();
+    $this->actingAs($this->student, 'web')->getJson($this->tasksUrl)->assertOk()->assertExactJson(['tasks' => []]);
+
+    $preview = $this->actingAs($this->teacher, 'web')->getJson($this->publishUrl.'-preview')->assertOk()->json('data.tests.0');
+    $choices = json_encode([['id' => $test->id, 'expected_version' => $preview['version'], 'start_mode' => 'individual']], JSON_THROW_ON_ERROR);
+    $preparation = $this->postJson($this->publishUrl, ($this->payload)(['release_now' => $released, 'mc_tests' => $choices,
+        'files' => [UploadedFile::fake()->createWithContent('Geheim.pdf', '%PDF-1.4 task')]]))->assertOk()->json('data');
+    if ($released) {
+        $preparation = $this->postJson($this->publishUrl, ($this->payload)(['publish' => false]))->assertOk()->json('data');
+        expect($test->fresh()->paused_at)->not->toBeNull();
+    }
+    $testBefore = $test->fresh()->getRawOriginal();
+    $attemptBefore = $attempt->fresh()->getRawOriginal();
+    $preparedGroups = $this->work->fresh()->groups;
+    $deletion = $this->publishUrl.'/preparation';
+    $version = ['expected_version' => $preparation['student_distribution_version']];
+    $fileId = $preparation['status']['student_distribution']['file_ids'][0];
+    $download = route('student.course-work.task-file', ['courseId' => $this->course->id, 'course_work' => $this->work->id, 'fileId' => $fileId], false);
+    $testUrl = '/api/multiple-choice/attempts/'.$attempt->id;
+
+    $this->actingAs($this->peer, 'web')->getJson($this->tasksUrl)->assertOk()->assertExactJson(['tasks' => []]);
+    $outsider = User::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->year->id])->assignRole('student');
+    $this->actingAs($outsider, 'web')->getJson($this->tasksUrl)->assertForbidden();
+    $this->get($download)->assertForbidden();
+    $this->actingAs($this->student, 'web')->getJson($this->tasksUrl)->assertOk()->assertExactJson(['tasks' => [
+        ['id' => $this->work->id, 'title' => 'Dateimanagement', 'status' => $released ? 'paused' : 'not_released', 'dates' => ['2026-10-28'],
+            'deadline' => ['date' => '2026-11-05', 'time' => '12:00'], 'assignment_kind' => 'worksheet', 'has_multiple_choice' => true, 'mc_points' => 2],
+    ]]);
+    $this->get($download)->assertNotFound();
+    if (! $released) {
+        $this->postJson($testUrl.'/start')->assertStatus(423);
+    }
+    Auth::guard('sanctum')->forgetUser();
+    $this->deleteJson($deletion, $version)->assertForbidden();
+    $otherTeacher = User::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->year->id])->assignRole('teacher');
+    Auth::guard('sanctum')->forgetUser();
+    $this->actingAs($otherTeacher, 'web')->deleteJson($deletion, $version)->assertForbidden();
+
+    Auth::guard('sanctum')->forgetUser();
+    $this->actingAs($this->teacher, 'web')->deleteJson($deletion, ['expected_version' => str_repeat('0', 64)])->assertConflict();
+    $this->deleteJson($deletion, $version)->assertOk()->assertJsonPath('data.status.task_dispatch_completed', true)
+        ->assertJsonPath('data.status.multiple_choice_tests.2026-10-28.test_id', $test->id);
+    $work = $this->work->fresh();
+    expect($work->status['student_distribution'])->toHaveKeys(['deleted_at'])->not->toHaveKeys(['prepared_at', 'instructions', 'file_ids', 'student_ids']);
+    expect($work->groups)->toBe($preparedGroups)
+        ->and($work->description)->toBe('Vertrauliche Aufgabenstellung')
+        ->and($test->fresh()->getRawOriginal())->toBe($testBefore)
+        ->and($attempt->fresh()->getRawOriginal())->toBe($attemptBefore);
+    $this->deleteJson($deletion, ['expected_version' => ($this->payload)()['expected_version']])->assertConflict();
+
+    $this->actingAs($this->student, 'web')->getJson($this->tasksUrl)->assertOk()->assertExactJson(['tasks' => []]);
+    $this->getJson('/api/homepage/student/courses/'.$this->course->id.'/entries')->assertOk()
+        ->assertJsonPath('entries.0.work.description', null);
+    $this->get($download)->assertNotFound();
+    Auth::guard('web')->logout();
+    $this->withHeader('X-MC-Access', $attempt->access_token)->getJson('/api/multiple-choice/access')->assertNotFound();
+    $this->postJson($testUrl.'/start')->assertNotFound();
+    $this->flushHeaders();
+    expect($attempt->fresh()->getRawOriginal())->toBe($attemptBefore);
+    Mail::assertNothingOutgoing();
+    Notification::assertNothingSent();
+    Http::assertNothingSent();
+})->with(['prepared' => false, 'paused after release' => true]);
+
 test('preparation cannot silently pause an existing task release', function (): void {
     $this->actingAs($this->teacher, 'web')->postJson($this->publishUrl, ($this->payload)())->assertOk();
     $before = $this->work->fresh()->status;
@@ -309,13 +523,20 @@ test('a withdrawn task can be prepared paused again without changing its publish
             'answers' => ['q1' => ['a']], 'completed_at' => $state === 'completed' ? now() : null,
             'completion_reason' => $state === 'completed' ? 'submitted' : null]);
     }
-    $testBefore = $test->fresh()->getRawOriginal();
-    $attemptBefore = $attempt->fresh()->getRawOriginal();
     $preview = $this->actingAs($this->teacher, 'web')->getJson($this->publishUrl.'-preview')->assertOk()->json('data.tests.0');
     $choices = json_encode([['id' => $test->id, 'expected_version' => $preview['version'], 'start_mode' => 'individual']], JSON_THROW_ON_ERROR);
     $release = $this->postJson($this->publishUrl, ($this->payload)(['mc_tests' => $choices,
         'files' => [UploadedFile::fake()->createWithContent('Aufgabe.pdf', '%PDF-1.4 task')]]))->assertOk()->json('data.status.student_distribution');
     $this->postJson($this->publishUrl, ($this->payload)(['publish' => false]))->assertOk();
+    $testBefore = $test->fresh()->getRawOriginal();
+    $attemptBefore = $attempt->fresh()->getRawOriginal();
+    $this->actingAs($this->student, 'web')->getJson($this->tasksUrl)->assertOk()->assertExactJson(['tasks' => [
+        ['id' => $this->work->id, 'title' => 'Dateimanagement', 'status' => 'paused', 'dates' => ['2026-10-28'],
+            'deadline' => ['date' => '2026-11-05', 'time' => '12:00'], 'assignment_kind' => 'worksheet', 'has_multiple_choice' => true, 'mc_points' => 2],
+    ]]);
+    $this->actingAs($this->teacher, 'web');
+    $preview = $this->getJson($this->publishUrl.'-preview')->assertOk()->json('data.tests.0');
+    $choices = json_encode([['id' => $test->id, 'expected_version' => $preview['version'], 'start_mode' => 'individual']], JSON_THROW_ON_ERROR);
     $payload = ($this->payload)(['mc_tests' => $choices, 'retained_file_ids' => $release['file_ids']]);
     unset($payload['release_now']);
     $this->postJson($this->publishUrl, $payload)->assertOk()
@@ -323,7 +544,8 @@ test('a withdrawn task can be prepared paused again without changing its publish
         ->assertJsonPath('data.status.student_distribution.withdrawn_at', null);
     expect($test->fresh()->getRawOriginal())->toBe($testBefore);
     expect($attempt->fresh()->getRawOriginal())->toBe($attemptBefore);
-    $this->actingAs($this->student, 'web')->getJson($this->tasksUrl)->assertOk()->assertJsonCount(0, 'tasks');
+    $this->actingAs($this->student, 'web')->getJson($this->tasksUrl)->assertOk()
+        ->assertJsonPath('tasks.0.status', 'not_released');
     $download = route('student.course-work.task-file', ['courseId' => $this->course->id, 'course_work' => $this->work->id, 'fileId' => $release['file_ids'][0]], false);
     $this->get($download)->assertNotFound();
     $this->getJson('/api/multiple-choice/attempts/'.$attempt->id)->assertStatus($state === 'not_started' ? 423 : 200);
@@ -335,6 +557,380 @@ test('a withdrawn task can be prepared paused again without changing its publish
     $this->actingAs($this->student, 'web')->getJson($this->tasksUrl)->assertOk()->assertJsonCount(1, 'tasks');
     $this->get($download)->assertOk();
 })->with(['not_started', 'in_progress', 'completed']);
+
+test('saved paused tasks release their existing material without starting or resuming the test', function (bool $previouslyReleased): void {
+    Queue::fake();
+    $this->travelTo(CarbonImmutable::parse('2026-10-30 12:00', 'Europe/Vienna'));
+    $test = studentTaskMcFixture($this->work, $this->teacher, [$this->student], 'published');
+    McTest::query()->whereKey($test->id)->update(['paused_at' => now()->subMinute()]);
+    $this->actingAs($this->teacher, 'web');
+    $choice = function () use ($test): string {
+        $preview = $this->getJson($this->publishUrl.'-preview')->assertOk()->json('data.tests.0');
+
+        return json_encode([['id' => $test->id, 'expected_version' => $preview['version'], 'start_mode' => 'individual']], JSON_THROW_ON_ERROR);
+    };
+    $stored = $this->postJson($this->publishUrl, ($this->payload)(['release_now' => $previouslyReleased, 'mc_tests' => $choice(),
+        'files' => [UploadedFile::fake()->createWithContent('Aufgabe.pdf', '%PDF-1.4 task')]]))->assertOk()->json('data.status');
+    if ($previouslyReleased) {
+        $paused = $this->postJson($this->publishUrl, ($this->payload)(['publish' => false]))->assertOk()->json('data.status.student_distribution');
+        $this->postJson($this->publishUrl, ($this->payload)(['release_now' => false, 'retain_paused_release' => true,
+            'mc_tests' => $choice(), 'retained_file_ids' => $stored['student_distribution']['file_ids']]))->assertOk()
+            ->assertJsonPath('data.status.student_distribution.published_at', $paused['published_at'])
+            ->assertJsonPath('data.status.student_distribution.withdrawn_at', $paused['withdrawn_at']);
+    }
+    $before = $test->fresh()->getRawOriginal();
+    $attempt = $test->attempts()->sole()->getRawOriginal();
+    $payload = ($this->payload)(['mc_tests' => $choice(), 'retained_file_ids' => $stored['student_distribution']['file_ids']]);
+    $this->postJson($this->publishUrl, [...$payload, 'expected_version' => str_repeat('f', 64)])->assertConflict();
+    $released = $this->postJson($this->publishUrl, $payload)->assertOk()
+        ->assertJsonPath('data.status.student_distribution.withdrawn_at', null)
+        ->assertJsonPath('data.status.student_distribution.instructions', $stored['student_distribution']['instructions'])
+        ->assertJsonPath('data.status.student_distribution.file_ids', $stored['student_distribution']['file_ids'])
+        ->json('data.status');
+    expect($released['student_task_files'])->toEqual($stored['student_task_files'])
+        ->and($test->fresh()->getRawOriginal())->toBe($before)
+        ->and($test->attempts()->sole()->getRawOriginal())->toBe($attempt);
+    Queue::assertNothingPushed();
+    Mail::assertNothingOutgoing();
+})->with(['prepared' => [false], 'previously released' => [true]]);
+
+test('a linked common test only starts from a separately authorized countdown after task release', function (): void {
+    Queue::fake();
+    $this->travelTo(CarbonImmutable::parse('2026-10-30 12:00', 'Europe/Vienna'));
+    $test = studentTaskMcFixture($this->work, $this->teacher, [$this->student], 'published');
+    McTest::query()->whereKey($test->id)->update(['start_mode' => 'common', 'closes_at' => null]);
+    $this->actingAs($this->teacher, 'web');
+    $preview = $this->getJson($this->publishUrl.'-preview')->assertOk()->json('data.tests.0');
+    $choice = json_encode([['id' => $test->id, 'expected_version' => $preview['version'], 'start_mode' => 'common']], JSON_THROW_ON_ERROR);
+    $this->postJson($this->publishUrl, ($this->payload)(['release_now' => false, 'mc_tests' => $choice]))->assertOk();
+    $actionUrl = $this->publishUrl.'/test-action';
+    $action = fn (): array => ['action' => 'countdown', 'test_id' => $test->id,
+        'expected_version' => ($this->payload)()['expected_version'], 'expected_test_version' => $preview['version']];
+    $this->getJson($this->publishUrl.'-preview')->assertJsonPath('data.tests.0.management_action', null);
+    $this->postJson($actionUrl, $action())->assertUnprocessable();
+    $this->postJson($this->publishUrl, ($this->payload)(['mc_tests' => $choice]))->assertOk();
+    $this->getJson($this->publishUrl.'-preview')->assertJsonPath('data.tests.0.management_action', 'countdown');
+    expect($test->fresh()->starts_at)->toBeNull();
+    $this->postJson($actionUrl, [...$action(), 'expected_test_version' => str_repeat('f', 64)])->assertConflict();
+    $this->postJson($actionUrl, [...$action(), 'test_id' => $test->id + 100])->assertNotFound();
+    Auth::forgetGuards();
+    $this->actingAs($this->student, 'web')->postJson($actionUrl, $action())->assertForbidden();
+    Auth::forgetGuards();
+    $this->actingAs($this->teacher, 'web')->postJson($actionUrl, $action())->assertOk()
+        ->assertJsonPath('data.tests.0.management_action', 'pause')
+        ->assertJsonPath('data.tests.0.preparation_locked', true);
+    expect($test->fresh()->starts_at->isFuture())->toBeTrue()->and($test->attempts()->sole()->started_at)->toBeNull();
+    $this->postJson($actionUrl, $action())->assertConflict();
+    Queue::assertPushed(FinalizeMultipleChoiceTest::class, 1);
+    Mail::assertNothingOutgoing();
+});
+
+test('work pause freezes an open attempt at the actual pause and explicit resume restores exactly that remaining time', function (string $mode, bool $legacy): void {
+    Queue::fake();
+    $this->travelTo(CarbonImmutable::parse('2026-10-30 12:00:00', 'Europe/Vienna'));
+    $test = studentTaskMcFixture($this->work, $this->teacher, [$this->student], 'published');
+    if ($mode === 'common') {
+        McTest::query()->whereKey($test->id)->update(['start_mode' => 'common', 'closes_at' => null, 'lead_seconds' => 30]);
+    }
+    $attempt = $test->attempts()->sole();
+    McAttempt::query()->whereKey($attempt->id)->update(['questions' => json_encode([
+        ['id' => 'one', 'prompt' => 'Testfrage', 'type' => 'single', 'options' => [['id' => 'yes', 'text' => 'Ja'], ['id' => 'no', 'text' => 'Nein']], 'correct_option_ids' => ['yes']],
+    ], JSON_THROW_ON_ERROR)]);
+    $this->actingAs($this->teacher, 'web');
+    $readPreview = fn (): array => $this->getJson($this->publishUrl.'-preview')->assertOk()->json('data.tests.0');
+    $selection = fn (array $preview): string => json_encode([['id' => $test->id, 'start_mode' => $mode, 'expected_version' => $preview['version']]], JSON_THROW_ON_ERROR);
+    $action = fn (array $preview, string $name): array => ['action' => $name, 'test_id' => $test->id,
+        'expected_version' => ($this->payload)()['expected_version'], 'expected_test_version' => $preview[$name === 'pause' ? 'pause_version' : 'version']];
+    $this->postJson($this->publishUrl, ($this->payload)(['mc_tests' => $selection($readPreview())]))->assertOk();
+    $savedBeforeCountdown = ($this->payload)(['instructions' => 'Verspätete Bearbeitung', 'mc_tests' => $selection($readPreview())]);
+    $actionUrl = $this->publishUrl.'/test-action';
+    if ($mode === 'common') {
+        $this->postJson($actionUrl, $action($readPreview(), 'countdown'))->assertOk()
+            ->assertJsonPath('data.tests.0.preparation_locked', true);
+        $this->postJson($this->publishUrl, $savedBeforeCountdown)->assertConflict()->assertJsonPath('message', 'Die Vorbereitung ist gesperrt, weil der gemeinsame MC-Countdown bereits angesetzt wurde.');
+        $freshSelection = $selection($readPreview());
+        $this->postJson($this->publishUrl, ($this->payload)(['instructions' => 'Neue Fassung', 'mc_tests' => $freshSelection,
+            'files' => [UploadedFile::fake()->createWithContent('Neu.pdf', '%PDF-1.4 task')]]))->assertConflict();
+        expect(Storage::disk('local')->allFiles())->toBe([]);
+        $planned = $test->fresh();
+        $this->travelTo($planned->starts_at->subSeconds(13));
+        $paused = $this->postJson($actionUrl, $action($readPreview(), 'pause'))->assertOk()->json('data.tests.0');
+        expect($paused['preparation_locked'])->toBeTrue()->and($paused['management_action'])->toBe('resume');
+        $this->travel(17)->seconds();
+        $this->postJson($actionUrl, $action($readPreview(), 'resume'))->assertOk()->assertJsonPath('data.tests.0.preparation_locked', true);
+        $test->refresh();
+        expect(now()->diffInSeconds($test->starts_at))->toEqual(13);
+        $this->travelTo($test->starts_at->addSeconds(11));
+    }
+
+    $attemptUrl = '/api/multiple-choice/attempts/'.$attempt->id;
+    Auth::forgetGuards();
+    $this->actingAs($this->student, 'web');
+    if ($mode === 'individual') {
+        $this->postJson($attemptUrl.'/start')->assertOk();
+    }
+    $this->putJson($attemptUrl.'/answers', ['answers' => ['one' => ['yes']]])->assertOk();
+    $this->travel(26)->seconds();
+    $before = $this->getJson($attemptUrl)->assertOk()->assertJsonPath('attempt.paused_at', null)->json('attempt');
+    $pauseAt = CarbonImmutable::now();
+    $remaining = $pauseAt->diffInSeconds(CarbonImmutable::parse($before['ends_at']));
+    $savedAnswer = $legacy ? ['no'] : ['yes'];
+    Auth::forgetGuards();
+    $this->actingAs($this->teacher, 'web');
+    if ($legacy) {
+        $work = $this->work->fresh();
+        $status = $work->status;
+        $status['student_distribution']['withdrawn_at'] = $pauseAt->subSeconds(9)->toIso8601String();
+        $work->update(['status' => $status]);
+        expect($test->fresh()->paused_at)->toBeNull();
+        $preview = $readPreview();
+        expect($preview['management_action'])->toBe('pause');
+        $this->postJson($this->publishUrl, ($this->payload)(['publish' => false, 'expected_test_versions' => [$test->id => str_repeat('f', 64)]]))->assertConflict();
+        expect($test->fresh()->paused_at)->toBeNull();
+        Auth::forgetGuards();
+        $this->actingAs($this->student, 'web')->putJson($attemptUrl.'/answers', ['answers' => ['one' => $savedAnswer]])->assertOk();
+        Auth::forgetGuards();
+        $this->actingAs($this->teacher, 'web');
+        $pauseRequest = ($this->payload)(['publish' => false, 'expected_test_versions' => [$test->id => $preview['pause_version']]]);
+        $this->postJson($this->publishUrl, $pauseRequest)->assertOk()
+            ->assertJsonPath('data.status.student_distribution.withdrawn_at', $status['student_distribution']['withdrawn_at']);
+    } else {
+        $this->postJson($this->publishUrl, ($this->payload)(['publish' => false]))->assertOk();
+        $pauseRequest = ($this->payload)(['publish' => false]);
+    }
+    expect($test->fresh()->paused_at->equalTo($pauseAt))->toBeTrue();
+    $this->travel(19)->seconds();
+    $this->postJson($this->publishUrl, $pauseRequest)->assertOk();
+    expect($test->fresh()->paused_at->equalTo($pauseAt))->toBeTrue();
+    if ($mode === 'common') {
+        $this->deleteJson($this->publishUrl.'/preparation', ['expected_version' => ($this->payload)()['expected_version']])->assertConflict();
+    }
+
+    Auth::forgetGuards();
+    $this->actingAs($this->student, 'web');
+    $this->getJson($attemptUrl)->assertOk()->assertJsonPath('attempt.paused_at', $test->fresh()->paused_at->toIso8601String())
+        ->assertJsonPath('attempt.ends_at', $before['ends_at'])->assertJsonPath('attempt.answers.one', $savedAnswer);
+    $this->putJson($attemptUrl.'/answers', ['answers' => ['one' => []]])->assertUnprocessable()->assertJsonValidationErrors('test');
+    $this->postJson($attemptUrl.'/submit')->assertUnprocessable()->assertJsonValidationErrors('test');
+    $this->travel(64)->seconds();
+    $this->getJson($attemptUrl)->assertOk()->assertJsonPath('attempt.ends_at', $before['ends_at'])->assertJsonPath('attempt.answers.one', $savedAnswer);
+
+    Auth::forgetGuards();
+    $this->actingAs($this->teacher, 'web');
+    $release = $mode === 'common' ? ['release_saved' => true, 'instructions' => 'Gesperrte Änderung'] : ['mc_tests' => $selection($readPreview())];
+    $this->postJson($this->publishUrl, ($this->payload)($release))->assertOk()
+        ->assertJsonPath('data.status.student_distribution.instructions', 'Ordne deine Dateien.');
+    expect($test->fresh()->paused_at->equalTo($pauseAt))->toBeTrue();
+    $this->postJson($actionUrl, $action($readPreview(), 'resume'))->assertOk()->assertJsonPath('data.tests.0.paused_at', null);
+    Auth::forgetGuards();
+    $resumed = $this->actingAs($this->student, 'web')->getJson($attemptUrl)->assertOk()->assertJsonPath('attempt.paused_at', null)
+        ->assertJsonPath('attempt.answers.one', $savedAnswer)->json('attempt');
+    expect(CarbonImmutable::now()->diffInSeconds(CarbonImmutable::parse($resumed['ends_at'])))->toEqual($remaining);
+    $this->putJson($attemptUrl.'/answers', ['answers' => ['one' => []]])->assertOk();
+    Mail::assertNothingOutgoing();
+})->with(['common' => ['common', false], 'individual' => ['individual', false], 'older paused work' => ['common', true]]);
+
+test('joint pause stops every active test and keeps existing pauses and completed attempts intact', function (): void {
+    $this->travelTo(CarbonImmutable::parse('2026-10-30 12:00:00', 'Europe/Vienna'));
+    $dates = ['2026-10-28', '2026-10-29', '2026-10-30', '2026-10-31'];
+    $this->work->update(['groups' => array_map(fn (string $date): array => ['date' => $date, 'student_ids' => [$this->student->id]], $dates)]);
+    $tests = array_map(fn (): McTest => studentTaskMcFixture($this->work, $this->teacher, [$this->student], 'published'), $dates);
+    [$common, $individual, $alreadyPaused, $finished] = $tests;
+    McTest::query()->whereKey($common->id)->update(['start_mode' => 'common', 'starts_at' => now()->addSeconds(17), 'ends_at' => now()->addSeconds(437)]);
+    McTest::query()->whereKey($alreadyPaused->id)->update(['paused_at' => now()->subMinute()]);
+    $finished->attempts()->sole()->update(['started_at' => now()->subMinutes(2), 'completed_at' => now()->subMinute(), 'completion_reason' => 'submitted']);
+    $previousPause = $alreadyPaused->fresh()->getRawOriginal();
+    $previousResult = $finished->attempts()->sole()->getRawOriginal();
+    $bindings = array_combine($dates, array_map(fn (McTest $test): array => ['work_id' => $this->work->id, 'test_id' => $test->id], $tests));
+    $this->work->update(['status' => [...$this->work->status, 'multiple_choice_tests' => $bindings, 'student_distribution' => [
+        'published_at' => now()->toIso8601String(), 'student_ids' => [$this->student->id], 'instructions' => 'Aufgabe',
+    ]]]);
+    $this->actingAs($this->teacher, 'web')->postJson($this->publishUrl, ($this->payload)(['publish' => false]))->assertOk()
+        ->assertJsonPath('data.status.student_distribution.withdrawn_at', now()->toIso8601String());
+    expect($common->fresh()->paused_at->equalTo(now()))->toBeTrue()
+        ->and($individual->fresh()->paused_at->equalTo(now()))->toBeTrue()
+        ->and($alreadyPaused->fresh()->getRawOriginal())->toBe($previousPause)
+        ->and($finished->fresh()->paused_at)->toBeNull()
+        ->and($finished->attempts()->sole()->getRawOriginal())->toBe($previousResult);
+});
+
+test('pausing the release rejects ambiguous or shared test associations before affecting any test', function (bool $shared): void {
+    $safe = studentTaskMcFixture($this->work, $this->teacher, [$this->student], 'published');
+    $second = studentTaskMcFixture($this->work, $this->teacher, [$this->student], 'published');
+    $status = $this->work->status;
+    $status['multiple_choice_tests']['all'] = ['work_id' => $shared ? $this->work->id : $this->work->id + 100, 'test_id' => $safe->id];
+    $status['student_distribution'] = ['published_at' => now()->toIso8601String(), 'student_ids' => [$this->student->id], 'instructions' => 'Aufgabe'];
+    $this->work->update(['status' => $status]);
+    if ($shared) {
+        $other = TeachingCourseWork::factory()->create(['teaching_course_id' => $this->course->id]);
+        $other->update(['status' => ['multiple_choice_tests' => ['all' => ['work_id' => $other->id, 'test_id' => $second->id]]]]);
+    }
+    $this->actingAs($this->teacher, 'web')->postJson($this->publishUrl, ($this->payload)(['publish' => false]))
+        ->assertUnprocessable()->assertJsonValidationErrors('mc_tests');
+    expect($this->work->fresh()->status['student_distribution'])->not->toHaveKey('withdrawn_at');
+    expect($safe->fresh()->paused_at)->toBeNull()->and($second->fresh()->paused_at)->toBeNull();
+})->with(['ambiguous' => [false], 'shared' => [true]]);
+
+test('the work management rejects a countdown for paused tests, shared tests and tests with no open attempts', function (string $state): void {
+    Queue::fake();
+    $test = studentTaskMcFixture($this->work, $this->teacher, [$this->student], 'published');
+    McTest::query()->whereKey($test->id)->update(['start_mode' => 'common', 'closes_at' => null,
+        'paused_at' => $state === 'paused' ? now() : null]);
+    $this->work->refresh()->update(['status' => [...$this->work->status, 'student_distribution' => [
+        'prepared_at' => now()->toIso8601String(), 'published_at' => now()->toIso8601String(), 'instructions' => 'Aufgabe',
+    ]]]);
+    if ($state === 'shared') {
+        $other = TeachingCourseWork::factory()->create(['teaching_course_id' => $this->course->id]);
+        $other->update(['status' => ['multiple_choice_tests' => ['all' => ['work_id' => $other->id, 'test_id' => $test->id]]]]);
+    } elseif ($state === 'completed') {
+        $test->attempts()->sole()->update(['completed_at' => now()]);
+    }
+    $expected = $state === 'paused' ? 'resume' : null;
+    $preview = $this->actingAs($this->teacher, 'web')->getJson($this->publishUrl.'-preview')->assertOk()
+        ->assertJsonPath('data.tests.0.management_action', $expected)->json('data.tests.0');
+    $this->postJson($this->publishUrl.'/test-action', ['action' => 'countdown', 'test_id' => $test->id,
+        'expected_version' => ($this->payload)()['expected_version'], 'expected_test_version' => $preview['version']])->assertUnprocessable();
+    expect($test->fresh()->starts_at)->toBeNull();
+    Queue::assertNothingPushed();
+})->with(['paused', 'shared', 'completed']);
+
+test('resuming a paused individual test leaves the saved preparation paused and never starts an attempt', function (): void {
+    Queue::fake();
+    $this->travelTo(CarbonImmutable::parse('2026-10-30 12:00', 'Europe/Vienna'));
+    $test = studentTaskMcFixture($this->work, $this->teacher, [$this->student], 'published');
+    McTest::query()->whereKey($test->id)->update(['paused_at' => now()->subMinute()]);
+    $this->actingAs($this->teacher, 'web');
+    $preview = $this->getJson($this->publishUrl.'-preview')->assertOk()->json('data.tests.0');
+    $choice = json_encode([['id' => $test->id, 'expected_version' => $preview['version'], 'start_mode' => 'individual']], JSON_THROW_ON_ERROR);
+    $this->postJson($this->publishUrl, ($this->payload)(['release_now' => false, 'mc_tests' => $choice]))->assertOk();
+    $this->getJson($this->publishUrl.'-preview')->assertJsonPath('data.tests.0.management_action', 'resume');
+    $url = $this->publishUrl.'/test-action';
+    $action = ['action' => 'resume', 'test_id' => $test->id, 'expected_version' => ($this->payload)()['expected_version'],
+        'expected_test_version' => $preview['version']];
+    $this->postJson($url, [...$action, 'expected_version' => str_repeat('f', 64)])->assertConflict();
+    $this->postJson($url, [...$action, 'action' => 'countdown'])->assertUnprocessable();
+    $this->postJson($url, $action)->assertOk()->assertJsonPath('data.tests.0.paused_at', null)
+        ->assertJsonPath('data.tests.0.management_action', null);
+    expect($this->work->fresh()->status['student_distribution']['published_at'])->toBeNull()
+        ->and($test->fresh()->starts_at)->toBeNull()
+        ->and($test->attempts()->sole()->started_at)->toBeNull();
+    $this->actingAs($this->student, 'web')->getJson('/api/multiple-choice/attempts/'.$test->attempts()->sole()->id)->assertStatus(423);
+    Mail::assertNothingOutgoing();
+});
+
+test('an already paused test can be stopped with saved answers and reset only after explicit confirmation', function (string $mode): void {
+    Queue::fake();
+    $this->travelTo(CarbonImmutable::parse('2026-10-30 12:00:00', 'Europe/Vienna'));
+    $this->work->update(['groups' => [['student_ids' => [$this->student->id, $this->peer->id]]]]);
+    $test = studentTaskMcFixture($this->work, $this->teacher, [$this->student, $this->peer], 'published');
+    $pausedAt = now()->subMinute();
+    McTest::query()->whereKey($test->id)->update(['start_mode' => $mode, 'paused_at' => $pausedAt,
+        'starts_at' => $mode === 'common' ? now()->subMinutes(2) : null, 'ends_at' => $mode === 'common' ? now()->addMinutes(5) : null]);
+    $attempt = $test->attempts()->where('student_id', $this->student->id)->sole();
+    $previouslyCompleted = $test->attempts()->where('student_id', $this->peer->id)->sole();
+    $previouslyCompleted->update(['started_at' => now()->subMinutes(2), 'completed_at' => now()->subSeconds(70), 'completion_reason' => 'submitted', 'score' => 1]);
+    $previousResult = $previouslyCompleted->fresh()->getRawOriginal();
+    McAttempt::query()->whereKey($attempt->id)->update(['started_at' => now()->subMinutes(2), 'answers' => json_encode(['one' => ['yes']], JSON_THROW_ON_ERROR),
+        'questions' => json_encode([['id' => 'one', 'type' => 'single', 'prompt' => 'Testfrage',
+            'options' => [['id' => 'yes', 'text' => 'Ja']], 'correct_option_ids' => ['yes']]], JSON_THROW_ON_ERROR)]);
+    $release = ['published_at' => now()->subMinutes(3)->toIso8601String(), 'withdrawn_at' => $pausedAt->toIso8601String(),
+        'student_ids' => [$this->student->id, $this->peer->id], 'instructions' => 'Gespeicherte Aufgabe'];
+    $this->work->update(['status' => [...$this->work->status, 'student_distribution' => $release]]);
+    $this->actingAs($this->teacher, 'web');
+    $preview = fn (): array => $this->getJson($this->publishUrl.'-preview')->assertOk()->json('data.tests.0');
+    $action = fn (string $name, string $version): array => ['action' => $name, 'test_id' => $test->id,
+        'expected_version' => ($this->payload)()['expected_version'], 'expected_test_version' => $version];
+    $url = $this->publishUrl.'/test-action';
+    $before = $preview();
+    expect($before['lifecycle_actions'])->toBe(['reset', 'stop', 'delete']);
+    $this->postJson($url, $action('stop', $before['version']))->assertUnprocessable();
+    $this->postJson($url, $action('stop', str_repeat('f', 64)) + ['confirmed' => true])->assertConflict();
+    expect($attempt->fresh()->completed_at)->toBeNull();
+    $afterStop = $this->postJson($url, $action('stop', $before['version']) + ['confirmed' => true])->assertOk()
+        ->assertJsonPath('data.tests.0.management_action', null)->assertJsonPath('data.tests.0.lifecycle_actions', ['reset', 'delete'])
+        ->json('data.tests.0');
+    expect($afterStop['stopped_at'])->not->toBeNull();
+    $stopped = $attempt->fresh();
+    expect($stopped->completed_at->equalTo($pausedAt))->toBeTrue()
+        ->and($stopped->answers)->toBe(['one' => ['yes']])->and((float) $stopped->score)->toBe(2.0)
+        ->and($previouslyCompleted->fresh()->getRawOriginal())->toBe($previousResult)
+        ->and($this->work->fresh()->status['student_distribution'])->toEqual($release);
+    expect(fn () => app(McTestService::class)->reopenAttempt($stopped, 60, $this->teacher->id))->toThrow(ValidationException::class);
+    $this->postJson($url, $action('reset', $before['version']) + ['confirmed' => true])->assertConflict();
+    $this->postJson($url, $action('reset', $afterStop['version']) + ['confirmed' => true])->assertOk()
+        ->assertJsonPath('data.tests.0.stopped_at', null)->assertJsonPath('data.tests.0.preparation_locked', $mode === 'common')
+        ->assertJsonPath('data.tests.0.management_action', 'resume');
+    $restarted = $test->fresh();
+    $freshAttempt = $attempt->fresh();
+    expect($restarted->starts_at)->toBeNull()->and($restarted->ends_at)->toBeNull()->and($restarted->paused_at)->not->toBeNull()
+        ->and($restarted->start_mode)->toBe($mode)->and($freshAttempt->startsIndividually($restarted))->toBe($mode === 'individual')
+        ->and($freshAttempt->answers)->toBe([])->and($freshAttempt->started_at)->toBeNull()->and($freshAttempt->completed_at)->toBeNull()
+        ->and($freshAttempt->access_token)->toBe($attempt->access_token)->and($freshAttempt->control()['version'])->toBe(1)
+        ->and($previouslyCompleted->fresh()->completed_at)->toBeNull()->and($previouslyCompleted->fresh()->score)->toBeNull()
+        ->and($previouslyCompleted->fresh()->control()['version'])->toBe(1)
+        ->and($this->work->fresh()->status['student_distribution'])->toEqual($release);
+    if ($mode === 'common') {
+        $this->postJson($this->publishUrl, ($this->payload)(['instructions' => 'Gesperrt']))->assertConflict();
+    }
+    Auth::forgetGuards();
+    $this->actingAs($this->student, 'web')->putJson('/api/multiple-choice/attempts/'.$attempt->id.'/answers', ['answers' => ['one' => ['yes']]])->assertConflict();
+    Queue::assertNothingPushed();
+
+    Auth::forgetGuards();
+    $this->actingAs($this->teacher, 'web');
+    $afterReset = $preview();
+    $existingRelease = $mode === 'common' ? ['release_saved' => true] : ['instructions' => $release['instructions'], 'mc_tests' => json_encode([
+        ['id' => $test->id, 'start_mode' => $mode, 'expected_version' => $afterReset['version']],
+    ], JSON_THROW_ON_ERROR)];
+    $this->postJson($this->publishUrl, ($this->payload)($existingRelease))->assertOk();
+    expect($test->fresh()->paused_at)->not->toBeNull()->and($test->fresh()->starts_at)->toBeNull();
+    $this->postJson($url, $action('resume', $preview()['version']))->assertOk();
+    expect($attempt->fresh()->started_at)->toBeNull()->and($test->fresh()->starts_at)->toBeNull();
+    if ($mode === 'common') {
+        $this->postJson($url, $action('countdown', $preview()['version']))->assertOk();
+        expect($test->fresh()->starts_at->isFuture())->toBeTrue()->and($attempt->fresh()->started_at)->toBeNull();
+    } else {
+        Auth::forgetGuards();
+        $this->actingAs($this->student, 'web')->withHeader('X-MC-Attempt-Version', '1')->postJson('/api/multiple-choice/attempts/'.$attempt->id.'/start')
+            ->assertOk()->assertJsonPath('attempt.status', 'in_progress');
+    }
+})->with(['common', 'individual']);
+
+test('deleting an assigned MC test removes just its binding and attempts and keeps work materials and imported grades', function (): void {
+    $test = studentTaskMcFixture($this->work, $this->teacher, [$this->student], 'published');
+    $other = studentTaskMcFixture($this->work, $this->teacher, [$this->student], 'published');
+    $status = $this->work->status;
+    $status['multiple_choice_tests']['all'] = ['work_id' => $this->work->id, 'test_id' => $test->id];
+    $status['student_distribution'] = ['prepared_at' => now()->toIso8601String(), 'instructions' => 'Aufgabe', 'file_ids' => ['test-pdf']];
+    $status['student_task_files'] = [['id' => 'test-pdf', 'file_path' => 'synthetic/aufgabe.pdf', 'name' => 'Aufgabe.pdf', 'storage_disk' => 'local']];
+    $status['assessment_json_imports'] = [['student_id' => $this->student->id, 'record_checksum' => str_repeat('a', 64)]];
+    $this->work->update(['status' => $status]);
+    Storage::disk('local')->put('synthetic/aufgabe.pdf', '%PDF-1.4 synthetic');
+    $attempt = $test->attempts()->sole();
+    $groups = $this->work->fresh()->groups;
+    $this->actingAs($this->teacher, 'web');
+    $this->deleteJson('/api/admin/multiple-choice/tests/'.$test->id)->assertConflict();
+    $this->deleteJson('/api/admin/multiple-choice/catalogs/'.$test->catalog_id, ['test_ids' => [$test->id]])->assertConflict();
+    $preview = collect($this->getJson($this->publishUrl.'-preview')->assertOk()->json('data.tests'))->firstWhere('id', $test->id);
+    $payload = ['action' => 'delete', 'test_id' => $test->id, 'expected_version' => ($this->payload)()['expected_version'], 'expected_test_version' => $preview['version']];
+    $url = $this->publishUrl.'/test-action';
+    $this->postJson($url, $payload)->assertUnprocessable();
+    $this->postJson($url, [...$payload, 'expected_version' => str_repeat('f', 64), 'confirmed' => true])->assertConflict();
+    $foreign = TeachingCourseWork::factory()->create(['status' => ['multiple_choice_tests' => ['all' => ['test_id' => $test->id]]]]);
+    $this->postJson($url, $payload + ['confirmed' => true])->assertUnprocessable()->assertJsonValidationErrors('mc_tests');
+    expect($test->fresh())->not->toBeNull();
+    $foreign->update(['status' => []]);
+    Auth::forgetGuards();
+    $this->actingAs($this->student, 'web')->postJson($url, $payload + ['confirmed' => true])->assertForbidden();
+    Auth::forgetGuards();
+    $this->actingAs($this->teacher, 'web')->postJson($url, $payload + ['confirmed' => true])->assertOk()
+        ->assertJsonCount(1, 'data.tests')->assertJsonPath('data.tests.0.id', $other->id)
+        ->assertJsonMissingPath('data.work.status.multiple_choice_tests.all');
+    expect($test->fresh())->toBeNull()->and($attempt->fresh())->toBeNull()->and($test->catalog()->exists())->toBeTrue()
+        ->and($other->fresh())->not->toBeNull()->and($this->work->fresh()->groups)->toBe($groups);
+    expect(collect($this->work->fresh()->status)->except('multiple_choice_tests')->all())->toEqual(collect($status)->except('multiple_choice_tests')->all());
+    Storage::disk('local')->assertExists('synthetic/aufgabe.pdf');
+});
 
 test('paused task descriptions cannot leak through student performance entries', function (): void {
     $this->work->update(['description' => 'Vertrauliche Aufgabenstellung']);
@@ -350,6 +946,10 @@ test('paused task descriptions cannot leak through student performance entries',
     $this->actingAs($this->teacher, 'web')->postJson($this->publishUrl, ($this->payload)())->assertOk();
     $this->actingAs($this->student, 'web')->getJson($url)->assertOk()
         ->assertJsonPath('entries.0.description', 'Vertrauliche Aufgabenstellung');
+    $this->actingAs($this->teacher, 'web')->postJson($this->publishUrl, ($this->payload)(['publish' => false]))->assertOk();
+    $this->actingAs($this->student, 'web')->getJson($url)->assertOk()
+        ->assertJsonPath('entries.0.description', null)->assertJsonPath('entries.0.work.description', null)
+        ->assertJsonPath('entries.0.grade', '2');
 });
 
 test('an individual draft can be prepared without inventing a missing deadline but cannot be released', function (): void {
@@ -448,6 +1048,77 @@ test('updating an existing task release publishes a linked draft MC test and lat
     Queue::assertPushed(FinalizeMultipleChoiceTest::class, 1);
 });
 
+test('a paused unused published MC test can switch both start modes and consciously adopt a divergent legacy cutoff', function (): void {
+    Queue::fake();
+    $this->travelTo(CarbonImmutable::parse('2026-10-29 12:00', 'Europe/Vienna'));
+    $this->work->update(['is_group_work' => true]);
+    $test = studentTaskMcFixture($this->work, $this->teacher, [$this->student], 'published');
+    $legacy = CarbonImmutable::parse('2026-11-05 23:59', 'Europe/Vienna');
+    $snapshot = [...$test->snapshot, 'schooltool_work' => ['work_id' => $this->work->id, 'course_id' => $this->course->id, 'slot' => '2026-10-28'],
+        'closes_at' => $legacy->toIso8601String()];
+    McTest::query()->whereKey($test->id)->update(['closes_at' => $legacy, 'snapshot' => json_encode($snapshot, JSON_THROW_ON_ERROR)]);
+    $test = app(McTestService::class)->pause($test->fresh(), (int) $this->teacher->id);
+    $attempt = $test->attempts()->sole()->getRawOriginal();
+    $this->actingAs($this->teacher, 'web')->putJson('/api/admin/teaching/course_works/'.$this->work->id,
+        ['finish_until_time' => '16:00'])->assertOk();
+    expect($test->fresh()->closes_at->equalTo($legacy))->toBeTrue();
+
+    foreach (['common', 'individual', 'adopt'] as $step) {
+        $preview = $this->getJson($this->publishUrl.'-preview')->assertOk()
+            ->assertJsonPath('data.tests.0.status', 'published')->assertJsonPath('data.tests.0.mode_editable', true)
+            ->assertJsonPath('data.tests.0.deadline_differs', true)->assertJsonPath('data.tests.0.can_adopt_final_deadline', true)
+            ->json('data.tests.0');
+        $mode = $step === 'common' ? 'common' : 'individual';
+        $choices = json_encode([['id' => $test->id, 'expected_version' => $preview['version'], 'start_mode' => $mode,
+            'adopt_final_deadline' => $step === 'adopt']], JSON_THROW_ON_ERROR);
+        $this->postJson($this->publishUrl, ($this->payload)(['release_now' => false, 'mc_tests' => $choices]))->assertOk()
+            ->assertJsonPath('data.status.student_distribution.published_at', null);
+        $saved = $test->fresh();
+        expect($saved->start_mode)->toBe($mode)
+            ->and($saved->snapshot['start_mode'])->toBe($mode)
+            ->and($saved->status)->toBe('published')
+            ->and($saved->starts_at)->toBeNull()
+            ->and($saved->ends_at)->toBeNull()
+            ->and($saved->paused_at->equalTo($test->paused_at))->toBeTrue()
+            ->and($test->attempts()->sole()->getRawOriginal())->toBe($attempt);
+        expect($saved->closes_at?->setTimezone('Europe/Vienna')->format('H:i'))->toBe(match ($step) {
+            'common' => null, 'individual' => '23:59', 'adopt' => '16:00',
+        });
+    }
+    expect($test->fresh()->snapshot['work_deadline_inherited'])->toBeTrue();
+    expect($this->work->fresh()->status['multiple_choice_tests']['2026-10-28']['test_id'])->toBe($test->id);
+    expect($this->work->fresh()->groups[0]['student_ids'])->toBe([$this->student->id]);
+    Queue::assertNothingPushed();
+    Mail::assertNothingOutgoing();
+});
+
+test('a paused published MC test keeps its start mode when the test or its attempts are locked', function (string $state): void {
+    $test = studentTaskMcFixture($this->work, $this->teacher, [$this->student], 'published');
+    McTest::query()->whereKey($test->id)->update(['paused_at' => now()]);
+    if ($state === 'countdown') {
+        McTest::query()->whereKey($test->id)->update(['starts_at' => now()->addMinutes(2)]);
+    } elseif ($state === 'shared') {
+        $other = TeachingCourseWork::factory()->create(['teaching_course_id' => $this->course->id]);
+        $other->update(['status' => ['multiple_choice_tests' => ['all' => ['work_id' => $other->id, 'test_id' => $test->id]]]]);
+    } else {
+        $attempt = $test->attempts()->sole();
+        McAttempt::query()->whereKey($attempt->id)->update(match ($state) {
+            'started' => ['started_at' => now()->subMinute()],
+            'personal' => ['closes_at' => now()->addDays(3)],
+            'answered' => ['answers' => json_encode(['one' => ['yes']], JSON_THROW_ON_ERROR)],
+            'completed' => ['completed_at' => now()->subMinute()],
+        });
+    }
+    $before = $test->fresh()->getRawOriginal();
+    $preview = $this->actingAs($this->teacher, 'web')->getJson($this->publishUrl.'-preview')->assertOk()
+        ->assertJsonPath('data.tests.0.mode_editable', false)->json('data.tests.0');
+    $choices = json_encode([['id' => $test->id, 'expected_version' => $preview['version'], 'start_mode' => 'common']], JSON_THROW_ON_ERROR);
+    $this->postJson($this->publishUrl, ($this->payload)(['release_now' => false, 'mc_tests' => $choices]))->assertUnprocessable()
+        ->assertJsonValidationErrors('mc_tests');
+    expect($test->fresh()->getRawOriginal())->toBe($before)
+        ->and($this->work->fresh()->status)->not->toHaveKey('student_distribution');
+})->with(['started', 'personal', 'answered', 'completed', 'countdown', 'shared']);
+
 test('a common-start draft uses the saved work deadline when changed to individual start', function (): void {
     Queue::fake();
     $this->travelTo(CarbonImmutable::parse('2026-10-29 12:00', 'Europe/Vienna'));
@@ -510,12 +1181,161 @@ test('teachers release private tasks independently from email and students recei
     Http::assertNothingSent();
 });
 
-test('withdrawal and removing a PDF revoke previously issued download URLs', function (): void {
+test('normal saving shortens a historical work and provides only the final deadline and a current PDF', function (): void {
+    $this->work->update(['status' => [...$this->work->status, 'communicated_deadline_date' => '2026-11-04',
+        'communicated_deadline_at' => '2026-11-04T15:00:00+01:00']]);
+    $this->actingAs($this->teacher, 'web')->postJson($this->publishUrl, ($this->payload)([
+        'files' => [UploadedFile::fake()->createWithContent('Aufgabe.pdf', '%PDF-1.4 task')],
+    ]))->assertOk();
+    $pdfUrl = route('student.course-work.task-file', ['courseId' => $this->course->id, 'course_work' => $this->work->id, 'fileId' => 'deadline'], false);
+    config(['laravel-pdf.driver' => 'dompdf']);
+    $parser = new Parser;
+    $this->actingAs($this->student, 'web')->getJson($this->tasksUrl)->assertOk()
+        ->assertJsonPath('tasks.0.deadline', ['date' => '2026-11-05', 'time' => '12:00'])->assertJsonMissingPath('tasks.0.final_deadline');
+    $pdfText = $parser->parseContent($this->get($pdfUrl)->assertOk()->streamedContent())->getText();
+    expect($pdfText)->toContain('05.11.2026', '12:00 Uhr')->not->toContain('04.11.2026');
+
+    $updateUrl = '/api/admin/teaching/course_works/'.$this->work->id;
+    $this->actingAs($this->teacher, 'web')->putJson($updateUrl, [
+        'finish_until_date' => '2026-11-03', 'finish_until_time' => null,
+        'expected_final_deadline' => ['date' => '2026-11-05', 'time' => '12:00'],
+    ])->assertOk()->assertJsonMissingPath('data.status.communicated_deadline_date')->assertJsonPath('data.finish_until_time', null);
+    expect($this->work->fresh()->status['communicated_deadline_date'])->toBe('2026-11-04');
+    $this->putJson($updateUrl, ['finish_until_time' => '13:30', 'expected_final_deadline' => ['date' => '2026-11-05', 'time' => '12:00']])->assertConflict();
+    $this->putJson($updateUrl, ['finish_until_date' => null, 'finish_until_time' => '13:30'])->assertUnprocessable()->assertJsonValidationErrors('finish_until_date');
+
+    $this->actingAs($this->student, 'web')->getJson($this->tasksUrl)->assertOk()
+        ->assertJsonPath('tasks.0.deadline', ['date' => '2026-11-03', 'time' => null])->assertJsonMissingPath('tasks.0.final_deadline');
+    $pdfText = $parser->parseContent($this->get($pdfUrl)->assertOk()->streamedContent())->getText();
+    expect($pdfText)->toContain('03.11.2026')->not->toContain('04.11.2026', '05.11.2026', '23:59');
+    $this->actingAs($this->peer, 'web')->get($pdfUrl)->assertNotFound();
+    Http::assertNothingSent();
+});
+
+test('an inherited MC cutoff follows the saved deadline and leaves personal and completed attempts intact', function (): void {
+    $this->travelTo(CarbonImmutable::parse('2026-11-04 13:00', 'Europe/Vienna'));
+    Queue::fake();
+    $finished = User::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->year->id])->assignRole('student');
+    $this->course->teachingCourseStudents()->create(['user_id' => $finished->id]);
+    $this->work->update(['groups' => [['student_ids' => [$this->student->id, $this->peer->id, $finished->id]]]]);
+    $test = studentTaskMcFixture($this->work, $this->teacher, [$this->student, $this->peer, $finished], 'published');
+    $snapshot = [...$test->snapshot, 'schooltool_work' => ['work_id' => $this->work->id, 'course_id' => $this->course->id, 'slot' => '2026-10-28']];
+    McTest::query()->whereKey($test->id)->update(['closes_at' => $this->work->finalDeadlineInstant(), 'duration_seconds' => 10800,
+        'snapshot' => json_encode($snapshot, JSON_THROW_ON_ERROR)]);
+    $attempt = $test->attempts()->where('student_id', $this->student->id)->firstOrFail();
+    $personal = $test->attempts()->where('student_id', $this->peer->id)->firstOrFail();
+    $history = $test->attempts()->where('student_id', $finished->id)->firstOrFail();
+    McAttempt::query()->whereKey($attempt->id)->update(['questions' => json_encode([
+        ['id' => 'question-1', 'correct_option_ids' => ['yes']],
+    ], JSON_THROW_ON_ERROR)]);
+    McAttempt::query()->whereKey($personal->id)->update(['closes_at' => CarbonImmutable::parse('2026-11-05 18:00', 'Europe/Vienna')]);
+    $attempt->update(['started_at' => now()]);
+    $history->update(['started_at' => now()->subHour(), 'completed_at' => now()->subMinutes(10), 'completion_reason' => 'submitted']);
+    $historyBefore = $history->fresh()->getRawOriginal();
+    $personalBefore = $personal->fresh()->getRawOriginal();
+
+    $updateUrl = '/api/admin/teaching/course_works/'.$this->work->id;
+    $this->actingAs($this->teacher, 'web')->putJson($updateUrl, ['finish_until_date' => '2026-11-04', 'finish_until_time' => '14:00'])->assertOk();
+    expect($attempt->fresh()->effectiveDeadline()?->setTimezone('Europe/Vienna')->format('H:i'))->toBe('14:00');
+    $this->putJson($updateUrl, ['finish_until_time' => '15:30'])->assertOk();
+    expect($attempt->fresh()->effectiveDeadline()?->setTimezone('Europe/Vienna')->format('H:i'))->toBe('15:30');
+    $this->putJson($updateUrl, ['finish_until_time' => '12:59'])->assertOk();
+    expect(app(McTestService::class)->finalizeExpired($test->id))->toBe(1);
+    expect($attempt->fresh()->completion_reason)->toBe('timeout')
+        ->and($personal->fresh()->getRawOriginal())->toBe($personalBefore)
+        ->and($history->fresh()->getRawOriginal())->toBe($historyBefore);
+    $this->putJson($updateUrl, ['finish_until_time' => null])->assertOk();
+    expect($test->fresh()->closes_at->setTimezone('Europe/Vienna')->format('H:i:s'))->toBe('23:59:00')
+        ->and($attempt->fresh()->completion_reason)->toBe('timeout');
+    $this->putJson($updateUrl, ['finish_until_date' => null, 'finish_until_time' => null])->assertUnprocessable();
+    Queue::assertPushed(FinalizeMultipleChoiceTest::class);
+});
+
+test('the student deadline check contains only deadlines and a revision that changes even within a second', function (): void {
+    $this->travelTo(CarbonImmutable::parse('2026-11-06 13:00', 'Europe/Vienna'));
+    $this->work->update(['finish_until_date' => '2026-11-07']);
+    $this->actingAs($this->teacher, 'web')->postJson($this->publishUrl, ($this->payload)())->assertOk();
+    $modules = $this->mock(DropboxModuleLinks::class);
+    $modules->shouldNotReceive('cachedAssessmentPreparation');
+    $modules->shouldReceive('current')->andReturnNull();
+    $snapshotUrl = $this->tasksUrl.'?view=deadlines';
+    $before = $this->actingAs($this->student, 'web')->getJson($snapshotUrl)->assertOk()
+        ->assertJsonPath('tasks.0.deadline', ['date' => '2026-11-07', 'time' => '12:00'])->json('version');
+    $this->getJson($snapshotUrl.'&version='.$before)->assertExactJson(['version' => $before]);
+
+    $updateUrl = '/api/admin/teaching/course_works/'.$this->work->id;
+    $this->actingAs($this->teacher, 'web')->putJson($updateUrl, ['finish_until_date' => '2026-11-06'])->assertOk();
+    $response = $this->actingAs($this->student, 'web')->getJson($snapshotUrl.'&version='.$before)->assertOk();
+    $shorter = $response->json('version');
+    expect($shorter)->not->toBe($before);
+    $response->assertExactJson(['version' => $shorter, 'tasks' => [[
+        'id' => $this->work->id, 'status' => 'released', 'deadline' => ['date' => '2026-11-06', 'time' => '12:00'],
+    ]]]);
+
+    $this->actingAs($this->teacher, 'web')->putJson($updateUrl, ['finish_until_time' => '18:00'])->assertOk();
+    $response = $this->actingAs($this->student, 'web')->getJson($snapshotUrl.'&version='.$shorter)->assertOk()
+        ->assertJsonPath('tasks.0.deadline', ['date' => '2026-11-06', 'time' => '18:00']);
+    expect($response->json('version'))->not->toBe($shorter);
+    $this->actingAs($this->peer, 'web')->getJson($snapshotUrl.'&version='.$shorter)->assertOk()->assertJsonPath('tasks', []);
+});
+
+function studentTaskUseTestBroadcaster(): void
+{
+    config(['broadcasting.default' => 'pusher', 'broadcasting.connections.pusher' => [
+        'driver' => 'pusher', 'key' => 'local-test-key', 'secret' => 'local-test-secret', 'app_id' => 'local-test-app',
+    ]]);
+}
+
+test('normal student login can only authorize its own private deadline channel', function (): void {
+    studentTaskUseTestBroadcaster();
+    // Route registration normally runs when the configured broadcaster boots.
+    require base_path('routes/channels.php');
+
+    $this->actingAs($this->student, 'web')->getJson($this->tasksUrl)->assertOk()
+        ->assertHeader('X-Schooltool-Deadline-Channel', 'user.'.$this->student->id);
+    $this->postJson('/broadcasting/auth', [
+        'socket_id' => '123.456', 'channel_name' => 'private-user.'.$this->student->id,
+    ])->assertOk()->assertJsonStructure(['auth']);
+    $this->postJson('/broadcasting/auth', [
+        'socket_id' => '123.456', 'channel_name' => 'private-user.'.$this->peer->id,
+    ])->assertForbidden();
+});
+
+test('a successful deadline save signals only the assigned private channel and sends no work data', function (): void {
+    $this->actingAs($this->teacher, 'web')->postJson($this->publishUrl, ($this->payload)())->assertOk();
+    studentTaskUseTestBroadcaster();
+    $datesAtSignal = [];
+    $pusher = Mockery::mock(Pusher::class);
+    $pusher->shouldReceive('trigger')
+        ->with(['private-user.'.$this->student->id], 'course-work.deadline-changed', [], [])
+        ->twice()->andReturnUsing(function () use (&$datesAtSignal): object {
+            $work = $this->work->fresh();
+            $datesAtSignal[] = [$work->finish_until_date->format('Y-m-d'), $work->finish_until_time];
+
+            return (object) [];
+        });
+    Broadcast::partialMock()->shouldReceive('pusher')->with(Mockery::on(
+        fn (array $config): bool => $config['key'] === 'local-test-key' && $config['client_options']['timeout'] === 1.0
+    ))->twice()->andReturn($pusher);
+
+    $updateUrl = '/api/admin/teaching/course_works/'.$this->work->id;
+    $this->putJson($updateUrl, ['finish_until_date' => '2026-11-09'])->assertOk();
+    $this->putJson($updateUrl, ['finish_until_time' => '18:00'])->assertOk();
+    $this->putJson($updateUrl, ['finish_until_date' => null])->assertUnprocessable();
+    $this->putJson($updateUrl, ['finish_until_date' => '2026-11-09'])->assertOk();
+    expect($datesAtSignal)->toBe([['2026-11-09', '12:00'], ['2026-11-09', '18:00']]);
+});
+
+test('pausing keeps the assigned task listed while revoking previously issued download URLs', function (): void {
     $this->actingAs($this->teacher, 'web')->postJson($this->publishUrl, ($this->payload)(['files' => [UploadedFile::fake()->createWithContent('Aufgabe.pdf', '%PDF-1.4 task')]]))->assertOk();
     $url = $this->actingAs($this->student, 'web')->getJson($this->tasksUrl)->json('tasks.0.files.0.url');
     $this->actingAs($this->teacher, 'web')->postJson($this->publishUrl, ($this->payload)(['publish' => false]))->assertOk();
-    $this->actingAs($this->student, 'web')->getJson($this->tasksUrl)->assertOk()->assertJsonCount(0, 'tasks');
+    $this->actingAs($this->student, 'web')->getJson($this->tasksUrl)->assertOk()->assertExactJson(['tasks' => [
+        ['id' => $this->work->id, 'title' => 'Dateimanagement', 'status' => 'paused', 'dates' => ['2026-10-28'],
+            'deadline' => ['date' => '2026-11-05', 'time' => '12:00'], 'assignment_kind' => 'worksheet'],
+    ]]);
     $this->get($url)->assertNotFound();
+    $this->actingAs($this->peer, 'web')->getJson($this->tasksUrl)->assertOk()->assertExactJson(['tasks' => []]);
     $this->actingAs($this->teacher, 'web')->postJson($this->publishUrl, ($this->payload)())->assertOk();
     $this->actingAs($this->student, 'web')->getJson($this->tasksUrl)->assertOk()->assertJsonCount(1, 'tasks')->assertJsonCount(0, 'tasks.0.files');
     $this->get($url)->assertNotFound();
@@ -592,7 +1412,7 @@ test('personal MC links use only the current learners attempt and never start or
     $selection = json_encode([['id' => $test->id, 'expected_version' => $preview[0]['version'], 'start_mode' => 'individual']], JSON_THROW_ON_ERROR);
     $this->postJson($this->publishUrl, ($this->payload)(['mc_tests' => $selection]))->assertOk();
     $response = $this->actingAs($this->student, 'web')->getJson($this->tasksUrl)->assertOk()->assertJsonCount(1, 'tasks.0.tests');
-    expect($response->json('tasks.0.tests.0.url'))->toBe('/multiple-choice#access=personal-'.$this->student->id)
+    expect($response->json('tasks.0.tests.0.url'))->toBe('/multiple-choice?course='.$this->course->id.'#access=personal-'.$this->student->id)
         ->and($response->getContent())->not->toContain('personal-'.$this->peer->id)
         ->and(McAttempt::all()->map->getAttributes()->all())->toBe($before);
     $this->actingAs($this->teacher, 'web')->postJson("/api/admin/multiple-choice/tests/{$test->id}/withdraw")->assertOk();
@@ -601,6 +1421,33 @@ test('personal MC links use only the current learners attempt and never start or
     $this->actingAs($this->student, 'web')->getJson($this->tasksUrl)->assertOk()->assertJsonCount(1, 'tasks.0.tests');
     McTest::query()->whereKey($test->id)->update(['access_links_disabled_at' => now()]);
     $this->getJson($this->tasksUrl)->assertOk()->assertJsonCount(0, 'tasks.0.tests');
+});
+
+test('recalling the complete distribution invalidates a finished common test link without altering its attempt', function (): void {
+    $this->travelTo(CarbonImmutable::parse('2026-11-06 12:00', 'Europe/Vienna'));
+    $test = studentTaskMcFixture($this->work, $this->teacher, [$this->student], 'published');
+    McTest::query()->whereKey($test->id)->update(['start_mode' => 'common', 'starts_at' => now()->subHour(), 'ends_at' => now()->subMinutes(50)]);
+    $attempt = $test->attempts()->sole();
+    $attempt->update(['started_at' => now()->subHour(), 'submitted_at' => now()->subMinutes(56), 'completed_at' => now()->subMinutes(56),
+        'completion_reason' => 'submitted', 'score' => 2, 'answers' => ['one' => ['yes']]]);
+    $work = $this->work->fresh();
+    $status = $work->status;
+    $status['student_distribution'] = ['student_ids' => [$this->student->id], 'published_at' => now()->subHours(2)->toIso8601String(),
+        'instructions' => 'Aufgabe', 'file_ids' => []];
+    $work->update(['status' => $status]);
+    $url = '/api/multiple-choice/attempts/'.$attempt->id;
+    $this->actingAs($this->student, 'web')->getJson($url)->assertOk()->assertJsonPath('attempt.status', 'submitted');
+    $before = $attempt->fresh()->getRawOriginal();
+
+    $status['student_distribution'] = ['deleted_at' => now()->toIso8601String()];
+    $work->update(['status' => $status]);
+    $this->getJson($url)->assertNotFound()->assertJsonMissingPath('attempt');
+    $this->getJson($this->tasksUrl)->assertOk()->assertJsonCount(0, 'tasks');
+    $this->getJson('/api/multiple-choice/attempts')->assertOk()->assertJsonCount(0, 'attempts');
+    Auth::forgetGuards();
+    Auth::guard('web')->logout();
+    $this->withHeader('X-MC-Access', $attempt->access_token)->getJson('/api/multiple-choice/access')->assertNotFound()->assertJsonMissingPath('attempt');
+    expect($attempt->fresh()->getRawOriginal())->toBe($before);
 });
 
 test('the MC action state reflects only the current learners attempt and its effective deadline', function (): void {

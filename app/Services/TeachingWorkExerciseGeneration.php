@@ -299,6 +299,12 @@ class TeachingWorkExerciseGeneration
         foreach (['assignment_markdown' => ['Angaben', 'Aufgabenstellung_'.$topic, 'Aufgabenstellung'],
             'criteria_markdown' => ['Bewertungskriterien', 'Beurteilungskriterien_'.$topic, 'Bewertungskriterien']] as $field => [$section, $name, $label]) {
             $markdown = trim($plan['draft'][$field])."\n";
+            $deadline = $plan['context']['work']['main_deadline'];
+            if ($field === 'assignment_markdown' && $deadline['date']) {
+                $date = CarbonImmutable::createFromFormat('!Y-m-d', $deadline['date'], 'Europe/Vienna')->format('d.m.Y');
+                $text = $date.($deadline['time'] ? ' · '.$deadline['time'].' Uhr' : '');
+                $markdown = "**Endgültige Abgabefrist**  \n".$text."\n\n".$markdown;
+            }
             $files[$section.'/'.$name.'.md'] = $markdown;
             $html = Str::markdown($markdown, ['html_input' => 'strip', 'allow_unsafe_links' => false]);
             abort_if(preg_match('/<img\b/i', $html), 422, 'Externe Bilder sind im erzeugten Dokument nicht zulässig. Bitte die Vorschau neu erzeugen.');
@@ -331,7 +337,7 @@ class TeachingWorkExerciseGeneration
             'Schooltool_Schule_ID' => $work->teachingCourse->school_id, 'Titel' => $work->title,
             'Leistungsfeststellungsordner' => $path, 'Durchfuehrungsdatum' => $plan['context']['work']['scheduled_date'],
             'Zeitzone' => 'Europe/Vienna', 'Abgabeschluss' => $this->deadline($plan['context']['work']['main_deadline']),
-            'MitgeteilteAbgabefrist' => $plan['context']['work']['communicated_deadline']['at'] ?? null,
+            'Schooltool_Fristdaten' => ['main_deadline' => $plan['context']['work']['main_deadline']],
             'Modulbindung' => $plan['context']['module_binding'], 'Kurs' => $plan['context']['course'],
             'Teilnehmerliste' => 'Schülerlisten/Schuelerliste.json', 'Erstellt' => $plan['prepared_at'],
             'MC_Test_ID' => $plan['context']['multiple_choice_test']['test_id'] ?? null,

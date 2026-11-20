@@ -178,8 +178,7 @@ test('combined refresh saves the deadline and safely reuses or rechecks the coll
         return $found;
     });
     $this->app->instance(DropboxModuleLinks::class, $modules);
-    $deadlines = Mockery::mock(TeachingWorkDeadlineSync::class);
-    $deadlines->shouldReceive('metadata')->once()->andReturn([]);
+    $deadlines = Mockery::mock(TeachingWorkDeadlineSync::class)->makePartial();
     $deadlines->shouldReceive('sync')->once()->andReturn(['changed' => true, 'message' => 'Gespeichert']);
     $this->app->instance(TeachingWorkDeadlineSync::class, $deadlines);
     $folders = Mockery::mock(DropboxFolderContents::class);
@@ -421,13 +420,12 @@ test('deadline metadata is previewed and automatically imported without changing
     expect($this->work->fresh()->groups)->toEqual($groups);
 })->with(['dropbox', 'upload'])->with(['2026-10-15T14:55:00+02:00', '2026-10-15T12:55:00Z']);
 
-test('optional first deadline is previewed read only and retained through older packages and ordinary edits', function (string $source): void {
+test('old optional deadline fields from Dropbox or upload do not change the current work', function (string $source): void {
     dropboxConnectionForWork($this);
     $this->work->update(['status' => ['dispatch_notifications' => [], 'automation_enabled' => true]]);
     $metadata = ['Schooltool_Arbeit_ID' => $this->work->id, 'Schooltool_Kurs_ID' => $this->course->id,
         'Abgabeschluss' => '2026-10-15T14:55:00+02:00', 'MitgeteilteAbgabefrist' => '2026-10-15T12:00:00Z', 'Zeitzone' => 'Europe/Vienna'];
     $url = $source === 'dropbox' ? $this->url.'/import' : '/api/admin/teaching/course_works/'.$this->work->id.'/import-json';
-    $deadline = ['at' => '2026-10-15T14:00:00+02:00', 'date' => '2026-10-15', 'time' => '14:00'];
     foreach (['present', 'absent', 'null'] as $case) {
         if ($case === 'absent') {
             unset($metadata['MitgeteilteAbgabefrist']);
@@ -442,17 +440,17 @@ test('optional first deadline is previewed read only and retained through older 
         $preview = $this->postJson($url, $payload)->assertOk()->assertJsonPath('preview.can_import', true)->json('preview');
         expect($this->work->fresh()->getAttributes())->toBe($before);
         $this->postJson($url, $payload + ['apply' => true, 'hash' => $preview['hash']])->assertOk()
-            ->assertJsonPath('data.communicated_deadline', $deadline)->assertJsonPath('data.finish_until_time', '14:55');
-        expect($this->work->fresh()->communicatedDeadline())->toBe($deadline)
+            ->assertJsonMissingPath('data.communicated_deadline')->assertJsonPath('data.finish_until_time', '14:55');
+        expect($this->work->fresh()->status)->not->toHaveKey('communicated_deadline_at')
             ->and($this->work->fresh()->status['automation_enabled'])->toBeTrue()
             ->and($this->work->fresh()->status['dispatch_notifications'])->toBe([]);
     }
     $this->putJson('/api/admin/teaching/course_works/'.$this->work->id, ['status' => ['communicated_deadline_at' => '2026-10-15T13:00:00+02:00']])
-        ->assertOk()->assertJsonPath('data.communicated_deadline', $deadline);
-    expect($this->work->fresh()->communicatedDeadline())->toBe($deadline);
+        ->assertOk()->assertJsonMissingPath('data.communicated_deadline');
+    expect($this->work->fresh()->status)->not->toHaveKey('communicated_deadline_at');
 })->with(['dropbox', 'upload']);
 
-test('deadline metadata rejects foreign identities invalid times and inconsistent communicated deadlines', function (array $changes): void {
+test('deadline metadata rejects foreign identities and invalid final times', function (array $changes): void {
     $this->work->update(['finish_until_date' => '2026-10-15', 'finish_until_time' => '16:00']);
     $metadata = array_replace(['Schooltool_Arbeit_ID' => $this->work->id, 'Schooltool_Kurs_ID' => $this->course->id,
         'Abgabeschluss' => '2026-10-15T14:55:00+02:00', 'Zeitzone' => 'Europe/Vienna'], $changes);
@@ -470,7 +468,6 @@ test('deadline metadata rejects foreign identities invalid times and inconsisten
     'missing offset' => [['Abgabeschluss' => '2026-10-15T14:55:00']],
     'invalid date' => [['Abgabeschluss' => '2026-02-30T14:55:00+01:00']],
     'wrong Vienna offset' => [['Abgabeschluss' => '2026-10-15T14:55:00+01:00']],
-    'later communicated deadline' => [['MitgeteilteAbgabefrist' => '2026-10-15T15:00:00+02:00']],
 ]);
 
 test('deadline metadata cannot overwrite a work changed after its preview', function (): void {

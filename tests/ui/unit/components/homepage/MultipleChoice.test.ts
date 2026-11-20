@@ -7,7 +7,7 @@ import { useMultipleChoiceSession } from '@/pages/homepage/multipleChoice/useMul
 
 const { route } = vi.hoisted(() => ({ route: {
     path: '/multiple-choice', fullPath: '/multiple-choice#access=personal-secret',
-    hash: '#access=personal-secret', params: {},
+    hash: '#access=personal-secret', params: {}, query: {},
 } }))
 vi.mock('vue-router', () => ({ useRoute: () => route, useRouter: () => ({ push: vi.fn() }) }))
 vi.mock('axios', () => ({ default: { get: vi.fn(), put: vi.fn(), post: vi.fn() } }))
@@ -84,6 +84,7 @@ beforeEach(() => {
     route.fullPath = '/multiple-choice#access=personal-secret'
     route.hash = '#access=personal-secret'
     route.params = {}
+    route.query = {}
     vi.mocked(axios.get).mockResolvedValue({ data: { attempt: fixture() } })
     vi.mocked(axios.put).mockImplementation(async (_url, body) => ({ data: { attempt: fixture({ answers: body.answers }) } }))
     vi.mocked(axios.post).mockResolvedValue({ data: { attempt: fixture({ status: 'submitted', questions: [] }) } })
@@ -542,32 +543,61 @@ it('does not retry a failed start automatically and allows another explicit conf
     expect(wrapper.find('fieldset').exists()).toBe(true)
 })
 
-it('freezes the current question, selected answers and remaining clock during a teacher pause and resumes in place', async () => {
+it('discovers a teacher pause between polls, restores the exact frozen time and resumes in place', async () => {
     const wrapper = mount(MultipleChoice)
     wrappers.push(wrapper)
     await flushPromises()
     await wrapper.findAll('button').find(button => button.text() === 'Weiter').trigger('click')
     await flushPromises()
-    const paused = fixture({ paused_at: '2026-10-16T08:01:00Z', answers: { q1: ['a'], q2: ['c'] } })
+    await vi.advanceTimersByTimeAsync(1000)
+    const paused = fixture({ paused_at: '2026-10-16T08:01:01Z', server_now: '2026-10-16T08:01:02Z', answers: { q1: ['a'], q2: ['c'] } })
     vi.mocked(axios.get).mockResolvedValue({ data: { attempt: paused } })
-    window.dispatchEvent(new Event('online'))
-    await flushPromises()
+    await vi.advanceTimersByTimeAsync(1000)
     expect(wrapper.text()).toContain('Der Test ist pausiert.')
     expect(wrapper.find('legend').text()).toContain('Frage 2')
     expect(wrapper.find('input[value="c"]').element.checked).toBe(true)
     expect(wrapper.find('fieldset').element.disabled).toBe(true)
-    expect(wrapper.find('[role="timer"]').text()).toContain('9:00')
-    await vi.advanceTimersByTimeAsync(30000)
-    expect(wrapper.find('[role="timer"]').text()).toContain('9:00')
+    expect(wrapper.find('[role="timer"]').text()).toContain('8:59')
+    await vi.advanceTimersByTimeAsync(29000)
+    expect(wrapper.find('[role="timer"]').text()).toContain('8:59')
     expect(axios.put).not.toHaveBeenCalled()
-    vi.mocked(axios.get).mockResolvedValue({ data: { attempt: fixture({ ends_at: '2026-10-16T08:10:30Z', server_now: '2026-10-16T08:01:30Z', answers: paused.answers }) } })
-    window.dispatchEvent(new Event('online'))
-    await flushPromises()
+    vi.mocked(axios.get).mockResolvedValue({ data: { attempt: fixture({ ends_at: '2026-10-16T08:10:30Z', server_now: '2026-10-16T08:01:32Z', answers: paused.answers }) } })
+    await vi.advanceTimersByTimeAsync(1000)
     expect(wrapper.text()).not.toContain('Der Test ist pausiert.')
     expect(wrapper.find('legend').text()).toContain('Frage 2')
     expect(wrapper.find('input[value="c"]').element.checked).toBe(true)
     expect(wrapper.find('fieldset').element.disabled).toBe(false)
-    expect(wrapper.find('[role="timer"]').text()).toContain('9:00')
+    expect(wrapper.find('[role="timer"]').text()).toContain('8:58')
+})
+
+it('does not replace a frozen attempt with an older active poll response', async () => {
+    const session = mountSession()
+    await flushPromises()
+    const activePoll = deferred()
+    vi.mocked(axios.get).mockReturnValueOnce(activePoll.promise)
+    await vi.advanceTimersByTimeAsync(2000)
+    vi.mocked(axios.get).mockResolvedValue({ data: { attempt: fixture({ paused_at: '2026-10-16T08:01:01Z', server_now: '2026-10-16T08:01:02Z' }) } })
+    window.dispatchEvent(new Event('online'))
+    await flushPromises()
+    expect(session.active.value).toBe(false)
+    expect(session.remainingSeconds.value).toBe(539)
+    activePoll.resolve({ data: { attempt: fixture() } })
+    await flushPromises()
+    expect(session.active.value).toBe(false)
+    expect(session.remainingSeconds.value).toBe(539)
+})
+
+it('holds a paused common countdown at the server pause time without showing the work controls', async () => {
+    vi.mocked(axios.get).mockResolvedValue({ data: { attempt: fixture({ questions: [], paused_at: '2026-10-16T08:01:03Z',
+        starts_at: '2026-10-16T08:01:17Z', ends_at: '2026-10-16T08:11:17Z', started_at: null, status: 'ready', server_now: '2026-10-16T08:01:03Z' }) } })
+    const wrapper = mount(MultipleChoice)
+    wrappers.push(wrapper)
+    await flushPromises()
+    const timer = wrapper.get('[aria-label="Pausierter Countdown"]')
+    expect(timer.get('strong').text()).toBe('14')
+    await vi.advanceTimersByTimeAsync(20000)
+    expect(timer.get('strong').text()).toBe('14')
+    expect(wrapper.find('fieldset').exists()).toBe(false)
 })
 
 it('records focus changes in exam mode without submitting or changing the running test and enters fullscreen only on click', async () => {
@@ -780,4 +810,35 @@ it('hides questions after a link is revoked, preserves unsaved answers and recon
     await session.refresh(true)
     expect(session.attempt.value.id).toBe(7)
     expect(session.answers.value.q1).toEqual(['a'])
+})
+
+it('offers return to the course tasks when a completed tab discovers the withdrawal during polling', async () => {
+    route.query = { course: '18' }
+    vi.mocked(axios.get).mockResolvedValueOnce({ data: { attempt: fixture({ status: 'submitted', questions: [] }) } })
+        .mockRejectedValue({ response: { status: 404 } })
+    const wrapper = mount(MultipleChoice)
+    wrappers.push(wrapper)
+    await flushPromises()
+    expect(wrapper.text()).toContain('Dein Test ist abgegeben')
+    await vi.advanceTimersByTimeAsync(5000)
+    const error = wrapper.get('[role="alert"]')
+    expect(error.text()).toContain('Dieser Zugang ist ungültig oder nicht mehr verfügbar')
+    expect(error.get('a').text()).toBe('Meine Aufgaben öffnen')
+    expect(error.get('a').attributes('href')).toBe('/student/overview?panel=tasks&course=18')
+    expect(wrapper.text()).not.toContain('Dein Test ist abgegeben')
+    expect(axios.get).toHaveBeenCalledTimes(2)
+    expect(axios.post).not.toHaveBeenCalled()
+    expect(axios.put).not.toHaveBeenCalled()
+})
+
+it('offers the task selection when an old personal link is unavailable and carries no course', async () => {
+    vi.mocked(axios.get).mockRejectedValue({ response: { status: 404 } })
+    const wrapper = mount(MultipleChoice)
+    wrappers.push(wrapper)
+    await flushPromises()
+    expect(wrapper.get('[role="alert"] a').attributes('href')).toBe('/student/overview?panel=tasks')
+    expect(wrapper.text()).not.toContain('Deine Tests')
+    await vi.advanceTimersByTimeAsync(10000)
+    expect(axios.get).toHaveBeenCalledOnce()
+    expect(axios.put).not.toHaveBeenCalled()
 })

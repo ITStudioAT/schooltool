@@ -16,6 +16,8 @@ return [
 
     'postmark' => [
         'token' => env('POSTMARK_TOKEN'),
+        'work_test_sender' => 'guenther.kron@cdgym.info',
+        'work_test_sender_name' => 'DI Günther Kron',
     ],
 
     'resend' => [

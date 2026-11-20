@@ -46,7 +46,7 @@ class TeachingWorkFolderImport
             if ($file['kind'] === 'deadline') {
                 $metadata = $this->parseDeadline($document['text']);
                 $workIdentity = ['work_id' => $metadata['work_id'], 'course_id' => $metadata['course_id']];
-                $deadline = $metadata['at'] === null ? null : $metadata;
+                $deadline = $metadata['at'] === null && ! isset($metadata['date']) ? null : $metadata;
             } elseif ($file['kind'] === 'evaluation' && str_ends_with(mb_strtolower($file['name']), '.md')) {
                 if (strlen($document['text']) > 262144) {
                     $this->reject($file['name'].': Auswertung überschreitet 256 KB.');
@@ -97,7 +97,7 @@ class TeachingWorkFolderImport
             'protocols' => $protocols, 'provisions' => $provisions, 'deadline' => $deadline, 'work_identity' => $workIdentity, 'pdfs' => $pdfs, 'uploads' => $uploads, 'sources' => $sources];
     }
 
-    /** @return array{work_id: int, course_id: int, at: ?string, communicated_at?: ?string} */
+    /** @return array{work_id: int, course_id: int, at: ?string, date?: string} */
     private function parseDeadline(string $text): array
     {
         if (str_starts_with($text, "\xEF\xBB\xBF")) {
@@ -114,21 +114,22 @@ class TeachingWorkFolderImport
             $this->reject('Anlage_und_Quellen.json: Eindeutige Arbeits- und Kurskennung sowie Europe/Vienna erforderlich.');
         }
         if (($metadata['Abgabeschluss'] ?? null) === null) {
-            if (isset($metadata['MitgeteilteAbgabefrist'])) {
-                $this->reject('Anlage_und_Quellen.json: Zur mitgeteilten Frist fehlt der interne Prüfungsschluss.');
+            $result = ['work_id' => $metadata['Schooltool_Arbeit_ID'], 'course_id' => $metadata['Schooltool_Kurs_ID'], 'at' => null];
+            $date = $metadata['Schooltool_Fristdaten']['main_deadline']['date'] ?? null;
+            if ($date !== null) {
+                $parsed = is_string($date) && preg_match('/\A\d{4}-\d{2}-\d{2}\z/', $date) ? DateTimeImmutable::createFromFormat('!Y-m-d', $date) : false;
+                if (! $parsed || $parsed->format('Y-m-d') !== $date || isset($metadata['Schooltool_Fristdaten']['main_deadline']['time'])) {
+                    $this->reject('Anlage_und_Quellen.json: Ungültige endgültige Abgabefrist.');
+                }
+                $result['date'] = $date;
             }
 
-            return ['work_id' => $metadata['Schooltool_Arbeit_ID'], 'course_id' => $metadata['Schooltool_Kurs_ID'], 'at' => null];
+            return $result;
         }
         $deadline = $this->deadlineInstant($metadata['Abgabeschluss']);
-        $communicated = isset($metadata['MitgeteilteAbgabefrist']) ? $this->deadlineInstant($metadata['MitgeteilteAbgabefrist']) : null;
-        if ($communicated !== null && $communicated > $deadline) {
-            $this->reject('Anlage_und_Quellen.json: Die mitgeteilte Frist liegt nach dem Prüfungsschluss.');
-        }
 
         return ['work_id' => $metadata['Schooltool_Arbeit_ID'], 'course_id' => $metadata['Schooltool_Kurs_ID'],
-            'at' => $deadline->setTimezone(new DateTimeZone('Europe/Vienna'))->format('Y-m-d\TH:i:sP'),
-            'communicated_at' => $communicated?->setTimezone(new DateTimeZone('Europe/Vienna'))->format('Y-m-d\TH:i:sP')];
+            'at' => $deadline->setTimezone(new DateTimeZone('Europe/Vienna'))->format('Y-m-d\TH:i:sP')];
     }
 
     private function deadlineInstant(mixed $value): DateTimeImmutable
@@ -155,17 +156,15 @@ class TeachingWorkFolderImport
         if ($identity !== null && ($identity['work_id'] !== $work->id || $identity['course_id'] !== $work->teaching_course_id)) {
             $this->reject('Anlage_und_Quellen.json: Prüfungsschluss gehört zu einer anderen Arbeit oder einem anderen Kurs.');
         }
-        if ($deadline === null) {
+        if ($deadline === null || ($work->status['final_deadline_saved'] ?? false)) {
             return [];
+        }
+        if ($deadline['at'] === null) {
+            return ['finish_until_date' => $deadline['date'], 'finish_until_time' => null];
         }
         $instant = new DateTimeImmutable($deadline['at']);
 
-        $fields = ['finish_until_date' => $instant->format('Y-m-d'), 'finish_until_time' => $instant->format('H:i')];
-        if (($deadline['communicated_at'] ?? null) !== null) {
-            $fields['status'] = array_merge($work->status ?? [], ['communicated_deadline_at' => $deadline['communicated_at']]);
-        }
-
-        return $fields;
+        return ['finish_until_date' => $instant->format('Y-m-d'), 'finish_until_time' => $instant->format('H:i')];
     }
 
     /** @return array{source: string, name: string, kind: string, run: string} */
@@ -287,11 +286,9 @@ class TeachingWorkFolderImport
         $messages = [];
         $deadlineFields = $this->deadlineFields($work, $bundle);
         if ($deadlineFields !== []) {
-            $work->forceFill($deadlineFields);
-            if ($work->isDirty(['finish_until_date', 'finish_until_time', 'status'])) {
-                $work->save();
-            }
-            $messages[] = 'Prüfungsschluss aus Arbeitsordner übernommen: '.(new DateTimeImmutable($bundle['deadline']['at']))->format('d.m.Y H:i').' Uhr (Europe/Vienna).';
+            app(TeachingWorkDeadlineSync::class)->saveWorkWithDeadline($work, $deadlineFields, manuallySaved: false);
+            $label = $bundle['deadline']['at'] === null ? $work->finalDeadlineLabel() : (new DateTimeImmutable($bundle['deadline']['at']))->format('d.m.Y H:i').' Uhr';
+            $messages[] = 'Prüfungsschluss aus Arbeitsordner übernommen: '.$label.' (Europe/Vienna).';
         }
         $missing = [];
         $dispatchPreviews = $this->previewDispatches($work, $bundle, $identityBinding);

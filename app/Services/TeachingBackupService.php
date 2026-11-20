@@ -2625,7 +2625,8 @@ class TeachingBackupService
                 ->flatMap(function (array $row): array {
                     $status = $this->arrayValue($row['status'] ?? []);
 
-                    return array_merge($status['evaluation_pdfs'] ?? [], $status['dispatch_logs'] ?? [], $status['student_task_files'] ?? []);
+                    return array_merge($status['evaluation_pdfs'] ?? [], $status['dispatch_logs'] ?? [], $status['student_task_files'] ?? [], $status['portal_submissions'] ?? [],
+                        array_values(TeachingWorkAssignmentMail::artifactReferences($status)));
                 })
                 ->map(fn (array $pdf): array => $this->filePayload($pdf['file_path'], 'local', true)))
             ->merge(collect($tables['teaching_course_date_material_attachments'] ?? [])
@@ -3841,9 +3842,21 @@ class TeachingBackupService
             return null;
         }
         $status = $this->arrayValue($status);
+        foreach (TeachingWorkAssignmentMail::artifactReferences($status) as $key => $file) {
+            data_set($status, $key.'.file_path', $this->restoreFilePath($file['file_path'], $files, "teaching/assignment-mail/{$schoolId}/restored"));
+            data_set($status, $key.'.storage_disk', 'local');
+        }
+        TeachingWorkAssignmentMail::recoverReceipts($status, $userIdMap);
         foreach ($status['student_task_files'] ?? [] as $index => $file) {
             $status['student_task_files'][$index]['file_path'] = $this->restoreFilePath($file['file_path'], $files, "teaching/work_tasks/{$schoolId}/restored");
             $status['student_task_files'][$index]['storage_disk'] = 'local';
+        }
+        foreach ($status['portal_submissions'] ?? [] as $index => $file) {
+            $status['portal_submissions'][$index]['file_path'] = $this->restoreFilePath($file['file_path'], $files, "teaching/work_submissions/{$schoolId}/restored");
+            $status['portal_submissions'][$index]['storage_disk'] = 'local';
+            if ($userIdMap !== []) {
+                $status['portal_submissions'][$index]['student_id'] = $userIdMap[$file['student_id']] ?? throw new RuntimeException('Schülerzuordnung der Aufgabenabgabe fehlt.');
+            }
         }
         if (isset($status['student_distribution']['student_ids']) && $userIdMap !== []) {
             $status['student_distribution']['student_ids'] = array_map(fn (int $id): int => $userIdMap[$id] ?? throw new RuntimeException('Schülerzuordnung der Aufgabenfreigabe fehlt.'), $status['student_distribution']['student_ids']);

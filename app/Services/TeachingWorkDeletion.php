@@ -2,12 +2,14 @@
 
 namespace App\Services;
 
+use App\Exceptions\TeachingWorkDeletionConflict;
 use App\Models\McTest;
 use App\Models\TeachingCourseWork;
 use App\Models\User;
 use App\Services\MultipleChoice\McTestExchange;
 use App\Services\MultipleChoice\McTestFolder;
 use Illuminate\Support\Collection;
+use Illuminate\Validation\ValidationException;
 
 class TeachingWorkDeletion
 {
@@ -39,7 +41,15 @@ class TeachingWorkDeletion
                     'Die Prüfungsordner haben sich seit dem Löschversuch geändert. Bitte die Zuordnung prüfen.');
             }
             foreach (array_diff_key($planned, $current) as $id => $path) {
-                abort_unless(app(DropboxWorkImport::class)->findFolderById($targets['connection'], $id) === null, 409,
+                try {
+                    $folder = app(DropboxWorkImport::class)->findFolderById($targets['connection'], $id);
+                } catch (ValidationException $exception) {
+                    if (! isset($exception->errors()['dropbox'])) {
+                        throw $exception;
+                    }
+                    throw new TeachingWorkDeletionConflict('Der zuvor bestätigte Prüfungsordner konnte nicht geprüft werden. '.collect($exception->errors()['dropbox'])->first());
+                }
+                abort_unless($folder === null, 409,
                     'Ein zuvor bestätigter Prüfungsordner wurde verändert oder verschoben. Bitte die Zuordnung prüfen.');
             }
         } elseif ($targets && $targets['folders'] !== []) {
@@ -111,28 +121,34 @@ class TeachingWorkDeletion
     public function testsForWork(TeachingCourseWork $work): Collection
     {
         $bindings = $work->status['multiple_choice_tests'] ?? [];
-        abort_unless(is_array($bindings), 409, 'Die MC-Zuordnung ist unvollständig. Bitte die Arbeit prüfen.');
+        if (! is_array($bindings)) {
+            throw new TeachingWorkDeletionConflict('Die MC-Zuordnung ist unvollständig.');
+        }
         $ids = [];
         foreach ($bindings as $binding) {
-            abort_unless(is_array($binding)
-                && filter_var($binding['work_id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]) === (int) $work->id
-                && filter_var($binding['test_id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]) !== false,
-                409, 'Die MC-Zuordnung ist nicht eindeutig. Bitte die Arbeit prüfen.');
+            if (! is_array($binding)
+                || filter_var($binding['work_id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]) !== (int) $work->id
+                || filter_var($binding['test_id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]) === false) {
+                throw new TeachingWorkDeletionConflict('Die MC-Zuordnung ist nicht eindeutig.');
+            }
             $ids[] = (int) $binding['test_id'];
         }
 
         $tests = McTest::query()->whereIn('id', array_unique($ids))->orderBy('id')->lockForUpdate()->get();
         foreach ($tests as $test) {
-            abort_unless((int) $test->school_id === (int) $work->teachingCourse->school_id
-                && (int) $test->schoolyear_id === (int) $work->teachingCourse->schoolyear_id
-                && (int) $test->owner_id === (int) $work->teachingCourse->user_id,
-                409, 'Ein zugeordneter MC-Test gehört nicht eindeutig zu dieser Arbeit.');
+            if ((int) $test->school_id !== (int) $work->teachingCourse->school_id
+                || (int) $test->schoolyear_id !== (int) $work->teachingCourse->schoolyear_id
+                || (int) $test->owner_id !== (int) $work->teachingCourse->user_id) {
+                throw new TeachingWorkDeletionConflict('Ein zugeordneter MC-Test gehört nicht eindeutig zu dieser Arbeit.');
+            }
             $shared = TeachingCourseWork::query()->whereKeyNot($work->id)
                 ->where(function ($query) use ($test): void {
                     $query->whereRaw('JSON_CONTAINS(JSON_EXTRACT(status, ?), ?)', ['$.multiple_choice_tests.*.test_id', json_encode((int) $test->id, JSON_THROW_ON_ERROR)])
                         ->orWhereRaw('JSON_CONTAINS(JSON_EXTRACT(status, ?), ?)', ['$.multiple_choice_tests.*.test_id', json_encode((string) $test->id, JSON_THROW_ON_ERROR)]);
                 })->lockForUpdate()->exists();
-            abort_if($shared, 409, 'Ein zugeordneter MC-Test wird auch von einer anderen Arbeit verwendet. Bitte die Zuordnung prüfen.');
+            if ($shared) {
+                throw new TeachingWorkDeletionConflict('Ein zugeordneter MC-Test wird auch von einer anderen Arbeit verwendet.');
+            }
         }
 
         return $tests;

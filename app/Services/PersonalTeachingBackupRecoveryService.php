@@ -170,12 +170,13 @@ class PersonalTeachingBackupRecoveryService
                     unset($group);
                     $row['groups'] = json_encode($groups, JSON_THROW_ON_ERROR);
                 }
-                if ($users !== [] && $table === 'teaching_course_works' && isset($row['status'])) {
+                if ($table === 'teaching_course_works' && isset($row['status'])) {
                     $status = $this->decode($row['status']);
+                    TeachingWorkAssignmentMail::recoverReceipts($status, $users, sameSchoolAccounts: true);
                     if (isset($status['student_distribution']['student_ids'])) {
                         $status['student_distribution']['student_ids'] = array_map(fn (int $id): int => (int) ($users[$id] ?? $id), $status['student_distribution']['student_ids']);
                     }
-                    foreach (['evaluation_pdfs', 'dispatch_notifications', 'dispatch_attempts', 'provision_events', 'provision_imports'] as $key) {
+                    foreach (['evaluation_pdfs', 'portal_submissions', 'dispatch_notifications', 'dispatch_attempts', 'provision_events', 'provision_imports'] as $key) {
                         foreach ($status[$key] ?? [] as $index => $record) {
                             if (isset($users[$record['student_id'] ?? null])) {
                                 $status[$key][$index]['student_id'] = (int) $users[$record['student_id']];

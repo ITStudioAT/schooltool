@@ -44,6 +44,18 @@ class TeachingCourseStudentEntry extends Model
         return $this->belongsTo(TeachingCourseWork::class);
     }
 
+    public function visibleInStudentResults(): bool
+    {
+        if ($this->teaching_course_work_id === null) {
+            return true;
+        }
+
+        $work = $this->teachingCourseWork;
+
+        return $work && (int) $work->teaching_course_id === (int) $this->teaching_course_id
+            && $work->gradesVisibleToStudents();
+    }
+
     public function notifications(): HasMany
     {
         return $this->hasMany(TeachingCourseStudentEntryNotification::class);

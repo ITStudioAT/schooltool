@@ -13,20 +13,136 @@ use App\Models\TeachingEntryDefinition;
 use App\Models\TeachingSchema;
 use App\Models\User;
 use App\Services\TeachingCourseWorkEntrySyncService;
+use App\Services\TeachingWorkDeletion;
 use App\Services\TeachingWorkFolderImport;
 use App\Support\SchooltoolAssessmentJson;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request as OutgoingRequest;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\Models\Role;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\Support\TeachingWorkDispatchFixture;
 use Tests\Support\TeachingWorkEvaluationFixture;
 use Tests\Support\TeachingWorkJsonFixture;
 
 uses(RefreshDatabase::class);
+
+test('the local Postmark test requires a dedicated sender and only sends on confirmation', function (string $outcome): void {
+    $this->app->instance('env', 'local');
+    $sender = 'guenther.kron@cdgym.info';
+    expect(config('services.postmark.work_test_sender'))->toBe($sender);
+    expect(config('services.postmark.work_test_sender_name'))->toBe('DI Günther Kron');
+    config(['services.postmark.token' => $outcome === 'unavailable' ? null : 'synthetic-postmark-token',
+        'services.postmark.work_test_sender' => $outcome === 'sender_pending' ? null : $sender,
+        'mail.from.address' => 'hallo@itstudio.at', 'mail.mailers.postmark.message_stream_id' => 'test-transactional']);
+    $this->course->update(['user_id' => $this->teacher->id]);
+    $work = TeachingCourseWork::factory()->create(['teaching_course_id' => $this->course->id]);
+    $preview = route('teaching.course-works.postmark-test.preview', $work);
+    $send = route('teaching.course-works.postmark-test.send', $work);
+    Storage::fake('local');
+    $oldReceipts = [
+        'schooltool-postmark-test-naturwelt.json' => '{"status":"accepted"}',
+        'schooltool-postmark-test-guenther-kron-cdgym-info-naturwelt.json' => '{"status":"accepted"}',
+        'schooltool-postmark-test-guenther-kron-cdgym-info-naturwelt-ai-2027-standard-v1.json' => '{"status":"rejected","layout_version":"ai-2027-standard-v1"}',
+    ];
+    foreach ($oldReceipts as $oldReceipt => $contents) {
+        Storage::disk('local')->put($oldReceipt, $contents);
+    }
+    Mail::fake();
+    Http::preventStrayRequests();
+    Http::fake([
+        'https://api.postmarkapp.com/server' => Http::response(['ID' => 1, 'DeliveryType' => $outcome === 'unverified' ? 'Sandbox' : 'Live']),
+        'https://api.postmarkapp.com/email' => match ($outcome) {
+            'uncertain' => Http::response(['ErrorCode' => 0]),
+            'invalid_payload' => Http::response(['ErrorCode' => 300, 'Message' => 'Invalid metadata field.'], 422),
+            'sender_signature_missing' => Http::response(['ErrorCode' => 400, 'Message' => 'Sender Signature not found.'], 422),
+            'sender_signature_unconfirmed' => Http::response(['ErrorCode' => 401, 'Message' => 'Sender Signature not confirmed.'], 422),
+            default => Http::response(['ErrorCode' => 0, 'MessageID' => 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa']),
+        },
+    ]);
+    $this->actingAs($this->teacher, 'sanctum')->postJson($preview)->assertForbidden();
+    $this->teacher->update(['email' => 'guenther.kron@cdgym.at', 'email_verified_at' => now()]);
+    $this->actingAs($this->teacher, 'sanctum');
+
+    $draft = $this->postJson($preview, ['sender' => 'other@example.test', 'recipient' => 'other@example.test'])->assertOk();
+    Http::assertNotSent(fn (OutgoingRequest $request): bool => $request->method() === 'POST');
+    if (in_array($outcome, ['unavailable', 'unverified', 'sender_pending'], true)) {
+        $draft->assertJsonPath('status', $outcome)->assertJsonMissingPath('draft_id');
+        if ($outcome === 'sender_pending') {
+            $this->postJson($send, ['draft_id' => str_repeat('0', 64), 'sender' => 'guenther.kron@cdgym.at'])->assertOk()->assertJsonPath('status', 'sender_pending');
+            Http::assertNothingSent();
+        }
+    } else {
+        $draft->assertJsonPath('status', 'ready')->assertJsonPath('sender', 'DI Günther Kron <guenther.kron@cdgym.info>')
+            ->assertJsonPath('reply_to', 'guenther.kron@cdgym.at')
+            ->assertJsonPath('recipient', 'kron@naturwelt.at')->assertJsonPath('subject', 'Schooltool · Postmark-Versandtest');
+        $draftId = $draft->json('draft_id');
+        $sessionKey = 'teaching_postmark_test_current';
+        $this->postJson($send, ['draft_id' => str_repeat('0', 64)])->assertConflict();
+        if ($outcome === 'accepted') {
+            $staleDraft = session($sessionKey);
+            unset($staleDraft['payload']['ReplyTo']);
+            $this->withSession([$sessionKey => $staleDraft])->postJson($send, ['draft_id' => $draftId])->assertConflict();
+            $staleDraft['payload']['ReplyTo'] = 'old@example.test';
+            $this->withSession([$sessionKey => $staleDraft])->postJson($send, ['draft_id' => $draftId])->assertConflict();
+            $this->travel(61)->seconds();
+            $staleDraft['payload']['ReplyTo'] = $draft->json('reply_to');
+            $staleDraft['payload']['HtmlBody'] = '<p>Alte Vorschau</p>';
+            $this->withSession([$sessionKey => $staleDraft])->postJson($send, ['draft_id' => $draftId])->assertConflict()
+                ->assertJsonPath('message', 'Die Testmail wurde inzwischen geändert. Bitte mit „Test“ eine neue Vorschau öffnen.');
+            Http::assertNotSent(fn (OutgoingRequest $request): bool => $request->method() === 'POST');
+            $draft = $this->postJson($preview)->assertOk()->assertJsonPath('reply_to', 'guenther.kron@cdgym.at');
+            expect($draft->json('draft_id'))->not->toBe($draftId);
+            expect($draft->json('html'))->toContain('data-email-palette="energie"', 'Freundliche Grüße',
+                '<strong style="font-weight:700">Dipl.-Ing. Günther Kron</strong>', 'Professor für Informatik',
+                'Christian-Doppler-Gymnasium Salzburg', 'Abendgymnasium Salzburg', '<span style="text-decoration:underline">Anhänge</span>: keine');
+            $draftId = $draft->json('draft_id');
+        }
+        $confirmedDraft = session($sessionKey);
+        $result = $this->postJson($send, ['draft_id' => $draftId, 'sender' => 'guenther.kron@cdgym.at', 'reply_to' => 'wrong@example.test', 'recipient' => 'wrong@example.test'])
+            ->assertOk()->assertJsonPath('status', $outcome);
+        if (str_starts_with($outcome, 'sender_signature_')) {
+            expect($result->json('message'))->toContain('Absendersignatur')
+                ->toContain($outcome === 'sender_signature_missing' ? 'nicht gefunden' : 'noch nicht bestätigt');
+        }
+        if ($outcome === 'invalid_payload') {
+            $result->assertJsonPath('http_status', 422)->assertJsonPath('provider_error_code', 300);
+            expect($result->json('message'))->toContain('Versanddaten', '422', '300')->not->toContain('Invalid metadata field');
+        }
+        $this->postJson($send, ['draft_id' => $draftId])->assertConflict();
+        $this->travel(61)->seconds();
+        $this->withSession([$sessionKey => $confirmedDraft])->postJson($send, ['draft_id' => $draftId])->assertOk()->assertJsonPath('status', 'uncertain');
+        $afterwards = $this->postJson($preview)->assertOk()->assertJsonPath('status', $outcome)->assertJsonMissingPath('draft_id')
+            ->assertJsonPath('html', $draft->json('html'));
+        if ($outcome === 'invalid_payload') {
+            $afterwards->assertJsonPath('http_status', 422)->assertJsonPath('provider_error_code', 300);
+        }
+        Http::assertSentCount($outcome === 'accepted' ? 3 : 2);
+        Http::assertSent(fn (OutgoingRequest $request): bool => $request->url() === 'https://api.postmarkapp.com/email'
+            && $request->hasHeader('X-Postmark-Server-Token', 'synthetic-postmark-token')
+            && $request['From'] === '"DI Günther Kron" <guenther.kron@cdgym.info>'
+            && $request['ReplyTo'] === 'guenther.kron@cdgym.at'
+            && $request['To'] === 'kron@naturwelt.at' && $request['MessageStream'] === 'test-transactional'
+            && $request['Metadata'] === ['test_layout' => 'ai-2027-standard-v2']
+            && $request['HtmlBody'] === $draft->json('html')
+            && str_ends_with($request['TextBody'], "Freundliche Grüße\nDipl.-Ing. Günther Kron\nProfessor für Informatik\nChristian-Doppler-Gymnasium Salzburg\nAbendgymnasium Salzburg\n\nAnhänge: keine"));
+        $receipt = json_decode(Storage::disk('local')->get('schooltool-postmark-test-guenther-kron-cdgym-info-naturwelt-ai-2027-standard-v2.json'), true, 512, JSON_THROW_ON_ERROR);
+        expect($receipt['status'])->toBe($outcome)
+            ->and($receipt['layout_version'])->toBe('ai-2027-standard-v2')
+            ->and($receipt['message_id'])->toBe($outcome === 'accepted' ? 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' : null);
+    }
+    $this->app->instance('env', 'production');
+    $this->postJson($preview)->assertNotFound();
+    foreach ($oldReceipts as $oldReceipt => $contents) {
+        expect(Storage::disk('local')->get($oldReceipt))->toBe($contents);
+    }
+    Mail::assertNothingOutgoing();
+})->with(['sender_pending', 'accepted', 'uncertain', 'invalid_payload', 'sender_signature_missing', 'sender_signature_unconfirmed', 'unverified', 'unavailable']);
 
 test('the work progress check reads fresh historical evidence without importing or modifying a work', function (): void {
     $work = prepareWorkDispatchImport($this);
@@ -1415,6 +1531,86 @@ test('work automation is validated on creation and supports manual work without 
     $this->postJson('/api/admin/teaching/course_works', $payload + ['automation_enabled' => false])
         ->assertCreated()->assertJsonPath('data.automation_enabled', false)->assertJsonPath('data.status.automation_enabled', false);
     $this->postJson('/api/admin/teaching/course_works', $payload)->assertCreated()->assertJsonPath('data.automation_enabled', true);
+});
+
+test('ordinary work saves preserve submission receipts and the independent release decisions', function (): void {
+    $work = prepareWorkDispatchImport($this);
+    $status = [
+        'provision_method' => ['channel' => 'email'],
+        'submission_method' => ['channel' => 'email', 'email' => 'aufgaben@example.test'],
+        'portal_submissions' => [['student_id' => $this->student->id, 'name' => 'Abgabe.pdf']],
+        'assignment_mail' => ['batches' => ['all' => ['state' => 'sent']]],
+        'grade_visibility' => ['visible' => true, 'changed_at' => now()->toIso8601String()],
+    ];
+    $work->update(['status' => $status]);
+    $this->putJson("/api/admin/teaching/course_works/{$work->id}", [
+        'status' => ['provision_method' => ['channel' => 'portal'], 'submission_method' => ['channel' => 'portal'], 'grade_visibility' => ['visible' => false]],
+    ])->assertOk();
+    foreach ($status as $key => $value) {
+        expect($work->fresh()->status[$key])->toEqual($value);
+    }
+
+    $this->postJson('/api/admin/teaching/course_works', [
+        'teaching_course_id' => $this->course->id, 'type' => 'MA', 'title' => 'Neue Arbeit', 'status' => $status,
+    ])->assertCreated()->assertJsonPath('data.status.grade_visibility.visible', false)
+        ->assertJsonMissingPath('data.status.portal_submissions')->assertJsonMissingPath('data.status.assignment_mail')
+        ->assertJsonMissingPath('data.status.submission_method')->assertJsonMissingPath('data.status.provision_method');
+});
+
+test('a teacher selects a provision method independently of submission release and sending', function (): void {
+    $work = prepareWorkDispatchImport($this);
+    $existing = ['submission_method' => ['channel' => 'portal', 'email' => null],
+        'student_distribution' => ['published_at' => '2026-11-15T08:00:00+01:00', 'withdrawn_at' => '2026-11-17T15:00:00+01:00']];
+    $work->update(['status' => $existing]);
+    $url = "/api/admin/teaching/course_works/{$work->id}/provision-method";
+    Http::fake();
+    Queue::fake();
+    Mail::fake();
+    $this->putJson($url, ['channel' => 'other', 'expected' => null])->assertUnprocessable();
+    $choice = ['channel' => 'email', 'expected' => null];
+    $this->putJson($url, $choice)->assertOk()->assertJsonPath('data.status.provision_method.channel', 'email');
+    $this->putJson($url, $choice)->assertOk();
+    $this->putJson($url, ['channel' => 'portal', 'expected' => null])->assertConflict()->assertJsonPath('current', 'email');
+    $this->putJson($url, ['channel' => 'portal', 'expected' => 'email'])->assertOk()->assertJsonPath('data.status.provision_method.channel', 'portal');
+    $this->putJson($url, ['channel' => null, 'expected' => 'portal'])->assertOk()->assertJsonMissingPath('data.status.provision_method');
+    expect($work->fresh()->status)->toEqual($existing);
+    $other = User::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id])->assignRole('teacher');
+    $this->actingAs($other, 'sanctum')->putJson($url, $choice)->assertForbidden();
+    Queue::assertNothingPushed();
+    Mail::assertNothingOutgoing();
+    Http::assertNothingSent();
+});
+
+test('a title-only correction without an assigned folder needs no Dropbox call and rejects another teacher', function () {
+    $work = prepareWorkDispatchImport($this);
+    $groups = $work->groups;
+    Http::preventStrayRequests();
+    $url = "/api/admin/teaching/course_works/{$work->id}";
+    $this->putJson($url, ['title' => 'Korrigierter Titel'])->assertOk()->assertJsonPath('data.title', 'Korrigierter Titel');
+    expect($work->fresh()->groups)->toEqual($groups);
+    Http::assertNothingSent();
+    $other = User::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id]);
+    $other->assignRole('teacher');
+    $this->actingAs($other, 'sanctum')->putJson($url, ['title' => 'Fremde Änderung'])->assertForbidden();
+    expect($work->fresh()->title)->toBe('Korrigierter Titel');
+    Http::assertNothingSent();
+});
+
+test('repeating a work creation request returns the original work and rejects changed inputs', function () {
+    prepareWorkDispatchImport($this);
+    $payload = ['teaching_course_id' => $this->course->id, 'type' => 'MA', 'title' => 'Beispielarbeit',
+        'creation_request_id' => 'ff5efca0-fd83-4e71-8d0c-9e28fce62651'];
+    $url = '/api/admin/teaching/course_works';
+    $firstId = $this->postJson($url, $payload)->assertCreated()->json('data.id');
+    $this->postJson($url, $payload)->assertCreated()->assertJsonPath('data.id', $firstId);
+    $this->postJson($url, array_replace($payload, ['title' => 'Anderer Titel']))->assertConflict();
+    expect(TeachingCourseWork::query()->where('teaching_course_id', $this->course->id)->where('title', 'Beispielarbeit')->count())->toBe(1);
+
+    $work = TeachingCourseWork::findOrFail($firstId);
+    $receipt = $work->status['creation_receipt'];
+    $this->putJson("{$url}/{$firstId}", ['status' => ['creation_receipt' => ['id' => 'forged']]])->assertOk();
+    expect($work->fresh()->status['creation_receipt'])->toBe($receipt);
+    $this->postJson($url, $payload)->assertCreated()->assertJsonPath('data.id', $firstId);
 });
 
 test('manual work blocks automation endpoints before importing or contacting Dropbox', function () {
@@ -3415,6 +3611,34 @@ describe('show update destroy', function () {
         $this->assertDatabaseMissing('teaching_course_work_group_students', [
             'teaching_course_work_id' => $work->id,
         ]);
+    });
+
+    test('streams real deletion steps and confirms only after deleting the test work', function () {
+        $this->actingAs($this->admin, 'sanctum');
+        $work = TeachingCourseWork::factory()->create(['teaching_course_id' => $this->course->id]);
+        $response = $this->deleteJson('/api/admin/teaching/course_works/'.$work->id.'?stream_progress=1')->assertOk();
+        $events = array_map(fn ($line) => json_decode($line, true), array_filter(explode("\n", $response->streamedContent())));
+        expect(array_column($events, 'type'))->toContain('progress', 'result');
+        $progress = array_values(array_filter($events, fn ($event) => $event['type'] === 'progress'));
+        expect($progress[0]['data']['active'])->toBe('delete_check');
+        expect($progress[count($progress) - 1]['data'])->toMatchArray(['state' => 'done', 'active' => null,
+            'completed' => ['delete_check', 'delete_records'], 'skipped' => ['delete_folders', 'delete_mc_files']]);
+        expect(end($events)['data']['deleted'])->toBeTrue();
+        $this->assertDatabaseMissing('teaching_course_works', ['id' => $work->id]);
+    });
+
+    test('streams an interrupted deletion without claiming success', function () {
+        $this->actingAs($this->admin, 'sanctum');
+        $work = TeachingCourseWork::factory()->create(['teaching_course_id' => $this->course->id]);
+        $deletion = Mockery::mock(TeachingWorkDeletion::class);
+        $deletion->shouldReceive('prepare')->once()->andThrow(new HttpException(409, 'Zuordnung unklar.'));
+        app()->instance(TeachingWorkDeletion::class, $deletion);
+        $response = $this->deleteJson('/api/admin/teaching/course_works/'.$work->id.'?stream_progress=1')->assertOk();
+        $events = array_map(fn ($line) => json_decode($line, true), array_filter(explode("\n", $response->streamedContent())));
+        $progress = array_values(array_filter($events, fn ($event) => $event['type'] === 'progress'));
+        expect($progress[count($progress) - 1]['data']['state'])->toBe('failed');
+        expect(end($events)['type'])->toBe('error');
+        $this->assertDatabaseHas('teaching_course_works', ['id' => $work->id]);
     });
 
     test('syncWork rebuilds non-group work groups to current course students and preserves existing grade data', function () {

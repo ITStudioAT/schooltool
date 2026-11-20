@@ -2,64 +2,189 @@
 
 namespace App\Services;
 
+use App\Jobs\FinalizeMultipleChoiceTest;
 use App\Models\DropboxConnection;
+use App\Models\McTest;
 use App\Models\TeachingCourseWork;
-use DateTimeImmutable;
-use DateTimeZone;
+use App\Models\User;
+use Carbon\CarbonImmutable;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Validation\ValidationException;
 
 class TeachingWorkDeadlineSync
 {
     public function __construct(private DropboxWorkImport $dropbox) {}
 
+    /** Save under the caller's work row lock. */
+    public function saveWorkWithDeadline(TeachingCourseWork $work, array $attributes, bool $manuallySaved = true, ?array $expected = null): void
+    {
+        $current = $work->finalDeadline();
+        abort_unless($expected === null || ($expected['date'] === $current['date'] && $expected['time'] === $current['time']),
+            409, 'Die Abgabefrist wurde inzwischen geändert. Bitte die Arbeit erneut öffnen.');
+        $previous = $work->finalDeadlineInstant();
+        if (isset($attributes['status'])) {
+            foreach (['student_distribution', 'student_task_files', 'multiple_choice_tests', 'communicated_deadline_at',
+                'communicated_deadline_date', 'final_deadline_saved', 'final_deadline_sync_pending', ...TeachingCourseWork::ManagedWorkflowFields] as $key) {
+                if (array_key_exists($key, $work->status ?? [])) {
+                    $attributes['status'][$key] = $work->status[$key];
+                } else {
+                    unset($attributes['status'][$key]);
+                }
+            }
+        }
+        $work->fill($attributes);
+        $changed = $work->isDirty(['finish_until_date', 'finish_until_time']);
+        if ($changed) {
+            $this->validate($work);
+            $this->updateMcDeadlines($work, $previous);
+            if ($manuallySaved) {
+                $work->status = array_merge($work->status ?? [], ['final_deadline_saved' => true, 'final_deadline_sync_pending' => true]);
+            }
+        }
+        $work->save();
+        if ($changed) {
+            app(TeachingWorkStudentDistribution::class)->signalDeadlineChangeAfterCommit($work);
+        }
+    }
+
+    public function validate(TeachingCourseWork $work): void
+    {
+        if ($work->finish_until_date === null && $work->finish_until_time) {
+            throw ValidationException::withMessages(['finish_until_date' => 'Zur Uhrzeit fehlt das Datum der endgültigen Abgabefrist.']);
+        }
+        if ($work->finish_until_date !== null && $work->finalDeadlineInstant() === null) {
+            throw ValidationException::withMessages(['finish_until_time' => 'Die endgültige Abgabefrist ist keine gültige Wiener Ortszeit.']);
+        }
+    }
+
+    private function updateMcDeadlines(TeachingCourseWork $work, ?CarbonImmutable $previous): void
+    {
+        $ids = collect($work->status['multiple_choice_tests'] ?? [])
+            ->filter(fn ($binding) => is_array($binding) && (int) ($binding['work_id'] ?? 0) === $work->id)
+            ->pluck('test_id')->filter(fn ($id) => is_numeric($id) && (int) $id > 0)->unique()->values();
+        if ($ids->isEmpty() || ! Schema::hasTable('mc_tests')) {
+            return;
+        }
+        $course = $work->teachingCourse;
+        $deadline = $work->finalDeadlineInstant();
+        $tests = McTest::query()->whereIn('id', $ids)->where('school_id', $course->school_id)
+            ->where('schoolyear_id', $course->schoolyear_id)->where('owner_id', $course->user_id)
+            ->where('start_mode', 'individual')->whereIn('status', ['draft', 'published'])
+            ->orderBy('id')->lockForUpdate()->get();
+        foreach ($tests as $test) {
+            $inherited = $test->snapshot['work_deadline_inherited'] ?? null;
+            $origin = $test->snapshot['schooltool_work'] ?? [];
+            $binding = $work->status['multiple_choice_tests'][$origin['slot'] ?? ''] ?? [];
+            $provenOrigin = ($origin['work_id'] ?? null) === $work->id
+                && ($origin['course_id'] ?? null) === $work->teaching_course_id && (int) ($binding['test_id'] ?? 0) === $test->id;
+            $managedLink = collect($work->status['multiple_choice_tests'] ?? [])->contains(fn ($item) => is_array($item)
+                && (int) ($item['work_id'] ?? 0) === $work->id && (int) ($item['test_id'] ?? 0) === $test->id
+                && isset($item['request_id'], $item['request_hash'], $item['points_plan']));
+            $matchesPrevious = $test->closes_at === null ? $test->status === 'draft'
+                : $previous !== null && $test->closes_at->equalTo($previous);
+            if ($inherited !== true && ($inherited === false || ! $matchesPrevious || (! $provenOrigin && ! $managedLink))) {
+                continue;
+            }
+            if (app(TeachingWorkStudentDistribution::class)->mcTestShared($work, $test)) {
+                continue;
+            }
+            if ($test->status === 'published' && $deadline === null) {
+                throw ValidationException::withMessages(['finish_until_date' => 'Der freigegebene individuelle MC-Test benötigt eine endgültige Abgabefrist.']);
+            }
+            $snapshot = $test->snapshot;
+            if ($snapshot !== null) {
+                $snapshot['work_deadline_inherited'] = true;
+                $snapshot['closes_at'] = $deadline?->toIso8601String();
+            }
+            McTest::query()->whereKey($test->id)->update(['closes_at' => $deadline,
+                'snapshot' => $snapshot === null ? null : json_encode($snapshot, JSON_THROW_ON_ERROR)]);
+            if ($test->status === 'published' && $test->paused_at === null) {
+                FinalizeMultipleChoiceTest::dispatch((int) $test->id)->delay($deadline->isPast() ? now() : $deadline)->afterCommit();
+            }
+        }
+    }
+
+    public function syncLinkedFolders(TeachingCourseWork $saved, User $actor): void
+    {
+        $modules = app(DropboxModuleLinks::class);
+        $link = $modules->current($saved);
+        if (! $link) {
+            $this->markFolderDeadlineSynced($saved);
+
+            return;
+        }
+        $connection = DropboxConnection::query()->where('user_id', $actor->id)->whereNull('revoked_at')->find($link->dropbox_connection_id);
+        abort_unless($connection && $connection->account_id === $link->account_id, 409,
+            'Dropbox konnte für die verknüpfte Leistungsfeststellung nicht bestätigt werden.');
+        DB::transaction(function () use ($saved, $modules, $connection, $link): void {
+            $work = TeachingCourseWork::query()->with('teachingCourse')->lockForUpdate()->findOrFail($saved->id);
+            if ($work->finalDeadline() !== $saved->finalDeadline()) {
+                return;
+            }
+            abort_unless($modules->current($work)?->getAttributes() === $link->getAttributes(), 409,
+                'Die Modulzuordnung wurde während der Aktualisierung geändert.');
+            foreach ($modules->exerciseFoldersForDeadlineSync($connection, $work, $link) as $folder) {
+                $this->sync($connection, $work, $folder, allowMissing: true);
+            }
+            $this->markFolderDeadlineSynced($work);
+        });
+        $modules->forgetExerciseCache($saved, $actor);
+    }
+
+    private function markFolderDeadlineSynced(TeachingCourseWork $work): void
+    {
+        TeachingCourseWork::query()->whereKey($work->id)
+            ->where('finish_until_date', $work->finalDeadline()['date'])
+            ->where('finish_until_time', $work->finalDeadline()['time'])
+            ->update(['status' => DB::raw("JSON_REMOVE(status, '$.final_deadline_sync_pending')")]);
+    }
+
     /** @param array<string, mixed> $folder
      * @return array{changed: bool, message: string}
      */
-    public function sync(DropboxConnection $connection, TeachingCourseWork $work, array $folder): array
+    public function sync(DropboxConnection $connection, TeachingCourseWork $work, array $folder, bool $allowMissing = false): array
     {
         $parent = $this->dropbox->metadata($connection, $folder['id']);
         $path = $parent['path_display'] ?? $parent['path_lower'];
         abort_unless($parent['id'] === $folder['id'] && $path === $folder['path'], 409, 'Der Leistungsfeststellungsordner wurde inzwischen verschoben.');
         $document = $this->read($connection, $path.'/Anlage_und_Quellen.json');
+        if ($document === null && $allowMissing) {
+            return ['changed' => false, 'message' => 'Der Prüfungsordner enthält keine synchronisierbaren Fristmetadaten.'];
+        }
         abort_unless($document !== null, 409, 'Die Fristmetadaten fehlen.');
         $metadata = $document['value'];
         abort_unless(($metadata['Schooltool_Arbeit_ID'] ?? null) === $work->id
             && ($metadata['Schooltool_Kurs_ID'] ?? null) === $work->teaching_course_id
             && ($metadata['Zeitzone'] ?? null) === 'Europe/Vienna', 409, 'Die Fristmetadaten gehören nicht zu dieser Arbeit.');
         $updated = $this->metadata($work, $metadata);
-        if ($updated === $metadata) {
-            return ['changed' => false, 'message' => 'Interne Endfrist ist mit Dropbox abgeglichen.'];
-        }
-        abort_unless($this->dropbox->canWrite($connection), 422, 'Dropbox benötigt die Schreibfreigabe für die interne Endfrist.');
-        $ready = $this->read($connection, $path.'/Schooltool-Versandvorbereitung.json');
         $order = $this->read($connection, $path.'/E-Mail-Vorbereitung/Auftragsvorbereitung.json');
-        $oldHash = hash('sha256', $document['contents']);
-        $updated['FristSynchronisierung'] = ['at' => now()->toIso8601String(), 'source' => 'Schooltool', 'scope' => 'internal'];
-        $contents = $this->encode($updated);
-        $newHash = hash('sha256', $contents);
-        $writes = [[$document, $contents]];
+        $contents = $document['contents'];
+        $writes = [];
+        if ($updated !== $metadata) {
+            $updated['FristSynchronisierung'] = ['at' => now()->toIso8601String(), 'source' => 'Schooltool'];
+            $contents = $this->encode($updated);
+            $writes[] = [$document, $contents];
+        }
         if ($order !== null) {
             $value = $order['value'];
             abort_unless(($value['Leistungsfeststellung'] ?? null) === ($metadata['Leistungsfeststellungsordner'] ?? null), 409,
                 'Die E-Mail-Vorbereitung gehört zu einem anderen Ordner.');
-            $value['Fristquelle'] = ['Datei' => 'Anlage_und_Quellen.json', 'SHA256' => $newHash, 'Geltung' => 'intern'];
-            $writes[] = [$order, $this->encode($value)];
-        }
-        if ($ready !== null) {
-            $value = $ready['value'];
-            $sources = $value['Quellen'] ?? [];
-            abort_unless(is_array($sources), 422, 'Ungültige Quellenliste der E-Mail-Vorbereitung.');
-            $matches = array_keys(array_filter($sources, fn (mixed $source): bool => is_array($source) && ($source['Datei'] ?? null) === 'Anlage_und_Quellen.json'));
-            if (($value['kind'] ?? null) === 'schooltool.preparation' && ($value['Versandbereit'] ?? null) === true
-                && count($matches) === 1 && hash_equals($oldHash, $sources[$matches[0]]['SHA256'] ?? '')) {
-                $value['Quellen'][$matches[0]]['SHA256'] = $newHash;
-                $writes[] = [$ready, $this->encode($value)];
+            $source = ['Datei' => 'Anlage_und_Quellen.json', 'SHA256' => hash('sha256', $contents)];
+            if (($value['Fristquelle'] ?? null) !== $source) {
+                $value['Fristquelle'] = $source;
+                $writes[] = [$order, $this->encode($value)];
             }
         }
+        if ($writes === []) {
+            return ['changed' => false, 'message' => 'Die Abgabefrist ist mit Dropbox abgeglichen.'];
+        }
+        abort_unless($this->dropbox->canWrite($connection), 422, 'Dropbox benötigt die Schreibfreigabe für die Abgabefrist.');
         foreach ($writes as [$file, $bytes]) {
             $this->write($connection, $file, $bytes);
         }
 
-        return ['changed' => true, 'message' => 'Interne Endfrist in Schooltool und Dropbox übernommen. Schülertexte bleiben unverändert.'];
+        return ['changed' => true, 'message' => 'Die Abgabefrist wurde in den aktuellen Dropbox-Metadaten aktualisiert.'];
     }
 
     /** @param array<string, mixed> $metadata
@@ -67,52 +192,30 @@ class TeachingWorkDeadlineSync
      */
     public function metadata(TeachingCourseWork $work, array $metadata): array
     {
-        $date = $work->finish_until_date?->format('Y-m-d');
-        $time = $work->finish_until_time ?: null;
-        abort_if($time !== null && $date === null, 422, 'Zur Uhrzeit fehlt das Datum der internen Endfrist.');
-        $instant = $date && $time ? DateTimeImmutable::createFromFormat('!Y-m-d H:i', $date.' '.$time, new DateTimeZone('Europe/Vienna')) : null;
-        abort_if($date && $time && (! $instant || $instant->format('Y-m-d H:i') !== $date.' '.$time), 422,
-            'Die interne Endfrist ist keine gültige Wiener Ortszeit.');
-        $communicated = $work->communicatedDeadline();
-        abort_unless($this->matchesStudentDeadline($work, $metadata), 409,
-            'Die mitgeteilte Schülerfrist weicht ab. Diese Prüfung ändert nur die interne Endfrist.');
-        $candidate = clone $work;
-        $candidate->setStudentDeadline($communicated['date'] ?? null, $communicated['time'] ?? null);
-        $deadline = $instant?->format('Y-m-d\TH:i:sP');
-        $fields = ['date' => $date, 'time' => $time];
-        if (($metadata['Abgabeschluss'] ?? null) === $deadline && ($metadata['Schooltool_Fristdaten']['main_deadline'] ?? null) === $fields) {
-            return $metadata;
-        }
-        $metadata['Abgabeschluss'] = $deadline;
+        $this->validate($work);
+        $fields = $work->finalDeadline();
+        $metadata['Abgabeschluss'] = $fields['time'] === null ? null : $work->finalDeadlineInstant()?->toIso8601String();
         $metadata['Schooltool_Fristdaten']['main_deadline'] = $fields;
-        $metadata['Fristhinweis'] = $instant ? 'Interne endgültige Frist; keine Veröffentlichung an Schüler:innen.'
-            : 'Interne endgültige Frist noch unvollständig; keine Uhrzeit ergänzt und keine Veröffentlichung an Schüler:innen.';
+        unset($metadata['MitgeteilteAbgabefrist'], $metadata['Schooltool_Fristdaten']['communicated_deadline'], $metadata['Fristhinweis']);
 
         return $metadata;
     }
 
     /** @param array<string, mixed> $metadata */
-    public function matchesStudentDeadline(TeachingCourseWork $work, array $metadata): bool
+    public function matchesFinalDeadline(TeachingCourseWork $work, array $metadata): bool
     {
-        $expected = $work->communicatedDeadline();
-        $source = $metadata['Schooltool_Fristdaten']['communicated_deadline'] ?? null;
-        $at = $metadata['MitgeteilteAbgabefrist'] ?? null;
-        if ($at !== null) {
-            if (! is_string($at) || ! preg_match('/\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:00(?:Z|[+-]\d{2}:\d{2})\z/', $at)) {
-                return false;
-            }
-            $instant = DateTimeImmutable::createFromFormat('!Y-m-d\TH:i:sP', str_replace('Z', '+00:00', $at));
-            if (! $instant || $instant->format('Y-m-d\TH:i:sP') !== str_replace('Z', '+00:00', $at)) {
-                return false;
-            }
-            $instant = $instant->setTimezone(new DateTimeZone('Europe/Vienna'));
-            $source = ['date' => $instant->format('Y-m-d'), 'time' => $instant->format('H:i')];
+        if (isset($metadata['Schooltool_Fristdaten']['main_deadline'])) {
+            return $metadata['Schooltool_Fristdaten']['main_deadline'] === $work->finalDeadline();
         }
-        if ($source !== null && ! is_array($source)) {
-            return false;
+        $expected = $work->finish_until_time ? $work->finalDeadlineInstant() : null;
+        $source = $metadata['Abgabeschluss'] ?? null;
+        if ($expected === null || $source === null) {
+            return $expected === null && $source === null && $work->finish_until_date === null;
         }
+        $instant = is_string($source) && preg_match('/\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:00(?:Z|[+-]\d{2}:\d{2})\z/', $source)
+            ? \DateTimeImmutable::createFromFormat('!Y-m-d\TH:i:sP', str_replace('Z', '+00:00', $source)) : false;
 
-        return [$expected['date'] ?? null, $expected['time'] ?? null] === [$source['date'] ?? null, $source['time'] ?? null];
+        return $instant !== false && $expected->equalTo($instant);
     }
 
     /** @return array<string, mixed>|null */

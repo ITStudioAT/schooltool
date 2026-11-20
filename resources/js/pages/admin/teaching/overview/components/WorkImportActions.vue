@@ -1,6 +1,9 @@
 <template>
     <span v-if="workAutomationEnabled(work) && !hasLink" class="work-import-action flex-column align-start" @click.stop>
-        <v-btn size="small" variant="tonal" prepend-icon="mdi-link-variant" :disabled="disabled || statusLoading || !confirmedKey" @click.stop="$emit('link', work)">{{ needsPreparation ? 'Verknüpfen' : 'Ordner verknüpfen' }}</v-btn>
+        <v-btn size="small" variant="tonal" prepend-icon="mdi-link-variant" :disabled="disabled || statusLoading || !confirmedKey" @click.stop="$emit('link', work)">{{ needsPreparation ? 'Lernmodul auswählen' : 'Ordner verknüpfen' }}</v-btn>
+    </span>
+    <span v-if="workAutomationEnabled(work) && canRetryPreparation" class="work-import-action flex-column align-start" @click.stop>
+        <v-btn size="small" variant="tonal" prepend-icon="mdi-folder-refresh-outline" :disabled="disabled || statusLoading || !confirmedKey" @click.stop="$emit('link', work)">Prüfungsordner erneut anlegen</v-btn>
     </span>
     <span v-if="!linkOnly && workAutomationEnabled(work) && canQuickImport" class="work-import-action work-quick-import-action" :title="quickImportHint" @click.stop>
         <v-btn class="work-quick-import" size="small" variant="flat" prepend-icon="mdi-folder-refresh-outline" :disabled="disabled"
@@ -26,6 +29,10 @@ const key = computed(() => workDropboxKey(admin.config?.user?.id, props.work))
 const state = computed(() => workDropboxStates.get(key.value))
 const needsPreparation = computed(() => workNeedsPreparation(props.work, state.value))
 const hasLink = computed(() => Boolean(state.value?.module_link?.folder?.id || state.value?.folder?.id))
+const canRetryPreparation = computed(() => Boolean(state.value?.module_link?.folder?.id) && needsPreparation.value
+    && (state.value?.link_preparation?.status === 'partial'
+        || (state.value?.exercise?.status === 'missing' && state.value.exercise.reusable !== 'linked')
+        || state.value?.exercise?.status === 'unknown'))
 const canQuickImport = computed(() => !statusLoading.value && confirmedKey.value === key.value
     && workDropboxStates.get(key.value)?.can_quick_import === true)
 const quickImportHint = computed(() => workDropboxStates.get(key.value)?.message || 'Dropbox-Ordner erneut lesen und Vorschau öffnen.')

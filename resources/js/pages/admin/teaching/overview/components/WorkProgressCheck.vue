@@ -1,7 +1,7 @@
 <template>
     <div v-if="work?.id" class="d-inline-flex flex-column align-start ga-1" :class="{ 'w-100': progressState }">
         <v-btn size="small" variant="tonal" prepend-icon="mdi-refresh" :loading="loading" :disabled="disabled || loading" @click="check">
-            Erneut prüfen
+            Status erneut prüfen
         </v-btn>
         <span v-if="error" role="alert" class="text-caption text-error">{{ error }}</span>
         <WorkCheckProgress :state="progressState" :unavailable="progressUnavailable" />

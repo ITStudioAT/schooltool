@@ -12,10 +12,10 @@
 <script setup>
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { folders } from '@/actions/App/Http/Controllers/Admin/Teaching/WorkDropboxController'
-import { workDropboxKey } from '@/helpers/workDropbox'
+import { workDropboxKey, workPdfFilename } from '@/helpers/workDropbox'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 
-const props = defineProps({ work: Object, date: { type: String, default: '' }, section: String })
+const props = defineProps({ work: Object, date: { type: String, default: '' }, section: String, verifyExercise: Boolean })
 const admin = useAdminStore()
 const key = computed(() => workDropboxKey(admin.config?.user?.id, props.work))
 const loading = ref(false)
@@ -23,7 +23,9 @@ const error = ref('')
 const files = ref([])
 let sequence = 0
 let controller = null
-const params = computed(() => ({ contents: 1, exercise: 1, section: props.section, ...(props.date ? { date: props.date } : {}) }))
+const params = computed(() => ({ contents: 1, exercise: 1, section: props.section, ...(props.date ? { date: props.date } : {}),
+    ...(props.verifyExercise ? { verify_exercise: 1 } : {}) }))
+const preparedDownload = computed(() => props.verifyExercise && ['Angaben', 'Bewertungskriterien'].includes(props.section))
 
 function close() {
     sequence++
@@ -49,6 +51,13 @@ async function open() {
     controller = new AbortController()
     const operation = sequence
     try {
+        if (preparedDownload.value) {
+            const { verify_exercise, ...downloadParams } = params.value
+            const { data, headers } = await axios.get(folders.url(props.work.id), { params: { ...downloadParams, download_prepared: 1 },
+                responseType: 'blob', signal: controller.signal, timeout: 120000 })
+            if (operation === sequence) savePdf(data, workPdfFilename(headers?.['content-disposition'], `${props.section}.pdf`))
+            return
+        }
         let cursor = null
         const entries = []
         for (let page = 0; page < 10; page++) {
@@ -80,18 +89,25 @@ async function downloadPdf(file) {
         const { data } = await axios.get(folders.url(props.work.id), { params: { ...params.value, pdf: 1, file_id: file.id },
             responseType: 'blob', signal: controller.signal, timeout: 120000 })
         if (operation !== sequence) return
-        if (!(data instanceof Blob) || data.type !== 'application/pdf') throw new Error('Keine gültige PDF erhalten.')
-        const url = URL.createObjectURL(data)
-        const link = document.createElement('a')
-        link.href = url
-        link.download = file.name
-        link.click()
-        setTimeout(() => URL.revokeObjectURL(url), 60000)
+        savePdf(data, file.name)
     } catch (failure) {
         const message = await failureMessage(failure)
         if (operation === sequence) error.value = message
     } finally {
         if (operation === sequence) loading.value = false
+    }
+}
+
+function savePdf(data, filename) {
+    if (!(data instanceof Blob) || data.type !== 'application/pdf') throw new Error('Keine gültige PDF erhalten.')
+    const url = URL.createObjectURL(data)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = filename
+    document.body.append(link)
+    try { link.click() } finally {
+        link.remove()
+        setTimeout(() => URL.revokeObjectURL(url), 60000)
     }
 }
 

@@ -80,8 +80,12 @@ test('admin can approve a deleted student and restore grades attendance work gro
     $logs[] = ['file_path' => $provisionPath, 'storage_disk' => 'local', 'sha256' => hash('sha256', 'provision original'), 'purpose' => 'provision', 'origin' => 'provision_import'];
     $provision = ['student_id' => $id, 'participant_id' => 'stable-1', 'exercise_id' => 'exercise-1', 'log_sha256' => hash('sha256', 'provision original'), 'origin' => 'provision_import'];
     $taskPath = "teaching/work_tasks/{$this->school->id}/{$work->id}/original.pdf";
+    $submissionPath = "teaching/work_submissions/{$this->school->id}/{$work->id}/abgabe";
+    Storage::disk('local')->put($submissionPath, 'Eingereichte Lösung');
     Storage::disk('local')->put($taskPath, '%PDF-1.4 task original');
     $work->update(['status' => ['evaluation_pdfs' => $pdfs,
+        'submission_method' => ['channel' => 'portal', 'email' => null],
+        'portal_submissions' => [['id' => 'receipt', 'student_id' => $id, 'file_path' => $submissionPath, 'storage_disk' => 'local', 'name' => 'Lösung.txt']],
         'student_task_files' => [['id' => 'task-1', 'file_path' => $taskPath, 'storage_disk' => 'local', 'name' => 'Aufgabe.pdf']],
         'student_distribution' => ['student_ids' => [$id], 'file_ids' => ['task-1'], 'published_at' => '2026-09-10T10:00:00Z', 'instructions' => 'Aufgabe'],
         'provision_events' => [$provision + ['method' => 'download_release', 'available_at' => '2026-09-10T10:00:00Z']], 'provision_imports' => [$provision],
@@ -111,6 +115,9 @@ test('admin can approve a deleted student and restore grades attendance work gro
         ->and($work->fresh()->status['evaluation_pdfs'][0]['student_id'])->toBeNull()
         ->and($work->fresh()->status['evaluation_pdfs'][1]['student_id'])->toBe($this->target->id)
         ->and($work->fresh()->status['student_distribution']['student_ids'])->toBe([$this->target->id])
+        ->and($work->fresh()->status['submission_method']['channel'])->toBe('portal')
+        ->and($work->fresh()->status['portal_submissions'][0]['student_id'])->toBe($this->target->id)
+        ->and(Storage::disk('local')->get($work->fresh()->status['portal_submissions'][0]['file_path']))->toBe('Eingereichte Lösung')
         ->and(Storage::disk('local')->get($work->fresh()->status['student_task_files'][0]['file_path']))->toBe('%PDF-1.4 task original')
         ->and(array_column($work->fresh()->status['dispatch_notifications'], 'student_id'))->toBe([$this->target->id, $this->target->id])
         ->and(array_column($work->fresh()->status['dispatch_notifications'], 'purpose'))->toBe(['tasks', 'results'])

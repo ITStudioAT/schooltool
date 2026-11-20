@@ -78,53 +78,13 @@ test('refresh validates the internal time and keeps a different teachers work pr
     $this->actingAs($teacher, 'sanctum')->postJson($this->url, $this->payload)->assertForbidden();
 });
 
-test('teachers can set a student deadline with or without a time without changing the final deadline', function (?string $time): void {
-    $url = str_replace('/dropbox/refresh', '/student-deadline', $this->url);
-    $this->postJson($url, ['date' => '2026-10-22', 'time' => $time, 'expected' => ['date' => null, 'time' => null]])
-        ->assertOk()->assertJsonPath('data.communicated_deadline.date', '2026-10-22')->assertJsonPath('data.communicated_deadline.time', $time);
-    $saved = $this->work->fresh();
-    expect($saved->finish_until_date->format('Y-m-d'))->toBe('2026-10-23')
-        ->and($saved->finish_until_time)->toBeNull()
-        ->and($saved->title)->toBe('Gespeicherter Titel')
-        ->and($saved->communicatedDeadline()['at'])->toBe($time ? '2026-10-22T10:30:00+02:00' : null);
-    Http::assertNothingSent();
-})->with([null, '10:30']);
-
-test('checking an internal deadline also validates an existing date-only student deadline', function (): void {
-    $this->work->setStudentDeadline('2026-10-22', null);
-    $this->work->save();
-    $this->deadlines->shouldReceive('sync')->once()->andReturn(['changed' => true, 'message' => 'Frist übernommen.']);
-    $this->postJson($this->url, $this->payload)->assertOk()->assertJsonPath('saved_work.communicated_deadline.date', '2026-10-22');
-});
-
-test('teachers can remove the optional student deadline and ordinary work edits preserve it', function (): void {
-    $modules = app(DropboxModuleLinks::class);
-    $modules->shouldReceive('renamePreparedExamFolders')->once()->andReturn([]);
-    $modules->shouldReceive('forgetExerciseCache')->once();
-    $this->work->setStudentDeadline('2026-10-22', null);
-    $this->work->save();
+test('normal saving can shorten a historical work, synchronizes its linked folders, and the old editor is gone', function (): void {
+    $this->work->update(['status' => ['communicated_deadline_date' => '2026-10-22']]);
+    $this->deadlines->shouldReceive('syncLinkedFolders')->once()
+        ->withArgs(fn ($work, $actor): bool => $work->finish_until_date->format('Y-m-d') === '2026-10-21' && $actor->is($this->user));
     $base = '/api/admin/teaching/course_works/'.$this->work->id;
-    $this->putJson($base, ['title' => 'Geänderter Titel', 'status' => ['communicated_deadline_date' => '2026-10-21']])
-        ->assertOk()->assertJsonPath('data.communicated_deadline.date', '2026-10-22');
-    $this->postJson($base.'/student-deadline', ['date' => null, 'time' => null, 'expected' => ['date' => '2026-10-22', 'time' => null]])
-        ->assertOk()->assertJsonPath('data.communicated_deadline', null);
-});
-
-test('a student deadline after the final deadline and a later shortening of the final deadline are rejected', function (): void {
-    $base = '/api/admin/teaching/course_works/'.$this->work->id;
-    $this->postJson($base.'/student-deadline', ['date' => '2026-10-24', 'time' => null, 'expected' => ['date' => null, 'time' => null]])
-        ->assertUnprocessable()->assertJsonValidationErrors('date');
-    $this->work->setStudentDeadline('2026-10-22', '10:00');
-    $this->work->save();
-    $this->putJson($base, ['finish_until_date' => '2026-10-21'])->assertUnprocessable();
-    expect($this->work->fresh()->finish_until_date->format('Y-m-d'))->toBe('2026-10-23');
-});
-
-test('the student deadline editor rejects stale edits and another teachers work', function (): void {
-    $url = str_replace('/dropbox/refresh', '/student-deadline', $this->url);
-    $payload = ['date' => '2026-10-22', 'time' => null, 'expected' => ['date' => '2026-10-20', 'time' => null]];
-    $this->postJson($url, $payload)->assertConflict();
-    $teacher = User::factory()->create(['school_id' => $this->user->school_id, 'schoolyear_id' => $this->user->schoolyear_id])->assignRole('teacher');
-    $this->actingAs($teacher, 'sanctum')->postJson($url, $payload)->assertForbidden();
-    expect($this->work->fresh()->communicatedDeadline())->toBeNull();
+    $this->putJson($base, ['finish_until_date' => '2026-10-21', 'finish_until_time' => null])
+        ->assertOk()->assertJsonPath('data.finish_until_date', '2026-10-21')->assertJsonMissingPath('data.status.communicated_deadline_date');
+    $this->postJson($base.'/student-deadline', [])->assertNotFound();
+    expect($this->work->fresh()->status['communicated_deadline_date'])->toBe('2026-10-22');
 });

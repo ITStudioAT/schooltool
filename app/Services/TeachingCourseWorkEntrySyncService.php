@@ -78,17 +78,18 @@ class TeachingCourseWorkEntrySyncService
         return count($rows);
     }
 
-    public function serializeWork(TeachingCourseWork $work, ?array $testTitles = null): array
+    public function serializeWork(TeachingCourseWork $work, ?array $testDetails = null): array
     {
         $payload = $work->toArray();
         $payload['student_distribution_version'] = app(TeachingWorkStudentDistribution::class)->version($work);
         $payload['automation_enabled'] = $work->automationEnabled();
         $payload['local_task_copy'] = app()->isLocal() && ($work->status['local_test_copy']['source_work_id'] ?? null) !== null;
-        $payload['communicated_deadline'] = $work->communicatedDeadline();
+        unset($payload['status']['communicated_deadline_at'], $payload['status']['communicated_deadline_date']);
         $payload['groups'] = $this->groupsForWork($work);
         $ids = $this->multipleChoiceTestIds($work);
-        $titles = $testTitles ?? ($ids === [] ? [] : $this->multipleChoiceTestTitles($ids, $work->teachingCourse));
-        $payload['multiple_choice_test_titles'] = array_intersect_key($titles, array_flip($ids));
+        $details = $testDetails ?? ($ids === [] ? [] : $this->multipleChoiceTestDetails($ids, $work->teachingCourse));
+        $payload['multiple_choice_test_details'] = array_intersect_key($details, array_flip($ids));
+        $payload['multiple_choice_test_titles'] = array_map(fn (array $test): string => $test['title'], $payload['multiple_choice_test_details']);
         $payload['submission_check_status'] = app(TeachingWorkJsonImport::class)->submissionCheckStatus($work);
         $payload['collection_run'] = app(TeachingWorkCollectionStatus::class)->cached($work);
         $payload['simulation_collection'] = app()->isLocal() && Auth::id()
@@ -107,9 +108,9 @@ class TeachingCourseWorkEntrySyncService
     public function serializeWorks(Collection $works, TeachingCourse $course): Collection
     {
         $ids = $works->flatMap(fn (TeachingCourseWork $work): array => $this->multipleChoiceTestIds($work))->unique()->values()->all();
-        $titles = $this->multipleChoiceTestTitles($ids, $course);
+        $details = $this->multipleChoiceTestDetails($ids, $course);
 
-        return $works->map(fn (TeachingCourseWork $work): array => $this->serializeWork($work, $titles))->values();
+        return $works->map(fn (TeachingCourseWork $work): array => $this->serializeWork($work, $details))->values();
     }
 
     /** @return list<int> */
@@ -130,18 +131,26 @@ class TeachingCourseWorkEntrySyncService
     }
 
     /** @param list<int> $ids
-     * @return array<int, string>
+     * @return array<int, array{title: string, points: float, question_count: int, duration_seconds: int}>
      */
-    private function multipleChoiceTestTitles(array $ids, ?TeachingCourse $course): array
+    private function multipleChoiceTestDetails(array $ids, ?TeachingCourse $course): array
     {
         if ($ids === [] || ! Schema::hasTable('mc_tests') || ! $course) {
             return [];
         }
 
-        return McTest::query()->whereIn('id', $ids)
+        return McTest::query()
+            ->whereIn('id', $ids)
             ->where('school_id', $course->school_id)
             ->where('schoolyear_id', $course->schoolyear_id)
-            ->pluck('title', 'id')->all();
+            ->get(['id', 'title', 'total_points', 'question_count', 'duration_seconds'])
+            ->mapWithKeys(fn (McTest $test): array => [$test->id => [
+                'title' => $test->title,
+                'points' => (float) $test->total_points,
+                'question_count' => $test->question_count,
+                'duration_seconds' => $test->duration_seconds,
+            ]])
+            ->all();
     }
 
     /**

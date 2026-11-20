@@ -50,6 +50,7 @@
 <script>
 import { mapWritableState } from 'pinia'
 import { useStudentStore } from '@/stores/student/StudentStore'
+import { studentTasksUrl } from '../studentTasksNavigation'
 import ParentAccessPanel from '../components/ParentAccessPanel.vue'
 import StudentNavigationDrawer from '../components/StudentNavigationDrawer.vue'
 import MyCourses from './myCourses/MyCourses.vue'
@@ -69,7 +70,8 @@ export default {
 
         // Prüfen ob User eingeloggt ist
         if (!isAuthenticated || !this.user) {
-            this.$router.push('/student')
+            const query = this.$route?.query
+            this.$router.push(query?.panel === 'tasks' ? studentTasksUrl(query.course, '/student') : '/student')
         }
     },
 

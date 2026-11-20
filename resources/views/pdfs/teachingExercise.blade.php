@@ -28,6 +28,9 @@
 <body>
     <div class="footer">{{ $label }} · {{ $course }}</div>
     <div class="document-header"><div class="document-label">{{ mb_strtoupper($label) }}</div><h1>{{ $title }}</h1><div>{{ $course }}</div></div>
+    @isset($deadlineLabel)
+        <p><strong>Endgültige Abgabefrist</strong><br>{{ $deadlineLabel }}</p>
+    @endisset
     {!! $html !!}
 </body>
 </html>

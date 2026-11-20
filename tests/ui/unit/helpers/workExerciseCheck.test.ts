@@ -5,10 +5,22 @@ const key = '7:2:65'
 const work = { id: 65, teaching_course_id: 2, date_for_all_groups: '2026-10-23', groups: [] }
 const found = { connected: true, link_version: 'version-a', folder: null,
     module_link: { module_id: 'module-a', folder: { id: 'id:module-a', name: 'Modul' } },
-    exercise: { status: 'found', folder: { id: 'id:exercise', name: 'LF', path: '/Materialien/Modul/LF' } } }
+    exercise: { status: 'found', checked_at: '2026-10-22T17:00:00+02:00', folder: { id: 'id:exercise', name: 'LF', path: '/Materialien/Modul/LF' } } }
 
 beforeEach(() => { clearWorkDropboxStates() })
 afterEach(() => { clearWorkDropboxStates(); vi.unstubAllGlobals() })
+
+it('the workspace reads the database again and never gives an unverified work a check time', async () => {
+    const get = vi.fn().mockResolvedValueOnce({ data: found }).mockResolvedValueOnce({
+        data: { ...found, exercise: { status: 'unknown', checked_at: null, folder: null } },
+    })
+    vi.stubGlobal('axios', { get })
+    await loadWorkExercise(key, work, work.date_for_all_groups)
+    await loadWorkExercise(key, work, work.date_for_all_groups, false, null, false, null, null, false, true)
+    expect(get).toHaveBeenCalledTimes(2)
+    expect(get.mock.calls[1][1].params).toEqual({ include_exercise: 1, stored_only: 1, date: work.date_for_all_groups })
+    expect(workExerciseCheck(key, work, work.date_for_all_groups)).toMatchObject({ status: 'unknown', checkedAt: null })
+})
 
 it('shares one first check between overview, folder status and details', async () => {
     let finish: (value: unknown) => void = () => {}
@@ -50,6 +62,20 @@ it('keeps the server timestamp when reading a previously verified status', async
     vi.stubGlobal('axios', { get: vi.fn().mockResolvedValue({ data: { ...found, exercise: { ...found.exercise, checked_at: checkedAt } } }) })
     await loadWorkExercise(key, work, work.date_for_all_groups)
     expect(workExerciseCheck(key, work, work.date_for_all_groups)?.checkedAt).toBe(checkedAt)
+})
+
+it('revalidates a previously missing exercise after reload so a completed creation can appear in the table', async () => {
+    const previous = { ...found, exercise: { status: 'missing', folder: null } }
+    const get = vi.fn().mockResolvedValueOnce({ data: previous }).mockResolvedValueOnce({ data: found })
+    vi.stubGlobal('axios', { get })
+    await loadWorkExercise(key, work, work.date_for_all_groups)
+    await loadWorkExercise(key, work, work.date_for_all_groups)
+    expect(get).toHaveBeenCalledTimes(1)
+
+    clearWorkDropboxStates(false)
+    expect(await loadWorkExercise(key, work, work.date_for_all_groups)).toEqual(found)
+    expect(workExerciseCheck(key, work, work.date_for_all_groups)?.status).toBe('found')
+    expect(get).toHaveBeenCalledTimes(2)
 })
 
 it('keeps user, course, date, schedule and changed folder bindings separate', async () => {

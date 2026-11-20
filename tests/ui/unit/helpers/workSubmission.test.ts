@@ -7,6 +7,14 @@ import { workCellStatuses, workEvaluationStatus } from '@/helpers/workCellStatus
 
 const now = Date.parse('2026-10-14T10:00:00Z')
 
+it('counts only an active portal file for its own student, also after changing the return channel', () => {
+    const file = { student_id: 12, id: 'upload', sha256: 'a'.repeat(64), submitted_at: '2026-10-14T08:00:00Z', withdrawn_at: null }
+    const work = { id: 65, status: { submission_method: { channel: 'email' }, portal_submissions: [file] } }
+    expect(workSubmissionStatus(work, 12, now)).toMatchObject({ state: 'received', label: expect.stringContaining('1 Datei') })
+    expect(workSubmissionStatus(work, 13, now).state).toBe('unknown')
+    expect(workSubmissionStatus({ ...work, status: { portal_submissions: [{ ...file, withdrawn_at: '2026-10-14T09:00:00Z' }] } }, 12, now).state).toBe('unknown')
+})
+
 function fixture(state = 'received') {
     const record = { participant_id: 'person-12', record_checksum: 'a'.repeat(64), submission_state: state,
         evaluation_state: 'open', total_minor: null, email_collected_at: null, submission_note: '' }

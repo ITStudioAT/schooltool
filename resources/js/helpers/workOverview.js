@@ -2,8 +2,11 @@ import { workManualCompletionFields } from '@/helpers/workProgress'
 
 export function isInitialWork(work) {
     const hasValue = value => value !== null && value !== undefined && value !== ''
+    const preparationDeleted = Boolean(work?.status?.student_distribution?.deleted_at)
     const hasStatus = Object.entries(work?.status || {}).some(([key, value]) =>
-        !['automation_enabled', 'multiple_choice_tests'].includes(key)
+        !['automation_enabled', 'multiple_choice_tests', 'creation_receipt', 'final_deadline_saved', 'final_deadline_sync_pending',
+            'provision_method', 'submission_method', 'grade_visibility'].includes(key)
+        && !(preparationDeleted && ['student_distribution', 'student_task_files'].includes(key))
         && (!Object.values(workManualCompletionFields).includes(key) || value === true)
         && (Array.isArray(value) ? value.length > 0 : hasValue(value)))
     const hasAssessment = (work?.groups || []).some(group =>
@@ -25,12 +28,17 @@ export function workConnectionLabel(folderState, failed = false) {
     return failed ? 'Ordnerverbindung konnte nicht geprüft werden.' : 'Ordnerverbindung wird geprüft …'
 }
 
-export function workLinkedMcTestTitle(work, date = '') {
+export function workLinkedMcTest(work, date = '') {
     const slot = date || work?.date_for_all_groups || 'all'
     const binding = work?.status?.multiple_choice_tests?.[slot]
     if (!binding?.test_id || String(binding.work_id) !== String(work?.id)) return null
+    const details = work.multiple_choice_test_details?.[String(binding.test_id)]
     const title = work?.multiple_choice_test_titles?.[String(binding.test_id)]
-    return typeof title === 'string' && title.trim() ? title : `Nr. ${binding.test_id}`
+    return { ...details, title: typeof title === 'string' && title.trim() ? title : `Nr. ${binding.test_id}` }
+}
+
+export function workLinkedMcTestTitle(work, date = '') {
+    return workLinkedMcTest(work, date)?.title ?? null
 }
 
 export function workNeedsPreparation(work, folderState) {

@@ -28,6 +28,7 @@ export function useMultipleChoiceSession(route) {
     let saveTask = null
     let generation = 0
     let answerRevision = 0
+    let refreshSequence = 0
     let clockInitialized = false
     let disposed = false
 
@@ -357,9 +358,10 @@ export function useMultipleChoiceSession(route) {
         const currentGeneration = generation
         const id = attempt.value.id
         const requestRevision = answerRevision
+        const refreshRequest = ++refreshSequence
         try {
             const { data } = await axios.get(show.url(id), requestConfig())
-            if (currentGeneration === generation && requestRevision === answerRevision && !saving.value
+            if (refreshRequest === refreshSequence && currentGeneration === generation && requestRevision === answerRevision && !saving.value
                 && String(attempt.value?.id) === String(id) && !disposed) {
                 acceptAttempt(data.attempt)
                 error.value = ''
@@ -368,7 +370,7 @@ export function useMultipleChoiceSession(route) {
                 }
             }
         } catch (failure) {
-            if (currentGeneration === generation && !disposed) {
+            if (refreshRequest === refreshSequence && currentGeneration === generation && !disposed) {
                 error.value = explainFailure(failure)
             }
         }
@@ -394,7 +396,7 @@ export function useMultipleChoiceSession(route) {
 
     watch(() => route.fullPath, () => void load())
     watch(active, (value, previous) => {
-        if (!value && previous) {
+        if (!value && previous && !attempt.value?.paused_at) {
             void refresh()
         }
         if (value && hasPending.value) void flush()

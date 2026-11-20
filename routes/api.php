@@ -96,6 +96,7 @@ use App\Http\Controllers\Admin\Teaching\PersonalTeachingBackupRecoveryController
 use App\Http\Controllers\Admin\Teaching\SchoolHourController;
 use App\Http\Controllers\Admin\Teaching\SchoolHourImportsController;
 use App\Http\Controllers\Admin\Teaching\StudentEmailZipImportController;
+use App\Http\Controllers\Admin\Teaching\TeachingAssessmentRunController;
 use App\Http\Controllers\Admin\Teaching\TeachingBackupController;
 use App\Http\Controllers\Admin\Teaching\TeachingController;
 use App\Http\Controllers\Admin\Teaching\TeachingCourseController;
@@ -109,8 +110,11 @@ use App\Http\Controllers\Admin\Teaching\TeachingEntryGradingPartController;
 use App\Http\Controllers\Admin\Teaching\TeachingEntryGradingPartEntryController;
 use App\Http\Controllers\Admin\Teaching\TeachingReminderController;
 use App\Http\Controllers\Admin\Teaching\TeachingSynchronisationController;
+use App\Http\Controllers\Admin\Teaching\WorkAssignmentMailController;
 use App\Http\Controllers\Admin\Teaching\WorkDropboxController;
+use App\Http\Controllers\Admin\Teaching\WorkGradeVisibilityController;
 use App\Http\Controllers\Admin\Teaching\WorkResultNotificationController;
+use App\Http\Controllers\Admin\Teaching\WorkSubmissionController;
 use App\Http\Controllers\Admin\TeachingExplanationController;
 use App\Http\Controllers\Admin\TeachingSimulationController;
 use App\Http\Controllers\Admin\TwoFactorAuthenticationController;
@@ -189,6 +193,8 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::get('/homepage/student/courses/{courseId}', [CourseController::class, 'show'])->middleware('tool-licensed:Lehrertool');
         Route::get('/homepage/student/courses/{courseId}/entries', [CourseStudentEntryController::class, 'index'])->middleware('tool-licensed:Lehrertool');
         Route::get('/homepage/student/courses/{courseId}/tasks', [CourseWorkTaskController::class, 'index'])->middleware('tool-licensed:Lehrertool')->name('student.course-work.tasks');
+        Route::post('/homepage/student/courses/{courseId}/works/{course_work}/submissions', [CourseWorkTaskController::class, 'submit'])->middleware(['auth:sanctum', 'tool-licensed:Lehrertool', 'throttle:30,1'])->name('student.course-work.submissions.store');
+        Route::delete('/homepage/student/courses/{courseId}/works/{course_work}/submissions/{fileId}', [CourseWorkTaskController::class, 'submit'])->whereUuid('fileId')->middleware(['auth:sanctum', 'tool-licensed:Lehrertool', 'throttle:30,1'])->name('student.course-work.submissions.withdraw');
         Route::get('/homepage/student/courses/{courseId}/works/{course_work}/tasks/{fileId}', [CourseWorkTaskController::class, 'download'])->middleware('tool-licensed:Lehrertool')->name('student.course-work.task-file');
         Route::get('/homepage/student/courses/{courseId}/works/{course_work}/evaluations/{sha256}', [CourseStudentEntryController::class, 'evaluationPdf'])->middleware('tool-licensed:Lehrertool')->name('student.course-work.evaluation-pdf');
         Route::get('/homepage/student/course-date-materials/attachments/{attachment}/preview', [CourseController::class, 'previewAdoptedAttachment'])->middleware('tool-licensed:Lehrertool');
@@ -804,15 +810,35 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::delete('/admin/teaching/import116/runs/{import116_run}', [Import116Controller::class, 'destroyRun']);
         Route::get('/admin/teaching/course_works/{course_work}/ai-export', [CourseWorkController::class, 'aiExport'])->name('teaching.course-works.ai-export');
         Route::get('/admin/teaching/course_works/{course_work}/email-preparation-preview', [CourseWorkController::class, 'emailPreparationPreview'])->name('teaching.course-works.email-preparation-preview');
+        Route::post('/admin/teaching/course_works/{course_work}/postmark-test/preview', [ConnectionStatusController::class, 'prepareWorkPostmarkTest'])
+            ->middleware([StartSession::class, 'throttle:10,1'])->name('teaching.course-works.postmark-test.preview');
+        Route::post('/admin/teaching/course_works/{course_work}/postmark-test/send', [ConnectionStatusController::class, 'sendWorkPostmarkTest'])
+            ->middleware([StartSession::class, 'throttle:5,1'])->name('teaching.course-works.postmark-test.send');
         Route::get('/admin/teaching/course_works/{course_work}/exercise-options', [CourseWorkController::class, 'exerciseOptions'])->name('teaching.course-works.exercise-options');
         Route::post('/admin/teaching/course_works/{course_work}/prepare-exercise', [CourseWorkController::class, 'prepareExercise'])->middleware('throttle:10,1')->name('teaching.course-works.prepare-exercise');
         Route::post('/admin/teaching/course_works/{course_work}/store-exercise', [CourseWorkController::class, 'storeExercise'])->name('teaching.course-works.store-exercise');
+        Route::get('/admin/teaching/course_works/{course_work}/exercise-run', [TeachingAssessmentRunController::class, 'show'])->name('teaching.course-works.exercise-run.show');
+        Route::post('/admin/teaching/course_works/{course_work}/exercise-run', [TeachingAssessmentRunController::class, 'store'])->name('teaching.course-works.exercise-run.store');
+        Route::delete('/admin/teaching/course_works/{course_work}/exercise', [WorkDropboxController::class, 'destroyExercise'])->name('teaching.course-works.exercise.destroy');
         Route::post('/admin/teaching/course_works/{course_work}/import-evaluations', [CourseWorkController::class, 'importEvaluations'])->name('teaching.course-works.import-evaluations');
         Route::post('/admin/teaching/course_works/{course_work}/import-folder', [CourseWorkController::class, 'importFolder'])->name('teaching.course-works.import-folder');
         Route::post('/admin/teaching/course_works/{course_work}/import-json', [CourseWorkController::class, 'importJson'])->name('teaching.course-works.import-json');
-        Route::post('/admin/teaching/course_works/{course_work}/student-deadline', [CourseWorkController::class, 'studentDeadline'])->name('teaching.work-student-deadline');
         Route::get('/admin/teaching/course_works/{course_work}/student-distribution-preview', [CourseWorkController::class, 'studentDistributionPreview'])->name('teaching.work-student-distribution-preview');
+        Route::put('/admin/teaching/course_works/{course_work}/provision-method', [WorkSubmissionController::class, 'updateProvisionMethod'])->name('teaching.work-provision-method.update');
+        Route::put('/admin/teaching/course_works/{course_work}/submission-method', [WorkSubmissionController::class, 'update'])->name('teaching.work-submission-method.update');
+        Route::get('/admin/teaching/course_works/{course_work}/submissions/{fileId}', [WorkSubmissionController::class, 'download'])->whereUuid('fileId')->name('teaching.work-submissions.download');
         Route::post('/admin/teaching/course_works/{course_work}/student-distribution', [CourseWorkController::class, 'studentDistribution'])->name('teaching.work-student-distribution');
+        Route::post('/admin/teaching/course_works/{course_work}/student-distribution/test-action', [CourseWorkController::class, 'studentDistributionTestAction'])->name('teaching.work-student-distribution.test-action');
+        Route::delete('/admin/teaching/course_works/{course_work}/student-distribution/preparation', [CourseWorkController::class, 'deleteStudentDistributionPreparation'])->name('teaching.work-student-distribution-preparation.delete');
+        Route::patch('/admin/teaching/course_works/{course_work}/grade-visibility', [WorkGradeVisibilityController::class, 'update'])->name('teaching.work-results.visibility');
+        Route::put('/admin/teaching/course_works/{course_work}/grade-notice', [WorkGradeVisibilityController::class, 'notice'])->name('teaching.work-results.notice');
+        Route::prefix('/admin/teaching/course_works/{course_work}/assignment-mail')->name('teaching.work-assignment-mail.')->group(function (): void {
+            Route::get('/', [WorkAssignmentMailController::class, 'show'])->name('show');
+            Route::get('/{batch}/attachments/{index}', [WorkAssignmentMailController::class, 'attachment'])
+                ->whereUuid('batch')->whereNumber('index')->name('attachment');
+            Route::post('/prepare', [WorkAssignmentMailController::class, 'prepare'])->middleware('throttle:12,1')->name('prepare');
+            Route::post('/action', [WorkAssignmentMailController::class, 'act'])->middleware('throttle:30,1')->name('act');
+        });
         Route::prefix('/admin/teaching/course_works/{course_work}/result-notifications')->name('teaching.work-results.')->group(function (): void {
             Route::post('/preview', [WorkResultNotificationController::class, 'preview'])->name('preview');
             Route::post('/send', [WorkResultNotificationController::class, 'send'])->middleware('throttle:5,1')->name('send');

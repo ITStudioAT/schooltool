@@ -2,7 +2,7 @@
     <div class="work-time-input-container">
     <v-text-field
         :model-value="modelValue"
-        label="Fertig bis (Uhrzeit)"
+        label="Frist bis (Uhrzeit)"
         type="text"
         inputmode="numeric"
         placeholder="HH:MM"

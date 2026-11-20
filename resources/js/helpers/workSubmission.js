@@ -66,6 +66,13 @@ export function workSubmissionStatus(work, studentId, now = Date.now()) {
     if (!work?.id || !studentId) return unknown
     if (work.is_group_work && !(work.groups || []).some(group =>
         (group.student_ids || []).some(id => String(id) === String(studentId)))) return unknown
+    const portalFiles = (work.status?.portal_submissions || []).filter(file => String(file.student_id) === String(studentId)
+        && !file.withdrawn_at && file.id && /^[a-f0-9]{64}$/.test(file.sha256 || '') && Number.isFinite(Date.parse(file.submitted_at)))
+    if (portalFiles.length) {
+        const latest = portalFiles.reduce((last, item) => Date.parse(item.submitted_at) > Date.parse(last.submitted_at) ? item : last)
+        return { state: 'received', color: 'success', label: 'Im Schülerbereich abgegeben · '
+            + portalFiles.length + (portalFiles.length === 1 ? ' Datei' : ' Dateien') + ' · ' + assessmentTimeText(latest.submitted_at) }
+    }
     const receipt = (work.status?.assessment_json_imports || [])
         .findLast(item => String(item.student_id) === String(studentId))
     const record = personalWorkAssessment(work, studentId)

@@ -2,8 +2,8 @@
     <div class="student-subjects">
         <div class="subjects-heading">
             <div>
-                <h2>Meine Fächer <span v-if="!loading" class="subjects-count">{{ courses.length }}</span></h2>
-                <p>Öffne ein Fach für Termine, Lerninhalte und Leistungen.</p>
+                <h2>{{ tasksSelection ? 'Meine Aufgaben' : 'Meine Fächer' }} <span v-if="!loading" class="subjects-count">{{ courses.length }}</span></h2>
+                <p>{{ tasksSelection ? 'Wähle ein Fach, um deine Aufgaben zu öffnen.' : 'Öffne ein Fach für Termine, Lerninhalte und Leistungen.' }}</p>
             </div>
             <label v-if="courses.length > 1" class="subjects-search">
                 <v-icon size="21" aria-hidden="true">mdi-magnify</v-icon>
@@ -22,7 +22,7 @@
                 :key="course.id"
                 type="button"
                 class="subject-card"
-                :aria-label="`${course.title} öffnen`"
+                :aria-label="tasksSelection ? `Aufgaben für ${course.title} öffnen` : `${course.title} öffnen`"
                 @click="handleCourseClick(course)">
                 <span class="subject-topline">
                     <span class="subject-symbol"><v-icon size="25" aria-hidden="true">mdi-book-open-page-variant-outline</v-icon></span>
@@ -42,7 +42,7 @@
                         {{ course.classes.join(', ') }}
                     </span>
                     <span v-if="course.students_count !== undefined && course.students_count !== null">{{ course.students_count }} Schüler:innen</span>
-                    <span class="subject-action">Zum Fach <v-icon size="16" aria-hidden="true">mdi-arrow-right</v-icon></span>
+                    <span class="subject-action">{{ tasksSelection ? 'Zu den Aufgaben' : 'Zum Fach' }} <v-icon size="16" aria-hidden="true">mdi-arrow-right</v-icon></span>
                 </span>
             </button>
         </div>
@@ -64,6 +64,7 @@
 <script>
 import { parseLocalDate } from '@/helpers/date'
 import { useCourseStore } from '@/stores/student/CourseStore'
+import { studentTasksCourse } from '../../studentTasksNavigation'
 
 export default {
     emits: ['live-timer-change'],
@@ -95,6 +96,10 @@ export default {
     },
 
     computed: {
+        tasksSelection() {
+            return this.$route?.query?.panel === 'tasks'
+        },
+
         filteredCourses() {
             const query = this.courseSearch.trim().toLocaleLowerCase('de')
             if (!query) {
@@ -155,6 +160,11 @@ export default {
                 if (success) {
                     this.courses = this.courseStore.courses || []
                     this.setupSimulatedTimers()
+                    if (this.tasksSelection) {
+                        const courseId = studentTasksCourse(this.$route.query.course)
+                        const course = this.courses.find(item => String(item.id) === courseId) ?? (this.courses.length === 1 ? this.courses[0] : null)
+                        if (course) this.$router.replace({ path: `/student/course/${course.id}`, query: { panel: 'tasks' } })
+                    }
                 }
             } catch (error) {
                 console.error('Error loading courses:', error)
@@ -166,7 +176,7 @@ export default {
         handleCourseClick(course) {
             this.$router.push({
                 path: `/student/course/${course.id}`,
-                query: { ...(this.$route?.query || {}) },
+                query: this.tasksSelection ? { panel: 'tasks' } : { ...(this.$route?.query || {}) },
             })
         },
 

@@ -428,8 +428,7 @@ class MultipleChoiceController extends Controller
                 }
                 foreach ($tests as $test) {
                     $this->authorizeOwned($test);
-                    $test->attempts()->delete();
-                    $test->delete();
+                    $this->tests->deleteUnlinkedTest($test);
                 }
                 $locked->delete();
             }, 3);
@@ -443,8 +442,7 @@ class MultipleChoiceController extends Controller
         $this->authorizeOwned($test);
         DB::transaction(function () use ($test): void {
             $locked = McTest::query()->lockForUpdate()->findOrFail($test->id);
-            $locked->attempts()->delete();
-            $locked->delete();
+            $this->tests->deleteUnlinkedTest($locked);
         }, 3);
 
         return response()->json(['deleted' => true]);

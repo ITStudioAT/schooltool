@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\Import116;
 use App\Models\Licence;
 use App\Models\School;
 use App\Models\SchoolTool;
@@ -15,6 +16,9 @@ use App\Models\TeachingSchema;
 use App\Models\User;
 use App\Services\TeachingCourseEvaluationService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\Models\Role;
 
@@ -78,6 +82,99 @@ test('student work evaluation PDFs expose only the personal current report and d
     $this->course->teachingCourseStudents()->where('user_id', $this->student->id)->update(['canceled_at' => now()]);
     $this->get($base.$current['sha256'])->assertForbidden();
 });
+
+test('releasing and hiding work results controls grades personal PDFs and reversible course notices', function (): void {
+    enableSchoolToolModuleForTests($this->school, 'teaching');
+    Storage::fake('local');
+    Http::preventStrayRequests();
+    Mail::fake();
+    $content = '%PDF-1.4 own evaluation';
+    $sha = hash('sha256', $content);
+    $filePath = "teaching/work_evaluations/{$this->school->id}/80/{$sha}.pdf";
+    Storage::disk('local')->put($filePath, $content);
+    $work = TeachingCourseWork::create(['teaching_course_id' => $this->course->id, 'title' => 'Quartett', 'type' => 'TW',
+        'groups' => [['student_ids' => [$this->student->id], 'comment' => 'Persönliche Rückmeldung']], 'status' => [
+            'grade_visibility' => ['visible' => false], 'automation_enabled' => false,
+            'evaluation_pdfs' => [['student_id' => $this->student->id, 'sha256' => $sha, 'name' => 'Persönlich.pdf',
+                'origin' => 'evaluation_import', 'storage_disk' => 'local', 'file_path' => $filePath]],
+        ]]);
+    foreach ([$this->student, $this->peer] as $person) {
+        TeachingCourseStudentEntry::create(['teaching_course_id' => $this->course->id, 'teaching_course_work_id' => $work->id,
+            'user_id' => $person->id, 'type' => 'TW', 'grade' => $person->is($this->student) ? '0' : null, 'source' => 'course_work']);
+    }
+    $courseUrl = "/api/homepage/student/courses/{$this->course->id}";
+    $pdfUrl = "{$courseUrl}/works/{$work->id}/evaluations/{$sha}";
+    $workUrl = "/api/admin/teaching/course_works/{$work->id}";
+    $publish = ['visible' => true, 'expected_changed_at' => null];
+    $asUser = function (User $user) {
+        Auth::forgetGuards();
+
+        return $this->actingAs($user, 'web');
+    };
+    $asUser($this->student);
+    $this->getJson($courseUrl.'/entries')->assertOk()->assertJsonCount(0, 'entries');
+    $this->get($pdfUrl)->assertNotFound();
+    $this->patchJson($workUrl.'/grade-visibility', $publish)->assertForbidden();
+    $this->putJson($workUrl.'/grade-notice', ['publish' => true, 'expected_changed_at' => null, 'expected_notice_at' => null])->assertForbidden();
+    $asUser($this->teacher);
+    $this->putJson($workUrl.'/grade-notice', ['publish' => true, 'expected_changed_at' => null, 'expected_notice_at' => null])->assertConflict();
+    $state = $this->patchJson($workUrl.'/grade-visibility', $publish)->assertOk()->assertJsonPath('data.status.grade_visibility.visible', true)->json('data.status.grade_visibility');
+    $this->patchJson($workUrl.'/grade-visibility', $publish)->assertOk()->assertJsonPath('data.status.grade_visibility.changed_at', $state['changed_at']);
+    $notice = ['publish' => true, 'expected_changed_at' => $state['changed_at'], 'expected_notice_at' => null];
+    $noticeState = $this->putJson($workUrl.'/grade-notice', $notice)->assertOk()
+        ->assertJsonPath('data.status.grade_visibility.student_notice.student_ids', [$this->student->id])->json('data.status.grade_visibility.student_notice');
+    $this->putJson($workUrl.'/grade-notice', $notice)->assertOk()->assertJsonPath('data.status.grade_visibility.student_notice.changed_at', $noticeState['changed_at']);
+    $asUser($this->student);
+    $this->getJson($courseUrl.'/entries')->assertOk()->assertJsonPath('entries.0.grade', '0')
+        ->assertJsonPath('entries.0.comment', 'Persönliche Rückmeldung')->assertJsonPath('entries.0.work.evaluation_pdf.sha256', $sha);
+    $this->get($pdfUrl)->assertOk();
+    $this->getJson($courseUrl)->assertOk()->assertJsonCount(1, 'course.notifications')->assertJsonPath('course.notifications.0.type', 'Bewertung');
+    $asUser($this->peer)->getJson($courseUrl)->assertOk()->assertJsonCount(0, 'course.notifications');
+    $asUser($this->teacher);
+    $this->patchJson($workUrl.'/grade-visibility', ['visible' => false, 'expected_changed_at' => null])->assertConflict();
+    $withdraw = ['publish' => false, 'expected_changed_at' => $state['changed_at'], 'expected_notice_at' => $noticeState['changed_at']];
+    $noticeTime = $this->putJson($workUrl.'/grade-notice', $withdraw)->assertOk()->json('data.status.grade_visibility.student_notice.changed_at');
+    $asUser($this->student)->get($pdfUrl)->assertOk();
+    $this->getJson($courseUrl)->assertOk()->assertJsonCount(0, 'course.notifications');
+    $asUser($this->teacher)->putJson($workUrl.'/grade-notice', array_replace($notice, ['expected_notice_at' => $noticeTime]))->assertOk();
+    $this->patchJson($workUrl.'/grade-visibility', ['visible' => false, 'expected_changed_at' => $state['changed_at']])->assertOk();
+    $asUser($this->student)->getJson($courseUrl.'/entries')->assertOk()->assertJsonCount(0, 'entries');
+    $this->get($pdfUrl)->assertNotFound();
+    $this->getJson($courseUrl)->assertOk()->assertJsonCount(0, 'course.notifications');
+    expect($work->fresh()->teachingCourseStudentEntries()->where('user_id', $this->student->id)->value('grade'))->toBe('0');
+    expect(Storage::disk('local')->get($filePath))->toBe($content);
+    Http::assertNothingSent();
+    Mail::assertNothingSent();
+});
+
+test('an enrolment through a verified import receives its own manual feedback even without a numeric grade', function (bool $pointsOnly): void {
+    enableSchoolToolModuleForTests($this->school, 'teaching');
+    $import = Import116::factory()->forSchool($this->school)->importedBy($this->teacher)
+        ->create(['schoolyear_id' => $this->schoolyear->id, 'user_id' => $this->student->id]);
+    $this->course->teachingCourseStudents()->where('user_id', $this->student->id)->update(['user_id' => null, 'import116_id' => $import->id]);
+    $work = TeachingCourseWork::create(['teaching_course_id' => $this->course->id, 'title' => 'Rückmeldung', 'type' => 'TW',
+        'groups' => [['student_ids' => [$this->student->id, $this->peer->id],
+            'points' => $pointsOnly ? [['student_id' => $this->student->id, 'points' => 0]] : [],
+            'comments' => $pointsOnly ? [] : [['student_id' => $this->student->id, 'comment' => 'Sauber gearbeitet.']],
+        ]], 'status' => ['grade_visibility' => ['visible' => false]]]);
+    foreach ([$this->student, $this->peer] as $person) {
+        TeachingCourseStudentEntry::create(['teaching_course_id' => $this->course->id, 'teaching_course_work_id' => $work->id,
+            'user_id' => $person->id, 'type' => 'TW', 'grade' => null, 'source' => 'course_work']);
+    }
+    $teacherUrl = "/api/admin/teaching/course_works/{$work->id}";
+    $courseUrl = "/api/homepage/student/courses/{$this->course->id}";
+    $changed = $this->actingAs($this->teacher, 'web')->patchJson($teacherUrl.'/grade-visibility', ['visible' => true, 'expected_changed_at' => null])
+        ->assertOk()->json('data.status.grade_visibility.changed_at');
+    $this->putJson($teacherUrl.'/grade-notice', ['publish' => true, 'expected_changed_at' => $changed, 'expected_notice_at' => null])
+        ->assertOk()->assertJsonPath('data.status.grade_visibility.student_notice.student_ids', [$this->student->id]);
+    Auth::forgetGuards();
+    $this->actingAs($this->student, 'web')->getJson($courseUrl.'/entries')->assertOk()
+        ->assertJsonPath('entries.0.comment', $pointsOnly ? null : 'Sauber gearbeitet.')
+        ->assertJsonPath('entries.0.work.earned_points', $pointsOnly ? 0 : null);
+    $this->getJson($courseUrl)->assertOk()->assertJsonPath('course.notifications.0.type', 'Bewertung');
+    $this->actingAs($this->peer, 'web')->getJson($courseUrl.'/entries')->assertOk()
+        ->assertJsonPath('entries.0.comment', null)->assertJsonPath('entries.0.work.earned_points', null);
+})->with([false, true]);
 
 beforeEach(function () {
     collect(['student', 'teacher', 'super_admin'])->each(function (string $role) {
@@ -286,6 +383,13 @@ test('student points progress is opt in course scoped and projects only personal
         ->and($progress['parts'][1]['name'])->toBe('Basis')->and($progress['parts'][1]['sum'])->toEqual(12.5)->and($progress['parts'][1]['maximum'])->toEqual(15)
         ->and(array_keys($progress['parts'][0]))->toBe(['id', 'name', 'semester', 'status', 'sum', 'maximum', 'grade_boundaries']);
     expect($progress['parts'][0]['grade_boundaries'])->toEqual([50, 62.5, 75, 87.5]);
+    $hiddenWork = TeachingCourseWork::create(['teaching_course_id' => $this->course->id, 'type' => 'A5', 'groups' => [],
+        'status' => ['grade_visibility' => ['visible' => false]]]);
+    TeachingCourseStudentEntry::create(['teaching_course_id' => $this->course->id, 'teaching_course_work_id' => $hiddenWork->id,
+        'user_id' => $this->student->id, 'type' => 'A5', 'date' => '2026-10-17', 'grade' => '5', 'source' => 'course_work']);
+    $this->getJson($url)->assertOk()->assertJsonPath('points_progress.parts.0.sum', 7.75)->assertJsonPath('points_progress.parts.0.maximum', 10);
+    $teacherResults = app(TeachingCourseEvaluationService::class)->report($this->course->fresh(), 3)['students'];
+    expect(collect($teacherResults)->firstWhere('user_id', $this->student->id)['semesters'][0]['parts'][0]['trace']['sum'])->toEqual(12.75);
     $this->getJson("/api/homepage/student/courses/{$this->course->id}")->assertOk()->assertJsonPath('course.show_points_progress', true);
     $this->getJson("/api/homepage/student/courses/{$this->course->id}")->assertOk()->assertJsonPath('course.semester_count', 2);
     $this->actingAs($this->peer)->getJson($url)->assertOk()

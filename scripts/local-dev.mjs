@@ -21,6 +21,7 @@ export function localQueueWorkerArguments() {
         ['artisan', 'queue:work', '--once', '--queue=default', '--sleep=1', '--tries=2', '--timeout=1830'],
         ['artisan', 'queue:work', '--once', '--queue=imports', '--sleep=1', '--tries=1', '--timeout=60'],
         ['artisan', 'queue:work', '--once', '--queue=materials,maintenance', '--sleep=1', '--tries=1', '--timeout=1830'],
+        ['artisan', 'queue:work', 'database', '--once', '--queue=teaching-assessments', '--sleep=1', '--tries=1', '--timeout=1830'],
     ];
 }
 

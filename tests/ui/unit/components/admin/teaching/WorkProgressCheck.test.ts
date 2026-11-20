@@ -181,13 +181,14 @@ it('updates the Unterricht collection indicator and simulator time after an expl
     const wrapper = mount(page, { global: {
         plugins: [createTestingPinia({ createSpy: vi.fn })],
         stubs: { 'v-btn': { props: ['disabled'], template: '<button :disabled="disabled"><slot /></button>' },
-            'v-dialog': { props: ['modelValue'], template: '<section v-if="modelValue" role="dialog"><slot /></section>' } },
+            'v-dialog': { props: ['modelValue'], template: '<section v-if="modelValue" role="dialog"><slot /></section>' },
+            'v-textarea': true, 'v-file-input': true, 'v-checkbox': true },
     } })
     try {
         await flushPromises()
         expect(wrapper.get('[data-workflow-stage="collection"]').attributes('data-workflow-state')).toBe('open')
         expect(wrapper.get('[data-workflow-stage="collection"]').element.disabled).toBe(false)
-        await wrapper.findAll('button').find(button => button.text().includes('Erneut prüfen')).trigger('click')
+        await wrapper.findAll('button').find(button => button.text() === 'Status erneut prüfen').trigger('click')
         await flushPromises()
         expect(wrapper.get('[data-workflow-stage="collection"]').attributes('data-workflow-state')).toBe('complete')
         expect(wrapper.get('[data-workflow-stage="evaluation"]').attributes('data-workflow-state')).toBe('partial')

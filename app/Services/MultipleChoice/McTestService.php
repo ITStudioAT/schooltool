@@ -154,7 +154,7 @@ class McTestService
                 throw ValidationException::withMessages(['test' => 'Nur die zuständige Lehrkraft kann die Einstellungen ändern.']);
             }
             $attempts = $locked->attempts()->orderBy('id')->lockForUpdate()->get();
-            if ($locked->starts_at !== null || $attempts->contains(fn (McAttempt $attempt): bool => $attempt->started_at !== null || $attempt->completed_at !== null || ($attempt->answers ?? []) !== [])) {
+            if ($locked->commonPreparationLocked() || $locked->starts_at !== null || $attempts->contains(fn (McAttempt $attempt): bool => $attempt->started_at !== null || $attempt->completed_at !== null || ($attempt->answers ?? []) !== [])) {
                 throw ValidationException::withMessages(['test' => 'Der Countdown oder ein Versuch wurde bereits gestartet. Fragen und Bewertungsgrundlagen bleiben erhalten; verwenden Sie die Aktionen für Restzeit, Fristen und Zusatzzeit.']);
             }
             $pool = $locked->snapshot['questions'] ?? [];
@@ -179,17 +179,20 @@ class McTestService
                 $snapshot[$field] = $changed->{$field};
             }
             $snapshot['closes_at'] = $changed->closes_at?->toIso8601String();
+            if ($changed->isDirty(['closes_at', 'start_mode'])) {
+                $snapshot['work_deadline_inherited'] = false;
+            }
             McTest::query()->whereKey($locked->id)->update([...$settings, 'snapshot' => json_encode($snapshot, JSON_THROW_ON_ERROR)]);
 
             return $locked->fresh();
         }, 3);
     }
 
-    public function pause(McTest $test, int $teacherId): McTest
+    public function pause(McTest $test, int $teacherId, ?CarbonImmutable $pausedAt = null): McTest
     {
         $this->finalizeExpired((int) $test->id);
 
-        return DB::transaction(function () use ($test, $teacherId): McTest {
+        return DB::transaction(function () use ($test, $teacherId, $pausedAt): McTest {
             $locked = McTest::query()->lockForUpdate()->findOrFail($test->id);
             $this->assertPublished($locked);
             if ((int) $locked->owner_id !== $teacherId) {
@@ -202,7 +205,7 @@ class McTestService
             if ($attempts->isEmpty()) {
                 throw ValidationException::withMessages(['test' => 'Es gibt keine offenen Versuche zum Pausieren.']);
             }
-            $at = CarbonImmutable::now()->floorSecond();
+            $at = $pausedAt ?? CarbonImmutable::now()->floorSecond();
             foreach ($attempts as $attempt) {
                 app(McAttemptActivityService::class)->finish($attempt, $at);
             }
@@ -229,6 +232,9 @@ class McTestService
             $history[] = ['paused_at' => $locked->paused_at->toIso8601String(), 'resumed_at' => $until->toIso8601String(), 'seconds' => $seconds, 'teacher_id' => $teacherId];
             $values = ['paused_at' => null, 'pause_history' => json_encode($history, JSON_THROW_ON_ERROR)];
             foreach (['ends_at', 'closes_at'] as $field) {
+                if ($field === 'closes_at' && ($locked->snapshot['work_deadline_inherited'] ?? false)) {
+                    continue;
+                }
                 if ($locked->{$field} !== null) {
                     $values[$field] = $locked->{$field}->addSeconds($seconds);
                 }
@@ -272,6 +278,7 @@ class McTestService
             if ((int) $lockedTest->owner_id !== $teacherId) {
                 throw ValidationException::withMessages(['test' => 'Nur die zuständige Lehrkraft kann Versuche steuern.']);
             }
+            $this->assertNotStopped($lockedTest);
             $attempts = $lockedTest->attempts()->when(! $all, fn ($query) => $query->whereIn('id', $attemptIds))->orderBy('id')->lockForUpdate()->get();
             if ($attempts->isEmpty() || (! $all && $attempts->count() !== count($attemptIds)) || ($all && $attempts->count() !== count($expected))) {
                 throw ValidationException::withMessages(['attempts' => 'Die Auswahl gehört nicht vollständig zu diesem Test.']);
@@ -284,14 +291,7 @@ class McTestService
                 $state = $attempt->activity_state ?? [];
                 $control = $attempt->control();
                 if ($action === 'reset') {
-                    $state = ['control' => ['version' => (int) ($control['version'] ?? 0) + 1,
-                        'restart_individually' => $lockedTest->start_mode !== 'individual']];
-                    McAttempt::query()->whereKey($attempt->id)->update([
-                        'answers' => json_encode((object) [], JSON_THROW_ON_ERROR), 'ready_at' => null, 'started_at' => null,
-                        'completed_at' => null, 'submitted_at' => null, 'completion_reason' => null,
-                        'score' => null, 'percentage' => null, 'correct_count' => null, 'pause_seconds' => 0,
-                        'reopened_until' => null, 'reopen_history' => null, 'activity_state' => json_encode($state, JSON_THROW_ON_ERROR),
-                    ]);
+                    $this->resetAttempt($attempt, $lockedTest->start_mode !== 'individual');
 
                     continue;
                 }
@@ -406,6 +406,7 @@ class McTestService
         return DB::transaction(function () use ($attempt, $remainingSeconds, $teacherId): McAttempt {
             [$test, $locked] = $this->lockAttempt($attempt);
             $this->assertPublished($test);
+            $this->assertNotStopped($test);
             $this->assertNotPaused($test);
             $this->assertAttemptNotPaused($locked);
             if ((int) $test->owner_id !== $teacherId) {
@@ -471,7 +472,13 @@ class McTestService
                 $locked = $locked->fresh();
             }
             if ($locked->start_mode === 'individual') {
-                McTest::query()->whereKey($locked->id)->update(['closes_at' => now()]);
+                $values = ['closes_at' => now()];
+                if ($locked->snapshot['work_deadline_inherited'] ?? false) {
+                    $snapshot = $locked->snapshot;
+                    $snapshot['work_deadline_inherited'] = false;
+                    $values['snapshot'] = json_encode($snapshot, JSON_THROW_ON_ERROR);
+                }
+                McTest::query()->whereKey($locked->id)->update($values);
                 $locked = $locked->fresh();
                 $locked->attempts()->whereNull('completed_at')->whereNotNull('closes_at')->update(['closes_at' => now()]);
             }
@@ -485,6 +492,69 @@ class McTestService
 
             return $locked;
         }, 3);
+    }
+
+    /** The caller holds the test and attempt locks. */
+    public function resetWholeTest(McTest $test, iterable $attempts, bool $keepPaused): void
+    {
+        foreach ($attempts as $attempt) {
+            $this->resetAttempt($attempt, false);
+        }
+        $snapshot = $test->snapshot;
+        if ($test->commonPreparationLocked()) {
+            $snapshot['work_countdown_started'] = true;
+        }
+        unset($snapshot['work_stopped_at']);
+        McTest::query()->whereKey($test->id)->update([
+            'starts_at' => null, 'ends_at' => null, 'pause_history' => null,
+            'paused_at' => $keepPaused ? CarbonImmutable::now()->floorSecond() : null,
+            'results_released_at' => null, 'solutions_released_at' => null,
+            'snapshot' => json_encode($snapshot, JSON_THROW_ON_ERROR),
+        ]);
+    }
+
+    /** The caller holds the test and attempt locks. */
+    public function stopWholeTest(McTest $test, iterable $attempts): void
+    {
+        $at = $test->paused_at ?? CarbonImmutable::now()->floorSecond();
+        foreach ($attempts as $attempt) {
+            if ($attempt->completed_at === null) {
+                $this->complete($test, $attempt, 'timeout', $at->min($attempt->effectiveDeadline($test) ?? $at));
+            }
+        }
+        $snapshot = [...$test->snapshot, 'work_stopped_at' => now()->toIso8601String()];
+        $changes = ['paused_at' => null, 'snapshot' => json_encode($snapshot, JSON_THROW_ON_ERROR)];
+        if ($test->start_mode === 'common') {
+            $changes['ends_at'] = $at->min($test->ends_at ?? $at);
+        }
+        McTest::query()->whereKey($test->id)->update($changes);
+    }
+
+    /** The caller holds the test lock. */
+    public function deleteUnlinkedTest(McTest $test): void
+    {
+        abort_if(TeachingCourseWork::query()->linkedToMultipleChoiceTest((int) $test->id)->exists(), 409,
+            'Der MC-Test gehört zu einer Arbeit. Lösche ihn in der Aufgabenverwaltung.');
+        $test->attempts()->delete();
+        $test->delete();
+    }
+
+    private function resetAttempt(McAttempt $attempt, bool $restartIndividually): void
+    {
+        $state = ['control' => ['version' => (int) ($attempt->control()['version'] ?? 0) + 1, 'restart_individually' => $restartIndividually]];
+        McAttempt::query()->whereKey($attempt->id)->update([
+            'answers' => json_encode((object) [], JSON_THROW_ON_ERROR), 'ready_at' => null, 'started_at' => null,
+            'completed_at' => null, 'submitted_at' => null, 'completion_reason' => null,
+            'score' => null, 'percentage' => null, 'correct_count' => null, 'pause_seconds' => 0,
+            'reopened_until' => null, 'reopen_history' => null, 'activity_state' => json_encode($state, JSON_THROW_ON_ERROR),
+        ]);
+    }
+
+    private function assertNotStopped(McTest $test): void
+    {
+        if (isset($test->snapshot['work_stopped_at'])) {
+            throw ValidationException::withMessages(['test' => 'Der Test wurde endgültig beendet. Für einen neuen Durchlauf muss der gesamte Test ausdrücklich zurückgesetzt werden.']);
+        }
     }
 
     private function assertRunning(McTest $test): void
@@ -527,6 +597,7 @@ class McTestService
         return DB::transaction(function () use ($attempt, $closing): McAttempt {
             [$test, $locked] = $this->lockAttempt($attempt);
             $this->assertPublished($test);
+            $this->assertNotStopped($test);
             $this->assertNotPaused($test);
             if ($test->start_mode !== 'individual') {
                 throw ValidationException::withMessages(['test' => 'Persönliche Schlussfristen sind nur beim selbstständigen Start möglich.']);
@@ -723,13 +794,14 @@ class McTestService
         return $answers;
     }
 
-    private function complete(McTest $test, McAttempt $attempt, string $reason): McAttempt
+    private function complete(McTest $test, McAttempt $attempt, string $reason, ?CarbonImmutable $completedAt = null): McAttempt
     {
-        app(McAttemptActivityService::class)->finish($attempt, CarbonImmutable::instance($reason === 'timeout' ? $attempt->effectiveDeadline($test) : now()));
+        $completedAt ??= CarbonImmutable::instance($reason === 'timeout' ? $attempt->effectiveDeadline($test) : now());
+        app(McAttemptActivityService::class)->finish($attempt, $completedAt);
         $neverStarted = $reason === 'timeout' && $attempt->started_at === null;
         $evaluation = $this->evaluate($test, $attempt->questions, $attempt->answers ?? []);
         $attempt->forceFill([
-            'completed_at' => $reason === 'timeout' ? ($attempt->effectiveDeadline($test)) : now(),
+            'completed_at' => $completedAt,
             'submitted_at' => $reason === 'submitted' ? now() : null,
             'completion_reason' => $reason,
             'correct_count' => $neverStarted ? null : $evaluation['correct_count'],

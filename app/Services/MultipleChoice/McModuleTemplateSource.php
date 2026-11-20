@@ -129,7 +129,8 @@ class McModuleTemplateSource
         $folder = $this->dropbox->metadata($connection, $folders[0]['id']);
         abort_unless(dirname($folder['path_lower']) === mb_strtolower($module['folder_path']), 409);
         $entries = $this->children($connection, $folder['id']);
-        if (collect($entries)->contains(fn (array $entry): bool => ($entry['.tag'] ?? null) === 'folder')) {
+        if (mb_strtolower($folder['name']) !== 'leistungsfeststellung'
+            && collect($entries)->contains(fn (array $entry): bool => ($entry['.tag'] ?? null) === 'folder')) {
             return null;
         }
         $files = array_values(array_filter($entries, fn (array $entry): bool => ($entry['.tag'] ?? null) === 'file'

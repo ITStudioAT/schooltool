@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Jobs\FinalizeMultipleChoiceTest;
 use App\Models\McAttempt;
+use App\Models\TeachingCourseWork;
 use App\Models\User;
 use App\Services\LicenceService;
 use App\Services\MultipleChoice\McAttemptActivityService;
@@ -168,7 +169,11 @@ class MultipleChoiceParticipantController extends Controller
 
         $this->assertLicensed($student);
 
-        abort_unless($ownerPreview || app(TeachingWorkStudentDistribution::class)->mcAccessAllowed($attempt), 423, 'Die Aufgabe ist vorbereitet und noch nicht freigegeben.');
+        if (! $ownerPreview) {
+            $blocked = app(TeachingWorkStudentDistribution::class)->mcAccessBlockStatus($attempt);
+            abort_if($blocked === 404, 404);
+            abort_if($blocked === 423, 423, 'Die Aufgabe ist vorbereitet und noch nicht freigegeben.');
+        }
 
         return $ownerPreview;
     }
@@ -206,7 +211,7 @@ class MultipleChoiceParticipantController extends Controller
             : ($attempt->started_at ? 'in_progress' : ($attempt->ready_at ? 'ready' : 'not_started'));
         $questions = $released && $includeQuestions ? $attempt->questions : [];
         $result = null;
-        if ($attempt->completed_at && $test->results_released_at) {
+        if ($attempt->completed_at && $test->results_released_at && ($ownerPreview || $this->workResultsVisible($attempt))) {
             $solutionsReleased = $test->solutions_released_at !== null;
             $result = ['score' => $attempt->score, 'percentage' => $attempt->percentage, 'correct_count' => $attempt->correct_count,
                 'solutions_released' => $solutionsReleased];
@@ -251,5 +256,16 @@ class MultipleChoiceParticipantController extends Controller
     private function respond(array $data): JsonResponse
     {
         return response()->json($data)->header('Cache-Control', 'private, no-store')->header('Referrer-Policy', 'no-referrer');
+    }
+
+    private function workResultsVisible(McAttempt $attempt): bool
+    {
+        $test = $attempt->test;
+        $works = TeachingCourseWork::query()->linkedToMultipleChoiceTest((int) $test->id)
+            ->whereHas('teachingCourse', fn ($query) => $query->where('school_id', $test->school_id)
+                ->where('schoolyear_id', $test->schoolyear_id)->where('user_id', $test->owner_id))
+            ->whereNotNull('status->grade_visibility')->get(['id', 'status']);
+
+        return $works->every(fn (TeachingCourseWork $work): bool => $work->gradesVisibleToStudents());
     }
 }

@@ -13,6 +13,9 @@
     <link href="https://fonts.bunny.net/css?family=roboto:100,300,400,500,700,900" rel="stylesheet" />
 
     <title>Spa Homepage</title>
+    <script>
+        window.schooltoolEchoEnvironment = {{ Illuminate\Support\Js::from(config('frontend.echo')) }};
+    </script>
     @if (!app()->runningUnitTests())
     @vite('resources/js/apps/homepage.js')
     @endif

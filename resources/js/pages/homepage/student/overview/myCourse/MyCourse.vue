@@ -82,7 +82,7 @@
 
                     <v-tabs-window v-model="currentTab" style="margin-top: 20px">
                         <v-tabs-window-item value="tasks">
-                            <StudentCourseTasks :course-id="courseId" />
+                            <StudentCourseTasks :course-id="courseId" :active="currentTab === 'tasks'" />
                         </v-tabs-window-item>
                         <!-- Übersicht Tab -->
                         <v-tabs-window-item value="overview">
@@ -393,6 +393,9 @@
                                                                     <v-chip v-else class="entry-grade" size="small" variant="tonal" :color="entryGradeChipColor(entry)">
                                                                         {{ formatEntryValue(entry.grade) }}
                                                                     </v-chip>
+                                                                    <span v-if="entry.work?.earned_points != null && (entry.properties_mode !== 'points' || formatEntryValue(entry.grade, 2) !== formatEntryValue(entry.work.earned_points, 2))" class="entry-result-maximum">
+                                                                        {{ formatEntryValue(entry.work.earned_points, 2) }} {{ entry.work.earned_points === 1 ? 'Punkt' : 'Punkte' }} erreicht
+                                                                    </span>
                                                                 </div>
                                                             </div>
                                                         </div>

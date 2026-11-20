@@ -159,6 +159,11 @@ class TeachingWorkMultipleChoice
         abort_unless(is_numeric($test->total_points) && (float) $test->total_points > 0, 422,
             'Der MC-Test benötigt eine positive Gesamtpunktzahl. Bitte den Test zuerst prüfen.');
         $pointsPlan['test_maximum_points'] = round((float) $test->total_points, 2);
+        $snapshot = $test->snapshot;
+        if ($test->status === 'draft' && is_array($snapshot) && ! array_key_exists('work_deadline_inherited', $snapshot)) {
+            $snapshot['work_deadline_inherited'] = true;
+            $test->forceFill(['snapshot' => $snapshot])->save();
+        }
         $status = $work->status ?? [];
         $status['multiple_choice_tests'][$slot] = ['work_id' => $work->id, 'test_id' => $test->id,
             'request_id' => $data['request_id'], 'request_hash' => $requestHash, 'points_plan' => $pointsPlan];
@@ -181,8 +186,8 @@ class TeachingWorkMultipleChoice
             throw ValidationException::withMessages(['mc_mode' => 'Bitte zuerst das Enddatum der Arbeit festlegen. Der MC-Test startet individuell; ohne Uhrzeit gilt 23:59:00 Uhr.']);
         }
 
-        $deadline = CarbonImmutable::parse($work->finish_until_date->format('Y-m-d').' '.($work->finish_until_time ?: '23:59:00'), 'Europe/Vienna');
-        if (! $deadline->isFuture()) {
+        $deadline = $work->finalDeadlineInstant();
+        if (! $deadline?->isFuture()) {
             throw ValidationException::withMessages(['mc_mode' => 'Das Enddatum der Arbeit muss für den individuellen MC-Test in der Zukunft liegen.']);
         }
 
@@ -208,11 +213,22 @@ class TeachingWorkMultipleChoice
     }
 
     /** @return array{locked: bool, message: ?string, maximum_points: ?float} */
-    public function configuration(TeachingCourseWork $work, User $actor, ?string $date, array $workContext, bool $refresh = false): array
+    public function configuration(TeachingCourseWork $work, User $actor, ?string $date, array $workContext, bool $refresh = false, bool $allowUnreleasedPreparation = false): array
     {
         $locked = ! empty($work->status['student_distribution']['published_at'])
-            || ! empty($work->status['student_distribution']['prepared_at'])
+            || (! $allowUnreleasedPreparation && ! empty($work->status['student_distribution']['prepared_at']))
             || app(TeachingWorkFolderImport::class)->availabilitySources($work, [], []) !== [];
+        foreach ($work->status['assignment_mail']['batches'] ?? [] as $batch) {
+            if (($batch['transport'] ?? null) !== 'postmark') {
+                continue;
+            }
+            $states = array_column($batch['recipients'] ?? [], 'state');
+            if (array_intersect($states, ['sending', 'uncertain']) !== []
+                || (empty($batch['withdrawn_at']) && array_intersect($states, ['queued', 'accepted']) !== [])) {
+                $locked = true;
+                break;
+            }
+        }
         $message = $locked ? 'Die Leistungsfeststellung wurde bereits versendet oder bereitgestellt. MC-Fragen können nicht mehr ergänzt oder geändert werden.' : null;
         $modules = app(DropboxModuleLinks::class);
         $link = $modules->current($work);

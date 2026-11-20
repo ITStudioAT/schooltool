@@ -1,5 +1,5 @@
 <template>
-    <span v-if="portalRelease" class="d-inline-flex align-center ga-1 text-caption text-success" :title="`Im Schülerbereich bereitgestellt am ${assessmentTimeText(portalRelease.published_at)}`">
+    <span v-if="portalRelease && !hidePortal" class="d-inline-flex align-center ga-1 text-caption text-success" :title="`Im Schülerbereich bereitgestellt am ${assessmentTimeText(portalRelease.published_at)}`">
         <v-icon icon="mdi-account-school-outline" size="16" aria-label="Im Schülerbereich bereitgestellt" />
         <span v-if="!compact">Im Schülerbereich bereitgestellt</span>
     </span>
@@ -37,6 +37,8 @@ const props = defineProps({
     showResultTime: { type: Boolean, default: false },
     compact: { type: Boolean, default: false },
     nativeTitle: { type: Boolean, default: true },
+    hidePortal: Boolean,
+    purposes: Array,
 })
 const portalRelease = computed(() => workStudentDistribution(props.work, props.aggregate ? null : props.studentId))
 const resultSentText = sentAt => dispatchNotificationText(sentAt)
@@ -64,7 +66,8 @@ const records = computed(() => {
         const record = props.aggregate ? events.at(-1) : events[0]
         return [{ purpose: 'provision', record, label: provisionNotificationText(record, props.aggregate, new Set(events.map(event => event.student_id)).size) }]
     })
-    const items = [...provisions, ...['tasks', 'results'].flatMap(purpose => {
+    const items = [...((!props.purposes || props.purposes.includes('provision')) ? provisions : []),
+        ...['tasks', 'results'].filter(purpose => !props.purposes || props.purposes.includes(purpose)).flatMap(purpose => {
         const record = workDispatchRecord(props.work, props.studentId, purpose, props.aggregate)
         const ready = purpose === 'tasks' && workDispatchReady(props.work, props.studentId, props.aggregate)
         const label = props.compact && record?.mode === 'live'

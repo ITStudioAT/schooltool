@@ -16,6 +16,9 @@
     <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
 
     <title>Schooltool</title>
+    <script>
+        window.schooltoolEchoEnvironment = {{ Illuminate\Support\Js::from(config('frontend.echo')) }};
+    </script>
     @if (!app()->runningUnitTests())
     @vite('resources/js/apps/homepage.js')
     @endif
