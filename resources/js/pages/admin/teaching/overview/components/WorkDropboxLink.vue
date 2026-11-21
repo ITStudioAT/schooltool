@@ -1,8 +1,9 @@
 <template>
     <component :is="container" v-if="!inline || opened" v-bind="containerProps" @update:model-value="opened = $event">
-        <v-card>
-            <v-card-title>Lernmodul prüfen · {{ work?.title }}</v-card-title>
-            <v-card-text>
+        <v-card :flat="inline">
+            <v-card-title v-if="!inline">Lernmodul prüfen · {{ work?.title }}</v-card-title>
+            <v-card-text :class="{ 'pa-0': inline }">
+                <WorkCreationProgress v-if="inline" :step="creationStep" :status="creationStatus" with-dropbox />
                 <template v-if="legacyLink && state">
                     <p class="mb-4">Wählen Sie den vorhandenen Leistungsfeststellungsordner in Dropbox. Die Zuordnung verändert keine Bewertungen, Abgaben oder Versandbelege.</p>
                     <WorkDropboxSource v-if="opened" :work="work" :active="opened" selection-only @changed="folderLinked" @busy="folderBusy = $event" />
@@ -16,14 +17,13 @@
                     label-idle='handshake.json hierher ziehen oder <span class="filepond--label-action">Datei auswählen</span>'
                     @updatefiles="selectFiles" />
                 <p v-if="showPicker" class="text-caption text-medium-emphasis">Nur die kleine Handshake-Datei wird gelesen. Schooltool prüft das Modul im verbundenen Dropbox-Konto.</p>
-                <p v-if="inline && contents && !showPicker && !state?.module_link?.folder?.id" class="text-caption text-medium-emphasis">Ausgewählte Datei: {{ filename }}</p>
                 <v-alert v-if="error" type="error" variant="tonal" class="mt-3">{{ error }}</v-alert>
                 <v-alert v-if="state && !state.connected" type="info" variant="tonal" class="mt-3">
                     {{ state.message }}
                     <v-btn v-if="state.configured && state.installed" class="mt-2" @click="connectDropbox">Dropbox verbinden</v-btn>
                 </v-alert>
-                <v-progress-linear v-if="busy && !progress" class="mt-4" indeterminate aria-label="Dropbox wird geprüft" />
-                <section v-if="progress" class="link-progress mt-4" aria-label="Fortschritt der Verknüpfung" aria-live="polite">
+                <v-progress-linear v-if="!inline && busy && !progress" class="mt-4" indeterminate aria-label="Dropbox wird geprüft" />
+                <section v-if="!inline && progress" class="link-progress mt-4" aria-label="Fortschritt der Verknüpfung" aria-live="polite">
                     <strong>{{ progress.failed ? 'Prüfung oder Verknüpfung unterbrochen' : progress.completed.includes('save') ? 'Verknüpfung abgeschlossen' : progress.active === 'save' ? 'Verknüpfung läuft' : progress.active ? 'Lernmodul wird geprüft' : 'Bereit zum Verknüpfen' }}</strong>
                     <ul>
                         <li v-for="step in progressSteps" :key="step.id" :class="progressClass(step.id)">
@@ -33,7 +33,7 @@
                         </li>
                     </ul>
                 </section>
-                <div v-if="resolved" class="mt-4">
+                <div v-if="resolved && (!inline || !busy)" class="mt-4">
                     <v-alert :type="resolved.conflict ? 'error' : 'info'" variant="tonal">{{ resolved.message }}</v-alert>
                     <div v-if="resolved.candidate" class="mt-3">
                         <div class="text-subtitle-2">Gefundener Dropbox-Ordner</div>
@@ -43,7 +43,7 @@
                     </div>
                     <div v-for="candidate in resolved.candidates || []" :key="candidate.handshake_file_id" class="module-folder-path mt-2">{{ candidate.folder_path }}</div>
                 </div>
-                <div v-else-if="state?.module_link" class="mt-4">
+                <div v-else-if="state?.module_link && (!inline || !busy)" class="mt-4">
                     <div class="text-subtitle-2">Aktuell verknüpft</div>
                     <div class="module-folder-path">{{ state.module_link.folder.path }}</div>
                 </div>
@@ -55,9 +55,9 @@
                 <v-btn v-if="canRetryPreparation" class="mt-3" variant="tonal" :disabled="busy" @click="retryPreparation">Prüfungsordner erneut anlegen</v-btn>
                 <v-btn v-if="contents && (error || resolved?.conflict || (resolved && (!resolved.can_link || !resolved.proof))) && state?.connected" class="mt-3" variant="text" :disabled="busy" @click="resolve(autoCommitAuthorized)">Erneut prüfen</v-btn>
                 <v-btn v-if="inline && contents && error && !state" class="mt-3" variant="text" :disabled="busy" @click="retryConnection">Erneut prüfen</v-btn>
-                <v-btn v-if="inline && contents && !showPicker && !progress?.completed.includes('save')" class="mt-3" variant="text" :disabled="busy" @click="changeFile">Andere Datei auswählen</v-btn>
+                <v-btn v-if="inline && !busy && contents && !showPicker && !progress?.completed.includes('save')" class="mt-3" variant="text" @click="changeFile">Andere Datei auswählen</v-btn>
             </v-card-text>
-            <v-card-actions>
+            <v-card-actions v-if="!inline || !busy">
                 <v-spacer />
                 <v-btn v-if="!inline" :disabled="busy || folderBusy" @click="opened = false">{{ state?.module_link?.folder?.id ? 'Schließen' : 'Abbrechen' }}</v-btn>
                 <v-btn v-else :disabled="busy" variant="text" @click="defer">Später</v-btn>
@@ -79,6 +79,7 @@ import { loadWorkDropbox, workDropboxKey, workDropboxStates } from '@/helpers/wo
 import { workAutomationEnabled } from '@/helpers/workAutomation'
 import { readModuleHandshake } from '@/helpers/moduleHandshake'
 import { workNeedsPreparation } from '@/helpers/workOverview'
+import WorkCreationProgress from './WorkCreationProgress.vue'
 import WorkDropboxSource from './WorkDropboxSource.vue'
 
 const FilePond = vueFilePond(FilePondPluginFileValidateType)
@@ -115,6 +116,17 @@ const canRetryPreparation = computed(() => Boolean(state.value?.module_link?.fol
     && (linkPreparation.value?.status === 'partial' || (!progress.value
         && (state.value?.exercise?.status === 'unknown' || (state.value?.exercise?.status === 'missing'
             && state.value.exercise.reusable !== 'linked')))))
+const creationStep = computed(() => {
+    if (state.value?.module_link?.folder?.id || progress.value?.completed.includes('online')) return 3
+    return state.value?.connected ? 2 : 1
+})
+const creationStatus = computed(() => {
+    if (busy.value) return 'active'
+    if (error.value || progress.value?.failed || canRetryPreparation.value || (state.value && !state.value.connected)) {
+        return 'failed'
+    }
+    return 'waiting'
+})
 let operation = 0
 let controller = null
 

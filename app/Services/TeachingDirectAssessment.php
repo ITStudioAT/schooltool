@@ -212,6 +212,8 @@ class TeachingDirectAssessment
             $reusable = null;
             $root = $this->checkExisting($connection, $module, $work->id, $work->teaching_course_id, $context, null, $reusable, $linkedStatus);
             if (($reusable['kind'] ?? null) === 'linked') {
+                $this->modules->rememberInitializedExercise($connection, $work, $link, $dates[0], $reusable['folder']);
+
                 return ['status' => 'initialized', 'folder' => $reusable['folder']];
             }
             abort_unless($this->digest($this->context($work, $actor, $dates[0])) === $this->digest($context)
@@ -224,7 +226,7 @@ class TeachingDirectAssessment
             abort_unless(empty($folder['sharing_info']), 409, 'Der Prüfungsordner ist geteilt und muss geprüft werden.');
             $this->write($connection, $folder['id'], 'status.json', $linkedStatus);
             $this->assertInitialStatusOnly($connection, $folder['id']);
-            $this->modules->forgetExerciseCache($work, $actor);
+            $this->modules->rememberInitializedExercise($connection, $work, $link, $dates[0], $folder);
 
             return ['status' => 'initialized', 'folder' => $folder];
         } finally {

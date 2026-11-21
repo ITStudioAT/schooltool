@@ -153,13 +153,13 @@
         <!-- NEUE/BEARBEITEN ARBEIT (TEMPLATE) -->
         <v-card tile flat color="transparent" class="w-100" v-if="action === 'new_course_work' || action === 'edit_course_work'">
             <v-form ref="form" v-model="is_valid" @submit.prevent class="mb-4">
-                <div v-if="savedWorkForTitle" ref="workWorkflow" tabindex="-1" class="mt-3 px-4">
+                <div v-if="savedWorkForTitle && !creatingWork && !handshakeAwaitingLink" ref="workWorkflow" tabindex="-1" class="mt-3 px-4">
                     <v-select v-if="workflowDates.length > 1" :model-value="workflowDate" @update:model-value="workflowSelectedDate = $event"
                         :items="workflowDates" label="Durchführungstermin für den Ablauf"
                         density="compact" variant="outlined" hide-details class="mb-2" :disabled="workChecking || workExerciseBusy" />
                     <WorkWorkflowOverview :work="savedWorkForTitle" :course="selected_course" :date="workflowDate"
                         :assessment="workflowAssessment" :exercise-ready="workStudentDistributionAvailable(savedWorkForTitle)"
-                        :disabled="workChecking || is_saving || is_deleting_work || isEditingExistingDetails" :link-pending="handshakeAwaitingLink"
+                        :disabled="workChecking || is_saving || is_deleting_work || isEditingExistingDetails"
                         :link-error="work_folder_errors[workDropboxKey(config?.user?.id, savedWorkForTitle)]" :check-progress="workHasProgress(savedWorkForTitle)"
                         :assessment-count="`${workAssessedCount(savedWorkForTitle)} von ${totalCourseStudentsCount} beurteilt`"
                         :all-assessed="totalCourseStudentsCount > 0 && workAssessedCount(savedWorkForTitle) === totalCourseStudentsCount"
@@ -171,6 +171,14 @@
                             <WorkContextCopy :work="savedWorkForTitle" :course="selected_course" :date="workflowDate" />
                         </template>
                     </WorkWorkflowOverview>
+                </div>
+                <div v-if="creatingWork || handshakeAwaitingLink" class="mt-3 px-4">
+                    <WorkCreationProgress v-if="!handshakeAwaitingLink" :with-dropbox="Boolean(handshakeDraft)" />
+                    <WorkCreationProgress v-else-if="!handshakeInlineStarted" :step="1" status="waiting" with-dropbox />
+                    <v-btn v-if="handshakeAwaitingLink && work_form.id && !handshakeInlineStarted" class="mt-2"
+                        :disabled="is_saving" variant="tonal" @click="resumeHandshakeLink()">Lernmodul prüfen</v-btn>
+                    <WorkDropboxLink v-if="handshakeAwaitingLink && work_form.id" ref="creationLink" inline :course-id="selected_course?.id"
+                        @linked="handshakeLinked" @link-saved="handshakeLinkSaved" @defer="deferHandshakeLink" @closed="handshakeInlineStarted = false" />
                 </div>
                 <v-card-text class="pt-2">
                     <v-card variant="outlined" class="pa-3 mb-4">
@@ -292,15 +300,12 @@
                             :date="work_form.finish_until_date" :time="work_form.finish_until_time"
                             :color="workDeadlineColor(work_form, deadlineNow)" :disabled="is_saving"
                             :pending="finalDeadlinePending" @change="applyFinalDeadline" />
-                        <v-alert v-if="handshakeNotice" type="warning" variant="tonal" class="mb-3">{{ handshakeNotice }}</v-alert>
+                        <v-alert v-if="handshakeNotice && !handshakeAwaitingLink" type="warning" variant="tonal" class="mb-3">{{ handshakeNotice }}</v-alert>
                         <v-btn v-if="handshakeNotice && !work_form.id" variant="text" @click="recoverHandshakeCreation">Frühere Anlage prüfen</v-btn>
-                        <v-btn v-if="handshakeAwaitingLink && work_form.id && !handshakeInlineStarted" variant="tonal" @click="resumeHandshakeLink()">Lernmodul prüfen</v-btn>
-                        <WorkDropboxLink v-if="handshakeAwaitingLink && work_form.id" ref="creationLink" inline :course-id="selected_course?.id"
-                            @linked="handshakeLinked" @link-saved="handshakeLinkSaved" @defer="deferHandshakeLink" @closed="handshakeInlineStarted = false" />
                     </v-card>
 
                     <div ref="workGrading" tabindex="-1" :style="isEditingExistingDetails ? 'pointer-events:none; opacity:0.45' : ''">
-                    <v-btn v-if="savedWorkForTitle" size="small" min-height="44"
+                    <v-btn v-if="savedWorkForTitle && !creatingWork && !handshakeAwaitingLink" size="small" min-height="44"
                         variant="text" prepend-icon="mdi-arrow-up" @click="focusWorkSection('workWorkflow')">Zum Ablauf</v-btn>
 
                     <div v-if="pending_group_work !== null" class="d-flex align-center ga-2 mt-2">
@@ -915,6 +920,7 @@ import WorkAiExport from './WorkAiExport.vue'
 import WorkFinalDeadline from './WorkFinalDeadline.vue'
 import WorkContextCopy from './WorkContextCopy.vue'
 import WorkWorkflowOverview from './WorkWorkflowOverview.vue'
+import WorkCreationProgress from './WorkCreationProgress.vue'
 import WorkSimulationBadge from './WorkSimulationBadge.vue'
 import { workHasProgress, workManualCompletionFields, workProgressNextAction } from '@/helpers/workProgress'
 import { workAutomationEnabled } from '@/helpers/workAutomation'
@@ -922,7 +928,7 @@ import { loadWorkDropbox, loadWorkExercise, workDropboxKey, workDropboxStates, w
 import { isInitialWork, workConnectionLabel, workNeedsPreparation, workPreparationLabel } from '@/helpers/workOverview'
 
 export default {
-    components: { ItsGridBox, WorkAiExport, WorkEvaluationImport, WorkImportActions, WorkExerciseExport, WorkCheckProgress, WorkDropboxLink, WorkTitleEditor, WorkHandshakeDraft, WorkEvaluationPdf, WorkDispatchLog, WorkDispatchStatus, WorkCellStatus, WorkFinalDeadline, WorkContextCopy, WorkWorkflowOverview, WorkSimulationBadge },
+    components: { ItsGridBox, WorkAiExport, WorkEvaluationImport, WorkImportActions, WorkExerciseExport, WorkCheckProgress, WorkDropboxLink, WorkTitleEditor, WorkHandshakeDraft, WorkEvaluationPdf, WorkDispatchLog, WorkDispatchStatus, WorkCellStatus, WorkFinalDeadline, WorkContextCopy, WorkWorkflowOverview, WorkCreationProgress, WorkSimulationBadge },
 
     async beforeMount() {
         this.adminStore = useAdminStore()
@@ -975,6 +981,7 @@ export default {
             handshakeState: { busy: false, error: '' },
             handshakePendingCreation: null,
             handshakeAwaitingLink: false,
+            creatingWork: false,
             handshakeInlineStarted: false,
             handshakeNotice: '',
             group_dialog_open: false,
@@ -2015,6 +2022,7 @@ export default {
             // Prevent multiple saves while one is in progress
             if (this.is_saving || this.is_deleting_work) return
             this.is_saving = true
+            this.creatingWork = !this.work_form.id
 
             try {
                 if (!this.work_form.is_group_work) {
@@ -2132,6 +2140,7 @@ export default {
                     }
                 }
             } finally {
+                this.creatingWork = false
                 this.is_saving = false
             }
         },

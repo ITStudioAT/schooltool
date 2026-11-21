@@ -48,6 +48,18 @@ export function workNeedsPreparation(work, folderState) {
     return isInitialWork({ ...work, status }) && folderState?.has_import !== true
 }
 
+export function confirmedExerciseFolder(checked) {
+    if (checked?.status === 'found') return checked.folder
+    const exercise = checked?.data?.exercise
+    return exercise?.reusable === 'linked' ? exercise.reusable_folder : null
+}
+
+export function workFolderNeedsRetry(state, checked) {
+    const exercise = checked?.data?.exercise ?? state?.exercise
+    return exercise?.status !== 'found' && exercise?.reusable !== 'linked'
+        && (state?.link_preparation?.status === 'partial' || exercise?.status === 'missing')
+}
+
 export function workPreparationLabel(checked) {
     if (checked.status === 'found') {
         if (checked.data?.exercise?.preparation?.status === 'ready') return 'Aufgaben bereitstellen'

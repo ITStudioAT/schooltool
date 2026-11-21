@@ -130,7 +130,8 @@ class DropboxWorkImport
         return $entry;
     }
 
-    public function deleteExamFolder(DropboxConnection $connection, string $folderId, string $expectedPath): void
+    /** @param array{id: string, rev: string}|null $expectedStatus */
+    public function deleteExamFolder(DropboxConnection $connection, string $folderId, string $expectedPath, ?array $expectedStatus = null): void
     {
         abort_unless($this->canWrite($connection), 409, 'Für das Löschen fehlt die Dropbox-Schreibfreigabe.');
         $current = $this->findFolderById($connection, $folderId);
@@ -140,15 +141,26 @@ class DropboxWorkImport
         abort_unless($current['path_lower'] === mb_strtolower($expectedPath)
             && in_array(basename(dirname($current['path_lower'])), ['leistungsfeststellung', 'leistungsfeststellungen'], true),
             409, 'Der Prüfungsordner wurde verschoben. Bitte die Zuordnung erneut prüfen.');
-        $this->examFolderContents($connection, $folderId, $expectedPath);
+        $this->examFolderContents($connection, $folderId, $expectedPath, $expectedStatus);
         $this->api($connection, 'files/delete_v2', ['path' => $folderId]);
         abort_unless($this->findFolderById($connection, $folderId) === null, 409, 'Das Löschen des Prüfungsordners konnte nicht bestätigt werden.');
     }
 
-    /** @return list<string> */
-    public function examFolderContents(DropboxConnection $connection, string $folderId, string $expectedPath): array
+    /**
+     * @param  array{id: string, rev: string}|null  $expectedStatus
+     * @return list<string>
+     */
+    public function examFolderContents(DropboxConnection $connection, string $folderId, string $expectedPath, ?array $expectedStatus = null): array
     {
-        return [$folderId, ...array_column($this->examFolderEntries($connection, $folderId, $expectedPath), 'id')];
+        $entries = $this->examFolderEntries($connection, $folderId, $expectedPath);
+        if ($expectedStatus !== null) {
+            abort_unless(count($entries) === 1 && $entries[0]['.tag'] === 'file'
+                && $entries[0]['path_lower'] === mb_strtolower($expectedPath).'/status.json'
+                && $entries[0]['id'] === $expectedStatus['id'] && ($entries[0]['rev'] ?? null) === $expectedStatus['rev'],
+                409, 'Der Prüfungsordner wurde inzwischen verändert. Bitte den LF-Stand erneut prüfen.');
+        }
+
+        return [$folderId, ...array_column($entries, 'id')];
     }
 
     public function clearExamFolder(DropboxConnection $connection, string $folderId, string $expectedPath, string $statusRevision, ?Closure $onProgress = null): void

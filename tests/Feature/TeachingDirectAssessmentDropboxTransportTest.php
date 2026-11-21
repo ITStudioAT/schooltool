@@ -189,10 +189,12 @@ test('direct assessment uses real Dropbox transport for initial status retry and
         }
         throw new RuntimeException('Unexpected fake Dropbox endpoint: '.$url);
     });
+    $storedModules = app(DropboxModuleLinks::class);
     $modules = Mockery::mock(DropboxModuleLinks::class);
     app()->instance(DropboxModuleLinks::class, $modules);
     $modules->shouldReceive('current')->andReturn($link);
     $modules->shouldReceive('forgetExerciseCache');
+    $modules->shouldReceive('rememberInitializedExercise')->andReturnUsing($storedModules->rememberInitializedExercise(...));
     $modules->shouldReceive('exercise')->andReturnUsing(function () use ($state) {
         foreach ($state->files as $key => $file) {
             if (str_ends_with($key, '/status.json') && (json_decode($file['contents'], true)['prepared'] ?? false)) {
@@ -218,6 +220,12 @@ test('direct assessment uses real Dropbox transport for initial status retry and
             expect($initialFolderId)->toBe('id:existing');
         }
         expect($initial['status'])->toBe('initialized');
+        $callsAfterCreation = count($state->calls);
+        $stored = $storedModules->exercise($connection, $this->work, $link, '2026-11-18', initial: false);
+        expect($stored['reusable'])->toBe('linked')
+            ->and($stored['reusable_folder']['id'])->toBe($initialFolderId)
+            ->and($storedModules->exercise($connection, $this->work, $link, '2026-11-17', initial: false))->not->toHaveKey('reusable_folder')
+            ->and($state->calls)->toHaveCount($callsAfterCreation);
         expect(json_decode($state->files[$initialFolderId.'/status.json']['contents'], true)['prepared'])->toBeFalse();
         expect(app(DropboxWorkImport::class)->readExerciseDocument($connection, $initialFolderId, 'status.json')['contents'])
             ->toBe($state->files[$initialFolderId.'/status.json']['contents']);

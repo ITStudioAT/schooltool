@@ -15,9 +15,9 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { workAutomationEnabled } from '@/helpers/workAutomation'
-import { workNeedsPreparation } from '@/helpers/workOverview'
+import { workFolderNeedsRetry, workNeedsPreparation } from '@/helpers/workOverview'
 import { useAdminStore } from '@/stores/admin/AdminStore'
-import { loadWorkDropbox, workDropboxStates, workDropboxKey } from '@/helpers/workDropbox'
+import { loadWorkDropbox, workDropboxStates, workDropboxKey, workExerciseCheck } from '@/helpers/workDropbox'
 
 const props = defineProps({ work: Object, disabled: Boolean, linkOnly: Boolean, date: { type: String, default: '' } })
 const emit = defineEmits(['open', 'link'])
@@ -30,9 +30,7 @@ const state = computed(() => workDropboxStates.get(key.value))
 const needsPreparation = computed(() => workNeedsPreparation(props.work, state.value))
 const hasLink = computed(() => Boolean(state.value?.module_link?.folder?.id || state.value?.folder?.id))
 const canRetryPreparation = computed(() => Boolean(state.value?.module_link?.folder?.id) && needsPreparation.value
-    && (state.value?.link_preparation?.status === 'partial'
-        || (state.value?.exercise?.status === 'missing' && state.value.exercise.reusable !== 'linked')
-        || state.value?.exercise?.status === 'unknown'))
+    && workFolderNeedsRetry(state.value, workExerciseCheck(key.value, props.work, props.date)))
 const canQuickImport = computed(() => !statusLoading.value && confirmedKey.value === key.value
     && workDropboxStates.get(key.value)?.can_quick_import === true)
 const quickImportHint = computed(() => workDropboxStates.get(key.value)?.message || 'Dropbox-Ordner erneut lesen und Vorschau öffnen.')

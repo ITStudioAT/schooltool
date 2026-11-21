@@ -170,17 +170,30 @@ describe('New work overview and assessment mode', () => {
         const handshake = JSON.stringify({ schema_version: 1, module_id: 'a263b873-4f27-4167-90f0-7d94ea0f67fa' })
         const work = { id: 65, teaching_course_id: 2, type: 'A5', title: 'Beispiel', groups: [], status: {} }
         const connection = { connected: true, configured: true, installed: true, module_link: null }
+        const linked = { connected: true, module_link: { folder: { id: 'id:module' } } }
+        const exercise = { status: 'missing', reusable: 'linked', checked_at: '2026-11-20T10:00:00Z',
+            reusable_folder: { id: 'id:exam', name: 'Prüfung' } }
+        let initialized = false
         let finishCreate!: (value: unknown) => void
+        let finishCheck!: (value: unknown) => void
+        let finishLink!: (value: unknown) => void
         const post = vi.fn().mockImplementation((url, data) => {
             if (url === '/api/admin/teaching/course_works') return new Promise(resolve => { finishCreate = resolve })
-            if (data.resolve) return Promise.resolve({ data: { can_link: true, proof: 'proof', module_id: 'module',
-                candidate: { folder_path: '/Materialien/Beispiel' }, message: 'Online geprüft.' } })
-            return Promise.resolve({ data: { connected: true, module_link: { folder: { id: 'id:module' } }, link_preparation: partial && data.proof ? { status: 'partial', message: 'Ordnerprüfung fehlgeschlagen' } : { status: 'initialized' } } })
+            if (data.resolve) return new Promise(resolve => { finishCheck = resolve })
+            if (data.proof) return new Promise(resolve => { finishLink = resolve })
+            initialized = true
+            return Promise.resolve({ data: { ...linked, link_preparation: { status: 'initialized' } } })
         })
-        vi.stubGlobal('axios', { get: vi.fn().mockResolvedValue({ data: connection }), post })
+        const get = vi.fn().mockImplementation((_url, options) => Promise.resolve({
+            data: initialized ? { ...linked, exercise: options?.params?.include_exercise ? exercise : null } : connection,
+        }))
+        vi.stubGlobal('axios', { get, post })
         const wrapper = mountOverview(work, null, true)
         try {
             const vm = wrapper.vm as any
+            const progress = () => wrapper.get('[aria-label="Fortschritt beim Anlegen"]')
+            const activeStep = () => progress().get('[aria-current="step"]').text()
+            const workflow = () => wrapper.find('[aria-label="Ablauf der Arbeit"]')
             vm.newWork()
             vm.work_form.type = 'A5'
             vm.work_form.title = 'Beispiel'
@@ -196,9 +209,25 @@ describe('New work overview and assessment mode', () => {
             await create!.trigger('click')
             await flushPromises()
             expect(create!.attributes('disabled')).toBeDefined()
+            expect(activeStep()).toContain('Arbeit speichern')
+            expect(workflow().exists()).toBe(false)
             await create!.trigger('click')
             expect(post.mock.calls.filter(([url]) => url === '/api/admin/teaching/course_works')).toHaveLength(1)
             finishCreate({ data: { data: work } })
+            await flushPromises()
+            expect(activeStep()).toContain('Lernmodul in Dropbox prüfen')
+            expect(progress().text()).toContain('Arbeit speichernErledigt')
+            expect(workflow().exists()).toBe(false)
+            expect(wrapper.text()).not.toContain('Kontext kopieren')
+
+            finishCheck({ data: { can_link: true, proof: 'proof', module_id: 'module',
+                candidate: { folder_path: '/Materialien/Beispiel' }, message: 'Online geprüft.' } })
+            await flushPromises()
+            expect(activeStep()).toContain('Lernmodul verknüpfen und Prüfungsordner anlegen')
+            expect(workflow().exists()).toBe(false)
+            initialized = !partial
+            finishLink({ data: { ...linked, link_preparation: partial
+                ? { status: 'partial', message: 'Ordnerprüfung fehlgeschlagen' } : { status: 'initialized' } } })
             await flushPromises()
             expect(post.mock.calls.filter(([url]) => url === '/api/admin/teaching/course_works')).toHaveLength(1)
             expect(post.mock.calls.filter(([url]) => url.endsWith('/dropbox/folder')).map(([, data]) => data)).toEqual([
@@ -206,6 +235,8 @@ describe('New work overview and assessment mode', () => {
                 { handshake, filename: 'handshake.json', proof: 'proof' },
             ])
             if (partial) {
+                expect(activeStep()).toContain('Nicht abgeschlossen')
+                expect(workflow().exists()).toBe(false)
                 expect(wrapper.text()).toContain('Ordnerprüfung fehlgeschlagen')
                 expect(vm.handshakeNotice).toContain('Lernmodul ist verknüpft')
                 await wrapper.findAll('button').find(button => button.text() === 'Prüfungsordner erneut anlegen')!.trigger('click')
@@ -214,6 +245,10 @@ describe('New work overview and assessment mode', () => {
                 expect(post.mock.calls.filter(([url]) => url === '/api/admin/teaching/course_works')).toHaveLength(1)
             }
             expect(wrapper.find('[data-testid="work-module-inline"]').exists()).toBe(false)
+            expect(wrapper.find('[aria-label="Fortschritt beim Anlegen"]').exists()).toBe(false)
+            expect(workflow().text()).toContain('Prüfungsordner bestätigt')
+            expect(workflow().text()).toContain('Leistungsfeststellung erstellen')
+            expect(workflow().text()).not.toContain('Prüfungsordner erneut anlegen')
             expect(vm.handshakeNotice).toBe('')
             expect(wrapper.findAll('button').some(button => button.text() === 'Verknüpfen und Prüfungsordner anlegen')).toBe(false)
         } finally { wrapper.unmount() }

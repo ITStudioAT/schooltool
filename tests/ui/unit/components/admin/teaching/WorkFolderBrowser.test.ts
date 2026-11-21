@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createTestingPinia } from '@pinia/testing'
 import WorkFolderBrowser from '@/pages/admin/teaching/overview/components/WorkFolderBrowser.vue'
-import { clearWorkDropboxStates, confirmCreatedWorkExercise, workDropboxBinding, workDropboxStates } from '@/helpers/workDropbox'
+import { clearWorkDropboxStates, confirmCreatedWorkExercise, loadWorkExercise, workDropboxBinding, workDropboxStates } from '@/helpers/workDropbox'
 
 const work = { id: 65, teaching_course_id: 2, title: 'E-Mails' }
 const version = 'a'.repeat(64)
@@ -48,14 +48,14 @@ it('opens a persistent read-only listing, navigates folders and exposes only unl
     wrapper.unmount()
 })
 
-it('uses the existing version-bound unlink and leaves Dropbox files untouched', async () => {
+it('sends a version-bound unlink and closes after the server confirms it', async () => {
     const post = vi.fn().mockResolvedValue({ data: { connected: true, folder: null, module_link: null, link_version: 'b'.repeat(64) } })
     const wrapper = mountBrowser(undefined, post)
     await (wrapper.vm as any).open()
     await flushPromises()
     await wrapper.findAll('button').find(button => button.text() === 'Verbindung trennen')!.trigger('click')
     await flushPromises()
-    expect(post).toHaveBeenCalledExactlyOnceWith('/api/admin/teaching/course_works/65/dropbox/folder', { unlink: true, link_version: version }, { timeout: 45000 })
+    expect(post).toHaveBeenCalledExactlyOnceWith('/api/admin/teaching/course_works/65/dropbox/folder', { unlink: true, link_version: version }, { timeout: 120000 })
     expect(workDropboxStates.get('7:2:65')?.folder).toBeNull()
     expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
     wrapper.unmount()
@@ -120,6 +120,24 @@ it('shows the saved learning module without checking Dropbox or listing its cont
     expect(wrapper.text()).not.toContain('Aufgabe.pdf')
     expect(get).not.toHaveBeenCalled()
     wrapper.unmount()
+})
+
+it('shows the system-created LF folder before the assessment has been prepared', async () => {
+    const date = '2026-10-12'
+    const folderState = { ...saved, module_link: { folder }, exercise: { status: 'missing', reusable: 'linked',
+        reusable_folder: { id: 'id:exam', name: '2026-10-12 - 5L1_Gruppe-1 - E-Mails' }, checked_at: '2026-10-12T10:00:00Z' } }
+    const get = vi.fn().mockResolvedValue({ data: folderState })
+    const wrapper = mountBrowser(get, undefined, { module: true, date })
+    try {
+        await loadWorkExercise('7:2:65', work, date)
+        get.mockClear()
+        await (wrapper.vm as any).open()
+
+        expect(wrapper.text()).toContain(folderState.exercise.reusable_folder.name)
+        expect(wrapper.text()).not.toContain('LF-Ordner nicht bestätigt.')
+        expect(wrapper.text()).toContain('Beim Trennen löscht Schooltool auch den zugehörigen unvorbereiteten Prüfungsordner')
+        expect(get).not.toHaveBeenCalled()
+    } finally { wrapper.unmount() }
 })
 
 it('does not show a confirmed assessment folder from another date or binding', async () => {

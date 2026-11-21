@@ -685,6 +685,34 @@ describe('CourseTable manual work completion', () => {
         } finally { wrapper.unmount() }
     })
 
+    it('replaces the dated work workflow with creation progress until the module is linked', async () => {
+        clearWorkDropboxStates()
+        const get = vi.fn().mockResolvedValue({ data: { connected: true, module_link: null } })
+        vi.stubGlobal('axios', { get, post: vi.fn() })
+        const { wrapper, works, date, first } = mountCompletionTable(false, true)
+        const vm = wrapper.vm as any
+        const work = { ...first, status: {}, automation_enabled: true }
+        try {
+            useAdminStore().config = { user: { id: 7 } } as never
+            works.courseWorks = [work] as never
+            vm.openExistingWorkDialog(date, work)
+            await flushPromises()
+            const form = wrapper.get('.course-table-date-work-form')
+            expect(form.find('[aria-label="Ablauf der Arbeit"]').exists()).toBe(true)
+
+            vm.dateHandshakeAwaitingLink = true
+            await flushPromises()
+            expect(form.get('[aria-label="Fortschritt beim Anlegen"]').text()).toContain('Arbeit speichernErledigt')
+            expect(form.find('[aria-label="Ablauf der Arbeit"]').exists()).toBe(false)
+            expect(form.text()).not.toContain('Kontext kopieren')
+
+            vm.dateHandshakeLinked(work)
+            await flushPromises()
+            expect(form.find('[aria-label="Fortschritt beim Anlegen"]').exists()).toBe(false)
+            expect(form.get('[aria-label="Ablauf der Arbeit"]').text()).toContain('Kontext kopieren')
+        } finally { wrapper.unmount(); clearWorkDropboxStates(); vi.unstubAllGlobals() }
+    })
+
     it.each([true, false])('returns to the calling table only after a successful save: %s', async saved => {
         const methods = (CourseTable as any).methods
         const savedWork = { id: 65, finish_until_date: '2026-10-14', finish_until_time: '16:45' }

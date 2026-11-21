@@ -1282,9 +1282,10 @@
                                         label="Titel"
                                         maxlength="255"
                                         :disabled="workSaving" />
-                                    <WorkWorkflowOverview v-if="savedWorkDialogWork" class="mb-4" :work="savedWorkDialogWork" :course="selected_course"
+                                    <WorkWorkflowOverview v-if="savedWorkDialogWork && !dateWorkCreating && !dateHandshakeAwaitingLink"
+                                        class="mb-4" :work="savedWorkDialogWork" :course="selected_course"
                                         :date="workDialog.courseDate?.date || ''" :active="workDialog.open && workDialogTab === 'work'"
-                                        :disabled="workSaving || workDeleting || workDialogTypeEditing || workDialogModeEditing" :link-pending="dateHandshakeAwaitingLink"
+                                        :disabled="workSaving || workDeleting || workDialogTypeEditing || workDialogModeEditing"
                                         :link-error="work_folder_errors[workDropboxKey(config?.user?.id, savedWorkDialogWork)]"
                                         :assessment="workDialogAssessment" :exercise-ready="workDialogExerciseReady" :check-progress="workHasProgress(savedWorkDialogWork)"
                                         :assessment-count="`${savedWorkDialogCompletion.completed} von ${savedWorkDialogCompletion.completed + savedWorkDialogCompletion.open} beurteilt`"
@@ -1298,11 +1299,16 @@
                                         <WorkContextCopy :work="savedWorkDialogWork" :course="selected_course" :date="workDialog.courseDate?.date || ''" />
                                     </template>
                                     </WorkWorkflowOverview>
+                                    <WorkCreationProgress v-if="dateWorkCreating && !dateHandshakeAwaitingLink"
+                                        class="mb-3" :with-dropbox="Boolean(dateHandshakeDraft)" />
+                                    <WorkCreationProgress v-else-if="dateHandshakeAwaitingLink && !dateHandshakeInlineStarted"
+                                        class="mb-3" :step="1" status="waiting" with-dropbox />
                                     <WorkHandshakeDraft v-if="!workDialogForm.id && (workDialogForm.automation_enabled || dateHandshakeDraft || dateHandshakeState.error)" v-model="dateHandshakeDraft"
                                         :disabled="workSaving || Boolean(dateHandshakePendingCreation)" @state="dateHandshakeState = $event" />
-                                    <v-alert v-if="dateHandshakeNotice" type="warning" variant="tonal" class="mb-3">{{ dateHandshakeNotice }}</v-alert>
+                                    <v-alert v-if="dateHandshakeNotice && !dateHandshakeAwaitingLink" type="warning" variant="tonal" class="mb-3">{{ dateHandshakeNotice }}</v-alert>
                                     <v-btn v-if="dateHandshakeNotice && !workDialogForm.id" variant="text" @click="recoverDateHandshakeCreation">Frühere Anlage prüfen</v-btn>
-                                    <v-btn v-if="dateHandshakeAwaitingLink && workDialogForm.id && !dateHandshakeInlineStarted" variant="tonal" @click="resumeDateHandshakeLink()">Lernmodul prüfen</v-btn>
+                                    <v-btn v-if="dateHandshakeAwaitingLink && workDialogForm.id && !dateHandshakeInlineStarted"
+                                        :disabled="workSaving" variant="tonal" @click="resumeDateHandshakeLink()">Lernmodul prüfen</v-btn>
                                     <WorkDropboxLink v-if="dateHandshakeAwaitingLink && workDialogForm.id" ref="creationLink" inline :course-id="selected_course?.id"
                                         @linked="dateHandshakeLinked" @link-saved="dateHandshakeLinkSaved" @defer="deferDateHandshakeLink" @closed="dateHandshakeInlineStarted = false" />
                                     <v-text-field v-if="dateWorkRequiresMaximumPlus" v-model="workDialogForm.maximum_plus"
@@ -2620,6 +2626,7 @@ import { canEditWorkTitle } from '@/helpers/workTitlePermission'
 import WorkHandshakeDraft from './WorkHandshakeDraft.vue'
 import { clearWorkCreation, pendingWorkCreation, workCreationRequest } from '@/helpers/workCreationReceipt'
 import WorkWorkflowOverview from './WorkWorkflowOverview.vue'
+import WorkCreationProgress from './WorkCreationProgress.vue'
 import WorkSimulationBadge from './WorkSimulationBadge.vue'
 import { workHasProgress, workLastCollectionRunAt, workManualCompletionFields, workProgressNextAction } from '@/helpers/workProgress'
 import { personalWorkAssessment } from '@/helpers/workSubmission'
@@ -2649,7 +2656,7 @@ const courseContentBlockedTags = new Set([
 ])
 
 export default {
-    components: { ItsRichTextEditor, CourseStudentNotes, CourseGamesRow, CourseStudentIndicators, CurriculumPdfPreview, WorkEvaluationImport, WorkImportActions, WorkExerciseExport, WorkCheckProgress, WorkDropboxLink, WorkTitleEditor, WorkHandshakeDraft, WorkWorkflowOverview, WorkSimulationBadge, WorkContextCopy, WorkEvaluationPdf, WorkDispatchLog, WorkDispatchStatus, WorkCellStatus, WorkFinalDeadline },
+    components: { ItsRichTextEditor, CourseStudentNotes, CourseGamesRow, CourseStudentIndicators, CurriculumPdfPreview, WorkEvaluationImport, WorkImportActions, WorkExerciseExport, WorkCheckProgress, WorkDropboxLink, WorkTitleEditor, WorkHandshakeDraft, WorkWorkflowOverview, WorkCreationProgress, WorkSimulationBadge, WorkContextCopy, WorkEvaluationPdf, WorkDispatchLog, WorkDispatchStatus, WorkCellStatus, WorkFinalDeadline },
 
     emits: ['update:activeSemester', 'manage-curriculum'],
 
@@ -2769,6 +2776,7 @@ export default {
             },
             workDialogExerciseStatus: null,
             dateHandshakeDraft: null,
+            dateWorkCreating: false,
             dateHandshakeState: { busy: false, error: '' },
             dateHandshakePendingCreation: null,
             dateHandshakeAwaitingLink: false,
@@ -4795,6 +4803,7 @@ export default {
             })) return
 
             this.workSaving = true
+            this.dateWorkCreating = !this.workDialogForm.id
             try {
                 const gradeInputMode = this.courseWorkGradeInputModeForType(this.workDialogForm.type)
                 const payload = {
@@ -4856,6 +4865,7 @@ export default {
                     await this.resumeDateHandshakeLink(response.data)
                 } else this.cancelDateWorkForm(true)
             } finally {
+                this.dateWorkCreating = false
                 this.workSaving = false
             }
         },

@@ -35,7 +35,7 @@
                                     </div>
                                     <div class="work-phase__actions">
                                         <div class="workflow-command" :data-primary="phase.primary === 'link'">
-                                            <WorkImportActions v-if="!linkPending" :work="work" :date="date" link-only :disabled="disabled" @link="emit('link', $event)" />
+                                            <WorkImportActions :work="work" :date="date" link-only :disabled="disabled" @link="emit('link', $event)" />
                                         </div>
                                         <div class="workflow-management-actions">
                                             <div class="workflow-command">
@@ -185,7 +185,8 @@ import { computed, nextTick, ref, useId, watch } from 'vue'
 import { assessmentTimeText } from '@/helpers/workAssessmentTimes'
 import { workAutomationEnabled } from '@/helpers/workAutomation'
 import { workDispatchRecord, workProvisionRecords } from '@/helpers/workDispatch'
-import { workDropboxKey, workDropboxStates } from '@/helpers/workDropbox'
+import { workDropboxKey, workDropboxStates, workExerciseCheck } from '@/helpers/workDropbox'
+import { confirmedExerciseFolder, workFolderNeedsRetry } from '@/helpers/workOverview'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import WorkAssignmentMail from './WorkAssignmentMail.vue'
 import WorkAssessmentSummary from './WorkAssessmentSummary.vue'
@@ -203,7 +204,7 @@ import WorkQueueProgress from './WorkQueueProgress.vue'
 import WorkSubmissionMethod from './WorkSubmissionMethod.vue'
 
 const props = defineProps({ work: { type: Object, required: true }, course: Object, date: { type: String, default: '' },
-    active: { type: Boolean, default: true }, disabled: Boolean, linkPending: Boolean, linkError: Boolean,
+    active: { type: Boolean, default: true }, disabled: Boolean, linkError: Boolean,
     assessment: Object, exerciseReady: Boolean, checkProgress: Boolean, assessmentCount: String, allAssessed: Boolean,
     lastCollection: String, lastEvaluation: String, lastCheck: String })
 const emit = defineEmits(['link', 'import', 'saved', 'edit-grades', 'exercise-status', 'progress-checked', 'deadline-saved', 'check-busy', 'busy'])
@@ -234,12 +235,13 @@ watch([() => props.work.id, () => props.date], () => {
     queueInProgress.value = false
 })
 
-const binding = computed(() => workDropboxStates.get(workDropboxKey(admin.config?.user?.id, props.work)))
+const key = computed(() => workDropboxKey(admin.config?.user?.id, props.work))
+const binding = computed(() => workDropboxStates.get(key.value))
+const checked = computed(() => workExerciseCheck(key.value, props.work, props.date))
 const linked = computed(() => Boolean(binding.value?.module_link?.folder?.id || binding.value?.folder?.id))
 const automation = computed(() => workAutomationEnabled(props.work))
 const connectionStatus = computed(() => {
     if (!automation.value) return 'Manuelle Beurteilung'
-    if (props.linkPending) return 'Verknüpfung wird eingerichtet'
     if (props.linkError) return 'Verknüpfung konnte nicht geladen werden'
     return binding.value ? 'Kein Lernmodul verknüpft' : 'Verknüpfung wird geladen …'
 })
@@ -248,6 +250,7 @@ const assessmentStatus = computed(() => {
     if (queueInProgress.value) return 'Leistungsfeststellung wird erstellt'
     if (props.assessment?.deletionPending) return 'Löschung noch nicht bestätigt'
     if (props.exerciseReady) return 'Aufgabenstellung bestätigt'
+    if (props.assessment?.status === 'missing' && confirmedExerciseFolder(checked.value)?.id) return 'Prüfungsordner bestätigt'
     return { found: 'Prüfungsordner bestätigt', missing: 'Noch nicht erstellt', unknown: 'Status nicht bestätigt',
         checking: 'Statusprüfung läuft …' }[props.assessment?.status] || 'Noch nicht geprüft'
 })
@@ -308,11 +311,10 @@ function nextAction([collection, evaluation, publication], releaseState, previou
     if (queueInProgress.value) return ['preparation', null]
     if (releasePaused || releasePrepared) return ['provision', 'provision']
     if (!release && !mailed && !mailBatch.value && !collected && !evaluated && automation.value && !prepared) {
-        if (props.linkPending || !binding.value) return ['preparation', null]
+        if (!binding.value) return ['preparation', null]
         if (!linked.value) return ['preparation', 'link']
         if (props.assessment?.status === 'missing') {
-            const retryFolder = binding.value?.link_preparation?.status === 'partial'
-                || (binding.value?.exercise?.status === 'missing' && binding.value.exercise.reusable !== 'linked')
+            const retryFolder = workFolderNeedsRetry(binding.value, checked.value)
             return ['preparation', retryFolder ? 'link' : 'create']
         }
         if (props.assessment?.status !== 'found') return ['preparation', 'check']

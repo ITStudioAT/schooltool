@@ -9,6 +9,9 @@
                     <p v-else class="text-body-2 mb-2">Für diese Verknüpfung ist kein Lernmodulpfad gespeichert.</p>
                     <p v-if="exerciseFolderName" class="folder-browser-path text-body-1 text-primary">{{ exerciseFolderName }}</p>
                     <p v-else class="text-body-2">LF-Ordner nicht bestätigt.</p>
+                    <p v-if="hasModuleLink && !unlinkBlocked" class="text-body-2 mt-2">
+                        Beim Trennen löscht Schooltool auch den zugehörigen unvorbereiteten Prüfungsordner in Dropbox, falls vorhanden.
+                    </p>
                     <v-progress-linear v-if="loading" indeterminate aria-label="Verknüpfung wird geladen" />
                     <v-alert v-if="error" type="error" variant="tonal" class="my-3" role="alert">{{ error }}</v-alert>
                 </template>
@@ -30,6 +33,7 @@
                 <v-btn v-if="cursor" variant="text" :disabled="loading || unlinking" @click="read(current.id, true)">Weitere Einträge laden</v-btn>
                 <v-btn v-if="error && !loading" variant="text" :disabled="unlinking" @click="open">Erneut laden</v-btn>
                 </template>
+                <p v-if="unlinking" role="status" class="text-body-2 mt-3">Dropbox-Verbindung wird geprüft und getrennt …</p>
                 <v-alert v-if="!section && unlinkHint?.message" :type="unlinkHint.status === 'blocked' ? 'warning' : 'info'" variant="tonal" class="mt-3">{{ unlinkHint.message }}</v-alert>
             </v-card-text>
             <v-card-actions class="flex-wrap">
@@ -48,12 +52,15 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { folders, show, storeFolder } from '@/actions/App/Http/Controllers/Admin/Teaching/WorkDropboxController'
 import { workDropboxKey, workDropboxStates, workExerciseCheck } from '@/helpers/workDropbox'
+import { confirmedExerciseFolder } from '@/helpers/workOverview'
 import { workAutomationEnabled } from '@/helpers/workAutomation'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 
 const props = defineProps({ work: Object, disabled: Boolean, module: Boolean, exercise: Boolean, date: { type: String, default: '' }, section: { type: String, default: '' } })
+const unlinkTimeout = 120000
 const admin = useAdminStore()
 const key = computed(() => workDropboxKey(admin.config?.user?.id, props.work))
+const hasModuleLink = computed(() => Boolean(workDropboxStates.get(key.value)?.module_link?.folder?.id))
 const opened = ref(false)
 const loading = ref(false)
 const unlinking = ref(false)
@@ -63,7 +70,7 @@ const current = ref(null)
 const exerciseFolderName = computed(() => {
     if (!opened.value || !props.module) return ''
     const checked = workExerciseCheck(key.value, props.work, props.date)
-    return checked?.status === 'found' ? checked.folder?.name || '' : ''
+    return confirmedExerciseFolder(checked)?.name || ''
 })
 const modulePathParts = computed(() => {
     const path = current.value?.path || ''
@@ -113,9 +120,9 @@ function close() {
     error.value = ''
 }
 
-function failureMessage(failure) {
+function failureMessage(failure, fallback = 'Der Ordnerinhalt konnte nicht geladen werden. Bitte erneut versuchen.') {
     return Object.values(failure.response?.data?.errors || {}).flat()[0]
-        || failure.response?.data?.message || 'Der Ordnerinhalt konnte nicht geladen werden. Bitte erneut versuchen.'
+        || failure.response?.data?.message || fallback
 }
 
 async function open() {
@@ -207,15 +214,21 @@ async function checkUnlink() {
     checkingUnlink.value = true
     error.value = ''
     try {
-        const { data } = await axios.get(show.url(props.work.id), { timeout: 45000, params: { include_unlink_status: 1 } })
+        const { data } = await axios.get(show.url(props.work.id), { timeout: unlinkTimeout, params: { include_unlink_status: 1 } })
         if (request !== operation || currentKey !== key.value) return
         if (data.link_version !== linkVersion.value) {
+            if (data.connected && data.link_version && !data.module_conflict && !data.module_link?.folder?.id && !data.folder?.id) {
+                workDropboxStates.set(currentKey, data)
+                close()
+                return
+            }
             unlinkState.value = { status: 'unknown', message: 'Die Zuordnung hat sich geändert. Bitte den Dialog erneut öffnen.' }
             return
         }
         unlinkState.value = data.unlink_status || { status: 'unknown', message: 'Der LF-Stand konnte nicht eindeutig bestätigt werden.' }
     } catch (failure) {
-        if (request === operation) unlinkState.value = { status: 'unknown', message: failureMessage(failure) }
+        if (request === operation) unlinkState.value = { status: 'unknown',
+            message: failureMessage(failure, 'Der LF-Stand konnte nicht geprüft werden. Bitte erneut versuchen.') }
     } finally {
         if (request === operation) checkingUnlink.value = false
     }
@@ -228,13 +241,15 @@ async function unlink() {
     unlinking.value = true
     error.value = ''
     try {
-        const { data } = await axios.post(storeFolder.url(props.work.id), { unlink: true, link_version: linkVersion.value }, { timeout: 45000 })
+        const { data } = await axios.post(storeFolder.url(props.work.id), { unlink: true, link_version: linkVersion.value }, { timeout: unlinkTimeout })
         if (request !== operation || currentKey !== key.value) return
         workDropboxStates.set(currentKey, data)
         close()
     } catch (failure) {
         if (request === operation) {
-            error.value = failureMessage(failure)
+            const timedOut = ['ECONNABORTED', 'ETIMEDOUT'].includes(failure.code)
+            error.value = timedOut ? 'Der Server hat noch nicht geantwortet. Mit „LF-Stand prüfen“ kannst du den aktuellen Stand abrufen.'
+                : failureMessage(failure, 'Das Trennen der Dropbox-Verbindung konnte nicht bestätigt werden. Bitte den LF-Stand prüfen.')
             unlinkState.value = { status: 'unknown' }
         }
     } finally {

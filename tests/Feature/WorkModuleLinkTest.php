@@ -480,6 +480,16 @@ function addModernExerciseFixture(object $context, bool $withMc = false, string 
     return $path;
 }
 
+function addLinkedExerciseStatusFixture(object $context, string $path): void
+{
+    $record = ['schema_version' => 1, 'kind' => 'leistungsfeststellung.status',
+        'schooltool' => ['work_id' => $context->work->id, 'course_id' => $context->course->id],
+        'folder_group' => '3B_Gruppe-2', 'scheduled_date' => '2026-10-06', 'prepared' => false,
+        'components' => ['aufgabenblatt' => ['included' => false, 'points' => null], 'multiple_choice' => ['included' => false, 'points' => null]],
+        'total_points' => null];
+    addEmailPreparationFile($context, $path.'/status.json', json_encode($record, JSON_THROW_ON_ERROR));
+}
+
 test('the workflow reads the stored folder check on a cold and a previously checked work without remote requests', function (): void {
     config(['cache.stores.file' => ['driver' => 'array']]);
     Cache::forgetDriver('file');
@@ -568,13 +578,11 @@ test('only an empty canonical or verifiably linked initial folder can be offered
     $path = addModernExerciseFixture($this);
     $folderId = 'id:folder'.hash('sha256', $path);
     $this->online = array_values(array_filter($this->online, fn (array $entry): bool => ! str_starts_with($entry['path_lower'] ?? '', mb_strtolower($path).'/')));
+    if (in_array($case, ['linked', 'read-only'], true)) {
+        addLinkedExerciseStatusFixture($this, $path);
+    }
     if ($case === 'linked') {
-        $record = ['schema_version' => 1, 'kind' => 'leistungsfeststellung.status',
-            'schooltool' => ['work_id' => $this->work->id, 'course_id' => $this->course->id],
-            'folder_group' => '3B_Gruppe-2', 'scheduled_date' => '2026-10-06', 'prepared' => false,
-            'components' => ['aufgabenblatt' => ['included' => false, 'points' => null], 'multiple_choice' => ['included' => false, 'points' => null]],
-            'total_points' => null];
-        addEmailPreparationFile($this, $path.'/status.json', json_encode($record, JSON_THROW_ON_ERROR));
+        $this->connection->update(['credentials' => $this->connection->credentials + ['scopes' => ['files.content.write']]]);
     }
     if ($case === 'occupied') {
         addEmailPreparationFile($this, $path.'/fremd.txt', 'fremd');
@@ -588,17 +596,43 @@ test('only an empty canonical or verifiably linked initial folder can be offered
         unset($entry);
     }
     $result = $this->getJson($this->url.'?include_exercise=1&refresh=1&date=2026-10-06')->assertOk();
-    $result->assertJsonPath('exercise.status', in_array($case, ['empty', 'linked'], true) ? 'missing' : 'unknown');
-    if (in_array($case, ['empty', 'linked'], true)) {
-        $result->assertJsonPath('exercise.reusable', $case);
+    $result->assertJsonPath('exercise.status', in_array($case, ['empty', 'linked', 'read-only'], true) ? 'missing' : 'unknown');
+    if (in_array($case, ['empty', 'linked', 'read-only'], true)) {
+        $result->assertJsonPath('exercise.reusable', $case === 'empty' ? 'empty' : 'linked');
     }
     $canUnlink = in_array($case, ['empty', 'linked'], true);
     $version = $this->getJson($this->url.'?include_unlink_status=1')->assertOk()
-        ->assertJsonPath('unlink_status.status', $canUnlink ? 'available' : 'unknown')->json('link_version');
+        ->assertJsonPath('unlink_status.status', $canUnlink ? 'available' : ($case === 'read-only' ? 'blocked' : 'unknown'))->json('link_version');
     $this->postJson($this->url.'/folder', ['unlink' => true, 'link_version' => $version])->assertStatus($canUnlink ? 200 : 409);
-    expect(collect($this->online)->contains('id', $folderId))->toBeTrue();
-    Http::assertNotSent(fn (Request $request): bool => preg_match('#/files/(upload|delete|move|create)#', $request->url()) === 1);
-})->with(['empty', 'linked', 'occupied', 'shared']);
+    expect(collect($this->online)->contains('id', $folderId))->toBe($case !== 'linked')
+        ->and($this->deletedIds ?? [])->toBe($case === 'linked' ? [$folderId] : []);
+})->with(['empty', 'linked', 'read-only', 'occupied', 'shared']);
+
+test('unlink retries a verified exam removal after a Dropbox failure and keeps unrelated folders', function (bool $responseLost): void {
+    linkExerciseFixture($this);
+    $path = addModernExerciseFixture($this);
+    $folderId = 'id:folder'.hash('sha256', $path);
+    $this->online = array_values(array_filter($this->online, fn (array $entry): bool => ! str_starts_with($entry['path_lower'], mb_strtolower($path).'/')));
+    addLinkedExerciseStatusFixture($this, $path);
+    $foreignPath = dirname($path).'/anderer Ordner';
+    $this->online[] = ['.tag' => 'folder', 'id' => 'id:foreign', 'name' => basename($foreignPath),
+        'path_lower' => mb_strtolower($foreignPath), 'path_display' => $foreignPath];
+    $this->connection->update(['credentials' => $this->connection->credentials + ['scopes' => ['files.content.write']]]);
+    $link = TeachingWorkModuleLink::query()->where('teaching_course_work_id', $this->work->id)->firstOrFail();
+    $legacy = TeachingWorkDropboxFolder::factory()->create(['dropbox_connection_id' => $this->connection->id,
+        'teaching_course_work_id' => $this->work->id, 'folder_id' => $folderId]);
+    $this->failDeleteAt = $responseLost ? 0 : 1;
+    $this->loseDeleteResponseAt = $responseLost ? 1 : 0;
+    $request = ['unlink' => true, 'link_version' => $this->getJson($this->url)->assertOk()->json('link_version')];
+
+    $this->postJson($this->url.'/folder', $request)->assertUnprocessable();
+    expect($link->fresh())->not->toBeNull()->and($legacy->fresh())->not->toBeNull();
+
+    $this->postJson($this->url.'/folder', $request)->assertOk()->assertJsonPath('module_link', null);
+    expect($legacy->fresh())->toBeNull()
+        ->and($this->deletedIds)->toBe([$folderId])
+        ->and(collect($this->online)->pluck('id'))->toContain('id:handshake', 'id:foreign');
+})->with([false, true]);
 
 test('the new preparation exposes only the verified common PDF for read-only preview', function (): void {
     linkExerciseFixture($this);
@@ -2165,9 +2199,11 @@ test('clearing the selected exercise preserves the linked folder and the work be
     $this->getJson($this->url.'?include_exercise=1&date=2026-10-06')->assertOk()->assertJsonPath('exercise.status', 'missing')
         ->assertJsonPath('exercise.reusable', 'linked');
     $this->getJson($this->url.'?include_unlink_status=1')->assertOk()->assertJsonPath('unlink_status.status', 'available');
-    $beforeUnlink = $this->online;
     $this->postJson($this->url.'/folder', $unlink)->assertOk()->assertJsonPath('module_link', null);
-    expect($this->online)->toBe($beforeUnlink)->and($this->work->fresh()->getAttributes())->toBe($before);
+    expect(collect($this->online)->contains('id', $id))->toBeFalse()
+        ->and($this->deletedIds)->toContain($id)
+        ->and(collect($this->online)->contains('id', 'id:handshake'))->toBeTrue()
+        ->and($this->work->fresh()->getAttributes())->toBe($before);
 })->with(['none', 'contents', 'verification']);
 
 test('deleting a work removes a verified legacy exam folder', function (): void {

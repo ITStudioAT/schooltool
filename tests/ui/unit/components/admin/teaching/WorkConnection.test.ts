@@ -117,7 +117,7 @@ it('opens the saved folder dialog and unlinks only its work while updating conte
 
         await chooseUnlink(status)
 
-        expect(post).toHaveBeenCalledExactlyOnceWith('/api/admin/teaching/course_works/65/dropbox/folder', { unlink: true, link_version: saved.link_version }, { timeout: 45000 })
+        expect(post).toHaveBeenCalledExactlyOnceWith('/api/admin/teaching/course_works/65/dropbox/folder', { unlink: true, link_version: saved.link_version }, { timeout: 120000 })
         expect(button(wrapper, 'Verbindung')).toBeUndefined()
         expect(button(wrapper, 'Lernmodul auswählen')).toBeDefined()
         expect(status.get('[role="img"]').attributes('color')).toBe('error')
@@ -140,6 +140,52 @@ it('keeps a saved assignment and its copied context after a rejected unlink', as
         await context.get('button').trigger('click')
         await flushPromises()
         expect(writeText.mock.calls[0][0]).toContain('Ordner: verknüpft')
+    } finally { wrapper.unmount() }
+})
+
+it('keeps waiting for an unlink response after 45 seconds', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    const post = vi.fn((_url, _body, { timeout }) => new Promise((resolve, reject) => {
+        const deadline = setTimeout(() => reject({ code: 'ECONNABORTED' }), timeout)
+        setTimeout(() => {
+            clearTimeout(deadline)
+            resolve({ data: unlinked })
+        }, 52600)
+    }))
+    const { wrapper, status } = mountConnection(post)
+    try {
+        await flushPromises()
+        await chooseUnlink(status)
+        await vi.advanceTimersByTimeAsync(45000)
+        expect(status.get('[role="status"]').text()).toContain('Dropbox-Verbindung wird geprüft und getrennt')
+        expect(button(status, 'Verbindung trennen').attributes('disabled')).toBeDefined()
+        expect(status.find('[role="alert"]').exists()).toBe(false)
+
+        await vi.advanceTimersByTimeAsync(7600)
+        expect(status.find('[role="dialog"]').exists()).toBe(false)
+        expect(button(wrapper, 'Lernmodul auswählen')).toBeDefined()
+        expect(post).toHaveBeenCalledOnce()
+    } finally {
+        wrapper.unmount()
+        vi.useRealTimers()
+    }
+})
+
+it('adopts a completed unlink on status check when the original response timed out', async () => {
+    const post = vi.fn().mockRejectedValue({ code: 'ECONNABORTED' })
+    const { wrapper, status } = mountConnection(post)
+    try {
+        await flushPromises()
+        await chooseUnlink(status)
+        expect(status.get('[role="alert"]').text()).toContain('Der Server hat noch nicht geantwortet.')
+        vi.mocked(axios.get).mockResolvedValueOnce({ data: unlinked })
+
+        await button(status, 'LF-Stand prüfen').trigger('click')
+        await flushPromises()
+
+        expect(status.find('[role="dialog"]').exists()).toBe(false)
+        expect(button(wrapper, 'Lernmodul auswählen')).toBeDefined()
+        expect(post).toHaveBeenCalledOnce()
     } finally { wrapper.unmount() }
 })
 
@@ -180,7 +226,7 @@ it('blocks known assessments and only rechecks on request before allowing an exp
         get.mockResolvedValueOnce({ data: { ...saved, unlink_status: { status: 'unknown', message: 'Die LF-Löschung ist noch nicht bestätigt.' } } })
         await button(status, 'LF-Stand prüfen').trigger('click')
         await flushPromises()
-        expect(get).toHaveBeenCalledExactlyOnceWith('/api/admin/teaching/course_works/65/dropbox', { timeout: 45000, params: { include_unlink_status: 1 } })
+        expect(get).toHaveBeenCalledExactlyOnceWith('/api/admin/teaching/course_works/65/dropbox', { timeout: 120000, params: { include_unlink_status: 1 } })
         expect(status.text()).toContain('Die LF-Löschung ist noch nicht bestätigt.')
         expect(button(status, 'Verbindung trennen').attributes('disabled')).toBeDefined()
 
@@ -240,5 +286,17 @@ it.each([
         expect(button(wrapper, 'Lernmodul auswählen')).toBeUndefined()
         await button(wrapper, 'Prüfungsordner erneut anlegen').trigger('click')
         expect(wrapper.emitted('link')).toEqual([[work]])
+    } finally { wrapper.unmount() }
+})
+
+it.each([
+    { exercise: { status: 'unknown' } },
+    { exercise: { status: 'missing', reusable: 'linked' } },
+    { exercise: { status: 'found' }, link_preparation: { status: 'partial' } },
+])('does not offer folder recreation without a current failure or a missing folder', async status => {
+    const { wrapper } = mountConnection(vi.fn(), { ...saved, ...status })
+    try {
+        await flushPromises()
+        expect(button(wrapper, 'Prüfungsordner erneut anlegen')).toBeUndefined()
     } finally { wrapper.unmount() }
 })
