@@ -4,6 +4,7 @@ import { createTestingPinia } from '@pinia/testing'
 import { createVuetify } from 'vuetify'
 import { VBtn, VDialog } from 'vuetify/components'
 import WorkExerciseExport from '@/pages/admin/teaching/overview/components/WorkExerciseExport.vue'
+import { forgetAssessmentRun } from '@/helpers/workAssessmentRun'
 import { clearWorkDropboxStates, loadWorkExercise, workDropboxStates, workExerciseCheck } from '@/helpers/workDropbox'
 
 const work = { id: 65, teaching_course_id: 2, title: 'E-Mails' }
@@ -316,6 +317,7 @@ it('hides the preparation recheck until an automatic work has a module link', as
 })
 
 afterEach(() => {
+    forgetAssessmentRun('7:2:65')
     clearWorkDropboxStates(); vi.restoreAllMocks(); vi.unstubAllGlobals(); document.body.innerHTML = ''
     if (originalExecCommand) Object.defineProperty(document, 'execCommand', originalExecCommand)
     else delete (document as any).execCommand

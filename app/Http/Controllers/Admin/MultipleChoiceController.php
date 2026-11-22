@@ -454,6 +454,7 @@ class MultipleChoiceController extends Controller
         $data = $request->validate(['title' => ['required', 'string', 'max:255']]);
         $updated = DB::transaction(function () use ($test, $data): McTest {
             $locked = McTest::query()->lockForUpdate()->findOrFail($test->id);
+            $locked->assertWorkReleaseOpen();
             McTest::query()->whereKey($locked->id)->update(['title' => trim($data['title'])]);
 
             return $locked->fresh();
@@ -492,6 +493,7 @@ class MultipleChoiceController extends Controller
         $data = $request->validate(['enabled' => ['required', 'boolean']]);
         DB::transaction(function () use ($test, $data): void {
             $locked = McTest::query()->lockForUpdate()->findOrFail($test->id);
+            $locked->assertWorkReleaseOpen();
             McTest::query()->whereKey($locked->id)->update(['access_links_disabled_at' => $data['enabled'] ? null : ($locked->access_links_disabled_at ?? now())]);
         });
 
@@ -504,6 +506,7 @@ class MultipleChoiceController extends Controller
         $data = $request->validate(['enabled' => ['required', 'boolean']]);
         DB::transaction(function () use ($test, $data): void {
             $locked = McTest::query()->lockForUpdate()->findOrFail($test->id);
+            $locked->assertWorkReleaseOpen();
             if ($locked->status !== 'published') {
                 throw ValidationException::withMessages(['test' => 'Der Test ist noch nicht freigegeben.']);
             }
@@ -575,7 +578,7 @@ class MultipleChoiceController extends Controller
         $this->authorizeOwned($test);
         $data = $request->validate(['remaining_seconds' => ['required', 'integer', 'min:1', 'max:86400']]);
         $test = $this->tests->changeRemainingTime($test, $data['remaining_seconds']);
-        FinalizeMultipleChoiceTest::dispatch((int) $test->id)->delay($test->ends_at)->afterCommit();
+        FinalizeMultipleChoiceTest::dispatch((int) $test->id)->delay($test->capDeadline($test->ends_at))->afterCommit();
 
         return response()->json(['test' => $test, 'server_now' => now()->toIso8601String()]);
     }
@@ -623,7 +626,10 @@ class MultipleChoiceController extends Controller
         abort_unless((int) $attempt->test_id === (int) $test->id, 404);
         $data = $request->validate(['closes_at' => ['present', 'nullable', 'date', 'after:now']]);
         $attempt = $this->tests->changeClosingDeadline($attempt, $data['closes_at']);
-        FinalizeMultipleChoiceTest::dispatch((int) $test->id)->delay($attempt->effectiveDeadline($test))->afterCommit();
+        $test = $attempt->test;
+        if ($test->paused_at === null) {
+            FinalizeMultipleChoiceTest::dispatch((int) $test->id)->delay($attempt->effectiveDeadline($test))->afterCommit();
+        }
 
         return response()->json(['attempts' => $this->attemptPayloads($test)]);
     }
@@ -632,14 +638,15 @@ class MultipleChoiceController extends Controller
     {
         $this->authorizeOwned($test);
 
-        return response()->json(['test' => $test, 'attempts' => $this->attemptPayloads($test), 'can_edit_settings' => $test->status === 'published' && $test->paused_at === null && $test->starts_at === null && ! $test->attempts()->where(fn ($query) => $query->whereNotNull('started_at')->orWhereNotNull('completed_at'))->exists(), 'question_pool_count' => count($test->snapshot['questions'] ?? []), 'can_reopen_attempts' => Schema::hasColumns('mc_attempts', ['reopened_until', 'reopen_history']), 'server_now' => now()->toIso8601String()])->header('Cache-Control', 'private, no-store');
+        return response()->json(['test' => [...$test->toArray(), 'work_closes_at' => $test->workDeadline()?->toIso8601String()],
+            'attempts' => $this->attemptPayloads($test), 'can_edit_settings' => ! $test->workReleaseEnded() && $test->status === 'published' && $test->paused_at === null && $test->starts_at === null && ! $test->attempts()->where(fn ($query) => $query->whereNotNull('started_at')->orWhereNotNull('completed_at'))->exists(), 'question_pool_count' => count($test->snapshot['questions'] ?? []), 'can_reopen_attempts' => ! $test->workReleaseEnded() && Schema::hasColumns('mc_attempts', ['reopened_until', 'reopen_history']), 'server_now' => now()->toIso8601String()])->header('Cache-Control', 'private, no-store');
     }
 
     public function countdown(Request $request, McTest $test): JsonResponse
     {
         $this->authorizeOwned($test);
         $test = $this->tests->startCountdown($test);
-        FinalizeMultipleChoiceTest::dispatch((int) $test->id)->delay($test->ends_at)->afterCommit();
+        FinalizeMultipleChoiceTest::dispatch((int) $test->id)->delay($test->capDeadline($test->ends_at))->afterCommit();
 
         return response()->json(['test' => $test, 'server_now' => now()->toIso8601String()]);
     }
@@ -774,6 +781,7 @@ class MultipleChoiceController extends Controller
         foreach ($attemptIds as $attemptId) {
             $wasSent = DB::transaction(function () use ($attemptId, $test, $addressForm, $messages): bool {
                 $lockedTest = McTest::query()->lockForUpdate()->findOrFail($test->id);
+                $lockedTest->assertWorkReleaseOpen();
                 if ($lockedTest->status !== 'published' || $lockedTest->access_links_disabled_at !== null || ($lockedTest->start_mode !== 'individual' && $lockedTest->ends_at !== null && $lockedTest->ends_at->isPast())) {
                     throw ValidationException::withMessages(['test' => ['Einladungen können nur für einen freigegebenen, noch nicht beendeten Test versendet werden.']]);
                 }
@@ -935,8 +943,12 @@ class MultipleChoiceController extends Controller
             if ($attempt->completed_at !== null) {
                 $status = $attempt->completion_reason === 'submitted' ? 'submitted' : 'timeout';
             }
-            if ($attempt->started_at === null && $attempt->ready_at === null && $attempt->submitted_at === null) {
+            $fixed = $attempt->fixedWorkDeadline($test);
+            if ($attempt->started_at === null && $attempt->ready_at === null && $attempt->submitted_at === null
+                && ! $fixed?->isNowOrPast()) {
                 $status = 'not_started';
+            } elseif ($attempt->completed_at === null && $fixed?->isNowOrPast()) {
+                $status = 'timeout';
             }
             $questions = $attempt->questions ?? [];
             $answers = $attempt->answers ?? [];
@@ -961,7 +973,13 @@ class MultipleChoiceController extends Controller
                 ];
             }, $questions);
 
-            return [...$attempt->toArray(), 'individual_paused_at' => $attempt->individualPausedAt()?->toIso8601String(), 'control_revision' => $attempt->controlRevision(), 'activity' => ($test->exam_mode || $attempt->activity_state !== null) ? app(McAttemptActivityService::class)->summary($attempt, $test) : null, 'effective_ends_at' => $attempt->effectiveDeadline($test)?->toIso8601String(), 'closing_deadline' => $attempt->closingDeadline($test)?->toIso8601String(), 'access_url' => $test->status === 'published' && $test->access_links_disabled_at === null ? $this->invitationUrl($attempt) : null, 'status' => $status, 'questions' => $questions, 'answers' => $answers, 'evaluation' => $evaluation, 'question_results' => $evaluation];
+            return [...$attempt->toArray(), 'individual_paused_at' => $attempt->individualPausedAt()?->toIso8601String(),
+                'control_revision' => $attempt->controlRevision(),
+                'activity' => ($test->exam_mode || $attempt->activity_state !== null) ? app(McAttemptActivityService::class)->summary($attempt, $test) : null,
+                'effective_ends_at' => $test->hasWorkDeadlineConflict() ? null : $attempt->effectiveDeadline($test)?->toIso8601String(),
+                'fixed_closes_at' => $fixed?->toIso8601String(), 'closing_deadline' => $attempt->closingDeadline($test)?->toIso8601String(),
+                'access_url' => $test->status === 'published' && $test->access_links_disabled_at === null ? $this->invitationUrl($attempt) : null,
+                'status' => $status, 'questions' => $questions, 'answers' => $answers, 'evaluation' => $evaluation, 'question_results' => $evaluation];
         })->all();
     }
 }

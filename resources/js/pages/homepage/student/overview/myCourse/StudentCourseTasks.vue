@@ -28,6 +28,7 @@
                             <div class="task-title-text"><span>{{ task.has_assessment ? 'Leistungsfeststellung' : 'Aufgabe' }}</span><h3>{{ task.title || 'Leistungsfeststellung' }}</h3></div>
                         </div>
                         <span v-if="pendingTaskLabels[task.status]" class="task-status">{{ pendingTaskLabels[task.status] }}</span>
+                        <span v-else-if="task.status === 'ended'" class="task-status task-status--ended">Freigabe beendet</span>
                         <span v-else class="task-status task-status--released">{{ task.status === 'email_delivery' ? 'Per E-Mail bereitgestellt' : 'Freigegeben' }}</span>
                     </header>
                     <dl class="task-announcement-details">
@@ -58,14 +59,21 @@
                             <dd v-if="deadlineExpired(task.deadline)" class="task-deadline-expired">Abgelaufen</dd>
                         </div>
                     </dl>
-                    <div v-if="!pendingTaskLabels[task.status] && task.instructions" class="task-description">
-                        <h4>Das ist zu tun</h4>
+                    <div v-if="mustOpenTask(task)" class="task-materials">
+                        <v-btn min-height="44" variant="tonal" prepend-icon="mdi-file-document-outline"
+                            :loading="openingTaskId === task.id" :disabled="openingTaskId !== null" @click="openTask(task)">
+                            Aufgabenstellung öffnen
+                        </v-btn>
+                        <v-alert v-if="openTaskError?.id === task.id" type="error" variant="tonal" class="mt-3" role="alert">{{ openTaskError.message }}</v-alert>
+                    </div>
+                    <div v-if="!pendingTaskLabels[task.status] && !mustOpenTask(task) && task.instructions" class="task-description">
+                        <h4>{{ task.status === 'ended' ? 'Aufgabentext' : 'Das ist zu tun' }}</h4>
                         <p class="task-instructions">{{ task.instructions }}</p>
                     </div>
                     <div v-if="!pendingTaskLabels[task.status] && (task.files?.length || task.tests?.length)" class="task-materials">
                         <h4>{{ task.files?.length && task.tests?.length ? 'Unterlagen & Test' : task.tests?.length ? 'MC-Test' : 'Unterlagen' }}</h4>
                         <div class="task-actions">
-                            <v-btn v-for="file in task.files" :key="file.id" variant="outlined" class="task-action task-action--file" @click="openPdf(task, file)">
+                            <v-btn v-for="file in mustOpenTask(task) ? [] : task.files" :key="file.id" variant="outlined" class="task-action task-action--file" @click="openPdf(task, file)">
                                 <v-icon size="22" aria-hidden="true">mdi-file-pdf-box</v-icon>
                                 <span class="task-action-text"><strong>PDF öffnen</strong><span>{{ file.name }}</span></span>
                                 <v-icon size="20" aria-hidden="true">mdi-eye-outline</v-icon>
@@ -111,7 +119,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { configureEcho, echo, echoIsConfigured } from '@laravel/echo-vue'
 import { resolveAdminEchoConfig } from '@/apps/adminEchoConfig'
-import { download, index } from '@/actions/App/Http/Controllers/Student/CourseWorkTaskController'
+import { download, index, start } from '@/actions/App/Http/Controllers/Student/CourseWorkTaskController'
 import { workDeadlineExpired } from '@/helpers/date'
 import CurriculumPdfPreview from '@/pages/admin/teaching/curricula/CurriculumPdfPreview.vue'
 import StudentWorkSubmission from './StudentWorkSubmission.vue'
@@ -126,6 +134,8 @@ const deadlineNow = ref(Date.now())
 const loading = ref(false)
 const manualReloading = ref(false)
 const error = ref('')
+const openingTaskId = ref(null)
+const openTaskError = ref(null)
 const pdfDialog = ref(false)
 const pdfLoading = ref(false)
 const pdfError = ref('')
@@ -144,6 +154,27 @@ let deadlineChannelName = ''
 let subscribedDeadlineChannel = ''
 let deadlineSignalPending = false
 let taskRefreshTimer
+
+function mustOpenTask(task) {
+    return task.status === 'released' && task.can_start_task && !task.task_started
+        && (task.instructions || task.files?.length) && (!task.deadline || !deadlineExpired(task.deadline))
+}
+
+async function openTask(task) {
+    if (openingTaskId.value !== null || !mustOpenTask(task)) return
+    openingTaskId.value = task.id
+    openTaskError.value = null
+    try {
+        const { data } = await axios.post(start.url({ courseId: props.courseId, course_work: task.id }))
+        if (data?.started !== true) throw new Error()
+        const current = tasks.value.find(item => item.id === task.id)
+        if (current) current.task_started = true
+    } catch (failure) {
+        openTaskError.value = { id: task.id, message: failure.response?.data?.message || 'Die Aufgabenstellung konnte nicht geöffnet werden.' }
+    } finally {
+        openingTaskId.value = null
+    }
+}
 
 function leaveDeadlineChannel() {
     if (!subscribedDeadlineChannel) return
@@ -410,6 +441,7 @@ onBeforeUnmount(() => {
 .task-title-text h3 { color: #18243b; font-size: 1.2rem; line-height: 1.3; font-weight: 800; overflow-wrap: anywhere; }
 .task-status { flex-shrink: 0; align-self: flex-start; padding: 7px 11px; border-radius: 8px; background: #fff4db; color: #714a0e; font-size: .82rem; font-weight: 700; }
 .task-status--released { color: #225c42; background: #e6f5ec; }
+.task-status--ended { color: #394458; background: #edf0f5; }
 .task-announcement-details { display: flex; flex-wrap: wrap; gap: 12px 24px; padding: 0 24px 22px; color: #18243b; }
 .task-announcement-details:empty { display: none; }
 .task-announcement-details dt { color: #53617a; font-size: .78rem; font-weight: 700; }

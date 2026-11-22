@@ -36,6 +36,7 @@ use App\Services\TeachingWorkMarkdownImport;
 use App\Services\TeachingWorkMultipleChoice;
 use App\Services\TeachingWorkRefreshProgress;
 use App\Services\TeachingWorkStudentDistribution;
+use App\Services\TeachingWorkSubmissions;
 use Closure;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\JsonResponse;
@@ -90,7 +91,9 @@ class CourseWorkController extends Controller
         $actor = $this->userHasRole(['admin', 'teaching_admin', 'teacher']);
         abort_unless($actor && $course_work->teachingCourse, 403);
         $this->authorizeTeachingCourseAccess($course_work->teachingCourse, $actor);
-        $data = $request->validate(['publish' => ['required', 'boolean'], 'release_now' => ['sometimes', 'boolean'], 'release_saved' => ['sometimes', 'boolean'],
+        $data = $request->validate(['action' => ['sometimes', 'in:end', 'prohibits:publish'],
+            'confirmed' => ['exclude_unless:action,end', 'required', 'accepted'],
+            'publish' => ['required_without:action', 'boolean'], 'release_now' => ['sometimes', 'boolean'], 'release_saved' => ['sometimes', 'boolean'],
             'retain_paused_release' => ['sometimes', 'boolean'], 'instructions' => ['nullable', 'string', 'max:20000'],
             'files' => ['sometimes', 'array', 'max:5'], 'files.*' => ['file', 'extensions:pdf', 'mimetypes:application/pdf', 'max:8192'],
             'retained_file_ids' => ['sometimes', 'array', 'max:5'], 'retained_file_ids.*' => ['required', 'uuid', 'distinct'],
@@ -105,6 +108,15 @@ class CourseWorkController extends Controller
                 });
                 $work = TeachingCourseWork::query()->with('teachingCourse')->lockForUpdate()->findOrFail($course_work->id);
                 $this->authorizeTeachingCourseAccess($work->teachingCourse, $actor);
+                if (($data['action'] ?? null) === 'end') {
+                    if (! $work->studentReleaseEnded()) {
+                        abort_unless(hash_equals($distribution->version($work), $data['expected_version']), 409, 'Die Arbeit wurde inzwischen geändert. Bitte neu öffnen.');
+                        $distribution->endStudentRelease($work, (int) $actor->id);
+                    }
+
+                    return $entries->serializeWork($work->load('teachingCourseWorkGroupStudents'));
+                }
+                $work->assertStudentReleaseOpen();
                 abort_unless(hash_equals($distribution->version($work), $data['expected_version']), 409, 'Die Arbeit wurde inzwischen geändert. Bitte neu öffnen.');
                 if ($data['publish']) {
                     $releaseNow = (bool) ($data['release_now'] ?? false);
@@ -123,7 +135,7 @@ class CourseWorkController extends Controller
                 }
 
                 return $entries->serializeWork($work->load('teachingCourseWorkGroupStudents'));
-            });
+            }, ($data['action'] ?? null) === 'end' ? 3 : 1);
         } catch (Throwable $exception) {
             if ($committed) {
                 report($exception);
@@ -775,7 +787,17 @@ class CourseWorkController extends Controller
             $this->authorizeTeachingCourseAccess($work->teachingCourse, $actor);
 
             $exercise = ($data['purpose'] ?? null) === 'exercise';
-            abort_unless($exercise || $work->automationEnabled(), 422, 'Automatik ist für diese Arbeit ausgeschaltet.');
+            if (($data['purpose'] ?? null) === 'submission_collection') {
+                TeachingWorkSubmissions::assertCollectionOpen($work);
+                $method = TeachingWorkSubmissions::method($work);
+                if (($method['channel'] ?? null) === 'portal' || ($method === null && ! empty($work->status['portal_submissions']))) {
+                    return response()->json(['data' => $export->portalSubmissionCollection($work, $data['date'] ?? null)])
+                        ->header('Cache-Control', 'private, no-store');
+                }
+            }
+            abort_unless($exercise || $work->automationEnabled()
+                || (($data['purpose'] ?? null) === 'submission_collection' && ($method['channel'] ?? null) === 'email'),
+                422, 'Automatik ist für diese Arbeit ausgeschaltet.');
 
             if (($data['purpose'] ?? null) === 'evaluation') {
                 return response()->json(['data' => $export->buildEvaluation($work, $actor, $data['evaluation_mode'] === 'repeat', $data['date'] ?? null)])
@@ -788,11 +810,15 @@ class CourseWorkController extends Controller
             }
 
             if (($data['purpose'] ?? null) === 'email_preparation') {
+                $work->assertStudentReleaseOpen();
+
                 return response()->json(['data' => $export->buildEmailPreparation($work, $actor, $data['address_form'], $data['date'] ?? null)])
                     ->header('Cache-Control', 'private, no-store');
             }
 
             if (($data['purpose'] ?? null) === 'email_dispatch') {
+                $work->assertStudentReleaseOpen();
+
                 return response()->json(['data' => $export->buildEmailDispatch($work, $actor, $data['delivery_mode'], $data['date'] ?? null)])
                     ->header('Cache-Control', 'private, no-store');
             }
@@ -1360,6 +1386,7 @@ class CourseWorkController extends Controller
             try {
                 $course_work = DB::transaction(function () use ($course_work, $validated, $auth_user, $entrySyncService, $titleOnly, $expectedDeadline): TeachingCourseWork {
                     $locked = TeachingCourseWork::query()->with('teachingCourse')->lockForUpdate()->findOrFail($course_work->id);
+                    app(TeachingAssessmentRuns::class)->assertNoActiveCreation($locked);
                     abort_if(isset($locked->status['deletion_receipt']), 409,
                         'Die Löschung ist noch nicht abgeschlossen. Bitte die Zuordnung prüfen und erneut löschen.');
                     abort_unless($locked->title === $course_work->getOriginal('title'), 409,
@@ -1401,6 +1428,7 @@ class CourseWorkController extends Controller
         } else {
             $course_work = DB::transaction(function () use ($course_work, $validated, $entrySyncService, $expectedDeadline): TeachingCourseWork {
                 $locked = TeachingCourseWork::query()->lockForUpdate()->findOrFail($course_work->id);
+                app(TeachingAssessmentRuns::class)->assertNoActiveCreation($locked);
                 abort_if(isset($locked->status['deletion_receipt']), 409,
                     'Die Löschung ist noch nicht abgeschlossen. Bitte die Zuordnung prüfen und erneut löschen.');
                 app(TeachingWorkDeadlineSync::class)->saveWorkWithDeadline($locked, $validated, expected: $expectedDeadline);
@@ -1470,6 +1498,7 @@ class CourseWorkController extends Controller
         try {
             DB::transaction(function () use ($course_work, $actor, $deleteWorkOnly): void {
                 $work = TeachingCourseWork::query()->lockForUpdate()->findOrFail($course_work->id);
+                app(TeachingAssessmentRuns::class)->assertNoActiveCreation($work);
                 try {
                     app(TeachingWorkDeletion::class)->prepare($work, $actor, createReceipt: true);
                 } catch (TeachingWorkDeletionConflict $exception) {
@@ -1479,6 +1508,7 @@ class CourseWorkController extends Controller
             if ($skippedReason === null) {
                 DB::transaction(function () use ($course_work, $entrySyncService, $actor, $progressService, $deleteWorkOnly, &$progress, &$filesMayHaveChanged): void {
                     $work = TeachingCourseWork::query()->lockForUpdate()->findOrFail($course_work->id);
+                    app(TeachingAssessmentRuns::class)->assertNoActiveCreation($work);
                     try {
                         $plan = app(TeachingWorkDeletion::class)->prepare($work, $actor, createReceipt: false);
                     } catch (TeachingWorkDeletionConflict $exception) {
@@ -1498,7 +1528,8 @@ class CourseWorkController extends Controller
                         app(TeachingWorkCollectionStatus::class)->forget($work);
                         foreach ($targets['folders'] as $folder) {
                             $filesMayHaveChanged = true;
-                            app(DropboxWorkImport::class)->deleteExamFolder($targets['connection'], $folder['id'], $folder['path']);
+                            app(DropboxWorkImport::class)->deleteExamFolder($targets['connection'], $folder['id'], $folder['path'],
+                                contentsVerified: count($targets['folders']) === 1);
                         }
                     }
                     $progress[$targets && $targets['folders'] !== [] ? 'completed' : 'skipped'][] = 'delete_folders';

@@ -235,6 +235,60 @@ class TeachingDirectAssessment
     }
 
     /** @return array<string, mixed> */
+    public function initializeNewLinkedFolder(TeachingCourseWork $work, User $actor, ?array $module): array
+    {
+        $work = $work->fresh('teachingCourse');
+        $dates = $this->targets->dates($work);
+        abort_unless(count($dates) === 1, 422, 'Die Verknüpfung ist gespeichert. Der Durchführungstermin ist nicht eindeutig; bitte zuerst den Termin der Arbeit festlegen.');
+        $link = $this->modules->current($work);
+        $connection = $this->dropbox->connection($actor);
+        abort_unless($link && $connection->id === $link->dropbox_connection_id && $connection->account_id === $link->account_id
+            && $this->dropbox->canWrite($connection) && $work->automationEnabled(),
+            409, 'Modulverknüpfung oder Schreibfreigabe ist nicht bestätigt.');
+        $retry = $module === null;
+        $module ??= $this->dropbox->metadata($connection, $link->folder_id);
+        abort_unless($module['id'] === $link->folder_id && $module['path_lower'] === mb_strtolower($link->folder_path)
+            && empty($module['sharing_info']) && ! $this->dropbox->isTemporaryFolderPath($module['path_lower']),
+            409, 'Das Lernmodul ist geteilt oder wurde während der Prüfung geändert.');
+
+        $context = $this->context($work, $actor, $dates[0]);
+        $this->validateContext($context);
+        $this->targets->assertUnique($work, $link, $dates[0], $context['course']['folder_group']);
+        $this->assertUnreleased($work);
+
+        $root = $this->dropbox->findExerciseChildFolder($connection, $module, 'Leistungsfeststellungen')
+            ?? $this->dropbox->createExerciseChildFolder($connection, $module['id'], 'Leistungsfeststellungen', $module['path_lower'], verifyCreated: false);
+        $name = $this->folderName($context);
+        $status = $this->json($this->initialStatus($work, $context));
+        $folder = $retry ? $this->dropbox->findExerciseChildFolder($connection, $root, $name) : null;
+        $writeStatus = $folder === null || ! $this->hasInitialStatus($connection, $folder, $status);
+        $folder ??= $this->dropbox->createExerciseChildFolder($connection, $root['id'], $name, $root['path_lower'], verifyCreated: false);
+        if ($writeStatus) {
+            $this->dropbox->writeExerciseDocument($connection, $folder['id'], 'status.json', $status,
+                revision: null, expectedFolderPath: $folder['path_lower']);
+        }
+        $this->modules->rememberInitializedExercise($connection, $work, $link, $dates[0], $folder, lock: false);
+
+        return ['status' => 'initialized', 'folder' => $folder];
+    }
+
+    private function hasInitialStatus(DropboxConnection $connection, array $folder, string $status): bool
+    {
+        $children = $this->children($connection, $folder['id'], includeSharing: true);
+        if ($children === []) {
+            return false;
+        }
+        $file = $children[0];
+        abort_unless(count($children) === 1 && ($file['.tag'] ?? null) === 'file' && $file['name'] === 'status.json'
+            && ($file['path_lower'] ?? null) === $folder['path_lower'].'/status.json' && is_string($file['rev'] ?? null)
+            && empty($file['sharing_info']) && ($file['has_explicit_shared_members'] ?? false) !== true,
+            409, 'Der vorhandene Prüfungsordner enthält andere oder geteilte Daten. Bitte die Zuordnung prüfen.');
+        $this->verifyFile($connection, $folder['id'], 'status.json', $status, $file['rev']);
+
+        return true;
+    }
+
+    /** @return array<string, mixed> */
     public function store(TeachingCourseWork $work, User $actor, string $id, ?\Closure $progress = null): array
     {
         $key = $this->key($work, $actor, $id);
@@ -351,16 +405,18 @@ class TeachingDirectAssessment
                 $statusConfirmed = true;
                 $phase = 'documents';
                 $progress?->__invoke('completed', 'assessment_folder');
-                $progress?->__invoke('start', 'assessment_documents');
+                $progress?->__invoke('start', 'assessment_documents', 'Kandidatenbereich anlegen oder bestätigen');
                 $phase = 'candidate_root';
                 $candidates = $this->ensureFolder($connection, $folder, 'Kandidaten', $alreadyPrepared);
                 $phase = 'criteria_markdown';
+                $progress?->__invoke('detail', 'assessment_documents', 'Beurteilungskriterien als Markdown und PDF bestätigen');
                 $this->ensureFile($connection, $folder['id'], 'Beurteilung.md', $template['documents']['criteria_markdown']['bytes'], $alreadyPrepared);
                 $phase = 'criteria_pdf';
                 $this->ensureFile($connection, $folder['id'], 'Beurteilung.pdf', $template['documents']['criteria']['bytes'], $alreadyPrepared);
                 $assignment = $template['documents']['assignment'];
                 if (! $alreadyPrepared) {
                     $phase = 'assignment_file';
+                    $progress?->__invoke('detail', 'assessment_documents', 'Gemeinsames Aufgabenblatt speichern und prüfen');
                     $this->ensureFile($connection, $folder['id'], $assignment['name'], $assignment['bytes'], false);
                 }
                 $copies = [];
@@ -374,10 +430,11 @@ class TeachingDirectAssessment
                     $activeCandidate = $index;
                     $phase = 'candidate_folder';
                     $candidateStep = 'assessment_candidate_'.$index;
-                    $progress?->__invoke('start', $candidateStep);
+                    $progress?->__invoke('start', $candidateStep, 'Persönlichen Prüfungsordner anlegen oder bestätigen');
                     $personFolder = $this->ensureFolder($connection, $candidates, $this->personName($person), $alreadyPrepared, $candidateEntries);
                     $createdFolders[] = [$personFolder, $candidates];
                     $sectionEntries = $this->children($connection, $personFolder['id']);
+                    $progress?->__invoke('detail', $candidateStep, 'Angaben, Abgaben und Auswertung vorbereiten, Aufgabenblatt bestätigen');
                     foreach (['Angaben', 'Abgaben', 'Auswertung'] as $section) {
                         $phase = 'candidate_subfolder';
                         $child = $this->ensureFolder($connection, $personFolder, $section, $alreadyPrepared, $sectionEntries);
@@ -394,7 +451,7 @@ class TeachingDirectAssessment
                 }
                 $activeCandidate = null;
                 $phase = 'verification';
-                $progress?->__invoke('start', 'assessment_verify');
+                $progress?->__invoke('start', 'assessment_verify', 'Unterlagen, Ordnerzuordnung und Abschlussstatus rückprüfen');
                 $this->verifyFile($connection, $folder['id'], 'Beurteilung.md', $template['documents']['criteria_markdown']['bytes']);
                 $this->verifyFile($connection, $folder['id'], 'Beurteilung.pdf', $template['documents']['criteria']['bytes']);
                 if (! $alreadyPrepared) {

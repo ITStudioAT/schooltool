@@ -39,6 +39,7 @@ requireMultipleChoiceTestDatabase();
 uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
+    $this->travelTo(CarbonImmutable::parse('2026-11-04 09:00', 'Europe/Vienna'));
     foreach (['teacher', 'student', 'admin', 'teaching_admin'] as $role) {
         Role::firstOrCreate(['name' => $role, 'guard_name' => 'web']);
     }
@@ -123,11 +124,10 @@ test('portal submissions retain files and enforce the saved method, release, ide
     $as($otherTeacher)->get($download)->assertForbidden();
     $response = $as($this->teacher)->get($download)->assertOk()->assertDownload('Mein Dokument.txt');
     expect($response->streamedContent())->toBe('Meine Übung');
-    $this->putJson($settings, $email + ['expected' => $portal])->assertOk();
-    $as($this->student)->getJson($this->tasksUrl)->assertJsonPath('tasks.0.submission_method', $email)
-        ->assertJsonPath('tasks.0.submission_files.0.id', $receipt['id'])->assertJsonPath('tasks.0.can_submit', false);
-    $this->postJson($uploadUrl, ['file' => $file()])->assertConflict();
-    $as($this->teacher)->putJson($settings, $portal + ['expected' => $email])->assertOk();
+    $this->putJson($settings, $email + ['expected' => $portal])->assertConflict()->assertJsonPath('submission_lock_reason', 'started');
+    $as($this->student)->getJson($this->tasksUrl)->assertJsonPath('tasks.0.submission_method', $portal)
+        ->assertJsonPath('tasks.0.submission_files.0.id', $receipt['id'])->assertJsonPath('tasks.0.can_submit', true);
+    $as($this->teacher);
     $this->postJson($this->publishUrl, ($this->payload)(['publish' => false]))->assertOk();
     $as($this->student)->deleteJson($uploadUrl.'/'.$receipt['id'])->assertConflict();
     $as($this->teacher)->postJson($this->publishUrl, ($this->payload)())->assertOk();
@@ -144,6 +144,84 @@ test('portal submissions retain files and enforce the saved method, release, ide
     $this->work->update(['status' => $status]);
     Storage::disk('local')->put('private/unrelated-document.txt', 'Nicht zugeordnet');
     $as($this->teacher)->get($download)->assertNotFound();
+});
+
+test('a deliberate portal opening locks both submission settings paths while listing a released task does not', function (): void {
+    $methodUrl = route('teaching.work-submission-method.update', $this->work);
+    $provisionUrl = route('teaching.work-provision-method.update', $this->work);
+    $startUrl = route('student.course-work.start', ['courseId' => $this->course->id, 'course_work' => $this->work]);
+    $portal = ['channel' => 'portal', 'email' => null];
+    $email = ['channel' => 'email', 'email' => 'abgabe@example.test'];
+    $as = function (User $user) {
+        Auth::forgetGuards();
+
+        return $this->actingAs($user, 'web');
+    };
+    $as($this->teacher)->putJson($methodUrl, $portal + ['expected' => null])->assertOk();
+    $this->postJson($this->publishUrl, ($this->payload)())->assertOk();
+    $as($this->student)->getJson($this->tasksUrl)->assertOk()->assertJsonPath('tasks.0.task_started', false);
+    $as($this->peer)->postJson($startUrl)->assertNotFound();
+    $as($this->teacher)->putJson($methodUrl, $email + ['expected' => $portal])->assertOk();
+    $this->putJson($methodUrl, ['channel' => null, 'expected' => $email])->assertUnprocessable();
+    $as($this->student)->postJson($startUrl)->assertOk()->assertJsonPath('started', true);
+    $this->postJson($startUrl)->assertOk();
+    $this->getJson($this->tasksUrl)->assertOk()->assertJsonPath('tasks.0.task_started', true);
+    $as($this->teacher)->putJson($methodUrl, $portal + ['expected' => $email])->assertConflict()->assertJsonPath('submission_lock_reason', 'started');
+    $this->putJson($methodUrl, ['channel' => 'email', 'email' => 'neu@example.test', 'expected' => $email])->assertConflict();
+    $this->putJson($provisionUrl, ['channel' => 'portal', 'expected' => null, 'submission' => $portal, 'expected_submission' => $email])
+        ->assertConflict()->assertJsonPath('current_submission', $email);
+    expect($this->work->fresh()->status['provision_method'] ?? null)->toBeNull();
+    $this->getJson('/api/admin/teaching/course_works/'.$this->work->id)->assertOk()->assertJsonPath('data.submission_lock_reason', 'started');
+});
+
+test('MC readiness keeps the choice editable and starting a test locks it even after reset', function (string $mode): void {
+    $test = studentTaskMcFixture($this->work, $this->teacher, [$this->student], 'published');
+    if ($mode === 'common') {
+        McTest::query()->whereKey($test->id)->update(['start_mode' => 'common', 'starts_at' => now()->addMinute(), 'ends_at' => now()->addMinutes(8)]);
+    }
+    $attempt = $test->attempts()->sole();
+    $service = app(McTestService::class);
+    $service->openAttempt($attempt);
+    expect($attempt->fresh()->started_at)->toBeNull();
+    $url = route('teaching.work-submission-method.update', $this->work);
+    $portal = ['channel' => 'portal', 'email' => null];
+    $email = ['channel' => 'email', 'email' => 'abgabe@example.test'];
+    $this->actingAs($this->teacher, 'web')->putJson($url, $portal + ['expected' => null])->assertOk();
+    $this->putJson($url, $email + ['expected' => $portal])->assertOk();
+    if ($mode === 'common') {
+        $this->travel(1)->minutes();
+        $service->openAttempt($attempt->fresh());
+    } else {
+        $service->startIndividual($attempt->fresh());
+    }
+    expect($attempt->fresh()->started_at)->not->toBeNull();
+    $this->putJson($url, $portal + ['expected' => $email])->assertConflict()->assertJsonPath('submission_lock_reason', 'started');
+    $service->controlAttempts($test->fresh(), [$attempt->id], 'reset', $this->teacher->id, [$attempt->id => $attempt->fresh()->controlRevision()]);
+    expect($attempt->fresh()->started_at)->toBeNull();
+    $this->putJson($url, $portal + ['expected' => $email])->assertConflict();
+})->with(['individual', 'common']);
+
+test('an email-only release can end after a confirmed work delivery but not after Mailpit', function (): void {
+    $mail = ['channel' => 'email', 'email' => 'abgabe@example.test'];
+    $row = ['student_id' => $this->student->id, 'state' => 'accepted', 'accepted_at' => now()->toIso8601String()];
+    $status = ['submission_method' => $mail, 'assignment_mail' => ['batches' => ['all' => ['transport' => 'mailpit', 'recipients' => [$row]]]]];
+    $this->work->update(['status' => $status]);
+    $this->actingAs($this->teacher, 'web');
+    $end = fn () => $this->postJson($this->publishUrl, ['action' => 'end', 'confirmed' => true, 'expected_version' => app(TeachingWorkStudentDistribution::class)->version($this->work->fresh())]);
+    $end()->assertConflict();
+    $status['assignment_mail']['batches']['all']['transport'] = 'postmark';
+    $this->work->update(['status' => $status]);
+    $this->getJson('/api/admin/teaching/course_works/'.$this->work->id)->assertOk()
+        ->assertJsonPath('data.can_end_email_release', true)->assertJsonPath('data.submission_lock_reason', 'email_sent');
+    $this->putJson(route('teaching.work-submission-method.update', $this->work), ['channel' => 'portal', 'expected' => $mail])->assertConflict();
+    $collect = '/api/admin/teaching/course_works/'.$this->work->id.'/ai-export?purpose=submission_collection&collection_mode=collect';
+    $this->getJson($collect)->assertConflict();
+    $end()->assertOk()->assertJsonPath('data.submission_lock_reason', 'ended');
+    $end()->assertOk();
+    $this->postJson($this->publishUrl, ($this->payload)())->assertConflict();
+    $this->getJson($collect)->assertOk()->assertJsonPath('data.context.submission_method', $mail);
+    Http::assertNothingSent();
+    Mail::assertNothingSent();
 });
 
 test('portal submissions for mailed tasks follow personal confirmed dispatch and course membership', function (): void {
@@ -754,6 +832,128 @@ test('joint pause stops every active test and keeps existing pauses and complete
         ->and($finished->attempts()->sole()->getRawOriginal())->toBe($previousResult);
 });
 
+test('ending a release finalizes only begun MC attempts and keeps tasks and submissions in their prior visibility', function (bool $paused): void {
+    Queue::fake();
+    $completedStudent = User::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->year->id])->assignRole('student');
+    $this->course->teachingCourseStudents()->create(['user_id' => $completedStudent->id]);
+    $studentIds = [$this->student->id, $this->peer->id, $completedStudent->id];
+    $groups = [['student_ids' => $studentIds, 'grade' => '2', 'comment' => 'Gespeichertes Feedback']];
+    $this->work->update(['groups' => $groups]);
+    $groupsBefore = $this->work->fresh()->getRawOriginal('groups');
+    $test = studentTaskMcFixture($this->work, $this->teacher, [$this->student, $this->peer, $completedStudent], 'published');
+    $now = CarbonImmutable::now()->floorSecond();
+    $pausedAt = $now->subMinute();
+    $personalPause = $now->subSeconds(90);
+    McTest::query()->whereKey($test->id)->update($paused ? ['paused_at' => $pausedAt] : [
+        'start_mode' => 'common', 'starts_at' => $now->subMinutes(3), 'ends_at' => $now->addMinutes(4),
+    ]);
+    $attempt = $test->attempts()->where('student_id', $this->student->id)->sole();
+    $finished = $test->attempts()->where('student_id', $completedStudent->id)->sole();
+    $untouched = $test->attempts()->where('student_id', $this->peer->id)->sole();
+    $answers = ['q' => ['a']];
+    $attempt->update(['started_at' => $now->subMinutes(2), 'answers' => $answers]);
+    McAttempt::query()->whereKey($attempt->id)->update(['questions' => json_encode([
+        ['id' => 'q', 'prompt' => 'Frage', 'type' => 'single', 'options' => [['id' => 'a', 'text' => 'A'], ['id' => 'b', 'text' => 'B']], 'correct_option_ids' => ['a']],
+    ], JSON_THROW_ON_ERROR), 'activity_state' => $paused ? json_encode(['control' => ['paused_at' => $personalPause->toIso8601String()]], JSON_THROW_ON_ERROR) : null]);
+    $finished->update(['started_at' => $now->subMinutes(3), 'completed_at' => $now->subMinutes(2), 'score' => '0.00', 'completion_reason' => 'submitted']);
+    $finishedBefore = $finished->fresh()->getRawOriginal();
+    $untouchedBefore = $untouched->getRawOriginal();
+    $fileId = 'a8735ad4-38fb-4abd-9d32-12d9d6774328';
+    $pdfId = '93d29a38-73e7-4ab5-8ee3-1c4639338501';
+    $submissionPath = "teaching/work_submissions/{$this->school->id}/{$this->work->id}/test.txt";
+    $assignmentPath = "teaching/work_tasks/{$this->school->id}/{$this->work->id}/test.pdf";
+    Storage::disk('local')->put($submissionPath, 'Fiktive Abgabe');
+    Storage::disk('local')->put($assignmentPath, '%PDF-1.4 fixture');
+    $status = [...$this->work->status,
+        'student_distribution' => ['published_at' => $now->subHour()->toIso8601String(), 'withdrawn_at' => $paused ? $pausedAt->toIso8601String() : null,
+            'student_ids' => $studentIds, 'instructions' => 'Fiktive Aufgabenstellung', 'file_ids' => [$pdfId]],
+        'student_task_files' => [['id' => $pdfId, 'name' => 'Aufgabe.pdf', 'file_path' => $assignmentPath, 'storage_disk' => 'local']],
+        'portal_submissions' => [['id' => $fileId, 'student_id' => $this->student->id, 'name' => 'Abgabe.txt', 'storage_disk' => 'local',
+            'file_path' => $submissionPath, 'submitted_at' => $now->subMinutes(5)->toIso8601String(), 'withdrawn_at' => null]],
+        'submission_method' => ['channel' => 'portal', 'email' => null],
+        'assessment_json_imports' => [['student_id' => $this->student->id, 'exercise_id' => 'fiktiv']],
+    ];
+    $this->work->update(['status' => $status]);
+    $status = $this->work->fresh()->status;
+    $request = ['action' => 'end', 'confirmed' => true, 'expected_version' => ($this->payload)()['expected_version']];
+    $this->actingAs($this->teacher, 'web')->postJson($this->publishUrl, [...$request, 'confirmed' => false])->assertUnprocessable();
+    $this->postJson($this->publishUrl, [...$request, 'expected_version' => str_repeat('0', 64)])->assertConflict();
+    $this->postJson($this->publishUrl, $request)->assertOk()
+        ->assertJsonPath('data.status.student_distribution.ended_at', $now->toIso8601String())
+        ->assertJsonPath('data.status.student_distribution.withdrawn_at', $status['student_distribution']['withdrawn_at']);
+
+    $saved = $attempt->fresh();
+    expect($saved->completed_at->equalTo($paused ? $personalPause : $now))->toBeTrue()
+        ->and($saved->answers)->toBe($answers)->and($saved->score)->toBe('2.00')
+        ->and($finished->fresh()->getRawOriginal())->toBe($finishedBefore)
+        ->and($untouched->fresh()->getRawOriginal())->toBe($untouchedBefore)
+        ->and($this->work->fresh()->getRawOriginal('groups'))->toBe($groupsBefore);
+    $archivedStatus = $this->work->fresh()->status;
+    foreach (['student_task_files', 'portal_submissions', 'assessment_json_imports'] as $key) {
+        expect($archivedStatus[$key])->toBe($status[$key]);
+    }
+
+    $this->travel(10)->seconds();
+    $this->postJson($this->publishUrl, $request)->assertOk()->assertJsonPath('data.status.student_distribution.ended_at', $now->toIso8601String());
+    $version = ($this->payload)()['expected_version'];
+    foreach ([['publish' => false], ['publish' => true, 'release_now' => false], ['publish' => true, 'release_now' => true], ['publish' => true, 'release_now' => true, 'release_saved' => true]] as $action) {
+        $this->postJson($this->publishUrl, [...$action, 'expected_version' => $version])->assertConflict();
+    }
+    $this->deleteJson($this->publishUrl.'/preparation', ['expected_version' => $version])->assertConflict();
+    $preview = $this->getJson($this->publishUrl.'-preview')->assertOk()->assertJsonPath('data.tests.0.can_control_attempts', false)
+        ->assertJsonPath('data.tests.0.management_action', null)->assertJsonPath('data.tests.0.lifecycle_actions', [])->json('data.tests.0');
+    $this->postJson($this->publishUrl.'/test-action', ['action' => 'reset', 'test_id' => $test->id, 'confirmed' => true,
+        'expected_version' => $version, 'expected_test_version' => $preview['version']])->assertConflict();
+    $mcUrl = '/api/admin/multiple-choice/tests/'.$test->id;
+    foreach (['pause', 'resume', 'countdown', 'publish'] as $action) {
+        $this->postJson($mcUrl.'/'.$action)->assertConflict();
+    }
+    $this->postJson($mcUrl.'/attempts/control', ['action' => 'reset', 'attempt_ids' => [$attempt->id], 'confirmed' => true,
+        'expected' => [$attempt->id => $saved->controlRevision()]])->assertConflict();
+    $this->postJson($mcUrl.'/folder/import', ['apply' => true, 'package' => [], 'hash' => str_repeat('0', 64)])->assertConflict();
+    $this->putJson('/api/admin/teaching/course_works/'.$this->work->id.'/provision-method', ['channel' => 'email', 'expected' => null])->assertConflict();
+    $this->get(route('teaching.work-submissions.download', ['course_work' => $this->work, 'fileId' => $fileId]))->assertDownload('Abgabe.txt');
+
+    Auth::forgetGuards();
+    $this->actingAs($this->student, 'web')->getJson($this->tasksUrl)->assertOk()->assertJsonPath('tasks.0.status', 'ended')
+        ->assertJsonPath('tasks.0.can_submit', false)->assertJsonPath('tasks.0.submission_files.0.id', $fileId);
+    $this->getJson($this->tasksUrl.'?view=deadlines')->assertOk()->assertJsonPath('tasks.0.status', 'ended');
+    $fileUrl = route('student.course-work.task-file', ['courseId' => $this->course->id, 'course_work' => $this->work, 'fileId' => $pdfId]);
+    $this->get($fileUrl)->assertStatus($paused ? 404 : 200);
+    $upload = route('student.course-work.submissions.store', ['courseId' => $this->course->id, 'course_work' => $this->work]);
+    $this->postJson($upload, ['file' => UploadedFile::fake()->createWithContent('Neu.txt', 'Neue Abgabe')])->assertConflict();
+    $this->deleteJson($upload.'/'.$fileId)->assertConflict();
+    $attemptUrl = '/api/multiple-choice/attempts/'.$attempt->id;
+    $this->getJson($attemptUrl)->assertOk()->assertJsonPath('attempt.answers.q', ['a']);
+    $this->putJson($attemptUrl.'/answers', ['answers' => ['q' => ['b']]])->assertConflict();
+    Auth::forgetGuards();
+    $this->actingAs($this->peer, 'web')->postJson('/api/multiple-choice/attempts/'.$untouched->id.'/start')->assertGone();
+
+    expect($this->work->fresh()->status)->toBe($archivedStatus)
+        ->and($attempt->fresh()->getRawOriginal())->toBe($saved->getRawOriginal());
+    Storage::disk('local')->assertExists([$submissionPath, $assignmentPath]);
+    Mail::assertNothingOutgoing();
+})->with(['active common test' => [false], 'paused individual test' => [true]]);
+
+test('ending refuses a shared MC test atomically even when a separate test could be ended', function (): void {
+    $independent = studentTaskMcFixture($this->work, $this->teacher, [$this->student], 'published');
+    $shared = studentTaskMcFixture($this->work, $this->teacher, [$this->student], 'published');
+    $other = $this->work->replicate(['status']);
+    $other->save();
+    $other->update(['status' => ['multiple_choice_tests' => ['all' => ['work_id' => $other->id, 'test_id' => $shared->id]]]]);
+    $status = $this->work->status;
+    $status['multiple_choice_tests']['all'] = ['work_id' => $this->work->id, 'test_id' => $independent->id];
+    $status['student_distribution'] = ['published_at' => now()->toIso8601String(), 'student_ids' => [$this->student->id]];
+    $this->work->update(['status' => $status]);
+    $request = ['action' => 'end', 'confirmed' => true, 'expected_version' => ($this->payload)()['expected_version']];
+    $status = $this->work->fresh()->status;
+    $before = [$independent->fresh()->getRawOriginal(), $shared->fresh()->getRawOriginal()];
+    $this->actingAs($this->teacher, 'web')->postJson($this->publishUrl, $request)->assertConflict()
+        ->assertJsonPath('message', 'Die Freigabe kann nicht beendet werden, weil ein verknüpfter MC-Test auch zu einer anderen Arbeit gehört.');
+    expect($this->work->fresh()->status)->toBe($status)
+        ->and([$independent->fresh()->getRawOriginal(), $shared->fresh()->getRawOriginal()])->toBe($before);
+});
+
 test('pausing the release rejects ambiguous or shared test associations before affecting any test', function (bool $shared): void {
     $safe = studentTaskMcFixture($this->work, $this->teacher, [$this->student], 'published');
     $second = studentTaskMcFixture($this->work, $this->teacher, [$this->student], 'published');
@@ -793,6 +993,34 @@ test('the work management rejects a countdown for paused tests, shared tests and
     expect($test->fresh()->starts_at)->toBeNull();
     Queue::assertNothingPushed();
 })->with(['paused', 'shared', 'completed']);
+
+test('the work dialog can pause an eligible individual test and rejects other tests or shared bindings', function (bool $shared): void {
+    Queue::fake();
+    $test = studentTaskMcFixture($this->work, $this->teacher, [$this->student], 'published');
+    $status = $this->work->refresh()->status;
+    $status['student_distribution'] = ['published_at' => now()->toIso8601String(), 'student_ids' => [$this->student->id]];
+    $this->work->update(['status' => $status]);
+    if ($shared) {
+        $other = TeachingCourseWork::factory()->create(['teaching_course_id' => $this->course->id]);
+        $other->update(['status' => ['multiple_choice_tests' => ['all' => ['work_id' => $other->id, 'test_id' => $test->id]]]]);
+    }
+    $preview = $this->actingAs($this->teacher, 'web')->getJson($this->publishUrl.'-preview')->assertOk()
+        ->assertJsonPath('data.tests.0.can_pause', ! $shared)->assertJsonPath('data.tests.0.can_control_attempts', ! $shared)->json('data.tests.0');
+    $request = ['action' => 'pause', 'test_id' => $test->id, 'expected_version' => ($this->payload)()['expected_version'],
+        'expected_test_version' => $preview['pause_version']];
+    $this->postJson($this->publishUrl.'/test-action', array_replace($request, ['test_id' => $test->id + 1234]))->assertNotFound();
+    $this->postJson($this->publishUrl.'/test-action', array_replace($request, ['expected_test_version' => str_repeat('0', 64)]))->assertConflict();
+    $result = $this->postJson($this->publishUrl.'/test-action', $request);
+    if ($shared) {
+        $result->assertUnprocessable();
+        expect($test->fresh()->paused_at)->toBeNull();
+    } else {
+        $result->assertOk()->assertJsonPath('data.tests.0.management_action', 'resume')->assertJsonPath('data.tests.0.can_pause', false);
+        expect($test->fresh()->paused_at)->not->toBeNull();
+        expect($test->attempts()->sole()->started_at)->toBeNull();
+        expect($this->work->fresh()->status['student_distribution'])->toEqual($status['student_distribution']);
+    }
+})->with([false, true]);
 
 test('resuming a paused individual test leaves the saved preparation paused and never starts an attempt', function (): void {
     Queue::fake();
@@ -1249,6 +1477,311 @@ test('an inherited MC cutoff follows the saved deadline and leaves personal and 
         ->and($attempt->fresh()->completion_reason)->toBe('timeout');
     $this->putJson($updateUrl, ['finish_until_date' => null, 'finish_until_time' => null])->assertUnprocessable();
     Queue::assertPushed(FinalizeMultipleChoiceTest::class);
+});
+
+test('a paused attempt receives the updated work deadline independently of earlier MC limits', function (?bool $inherited, ?string $earlierKind, bool $stale): void {
+    $this->travelTo(CarbonImmutable::parse('2026-11-24 11:59', 'Europe/Vienna'));
+    Queue::fake();
+    $old = CarbonImmutable::parse('2026-11-24 12:02', 'Europe/Vienna');
+    $new = CarbonImmutable::parse('2026-11-24 12:30', 'Europe/Vienna');
+    $this->work->update(['finish_until_date' => '2026-11-24', 'finish_until_time' => '12:02']);
+    $test = studentTaskMcFixture($this->work, $this->teacher, [$this->student], 'published');
+    $snapshot = [...$test->snapshot, 'closes_at' => $old->toIso8601String(),
+        'schooltool_work' => ['work_id' => $this->work->id, 'course_id' => $this->course->id, 'slot' => '2026-10-28']];
+    if ($inherited !== null) {
+        $snapshot['work_deadline_inherited'] = $inherited;
+    }
+    McTest::query()->whereKey($test->id)->update([
+        'closes_at' => $old, 'duration_seconds' => 3600, 'paused_at' => now(),
+        'snapshot' => json_encode($snapshot, JSON_THROW_ON_ERROR),
+    ]);
+    $attempt = $test->attempts()->sole();
+    McAttempt::query()->whereKey($attempt->id)->update([
+        'started_at' => now()->subMinute(), 'answers' => json_encode(['q' => ['a']], JSON_THROW_ON_ERROR),
+        'closes_at' => $earlierKind === 'personal' ? $old : null,
+        'questions' => json_encode([['id' => 'q', 'prompt' => 'Frage', 'type' => 'single',
+            'options' => [['id' => 'a', 'text' => 'A'], ['id' => 'b', 'text' => 'B']], 'correct_option_ids' => ['a']]], JSON_THROW_ON_ERROR),
+    ]);
+    $before = $attempt->fresh()->getRawOriginal();
+    $url = '/api/multiple-choice/attempts/'.$attempt->id;
+    $as = function (User $user) {
+        Auth::forgetGuards();
+
+        return $this->actingAs($user, 'web');
+    };
+    $as($this->student)->getJson($url)->assertOk()
+        ->assertJsonPath('attempt.work_deadline', ['date' => '2026-11-24', 'time' => '12:02'])
+        ->assertJsonPath('attempt.earlier_deadline_kind', null)
+        ->assertJsonPath('attempt.closes_at', $old->toIso8601String());
+    $as($this->teacher)->putJson('/api/admin/teaching/course_works/'.$this->work->id, ['finish_until_time' => '12:30'])->assertOk();
+    if ($stale) {
+        // A persisted inherited mirror can lag behind the authoritative work value.
+        McTest::query()->whereKey($test->id)->update(['closes_at' => $old]);
+    }
+    $tokenHeader = ['X-MC-Access' => $attempt->access_token];
+    $as($this->teacher)->getJson('/api/multiple-choice/access', $tokenHeader)->assertOk()
+        ->assertJsonPath('attempt.teacher_preview', true)->assertJsonPath('attempt.work_deadline.time', '12:30');
+    $this->getJson('/api/admin/multiple-choice/tests/'.$test->id)->assertOk()
+        ->assertJsonPath('attempts.0.fixed_closes_at', ($earlierKind ? $old : $new)->toIso8601String());
+    $as($this->student);
+    foreach ([[$url, []], ['/api/multiple-choice/access', $tokenHeader]] as [$endpoint, $headers]) {
+        $this->getJson($endpoint, $headers)->assertOk()
+            ->assertJsonPath('attempt.work_deadline', ['date' => '2026-11-24', 'time' => '12:30'])
+            ->assertJsonPath('attempt.earlier_deadline_kind', $earlierKind)
+            ->assertJsonPath('attempt.closes_at', ($earlierKind ? $old : $new)->toIso8601String())
+            ->assertJsonPath('attempt.paused_at', $test->fresh()->paused_at->toIso8601String())
+            ->assertJsonPath('attempt.duration_seconds', 3600)
+            ->assertJsonPath('attempt.answers.q', ['a']);
+    }
+    expect($attempt->fresh()->getRawOriginal())->toBe($before);
+
+    $this->travelTo($old->addMinute());
+    if ($stale) {
+        app(McTestService::class)->resume($test, $this->teacher->id);
+        $this->putJson($url.'/answers', ['answers' => ['q' => ['b']]])->assertOk();
+        $this->travelTo($new);
+        $this->putJson($url.'/answers', ['answers' => ['q' => ['a']]])->assertUnprocessable();
+    } elseif ($earlierKind !== null) {
+        $this->getJson($url)->assertOk()->assertJsonPath('attempt.status', 'timeout')
+            ->assertJsonPath('attempt.completed_at', $old->toIso8601String());
+    }
+})->with([
+    'legacy inherited deadline established by the saved assignment' => [null, null, false],
+    'stale inherited mirror' => [true, null, true],
+    'earlier test deadline' => [false, 'test', false],
+    'earlier personal deadline' => [true, 'personal', false],
+]);
+
+test('the owner can restore the common closing deadline for one open attempt during a global pause', function (): void {
+    $pausedAt = CarbonImmutable::parse('2026-11-24 11:52:26', 'Europe/Vienna');
+    $personalDeadline = $pausedAt->setTime(12, 2);
+    $workDeadline = $pausedAt->setTime(12, 30);
+    $effectiveEnd = $pausedAt->addSeconds(454);
+    $this->travelTo($pausedAt->setTime(12, 0, 30));
+    Queue::fake();
+    $this->work->update(['finish_until_date' => '2026-11-24', 'finish_until_time' => '12:30']);
+    $test = studentTaskMcFixture($this->work, $this->teacher, [$this->student, $this->peer], 'published');
+    McTest::query()->whereKey($test->id)->update(['paused_at' => $pausedAt, 'closes_at' => $workDeadline, 'duration_seconds' => 600]);
+    $attempt = $test->attempts()->where('student_id', $this->student->id)->sole();
+    $other = $test->attempts()->where('student_id', $this->peer->id)->sole();
+    $answers = ['q1' => ['a'], 'q2' => ['b']];
+    McAttempt::query()->whereKey($attempt->id)->update([
+        'started_at' => $pausedAt->subSeconds(146), 'closes_at' => $personalDeadline,
+        'answers' => json_encode($answers, JSON_THROW_ON_ERROR),
+    ]);
+    McAttempt::query()->whereKey($other->id)->update(['closes_at' => $personalDeadline->addMinute()]);
+    $before = $attempt->fresh()->getRawOriginal();
+    $otherBefore = $other->fresh()->getRawOriginal();
+    $testBefore = $test->fresh()->getRawOriginal();
+    $url = "/api/admin/multiple-choice/tests/{$test->id}/attempts/{$attempt->id}/closing-deadline";
+    $foreign = User::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->year->id])->assignRole('teacher');
+    $as = function (User $user) {
+        Auth::forgetGuards();
+
+        return $this->actingAs($user, 'web');
+    };
+
+    $learnerUrl = '/api/multiple-choice/attempts/'.$attempt->id;
+    $as($this->student)->getJson($learnerUrl)->assertOk()->assertJsonPath('attempt.closes_at', $personalDeadline->toIso8601String())
+        ->assertJsonPath('attempt.ends_at', $effectiveEnd->toIso8601String());
+    $as($foreign)->patchJson($url, ['closes_at' => null])->assertNotFound();
+    $as($this->teacher)->patchJson($url, ['closes_at' => $personalDeadline->addMinute()->toIso8601String()])->assertUnprocessable();
+    expect($attempt->fresh()->getRawOriginal())->toBe($before);
+    $this->patchJson($url, ['closes_at' => null])->assertOk();
+    $this->patchJson($url, ['closes_at' => null])->assertOk();
+    Queue::assertNothingPushed();
+
+    unset($before['updated_at']);
+    $before['closes_at'] = null;
+    expect(collect($attempt->fresh()->getRawOriginal())->except('updated_at')->all())->toBe($before)
+        ->and($other->fresh()->getRawOriginal())->toBe($otherBefore)
+        ->and($test->fresh()->getRawOriginal())->toBe($testBefore);
+    $this->travelTo($personalDeadline->addSecond());
+    $learner = $as($this->student)->getJson($learnerUrl)->assertOk()
+        ->assertJsonPath('attempt.work_deadline.time', '12:30')->assertJsonPath('attempt.closes_at', $workDeadline->toIso8601String())
+        ->assertJsonPath('attempt.earlier_deadline_kind', null)->assertJsonPath('attempt.paused_at', $pausedAt->toIso8601String())
+        ->assertJsonPath('attempt.ends_at', $effectiveEnd->toIso8601String())->assertJsonPath('attempt.status', 'in_progress')
+        ->assertJsonPath('attempt.completed_at', null)->assertJsonPath('attempt.answers', $answers)->json('attempt');
+    expect((int) CarbonImmutable::parse($learner['paused_at'])->diffInSeconds(CarbonImmutable::parse($learner['ends_at'])))->toBe(454);
+});
+
+test('recovering the common closing deadline during a global pause rejects protected states', function (string $state, int $status): void {
+    Queue::fake();
+    $test = studentTaskMcFixture($this->work, $this->teacher, [$this->student], 'published');
+    $attempt = $test->attempts()->sole();
+    $sharedDeadline = $this->work->finalDeadlineInstant();
+    $personalDeadline = $sharedDeadline->subHour();
+    $snapshot = $test->snapshot;
+    $changes = [];
+    if ($state === 'stopped') {
+        $snapshot['work_stopped_at'] = now()->toIso8601String();
+    } elseif ($state === 'withdrawn') {
+        $changes['status'] = 'withdrawn';
+    } elseif ($state === 'common countdown') {
+        $changes['start_mode'] = 'common';
+    } elseif ($state === 'no shared deadline') {
+        $this->work->update(['finish_until_date' => null, 'finish_until_time' => null]);
+        $sharedDeadline = null;
+    } elseif ($state === 'ended release') {
+        $workStatus = $this->work->status;
+        $workStatus['student_distribution']['ended_at'] = now()->toIso8601String();
+        $this->work->update(['status' => $workStatus]);
+    } elseif ($state === 'conflicting work deadlines') {
+        $shared = TeachingCourseWork::factory()->create(['teaching_course_id' => $this->course->id, 'finish_until_date' => '2026-11-06']);
+        $shared->update(['status' => ['multiple_choice_tests' => ['all' => ['work_id' => $shared->id, 'test_id' => $test->id]]]]);
+    }
+    McTest::query()->whereKey($test->id)->update($changes + [
+        'paused_at' => now(), 'closes_at' => $sharedDeadline, 'snapshot' => json_encode($snapshot, JSON_THROW_ON_ERROR),
+    ]);
+    McAttempt::query()->whereKey($attempt->id)->update([
+        'started_at' => now()->subMinute(),
+        'closes_at' => $state === 'expired personal deadline' ? now()->subSecond() : $personalDeadline,
+        'completed_at' => $state === 'completed' ? now() : null,
+    ]);
+    $before = $attempt->fresh()->getRawOriginal();
+    $url = "/api/admin/multiple-choice/tests/{$test->id}/attempts/{$attempt->id}/closing-deadline";
+
+    $this->actingAs($this->teacher, 'web')->patchJson($url, ['closes_at' => null])->assertStatus($status);
+    expect($attempt->fresh()->getRawOriginal())->toBe($before);
+    Queue::assertNothingPushed();
+})->with([
+    'completed' => ['completed', 422],
+    'expired personal deadline' => ['expired personal deadline', 422],
+    'stopped' => ['stopped', 422],
+    'withdrawn' => ['withdrawn', 422],
+    'ended release' => ['ended release', 409],
+    'conflicting work deadlines' => ['conflicting work deadlines', 409],
+    'no shared deadline' => ['no shared deadline', 422],
+    'common countdown' => ['common countdown', 422],
+]);
+
+test('the work deadline caps both MC start modes and preserves saved answers when time expires', function (string $mode): void {
+    $this->travelTo(CarbonImmutable::parse('2026-11-05 11:57', 'Europe/Vienna'));
+    Queue::fake();
+    $test = studentTaskMcFixture($this->work, $this->teacher, [$this->student, $this->peer], 'published');
+    McTest::query()->whereKey($test->id)->update(['start_mode' => $mode, 'lead_seconds' => 0,
+        'closes_at' => $mode === 'common' ? null : now()->addHour()]);
+    $service = app(McTestService::class);
+    $attempt = $test->attempts()->where('student_id', $this->student->id)->firstOrFail();
+    McAttempt::query()->whereKey($attempt->id)->update(['questions' => json_encode([
+        ['id' => 'q', 'prompt' => 'Frage', 'type' => 'single', 'options' => [['id' => 'a', 'text' => 'A'], ['id' => 'b', 'text' => 'B']], 'correct_option_ids' => ['a']],
+    ], JSON_THROW_ON_ERROR)]);
+    $url = '/api/multiple-choice/attempts/'.$attempt->id;
+    $this->actingAs($this->student, 'web');
+    if ($mode === 'common') {
+        $service->startCountdown($test);
+        $opened = $this->getJson($url);
+    } else {
+        $opened = $this->postJson($url.'/start');
+    }
+    $opened->assertOk()->assertJsonPath('attempt.status', 'in_progress');
+    expect(CarbonImmutable::parse($opened->json('attempt.ends_at'))->equalTo($this->work->finalDeadlineInstant()))->toBeTrue();
+    $this->putJson($url.'/answers', ['answers' => ['q' => ['a']]])->assertOk();
+
+    $this->travelTo($this->work->finalDeadlineInstant());
+    $this->putJson($url.'/answers', ['answers' => ['q' => ['b']]])->assertUnprocessable();
+    $this->postJson($url.'/submit')->assertOk()->assertJsonPath('attempt.status', 'timeout');
+    $this->travel(1)->seconds();
+    $this->getJson($url)->assertOk()->assertJsonPath('attempt.answers.q', ['a']);
+    $neverStarted = $test->attempts()->where('student_id', $this->peer->id)->firstOrFail();
+    $this->actingAs($this->peer, 'web')->withHeader('X-MC-Access', $neverStarted->access_token)->getJson('/api/multiple-choice/access')
+        ->assertOk()->assertJsonPath('attempt.status', 'timeout')->assertJsonPath('attempt.questions', []);
+    expect($attempt->fresh()->completed_at->equalTo($this->work->finalDeadlineInstant()))->toBeTrue()
+        ->and($neverStarted->fresh()->completed_at)->toBeNull()
+        ->and($this->work->fresh()->groups[0]['grade'])->toBe('2');
+})->with(['common', 'individual']);
+
+test('a linked MC attempt keeps the earlier personal limit and cannot outlast the changed work deadline after a pause', function (string $pause): void {
+    $this->travelTo(CarbonImmutable::parse('2026-11-05 11:55', 'Europe/Vienna'));
+    Queue::fake();
+    $test = studentTaskMcFixture($this->work, $this->teacher, [$this->student, $this->peer], 'published');
+    $service = app(McTestService::class);
+    $attempt = $test->attempts()->where('student_id', $this->student->id)->firstOrFail();
+    $peer = $test->attempts()->where('student_id', $this->peer->id)->firstOrFail();
+    McAttempt::query()->whereKey($peer->id)->update(['closes_at' => now()->addMinutes(4)]);
+    McTest::query()->whereKey($test->id)->update(['duration_seconds' => 90]);
+    $test->attempts()->update(['questions' => json_encode([['id' => 'q', 'correct_option_ids' => ['a']]], JSON_THROW_ON_ERROR)]);
+    $service->startIndividual($attempt);
+    expect($attempt->fresh()->effectiveDeadline()->equalTo(now()->addSeconds(90)))->toBeTrue();
+    $service->startIndividual($peer);
+    $fixtureDeadline = '/api/admin/teaching/course_works/'.$this->work->id;
+    $this->actingAs($this->teacher, 'web')->putJson($fixtureDeadline, ['finish_until_time' => '12:30'])->assertOk();
+
+    if ($pause === 'test') {
+        $service->pause($test, $this->teacher->id);
+    } else {
+        $service->controlAttempts($test, [$attempt->id, $peer->id], 'pause', $this->teacher->id);
+    }
+    $this->travel(1)->minute();
+    $this->putJson($fixtureDeadline, ['finish_until_time' => '11:57'])->assertOk();
+    expect($peer->fresh()->closingDeadline()->equalTo(now()->addMinutes(3)))->toBeTrue();
+    if ($pause === 'test') {
+        $service->resume($test, $this->teacher->id);
+    } else {
+        $service->controlAttempts($test, [$attempt->id, $peer->id], 'resume', $this->teacher->id);
+    }
+    expect($attempt->fresh()->effectiveDeadline()->equalTo($this->work->fresh()->finalDeadlineInstant()))->toBeTrue();
+    $this->travel(30)->seconds();
+    $service->controlAttempts($test, [$attempt->id], 'pause', $this->teacher->id);
+    $this->travelTo($this->work->fresh()->finalDeadlineInstant());
+    expect($service->finalizeExpired($test->id))->toBe(2)
+        ->and($attempt->fresh()->completed_at->equalTo(now()))->toBeTrue();
+    $this->putJson($fixtureDeadline, ['finish_until_time' => '12:30'])->assertOk();
+    expect($attempt->fresh()->completion_reason)->toBe('timeout');
+})->with(['test', 'individual']);
+
+test('the scheduled job finishes a paused common test at the work deadline', function (): void {
+    $this->travelTo(CarbonImmutable::parse('2026-11-05 11:57', 'Europe/Vienna'));
+    Queue::fake();
+    $test = studentTaskMcFixture($this->work, $this->teacher, [$this->student], 'published');
+    McTest::query()->whereKey($test->id)->update(['start_mode' => 'common', 'lead_seconds' => 0, 'closes_at' => null]);
+    $test->attempts()->update(['questions' => json_encode([['id' => 'q', 'correct_option_ids' => ['a']]], JSON_THROW_ON_ERROR)]);
+    $tests = app(McTestService::class);
+    $tests->startCountdown($test);
+    $attempt = $tests->openAttempt($test->attempts()->sole());
+    $this->travel(1)->minute();
+    $tests->pause($test, $this->teacher->id);
+    $job = new FinalizeMultipleChoiceTest($test->id);
+    $job->handle($tests);
+    expect($attempt->fresh()->completed_at)->toBeNull();
+
+    $this->travelTo($this->work->finalDeadlineInstant());
+    $job->handle($tests);
+    expect($attempt->fresh()->completed_at->equalTo($this->work->finalDeadlineInstant()))->toBeTrue();
+    expect(fn () => $tests->resume($test, $this->teacher->id))->toThrow(ValidationException::class);
+});
+
+test('changing the work deadline rejects divergent shared bindings and leaves unrelated MC clocks alone', function (): void {
+    $this->travelTo(CarbonImmutable::parse('2026-11-05 11:55', 'Europe/Vienna'));
+    Queue::fake();
+    $shared = studentTaskMcFixture($this->work, $this->teacher, [$this->student], 'published');
+    $other = $this->work->replicate(['status']);
+    $other->save();
+    $other->update(['status' => ['multiple_choice_tests' => ['all' => ['work_id' => $other->id, 'test_id' => (string) $shared->id]]]]);
+    $independent = $shared->replicate();
+    $independent->save();
+    $service = app(McTestService::class);
+    $attempt = $shared->attempts()->sole();
+    $service->startIndividual($attempt);
+    $update = '/api/admin/teaching/course_works/'.$this->work->id;
+    $before = $shared->fresh()->getRawOriginal();
+    $this->actingAs($this->teacher, 'web')->putJson($update, ['finish_until_time' => '11:56'])->assertConflict()
+        ->assertJsonPath('message', 'Der MC-Test ist mehreren Arbeiten zugeordnet. Die Abgabefrist kann nur geändert werden, wenn sie danach für alle verknüpften Arbeiten übereinstimmt.');
+    expect($other->fresh()->finish_until_time)->toBe('12:00')
+        ->and($this->work->fresh()->finish_until_time)->toBe('12:00')
+        ->and($shared->fresh()->getRawOriginal())->toBe($before)
+        ->and($independent->workDeadline())->toBeNull();
+
+    $other->update(['finish_until_time' => '12:30']);
+    $url = '/api/multiple-choice/attempts/'.$attempt->id;
+    $this->actingAs($this->student, 'web')->getJson($url)->assertConflict();
+    $this->postJson($url.'/submit')->assertConflict();
+    $this->travelTo($this->work->finalDeadlineInstant());
+    expect($service->finalizeExpired($shared->id))->toBe(0)
+        ->and($attempt->fresh()->completed_at)->toBeNull();
+    $this->actingAs($this->teacher, 'web')->putJson($update, ['finish_until_time' => '12:30'])->assertOk();
+    expect($shared->fresh()->getRawOriginal())->toBe($before)
+        ->and($independent->fresh()->closes_at->equalTo($independent->closes_at))->toBeTrue();
 });
 
 test('the student deadline check contains only deadlines and a revision that changes even within a second', function (): void {

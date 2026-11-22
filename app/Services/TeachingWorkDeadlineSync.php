@@ -63,16 +63,29 @@ class TeachingWorkDeadlineSync
         $ids = collect($work->status['multiple_choice_tests'] ?? [])
             ->filter(fn ($binding) => is_array($binding) && (int) ($binding['work_id'] ?? 0) === $work->id)
             ->pluck('test_id')->filter(fn ($id) => is_numeric($id) && (int) $id > 0)->unique()->values();
-        if ($ids->isEmpty() || ! Schema::hasTable('mc_tests')) {
+        if ($work->studentReleaseEnded() || $ids->isEmpty() || ! Schema::hasTable('mc_tests')) {
             return;
         }
         $course = $work->teachingCourse;
         $deadline = $work->finalDeadlineInstant();
         $tests = McTest::query()->whereIn('id', $ids)->where('school_id', $course->school_id)
             ->where('schoolyear_id', $course->schoolyear_id)->where('owner_id', $course->user_id)
-            ->where('start_mode', 'individual')->whereIn('status', ['draft', 'published'])
+            ->whereIn('status', ['draft', 'published', 'withdrawn'])
             ->orderBy('id')->lockForUpdate()->get();
         foreach ($tests as $test) {
+            $otherWorks = $test->deadlineWorks()->reject(fn (TeachingCourseWork $linked): bool => $linked->is($work));
+            if ($otherWorks->isNotEmpty() && $deadline?->getTimestamp() !== $previous?->getTimestamp()) {
+                abort_if($otherWorks->contains(fn (TeachingCourseWork $linked): bool => $linked->finalDeadlineInstant()?->getTimestamp() !== $deadline?->getTimestamp()),
+                    409, 'Der MC-Test ist mehreren Arbeiten zugeordnet. Die Abgabefrist kann nur geändert werden, wenn sie danach für alle verknüpften Arbeiten übereinstimmt.');
+            }
+            if ($test->status === 'published' && $deadline !== null && ($test->starts_at !== null
+                || $test->attempts()->whereNotNull('started_at')->whereNull('completed_at')->exists())) {
+                FinalizeMultipleChoiceTest::dispatch((int) $test->id)->delay($deadline->isPast() ? now() : $deadline)->afterCommit();
+            }
+            if ($test->start_mode !== 'individual' || $test->status === 'withdrawn'
+                || app(TeachingWorkStudentDistribution::class)->mcTestShared($work, $test)) {
+                continue;
+            }
             $inherited = $test->snapshot['work_deadline_inherited'] ?? null;
             $origin = $test->snapshot['schooltool_work'] ?? [];
             $binding = $work->status['multiple_choice_tests'][$origin['slot'] ?? ''] ?? [];
@@ -86,9 +99,6 @@ class TeachingWorkDeadlineSync
             if ($inherited !== true && ($inherited === false || ! $matchesPrevious || (! $provenOrigin && ! $managedLink))) {
                 continue;
             }
-            if (app(TeachingWorkStudentDistribution::class)->mcTestShared($work, $test)) {
-                continue;
-            }
             if ($test->status === 'published' && $deadline === null) {
                 throw ValidationException::withMessages(['finish_until_date' => 'Der freigegebene individuelle MC-Test benötigt eine endgültige Abgabefrist.']);
             }
@@ -99,9 +109,6 @@ class TeachingWorkDeadlineSync
             }
             McTest::query()->whereKey($test->id)->update(['closes_at' => $deadline,
                 'snapshot' => $snapshot === null ? null : json_encode($snapshot, JSON_THROW_ON_ERROR)]);
-            if ($test->status === 'published' && $test->paused_at === null) {
-                FinalizeMultipleChoiceTest::dispatch((int) $test->id)->delay($deadline->isPast() ? now() : $deadline)->afterCommit();
-            }
         }
     }
 

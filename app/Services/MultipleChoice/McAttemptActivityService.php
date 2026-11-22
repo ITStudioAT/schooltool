@@ -26,6 +26,7 @@ class McAttemptActivityService
             if ($test->paused_at !== null || $attempt->individualPausedAt() !== null || $attempt->completed_at !== null) {
                 return;
             }
+            $test->assertConsistentWorkDeadline();
             $end = $attempt->effectiveDeadline($test);
             if ($end === null || ! $end->isFuture()) {
                 $this->finish($attempt, $end ?? CarbonImmutable::now());

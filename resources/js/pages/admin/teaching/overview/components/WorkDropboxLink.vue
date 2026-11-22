@@ -326,7 +326,11 @@ async function link() {
     progress.value.active = 'save'
     progress.value.failed = false
     try {
-        const response = await axios.post(storeFolder.url(work.value.id), { handshake: contents.value, filename: filename.value, proof: resolved.value.proof },
+        const creationRequestId = props.inline && linkFromCreation.value ? work.value.status?.creation_receipt?.id : null
+        const response = await axios.post(storeFolder.url(work.value.id), {
+            handshake: contents.value, filename: filename.value, proof: resolved.value.proof,
+            ...(creationRequestId ? { creation_request_id: creationRequestId } : {}),
+        },
             { signal: controller.signal, timeout: 120000 })
         if (current !== operation || key.value !== currentKey) return
         applyLinkResult(response.data, currentKey)

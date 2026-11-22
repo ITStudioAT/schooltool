@@ -49,6 +49,7 @@ class TeachingWorkAssignmentMail
 
     public function prepare(TeachingCourseWork $work, User $actor, string $slot, string $transport, ?string $previous): void
     {
+        $work->assertStudentReleaseOpen();
         $source = $this->messages->source($work, $actor, $slot === 'all' ? null : $slot, $transport);
         $files = $this->messages->documents($work, $actor, $source);
         $id = (string) Str::uuid();
@@ -84,6 +85,7 @@ class TeachingWorkAssignmentMail
                 'prepared_at' => now()->toIso8601String(), 'withdrawn_at' => null, 'recipients' => $rows];
             DB::transaction(function () use ($work, $slot, $state, $previous): void {
                 $locked = TeachingCourseWork::query()->lockForUpdate()->findOrFail($work->id);
+                $locked->assertStudentReleaseOpen();
                 $status = $locked->status ?? [];
                 $prior = $status['assignment_mail']['batches'][$slot] ?? null;
                 abort_if(($prior['id'] ?? null) !== $previous || ($prior && (! $prior['withdrawn_at']
@@ -142,7 +144,8 @@ class TeachingWorkAssignmentMail
         abort_unless(config('queue.connections.database.driver') === 'database'
             && (config('queue.connections.database.connection') ?: DB::getDefaultConnection()) === $work->getConnection()->getName(),
             503, 'Die Versandwarteschlange muss dieselbe Datenbank wie die Arbeit verwenden.');
-        $this->change($work->id, $slot, $id, function (array &$batch) use ($work, $slot, $id, $includePreviouslySent): void {
+        $this->change($work->id, $slot, $id, function (array &$batch, TeachingCourseWork $locked) use ($work, $slot, $id, $includePreviouslySent): void {
+            $locked->assertStudentReleaseOpen();
             abort_if($batch['withdrawn_at'], 409, 'Der Versand ist gestoppt.');
             foreach ($batch['recipients'] as &$row) {
                 if ($row['state'] === 'already_sent') {
@@ -272,7 +275,8 @@ class TeachingWorkAssignmentMail
 
     public function undo(TeachingCourseWork $work, string $slot, string $id, string $action): void
     {
-        $discarded = $this->change($work->id, $slot, $id, function (?array &$batch) use ($action): bool {
+        $discarded = $this->change($work->id, $slot, $id, function (?array &$batch, TeachingCourseWork $locked) use ($action): bool {
+            $locked->assertStudentReleaseOpen();
             if ($action === 'discard') {
                 abort_if(collect($batch['recipients'])->contains(fn ($row) => ! in_array($row['state'], ['draft', 'already_sent', 'rejected'], true)),
                     409, 'Versandbelege bleiben erhalten. Bitte den Versand stoppen.');
@@ -299,6 +303,7 @@ class TeachingWorkAssignmentMail
 
     private function assertSource(TeachingCourseWork $work, array $batch, string $slot, User $actor): void
     {
+        $work->assertStudentReleaseOpen();
         $source = $this->messages->source($work, $actor, $slot === 'all' ? null : $slot, $batch['transport']);
         abort_if(collect($source['mc'])->flatten(1)->contains(fn ($test) => ! $test['available']), 409,
             'Bitte den zugeordneten Multiple-Choice-Test und seine Zugänge vor dem E-Mail-Versand freigeben.');

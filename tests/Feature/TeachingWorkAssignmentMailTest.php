@@ -66,6 +66,29 @@ beforeEach(function () {
     $this->actingAs($this->teacher, 'sanctum');
 });
 
+test('an ended release rejects mail preparation, sending and restoration while keeping its draft readable', function (): void {
+    $draft = $this->postJson($this->url.'/prepare', ['transport' => 'postmark'])->assertOk()->json('preview.batch');
+    $state = $this->work->fresh()->status;
+    $state['student_distribution']['published_at'] = now()->subHour()->toIso8601String();
+    $state['student_distribution']['student_ids'] = $this->students->pluck('id')->all();
+    $this->work->update(['status' => $state]);
+    $url = '/api/admin/teaching/course_works/'.$this->work->id.'/student-distribution';
+    $end = fn () => ['action' => 'end', 'confirmed' => true, 'expected_version' => app(TeachingWorkStudentDistribution::class)->version($this->work->fresh())];
+    $state['assignment_mail']['batches']['all']['recipients'][0]['state'] = 'sending';
+    $this->work->update(['status' => $state]);
+    $this->postJson($url, $end())->assertConflict();
+    $state['assignment_mail']['batches']['all']['recipients'][0]['state'] = 'draft';
+    $this->work->update(['status' => $state]);
+    $this->postJson($url, $end())->assertOk();
+    $this->getJson($this->url)->assertOk()->assertJsonPath('preview.batch.id', $draft['id']);
+    $this->postJson($this->url.'/prepare', ['transport' => 'postmark'])->assertConflict();
+    foreach (['send', 'restore'] as $action) {
+        $this->postJson($this->url.'/action', ['action' => $action, 'batch_id' => $draft['id'], 'confirmed' => true])->assertConflict();
+    }
+    Queue::assertNothingPushed();
+    Http::assertNothingSent();
+});
+
 test('requires a separate send, preserves the reviewed messages, checks each receipt, and retries only rejected recipients', function () {
     $initial = $this->postJson($this->url.'/prepare', ['transport' => 'postmark'])->assertOk()->json('preview');
     expect($initial['attachments'])->toBe(['Angaben.pdf'])->and($initial['messages'])->toHaveCount(2);
@@ -118,7 +141,7 @@ test('requires a separate send, preserves the reviewed messages, checks each rec
     $collection = app(TeachingWorkAiExport::class)->buildSubmissionCollection($this->work->fresh(), $this->teacher, false, '2026-11-20');
     expect($collection['context']['submission_method']['email'])->toBe('abgaben@example.test')
         ->and($collection['context']['schooltool_assignment_mail'])->toHaveCount(2)
-        ->and($collection['text'])->toContain('ausschließlich das im Datenfeld submission_method.email');
+        ->and($collection['text'])->toContain('unter submission_method.email gespeicherten Abgabepostfach', 'zuständigen Office-/Outlook-Schulpostfächer');
 });
 
 test('the database rolls back both recipients and jobs on an interrupted second enqueue', function () {

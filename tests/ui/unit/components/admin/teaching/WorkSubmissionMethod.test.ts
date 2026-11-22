@@ -28,6 +28,25 @@ it('lets the teacher change the return channel independently of task release and
     expect(wrapper.emitted('saved')?.[0]).toEqual([saved])
     await wrapper.setProps({ work: saved })
     await click('Abgabeweg verwalten')
-    await click('Abgabeweg entfernen')
-    expect(put).toHaveBeenLastCalledWith('/api/admin/teaching/course_works/18/submission-method', { channel: null, email: null, expected: method })
+    expect(wrapper.text()).not.toContain('Abgabeweg entfernen')
+    expect(wrapper.text()).toContain('erst nach „Freigabe beenden“')
+    expect(put).toHaveBeenCalledTimes(2)
+})
+
+it('shows the current address and locks editing when a stale dialog learns that the work started', async () => {
+    const current = { channel: 'email', email: 'abgabe@example.test' }
+    const put = vi.fn().mockRejectedValue({ response: { status: 409, data: { submission_lock_reason: 'started', current_submission: current } } })
+    vi.stubGlobal('axios', { put })
+    const wrapper = mount(WorkSubmissionMethod, { props: { work: { id: 18, title: 'Übung', status: { submission_method: current } } }, global: { stubs: {
+        'v-btn': { template: '<button><slot /></button>' },
+        'v-text-field': { props: ['modelValue'], template: '<input type="email" :value="modelValue" />' },
+    } } })
+    await wrapper.get('button').trigger('click')
+    await wrapper.get('input[value=portal]').setValue(true)
+    await wrapper.findAll('button').find(button => button.text() === 'Speichern')!.trigger('click')
+    await flushPromises()
+    expect(wrapper.get('fieldset').attributes()).toHaveProperty('disabled')
+    expect(wrapper.get('input[type=email]').element.value).toBe(current.email)
+    expect(wrapper.text()).toContain('Die Bearbeitung hat bereits begonnen.')
+    expect(wrapper.text()).not.toContain('Speichern')
 })

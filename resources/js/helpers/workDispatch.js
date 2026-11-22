@@ -99,3 +99,106 @@ export function dispatchNotificationText(sentAt, purpose = 'results', mode = 'li
 
     return `${action} am ${values.day}.${values.month}.${values.year} um ${values.hour}:${values.minute} Uhr.${['prepared', 'scheduled'].includes(mode) ? ' Versand noch nicht bestätigt.' : ''}`
 }
+
+
+function latestEvidenceTime(values) {
+    return values.filter(value => Number.isFinite(Date.parse(value)))
+        .sort((first, second) => Date.parse(second) - Date.parse(first))[0]
+}
+
+export function workProvisionEvidence(work, date = '', dispatch = {}) {
+    const status = work?.status || {}
+    const proofWork = { ...work, status: { ...status, dispatch_logs: (status.dispatch_logs || []).filter(log => log.recipient_scope !== 'teacher') } }
+    const groups = work?.groups || []
+    const groupDate = group => group.date || work?.date_for_all_groups || ''
+    const dates = [...new Set(groups.map(groupDate).filter(Boolean))]
+    const selectedDate = date || work?.date_for_all_groups || (dates.length === 1 ? dates[0] : '')
+    const isGroupView = Boolean(selectedDate) && dates.some(group => group !== selectedDate)
+    const assigned = new Set()
+    const other = new Set()
+    for (const group of groups) {
+        const inScope = !selectedDate || groupDate(group) === selectedDate || dates.length === 0
+        for (const id of group.student_ids || []) (inScope ? assigned : other).add(String(id))
+    }
+    const belongs = id => Boolean(id) && (assigned.has(String(id)) || groups.length === 0)
+    // Older receipts identify a person but do not distinguish two dates of the same work.
+    const belongsToHistoricalScope = id => belongs(id) && (!isGroupView || !other.has(String(id)))
+    const rows = []
+    const release = status.student_distribution || {}
+    const portalInScope = !isGroupView || (release.student_ids || []).some(belongs)
+    if (portalInScope && release.published_at) {
+        const state = release.ended_at ? 'Freigabe beendet' : release.withdrawn_at ? 'Freigabe pausiert' : ''
+        rows.push({ key: 'portal', label: 'Im Schülerbereich bereitgestellt', state })
+    } else if (portalInScope && release.prepared_at) {
+        rows.push({ key: 'portal', label: 'Schülerbereich vorbereitet' })
+    } else if (release.deleted_at) {
+        rows.push({ key: 'portal', label: 'Bereitstellung im Schülerbereich entfernt' })
+    }
+
+    const batches = Object.entries(status.assignment_mail?.batches || {})
+        .filter(([slot]) => !selectedDate || slot === selectedDate || slot === 'all')
+        .flatMap(([slot, batch]) => {
+            const recipients = (batch.recipients || []).filter(row => belongs(row.student_id))
+            if (!recipients.length && ((batch.recipients || []).some(row => row.student_id) || (slot === 'all' && isGroupView))) return []
+            return [{ ...batch, recipients }]
+        })
+    const acceptedBy = transport => batches.filter(batch => batch.transport === transport)
+        .flatMap(batch => batch.recipients.filter(row => ['accepted', 'already_sent'].includes(row.state)
+            && Number.isFinite(Date.parse(row.accepted_at))).map(row => ({ ...row, withdrawn: Boolean(batch.withdrawn_at) })))
+    const postmark = acceptedBy('postmark')
+    const imported = workDispatchNotifications(proofWork, 'tasks').filter(row => belongsToHistoricalScope(row.student_id))
+    const legacy = !isGroupView && dates.length <= 1 && ['sent', 'partial'].includes(dispatch.status) && Number(dispatch.confirmed_count) > 0
+    if (postmark.length) {
+        const count = new Set(postmark.map(row => String(row.student_id))).size
+        const detail = `Postmark hat ${count} ${count === 1 ? 'Nachricht' : 'Nachrichten'} angenommen. Zustellung nicht bestätigt.`
+        rows.push({ key: 'email', label: 'Per E-Mail versandt', detail,
+            state: postmark.every(row => row.withdrawn) && !imported.length ? 'Verteilung zurückgezogen' : '',
+            at: latestEvidenceTime(postmark.map(row => row.accepted_at)) })
+    } else if (imported.length || (legacy && dispatch.transport === 'office_outlook')) {
+        rows.push({ key: 'email', label: 'Per E-Mail versandt',
+            detail: imported.length ? 'Gespeicherter Versandbeleg' : 'Versandbeleg im Prüfungsordner',
+            at: imported[0]?.sent_at })
+    }
+
+    const historicalAttempts = [...new Set((status.dispatch_attempts || [])
+        .map(row => row.student_id).filter(belongsToHistoricalScope).map(String))]
+        .map(id => workDispatchRecord(proofWork, id, 'tasks'))
+        .filter(Boolean)
+    const mailpit = acceptedBy('mailpit')
+    const historicalTests = historicalAttempts.filter(row => ['mailpit', 'test'].includes(row.mode))
+    const legacyMailpit = legacy && dispatch.transport === 'mailpit'
+    if (mailpit.length || historicalTests.length || legacyMailpit) {
+        rows.push({ key: 'mailpit', label: 'Lokaler Mailpit-Test', at: latestEvidenceTime([
+            ...mailpit.map(row => row.accepted_at), ...historicalTests.map(row => row.sent_at),
+        ]) })
+    }
+    const pending = batches.filter(batch => !batch.withdrawn_at)
+    const pendingStates = pending.flatMap(batch => batch.recipients.length ? batch.recipients.map(row => row.state) : [batch.state])
+    const scheduled = historicalAttempts.filter(row => row.mode === 'scheduled')
+    const prepared = historicalAttempts.filter(row => row.mode === 'prepared')
+    if (pendingStates.includes('sending')) {
+        rows.push({ key: 'email-pending', label: 'E-Mail-Versand läuft' })
+    } else if (pendingStates.includes('queued') || scheduled.length) {
+        rows.push({ key: 'email-pending', label: 'E-Mail-Versand geplant', at: latestEvidenceTime(scheduled.map(row => row.planned_at)) })
+    } else if (pendingStates.includes('draft') || prepared.length) {
+        rows.push({ key: 'email-pending', label: 'E-Mail vorbereitet', at: latestEvidenceTime([
+            ...prepared.map(row => row.prepared_at), ...pending.filter(batch => batch.state === 'draft').map(batch => batch.prepared_at),
+        ]) })
+    } else if (!rows.some(row => row.key === 'email' || row.key === 'mailpit') && pending.length) {
+        rows.push({ key: 'email-pending', label: 'E-Mail-Versand nicht bestätigt' })
+    }
+
+    const records = workProvisionRecords(proofWork, null, true).filter(row => belongsToHistoricalScope(row.student_id))
+    for (const [method, label] of [['direct_issue', 'Direkt ausgegeben'], ['download_release', 'Zum Download bereitgestellt']]) {
+        const evidence = records.filter(row => row.method === method)
+            .sort((first, second) => Date.parse(second.available_at) - Date.parse(first.available_at))
+        if (!evidence.length) continue
+        const count = new Set(evidence.map(row => String(row.student_id))).size
+        rows.push({ key: method, label, detail: `Für ${count} ${count === 1 ? 'Person' : 'Personen'} belegt. Individueller Empfang nicht bestätigt.`,
+            at: evidence[0].available_at })
+    }
+
+    if (rows.length) return rows
+    const chosen = status.provision_method?.channel
+    return [{ key: 'choice', label: chosen === 'portal' ? 'Schülerbereich gewählt' : chosen === 'email' ? 'E-Mail gewählt' : 'Bereitstellungsweg offen' }]
+}

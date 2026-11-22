@@ -15,6 +15,7 @@ use App\Models\TeachingWorkModuleLink;
 use App\Models\User;
 use App\Services\DropboxModuleLinks;
 use App\Services\DropboxWorkImport;
+use App\Services\TeachingAssessmentRuns;
 use App\Services\TeachingAssessmentTemplate;
 use App\Services\TeachingDirectAssessment;
 use GuzzleHttp\Psr7\Response;
@@ -116,6 +117,9 @@ test('the real direct endpoint creates a verified package with a separate MC sel
     app()->instance(DropboxModuleLinks::class, $modules);
     $modules->shouldReceive('current')->andReturn($link);
     $modules->shouldReceive('forgetExerciseCache');
+    if ($mode === 'linked') {
+        $modules->shouldReceive('rememberInitializedExercise')->once();
+    }
     $modules->shouldReceive('exercise')->andReturnUsing(function () use ($state) {
         foreach ($state->files as $key => $file) {
             if (str_ends_with($key, '/status.json') && (json_decode($file['contents'], true)['prepared'] ?? false)) {
@@ -188,6 +192,7 @@ test('the real direct endpoint creates a verified package with a separate MC sel
 })->with([[false, 'new'], [true, 'new'], [false, 'empty'], [true, 'empty'], [false, 'linked'], [true, 'linked']]);
 
 test('authorized teacher previews and explicitly confirms the direct path', function (): void {
+    $this->work->update(['date_for_all_groups' => '2026-11-18']);
     $direct = Mockery::mock(TeachingDirectAssessment::class);
     app()->instance(TeachingDirectAssessment::class, $direct);
     $id = '11111111-1111-4111-8111-111111111111';
@@ -198,8 +203,19 @@ test('authorized teacher previews and explicitly confirms the direct path', func
         'template_points_snapshot' => 35, 'expected_test_id' => null])->assertOk()->assertJsonPath('generation.id', $id);
     $this->postJson($this->url.'/store-exercise', ['kind' => 'direct', 'generation_id' => $id, 'approved' => true])
         ->assertAccepted()->assertJsonPath('run.state', 'queued');
+    $this->getJson($this->url.'/exercise-run?progress_only=1&date=2026-11-19')->assertOk()
+        ->assertJsonPath('activity.id', $id)->assertJsonPath('activity.state', 'queued')
+        ->assertJsonPath('run.date', '2026-11-18')->assertJsonMissingPath('run.result');
+    $this->getJson($this->url.'/exercise-run?date=2026-11-19')->assertOk()->assertJsonPath('run', null);
+    $this->putJson($this->url, ['title' => 'Während der Erstellung'])->assertConflict();
+    $this->deleteJson($this->url)->assertConflict();
+    $summary = app(TeachingAssessmentRuns::class)->summaries([$this->work->id]);
+    expect($summary[$this->work->id])->toMatchArray(['id' => $id, 'state' => 'queued']);
     runTeachingAssessmentWorker();
     $this->getJson($this->url.'/exercise-run')->assertOk()->assertJsonPath('run.result.status', 'created');
+    $this->getJson($this->url.'/exercise-run?progress_only=1&date=2026-11-19')->assertOk()
+        ->assertJsonPath('activity.state', 'completed')->assertJsonPath('run', null);
+    $this->putJson($this->url, ['title' => 'Nach der Erstellung'])->assertSuccessful();
     $this->getJson($this->url.'/exercise-run?progress_only=1')->assertOk()->assertJsonPath('run.state', 'completed')
         ->assertJsonPath('run.progress.state', 'done')->assertJsonMissingPath('run.generation')->assertJsonMissingPath('run.result');
     Http::assertNothingSent();

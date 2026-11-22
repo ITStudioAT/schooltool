@@ -570,6 +570,45 @@ it('discovers a teacher pause between polls, restores the exact frozen time and 
     expect(wrapper.find('[role="timer"]').text()).toContain('8:58')
 })
 
+it.each([
+    ['personal link', 'personal', 'Frühere persönliche Schlussfrist'],
+    ['student account', null, null],
+    ['student account', 'test', 'Frühere MC-Schlussfrist'],
+])('refreshes the work deadline during a pause from %s with %s limit', async (entry, earlierKind, earlierLabel) => {
+    if (entry === 'student account') {
+        route.path = '/student/multiple-choice'
+        route.fullPath = '/student/multiple-choice/7'
+        route.hash = ''
+        route.params = { attempt: 7 }
+    }
+    const paused = fixture({ start_mode: 'individual', status: 'ready', started_at: null, starts_at: null, questions: [],
+        paused_at: '2026-11-24T11:59:00+01:00', server_now: '2026-11-24T12:00:00+01:00',
+        closes_at: '2026-11-24T12:02:00+01:00', ends_at: '2026-11-24T12:02:00+01:00',
+        work_deadline: { date: '2026-11-24', time: '12:02' }, earlier_deadline_kind: null,
+    })
+    vi.mocked(axios.get).mockResolvedValueOnce({ data: { attempt: paused } })
+    const wrapper = mount(MultipleChoice)
+    wrappers.push(wrapper)
+    await flushPromises()
+    const deadline = (label: string) => wrapper.findAll('dt').find(item => item.text() === label)?.element.nextElementSibling?.textContent
+    expect(wrapper.text()).toContain('Der Test ist pausiert.')
+    expect(deadline('Abgabefrist der Arbeit')).toContain('12:02')
+    vi.mocked(axios.get).mockResolvedValue({ data: { attempt: { ...paused,
+        work_deadline: { date: '2026-11-24', time: '12:30' }, earlier_deadline_kind: earlierKind,
+        closes_at: earlierKind ? paused.closes_at : '2026-11-24T12:30:00+01:00',
+    } } })
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(deadline('Abgabefrist der Arbeit')).toContain('12:30')
+    if (earlierLabel) expect(deadline(earlierLabel)).toContain('12:02')
+    else expect(wrapper.text()).not.toContain('12:02')
+    expect(wrapper.text()).toContain('Der Test ist pausiert.')
+    expect(axios.get).toHaveBeenLastCalledWith('/api/multiple-choice/attempts/7', expect.objectContaining({
+        headers: entry === 'personal link' ? { 'X-MC-Access': 'personal-secret' } : {},
+    }))
+    expect(axios.post).not.toHaveBeenCalled()
+    expect(axios.put).not.toHaveBeenCalled()
+})
+
 it('does not replace a frozen attempt with an older active poll response', async () => {
     const session = mountSession()
     await flushPromises()

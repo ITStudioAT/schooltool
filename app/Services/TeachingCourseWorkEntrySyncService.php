@@ -78,9 +78,11 @@ class TeachingCourseWorkEntrySyncService
         return count($rows);
     }
 
-    public function serializeWork(TeachingCourseWork $work, ?array $testDetails = null): array
+    public function serializeWork(TeachingCourseWork $work, ?array $testDetails = null, ?array $assessmentRuns = null): array
     {
         $payload = $work->toArray();
+        $assessmentRuns ??= app(TeachingAssessmentRuns::class)->summaries([$work->id]);
+        $payload['assessment_run'] = $assessmentRuns[$work->id] ?? null;
         $payload['student_distribution_version'] = app(TeachingWorkStudentDistribution::class)->version($work);
         $payload['automation_enabled'] = $work->automationEnabled();
         $payload['local_task_copy'] = app()->isLocal() && ($work->status['local_test_copy']['source_work_id'] ?? null) !== null;
@@ -88,7 +90,12 @@ class TeachingCourseWorkEntrySyncService
         $payload['groups'] = $this->groupsForWork($work);
         $ids = $this->multipleChoiceTestIds($work);
         $details = $testDetails ?? ($ids === [] ? [] : $this->multipleChoiceTestDetails($ids, $work->teachingCourse));
-        $payload['multiple_choice_test_details'] = array_intersect_key($details, array_flip($ids));
+        $details = array_intersect_key($details, array_flip($ids));
+        $started = array_map(fn (array $test): array => $test['started_student_ids'], $details);
+        $payload['submission_lock_reason'] = TeachingWorkSubmissions::lockReason($work, groups: $payload['groups'], startedByTest: $started);
+        $payload['can_end_email_release'] = ! $work->studentReleaseEnded()
+            && TeachingWorkSubmissions::confirmedEmailRecipients($work, $payload['groups']) !== [];
+        $payload['multiple_choice_test_details'] = array_map(fn (array $test): array => array_diff_key($test, ['started_student_ids' => true]), $details);
         $payload['multiple_choice_test_titles'] = array_map(fn (array $test): string => $test['title'], $payload['multiple_choice_test_details']);
         $payload['submission_check_status'] = app(TeachingWorkJsonImport::class)->submissionCheckStatus($work);
         $payload['collection_run'] = app(TeachingWorkCollectionStatus::class)->cached($work);
@@ -110,7 +117,9 @@ class TeachingCourseWorkEntrySyncService
         $ids = $works->flatMap(fn (TeachingCourseWork $work): array => $this->multipleChoiceTestIds($work))->unique()->values()->all();
         $details = $this->multipleChoiceTestDetails($ids, $course);
 
-        return $works->map(fn (TeachingCourseWork $work): array => $this->serializeWork($work, $details))->values();
+        $runs = app(TeachingAssessmentRuns::class)->summaries($works->pluck('id')->values()->all());
+
+        return $works->map(fn (TeachingCourseWork $work): array => $this->serializeWork($work, $details, $runs))->values();
     }
 
     /** @return list<int> */
@@ -131,7 +140,7 @@ class TeachingCourseWorkEntrySyncService
     }
 
     /** @param list<int> $ids
-     * @return array<int, array{title: string, points: float, question_count: int, duration_seconds: int}>
+     * @return array<int, array{title: string, points: float, question_count: int, duration_seconds: int, started_student_ids: list<int>}>
      */
     private function multipleChoiceTestDetails(array $ids, ?TeachingCourse $course): array
     {
@@ -143,12 +152,15 @@ class TeachingCourseWorkEntrySyncService
             ->whereIn('id', $ids)
             ->where('school_id', $course->school_id)
             ->where('schoolyear_id', $course->schoolyear_id)
-            ->get(['id', 'title', 'total_points', 'question_count', 'duration_seconds'])
+            ->with(['attempts' => fn ($attempts) => $attempts->whereNotNull('started_at')->select('test_id', 'student_id')])
+            ->get(['id', 'title', 'total_points', 'question_count', 'duration_seconds', 'owner_id'])
             ->mapWithKeys(fn (McTest $test): array => [$test->id => [
                 'title' => $test->title,
                 'points' => (float) $test->total_points,
                 'question_count' => $test->question_count,
                 'duration_seconds' => $test->duration_seconds,
+                'started_student_ids' => (int) $test->owner_id === (int) $course->user_id
+                    ? $test->attempts->pluck('student_id')->all() : [],
             ]])
             ->all();
     }

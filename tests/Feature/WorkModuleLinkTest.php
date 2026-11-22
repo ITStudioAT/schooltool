@@ -27,6 +27,7 @@ use Illuminate\Http\Client\Factory as HttpFactory;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Spatie\Permission\Models\Role;
 use Symfony\Component\HttpKernel\Exception\HttpException;
@@ -150,12 +151,21 @@ function fakeModuleDropbox(object $context): void
                     'path_lower' => $request['path'], 'path_display' => '/schule2020_2027/Materialien/Lerninhalte']);
             }
             $path = $request['path'];
-            if (($context->resetExerciseStatus ?? false) && str_starts_with($path, 'id:') && str_ends_with($path, '/status.json')) {
+            if (($context->createExercise ?? false) && str_starts_with($path, 'id:') && str_contains($path, '/')) {
+                $parent = collect($context->online)->firstWhere('id', dirname($path));
+                $path = $parent['path_lower'].'/'.mb_strtolower(basename($path));
+            }
+            if ((($context->resetExerciseStatus ?? false) || ($context->createExercise ?? false))
+                && str_starts_with($path, 'id:') && str_ends_with($path, '/status.json')) {
                 $folder = collect($context->online)->firstWhere('id', dirname($path));
                 $path = $folder['path_lower'].'/status.json';
             }
             foreach ($context->online as $entry) {
                 if ($entry['id'] === $path || $entry['path_lower'] === mb_strtolower($path)) {
+                    if (($context->shareAfterPreflightId ?? null) === $path && ($context->recursivePreflights ?? 0) >= 2) {
+                        expect($request['include_has_explicit_shared_members'])->toBeTrue();
+                        $entry['has_explicit_shared_members'] = true;
+                    }
                     if (($context->varyParentCaseForId ?? null) === $request['path'] && isset($entry['path_display'])) {
                         $entry['path_display'] = mb_strtolower(dirname($entry['path_display'])).'/'.$entry['name'];
                     }
@@ -181,6 +191,46 @@ function fakeModuleDropbox(object $context): void
 
             return Http::response(['error_summary' => 'path/not_found/'], 409);
         }
+        if (($context->createExercise ?? false) && str_ends_with($request->url(), '/files/create_folder_v2')) {
+            $path = $request['path'];
+            expect($request['autorename'])->toBeFalse();
+            if (collect($context->online)->contains('path_lower', mb_strtolower($path))) {
+                return Http::response(['error_summary' => 'path/conflict/folder/',
+                    'error' => ['.tag' => 'path', 'path' => ['.tag' => 'conflict', 'conflict' => ['.tag' => 'folder']]]], 409);
+            }
+            $folder = ['.tag' => 'folder', 'id' => 'id:created'.hash('sha256', $path), 'name' => basename($path),
+                'path_lower' => mb_strtolower($path), 'path_display' => $path];
+            $context->online[] = $folder;
+
+            unset($folder['.tag']);
+            if (($context->initialFolderFault ?? null) === 'missing-path' && $folder['name'] !== 'Leistungsfeststellungen') {
+                unset($folder['path_lower']);
+            }
+            if (($context->initialFolderFault ?? null) === 'root-response' && $folder['name'] === 'Leistungsfeststellungen') {
+                $folder['name'] = 'Falscher Antwortname';
+            }
+
+            return Http::response(['metadata' => $folder]);
+        }
+        if (($context->createExercise ?? false) && str_ends_with($request->url(), '/files/upload')) {
+            $argument = json_decode($request->header('Dropbox-API-Arg')[0], true, flags: JSON_THROW_ON_ERROR);
+            $folder = collect($context->online)->firstWhere('id', dirname($argument['path']));
+            expect($argument['mode'])->toBe('add')->and(basename($argument['path']))->toBe('status.json');
+            $fault = $context->initialUploadFault ?? null;
+            unset($context->initialUploadFault);
+            if ($fault === 'before-write') {
+                return Http::response([], 503);
+            }
+            addEmailPreparationFile($context, $folder['path_display'].'/status.json', $request->body());
+            if ($fault === 'after-write') {
+                return Http::response([], 503);
+            }
+
+            $uploaded = end($context->online);
+            unset($uploaded['.tag']);
+
+            return Http::response($uploaded);
+        }
         if (($context->resetExerciseStatus ?? false) && str_ends_with($request->url(), '/files/upload')) {
             $argument = json_decode($request->header('Dropbox-API-Arg')[0], true, flags: JSON_THROW_ON_ERROR);
             $folder = collect($context->online)->firstWhere('id', dirname($argument['path']));
@@ -203,6 +253,9 @@ function fakeModuleDropbox(object $context): void
         }
         if (str_ends_with($request->url(), '/files/list_folder')) {
             $parentFolder = collect($context->online)->firstWhere('id', $request['path']);
+            if (($context->shareAfterPreflightId ?? null) === $request['path'] && ($request['recursive'] ?? false)) {
+                $context->recursivePreflights = ($context->recursivePreflights ?? 0) + 1;
+            }
             if (($context->failedCandidateFolderId ?? null) === $request['path']) {
                 return Http::response([], 503);
             }
@@ -211,6 +264,12 @@ function fakeModuleDropbox(object $context): void
                     ? (($request['recursive'] ?? false) ? str_starts_with($entry['path_lower'], $parentFolder['path_lower'].'/')
                         : dirname($entry['path_lower']) === $parentFolder['path_lower'])
                     : $request['path'] === 'id:folder'.basename(dirname($entry['path_lower']))));
+            if (($request['recursive'] ?? false) && ($context->changeStatusOnRecheckId ?? null) === $request['path']) {
+                $context->initialFolderInventoryCount = ($context->initialFolderInventoryCount ?? 0) + 1;
+                if ($context->initialFolderInventoryCount === 2) {
+                    $entries[0]['rev'] = 'changed-after-receipt';
+                }
+            }
             $listing = ['entries' => $entries, 'has_more' => false];
             if (($request['recursive'] ?? false) && ($context->recursiveRootFolderId ?? null) === $request['path']) {
                 $rootEntry = $parentFolder;
@@ -344,7 +403,7 @@ test('module lookup reuses unchanged handshake revisions but still detects newly
     $downloads = Http::recorded(fn (Request $request): bool => str_ends_with($request->url(), '/files/download'))->count();
 
     $this->postJson($this->url.'/folder', $payload)->assertOk()->assertJsonPath('can_link', true);
-    expect(Http::recorded(fn (Request $request): bool => str_ends_with($request->url(), '/files/download'))->count())->toBe($downloads + 1);
+    expect(Http::recorded(fn (Request $request): bool => str_ends_with($request->url(), '/files/download'))->count())->toBe($downloads);
 
     $copy = $this->online[0];
     $copy['id'] = 'id:copy';
@@ -415,6 +474,122 @@ test('confirmed module linking initializes the exam folder, but resolving alone 
     Http::assertNotSent(fn (Request $request): bool => preg_match('#/files/(upload|delete|move|create)#', $request->url()) === 1);
 });
 
+test('new work linking creates only its exact target without a module lock or a Dropbox readback', function (int $version, int $siblings, string $scenario = 'normal'): void {
+    $this->course->update(['title' => 'INF - 3B - 2', 'classes' => ['3B']]);
+    $this->work->update(['type' => 'TE', 'title' => 'Word', 'date_for_all_groups' => '2026-10-06',
+        'status' => ['creation_receipt' => ['id' => (string) Str::uuid(), 'user_id' => $this->user->id, 'hash' => str_repeat('a', 64)]]]);
+    $student = User::factory()->create(['school_id' => $this->course->school_id, 'schoolyear_id' => $this->course->schoolyear_id,
+        'first_name' => 'Anna', 'last_name' => 'Beispiel', 'schoolclass' => '3B', 'is_active' => true]);
+    $this->course->teachingCourseStudents()->create(['user_id' => $student->id]);
+    $credentials = $this->connection->credentials;
+    $credentials['scopes'][] = 'files.content.write';
+    $this->connection->update(['credentials' => $credentials]);
+    $path = dirname($this->online[0]['path_display']);
+    if ($version === 2) {
+        $this->handshake = json_encode(['schema_version' => 2, 'module_id' => 'A263B873-4f27-4167-90f0-7d94ea0f67fa',
+            'dropbox_folder_id' => 'id:module'], JSON_THROW_ON_ERROR);
+        $this->remoteContents = $this->handshake;
+        $this->online[0]['size'] = strlen($this->handshake);
+    }
+    array_unshift($this->online, ['.tag' => 'folder', 'id' => 'id:module', 'name' => basename($path),
+        'path_lower' => mb_strtolower($path), 'path_display' => $path]);
+    $root = $path.'/Leistungsfeststellungen';
+    $target = $root.'/2026-10-06 – 3B_Gruppe-2 – Word';
+    if ($siblings > 0 || $scenario === 'conflict') {
+        $this->online[] = ['.tag' => 'folder', 'id' => 'id:examroot', 'name' => basename($root),
+            'path_lower' => mb_strtolower($root), 'path_display' => $root];
+    }
+    for ($index = 0; $index < $siblings; $index++) {
+        $sibling = $root.'/2026-10-06 – 3B_Gruppe-2 – Andere '.$index;
+        $this->online[] = ['.tag' => 'folder', 'id' => 'id:sibling'.$index, 'name' => basename($sibling),
+            'path_lower' => mb_strtolower($sibling), 'path_display' => $sibling];
+        addEmailPreparationFile($this, $sibling.'/status.json', 'Dieser fremde Inhalt darf nicht gelesen werden.');
+    }
+    if ($scenario === 'conflict') {
+        $this->online[] = ['.tag' => 'folder', 'id' => 'id:conflict', 'name' => basename($target),
+            'path_lower' => mb_strtolower($target), 'path_display' => $target];
+        addEmailPreparationFile($this, $target.'/status.json', 'Bestehende Datei.');
+    }
+    $this->createExercise = true;
+    $this->initialFolderFault = $scenario;
+    $this->initialUploadFault = $scenario;
+    fakeModuleDropbox($this);
+    $payload = ['filename' => 'handshake.json', 'handshake' => $this->handshake];
+    $proof = $this->postJson($this->url.'/folder', $payload + ['resolve' => true])->assertOk()->json('proof');
+
+    $offset = Http::recorded()->count();
+    $lock = Cache::lock('teaching:direct-assessment:'.hash('sha256', 'id:module'), 60);
+    expect($lock->get())->toBeTrue();
+    try {
+        $response = $this->postJson($this->url.'/folder', $payload + ['proof' => $proof,
+            'creation_request_id' => $this->work->status['creation_receipt']['id']])->assertOk();
+    } finally {
+        $lock->release();
+    }
+    $calls = Http::recorded()->slice($offset);
+    expect($calls->filter(fn (array $call): bool => str_contains($call[0]->url(), '/files/list_folder')
+        || str_ends_with($call[0]->url(), '/files/download')
+        || (str_ends_with($call[0]->url(), '/files/get_metadata') && str_contains($call[0]['path'], 'sibling'))))->toBeEmpty();
+    if ($scenario === 'conflict') {
+        $response->assertJsonPath('link_preparation.status', 'partial');
+        expect($response->json('link_preparation.message'))->toContain('Konflikt');
+        expect($calls->filter(fn (array $call): bool => str_ends_with($call[0]->url(), '/files/upload')))->toBeEmpty();
+
+    } elseif (in_array($scenario, ['before-write', 'after-write', 'root-response'], true)) {
+        $response->assertJsonPath('link_preparation.status', 'partial');
+    } else {
+        $response->assertJsonPath('link_preparation.status', 'initialized')->assertJsonPath('link_preparation.folder', $target);
+        expect($calls)->toHaveCount(($siblings === 0 ? 11 : 9) + ($scenario === 'missing-path' ? 1 : 0));
+        expect($calls->last()[0]->url())->toEndWith('/files/upload');
+    }
+    if (in_array($scenario, ['before-write', 'after-write', 'root-response', 'conflict'], true)) {
+        $offset = Http::recorded()->count();
+        $targetId = collect($this->online)->firstWhere('path_lower', mb_strtolower($target))['id'] ?? null;
+        expect($lock->get())->toBeTrue();
+        try {
+            $retry = $this->postJson($this->url.'/folder', ['retry_preparation' => true])->assertOk();
+        } finally {
+            $lock->release();
+        }
+        $retryCalls = Http::recorded()->slice($offset);
+        expect($retryCalls->filter(fn (array $call): bool => (str_ends_with($call[0]->url(), '/files/list_folder') && $call[0]['path'] !== $targetId)
+            || (str_ends_with($call[0]->url(), '/files/get_metadata') && str_contains($call[0]['path'], 'sibling'))))->toBeEmpty();
+        expect($retryCalls->filter(fn (array $call): bool => str_ends_with($call[0]->url(), '/files/create_folder_v2')))
+            ->toHaveCount($scenario === 'root-response' ? 1 : 0);
+        if ($scenario === 'conflict') {
+            $retry->assertJsonPath('link_preparation.status', 'partial');
+            expect($retryCalls->filter(fn (array $call): bool => str_ends_with($call[0]->url(), '/files/upload')))->toBeEmpty();
+            $existing = collect($this->online)->firstWhere('path_lower', mb_strtolower($target.'/status.json'));
+            expect($this->exerciseDocuments['rev:'.$existing['rev']])->toBe('Bestehende Datei.');
+
+            return;
+        }
+        $retry->assertJsonPath('link_preparation.status', 'initialized')->assertJsonPath('link_preparation.folder', $target);
+        if ($targetId !== null) {
+            expect(collect($this->online)->firstWhere('path_lower', mb_strtolower($target))['id'])->toBe($targetId);
+        }
+        if ($scenario === 'after-write') {
+            expect($retryCalls->filter(fn (array $call): bool => str_ends_with($call[0]->url(), '/files/upload')))->toBeEmpty();
+        } else {
+            expect($retryCalls->last()[0]->url())->toEndWith('/files/upload');
+        }
+    }
+    $handshakeDownloads = Http::recorded(fn (Request $request): bool => str_ends_with($request->url(), '/files/download')
+        && json_decode($request->header('Dropbox-API-Arg')[0], true)['path'] === 'rev:revision1');
+    expect($handshakeDownloads)->toHaveCount(1);
+    $status = collect($this->online)->firstWhere('path_lower', mb_strtolower($target.'/status.json'));
+    expect(json_decode($this->exerciseDocuments['rev:'.$status['rev']], true)['schooltool'])
+        ->toBe(['work_id' => $this->work->id, 'course_id' => $this->course->id]);
+})->with([
+    'native response with a new parent' => [1, 0],
+    'native response with existing siblings' => [2, 8],
+    'missing path in the creation response' => [2, 8, 'missing-path'],
+    'retry after creating only the parent' => [2, 0, 'root-response'],
+    'retry after creating only the target' => [2, 8, 'before-write'],
+    'retry after losing a successful upload response' => [2, 8, 'after-write'],
+    'retry preserves conflicting existing data' => [2, 8, 'conflict'],
+]);
+
 test('a failed initial exam folder reports the saved link and a partial outcome', function (): void {
     fakeModuleDropbox($this);
     $direct = Mockery::mock(TeachingDirectAssessment::class);
@@ -446,7 +621,7 @@ test('a canonical folder cannot be claimed when another work has the same target
     Http::assertNotSent(fn (Request $request): bool => preg_match('#/files/(upload|delete|move|create)#', $request->url()) === 1);
 })->with([true, false]);
 
-function addModernExerciseFixture(object $context, bool $withMc = false, string $date = '2026-10-06'): string
+function addModernExerciseFixture(object $context, bool $withMc = false, string $date = '2026-10-06', bool $withAssignment = true): string
 {
     $context->course->update(['title' => 'INF - 3B - 2', 'classes' => ['3B']]);
     $context->work->update(['title' => 'Word', 'groups' => [['date' => '2026-10-06', 'student_ids' => [123]]]]);
@@ -457,7 +632,11 @@ function addModernExerciseFixture(object $context, bool $withMc = false, string 
         $context->online[] = ['.tag' => 'folder', 'id' => 'id:folder'.hash('sha256', $folder), 'name' => basename($folder),
             'path_lower' => mb_strtolower($folder), 'path_display' => $folder];
     }
-    foreach (['Beurteilung.md', 'Beurteilung.pdf', 'Kandidaten/Person/Angaben/Aufgaben.pdf'] as $file) {
+    $documents = ['Beurteilung.md', 'Beurteilung.pdf'];
+    if ($withAssignment) {
+        $documents[] = 'Kandidaten/Person/Angaben/Aufgaben.pdf';
+    }
+    foreach ($documents as $file) {
         addEmailPreparationFile($context, $path.'/'.$file, '%PDF-1.4 test content');
     }
     if ($withMc) {
@@ -472,13 +651,21 @@ function addModernExerciseFixture(object $context, bool $withMc = false, string 
     $record = ['schema_version' => 1, 'kind' => 'leistungsfeststellung.status',
         'schooltool' => ['work_id' => $context->work->id, 'course_id' => $context->course->id],
         'folder_group' => '3B_Gruppe-2', 'scheduled_date' => $date, 'prepared' => true,
-        'components' => ['aufgabenblatt' => ['included' => true, 'points' => 35],
+        'components' => ['aufgabenblatt' => ['included' => $withAssignment, 'points' => $withAssignment ? 35 : null],
             'multiple_choice' => ['included' => $withMc, 'points' => $withMc ? 2 : null]],
-        'total_points' => $withMc ? 37 : 35];
+        'total_points' => ($withAssignment ? 35 : 0) + ($withMc ? 2 : 0)];
     addEmailPreparationFile($context, $path.'/status.json', json_encode($record, JSON_THROW_ON_ERROR));
 
     return $path;
 }
+
+test('the verified assessment status accepts an explicitly MC-only package and preserves its total', function (): void {
+    linkExerciseFixture($this);
+    addModernExerciseFixture($this, withMc: true, withAssignment: false);
+    $this->getJson($this->url.'?include_exercise=1&refresh=1&date=2026-10-06')->assertOk()
+        ->assertJsonPath('exercise.preparation.status', 'ready')->assertJsonPath('exercise.preparation.components.aufgabenblatt.included', false)
+        ->assertJsonPath('exercise.preparation.components.multiple_choice.included', true)->assertJsonPath('exercise.preparation.total_points', 2);
+});
 
 function addLinkedExerciseStatusFixture(object $context, string $path): void
 {
@@ -2470,6 +2657,17 @@ test('a paginated Dropbox listing containing its own root permits deleting the e
         && ($request['cursor'] ?? null) === 'recursive-exam-page-2');
 });
 
+test('an exam folder shared after preflight is preserved before the exact delete', function (): void {
+    $fixture = recursiveRootDeletionFixture($this);
+    $this->shareAfterPreflightId = $fixture['root']['id'];
+
+    $this->deleteJson('/api/admin/teaching/course_works/'.$this->work->id)->assertConflict();
+    $this->assertDatabaseHas('teaching_course_works', ['id' => $this->work->id]);
+    $this->assertDatabaseHas('mc_tests', ['id' => $fixture['test']->id]);
+    expect($this->work->fresh()->status['deletion_receipt']['folders'])->toHaveCount(1);
+    Http::assertNotSent(fn (Request $request): bool => str_ends_with($request->url(), '/files/delete_v2'));
+});
+
 test('a recursive listing still protects inconsistent or shared entries with the root present', function (string $scenario): void {
     $fixture = recursiveRootDeletionFixture($this);
     $extra = $fixture['root'];
@@ -2607,7 +2805,61 @@ test('a status only initialized exam folder with an explicit work binding is rem
     $this->connection->update(['credentials' => $credentials]);
     $this->deleteJson('/api/admin/teaching/course_works/'.$this->work->id)->assertNoContent();
     expect($this->deletedIds)->toBe([$folder['id']])->and($this->work->fresh())->toBeNull();
+    expect(Http::recorded(fn (Request $request): bool => str_ends_with($request->url(), '/files/list_folder')
+        && ($request['recursive'] ?? false) && $request['path'] === $folder['id']))->toHaveCount(2);
 });
+
+test('the confirmed initial exam can be deleted without reading unrelated exams', function (string $scenario): void {
+    linkExerciseFixture($this);
+    $path = addModernExerciseFixture($this);
+    makeModernFixtureEmpty($this, $path);
+    addLinkedExerciseStatusFixture($this, $path);
+    $this->work->update(['status' => ['creation_receipt' => ['id' => 'test-creation', 'user_id' => $this->user->id]]]);
+    $credentials = $this->connection->credentials;
+    $credentials['scopes'][] = 'files.content.write';
+    $this->connection->update(['credentials' => $credentials]);
+    $folder = collect($this->online)->firstWhere('path_lower', mb_strtolower($path));
+    $status = collect($this->online)->firstWhere('name', 'status.json');
+    $modules = app(DropboxModuleLinks::class);
+    $modules->rememberInitializedExercise($this->connection, $this->work, $modules->current($this->work), '2026-10-06', $folder, lock: false);
+    $neighbor = dirname($path).'/2026-10-06 – 3B_Gruppe-2 – Andere';
+    $this->online[] = ['.tag' => 'folder', 'id' => 'id:neighbor', 'name' => basename($neighbor),
+        'path_lower' => mb_strtolower($neighbor), 'path_display' => $neighbor];
+    addEmailPreparationFile($this, $neighbor.'/status.json', 'Unrelated incomplete status');
+    if ($scenario === 'catalog') {
+        McCatalog::query()->create(['school_id' => $this->course->school_id, 'owner_id' => $this->user->id,
+            'title' => 'Geteilte Quelle', 'questions' => [], 'module_sources' => [['source_file_id' => $status['id']]]]);
+    } elseif ($scenario === 'changed') {
+        $this->changeStatusOnRecheckId = $folder['id'];
+    } elseif ($scenario === 'lost response') {
+        $this->loseDeleteResponseAt = 1;
+    }
+
+    $url = '/api/admin/teaching/course_works/'.$this->work->id;
+    $offset = Http::recorded()->count();
+    $response = $this->deleteJson($url);
+    if ($scenario === 'catalog') {
+        $response->assertOk()->assertJsonPath('skipped_unverified', true);
+    } elseif ($scenario === 'changed') {
+        $response->assertConflict();
+        expect($this->work->fresh()->status['deletion_receipt']['initialized_folder']['status_file']['rev'])->toBe($status['rev']);
+    } elseif ($scenario === 'lost response') {
+        $response->assertConflict();
+        expect($this->work->fresh()->status['deletion_receipt']['folders'][0]['id'])->toBe($folder['id']);
+        $this->deleteJson($url)->assertNoContent();
+    } else {
+        $response->assertNoContent();
+        expect(Http::recorded()->slice($offset))->toHaveCount(12);
+    }
+    $calls = Http::recorded()->slice($offset);
+    $listings = $calls->filter(fn (array $call): bool => str_contains($call[0]->url(), '/files/list_folder'));
+    expect($listings->every(fn (array $call): bool => ($call[0]['recursive'] ?? false) && $call[0]['path'] === $folder['id']))->toBeTrue();
+    $downloads = $calls->filter(fn (array $call): bool => str_ends_with($call[0]->url(), '/files/download'));
+    expect($downloads)->toHaveCount(1)
+        ->and(json_decode($downloads->first()[0]->header('Dropbox-API-Arg')[0], true)['path'])->toBe('rev:'.$status['rev']);
+    expect(collect($this->online)->contains('id', 'id:neighbor'))->toBeTrue();
+    expect($this->deletedIds ?? [])->toBe(in_array($scenario, ['catalog', 'changed'], true) ? [] : [$folder['id']]);
+})->with(['normal', 'catalog', 'changed', 'lost response']);
 
 test('one deletion preserves shared resources after a verified sharing conflict', function (string $resource): void {
     $fixture = recursiveRootDeletionFixture($this);

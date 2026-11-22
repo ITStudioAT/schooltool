@@ -1,33 +1,33 @@
 <template>
-    <div v-if="needsPreparation" class="exercise-action" :class="{ 'exercise-action--progress': checkProgressState }" @click.stop>
+    <div v-if="needsPreparation || activity" class="exercise-action" :class="{ 'exercise-action--progress': checkProgressState }" @click.stop>
         <template v-if="exerciseFolder">
             <span v-if="!hideFolderName" class="exercise-folder text-body-2" aria-label="Leistungsfeststellungsordner">LF: {{ exerciseFolder.name }}</span>
             <WorkExerciseStatus v-if="!hideActivator" :work="work" :course="course" :date="date" :state="exerciseState"
-                :disabled="disabled || !current" can-create @deleted="checkExercise(true)" />
+                :disabled="disabled || !current" :can-create="!activity" @deleted="checkExercise(true)" />
         </template>
         <span v-else-if="exerciseChecking" role="status" class="text-body-2">Leistungsfeststellung wird geprüft …</span>
-        <span v-else-if="!hideActivator && moduleLinked && checkedStatus === 'missing'" role="button" :tabindex="disabled || !current ? -1 : 0"
-            :aria-disabled="disabled || !current" aria-label="Leistungsfeststellung erstellen" title="Leistungsfeststellung erstellen"
+        <span v-else-if="!hideActivator && moduleLinked && checkedStatus === 'missing'" role="button" :tabindex="disabled || !current || activity ? -1 : 0"
+            :aria-disabled="Boolean(disabled || !current || activity)" aria-label="Leistungsfeststellung erstellen" title="Leistungsfeststellung erstellen"
             class="d-inline-flex cursor-pointer" @click="openDialog" @keydown.enter.stop.prevent="openDialog" @keydown.space.stop.prevent="openDialog">
             <v-icon color="error" size="30">mdi-clipboard-text-outline</v-icon>
         </span>
         <span v-if="linkedMcTest && !hideMcTest" class="exercise-folder text-body-2">MC-Test: {{ linkedMcTest }}</span>
         <span v-if="!work?.id" class="d-block text-caption mt-1">Arbeit zuerst speichern, damit Arbeitskennung und Prüfungskandidaten bestätigt werden können.</span>
-        <v-btn v-if="active && current && moduleLinked && !exerciseChecking" size="small" variant="tonal" prepend-icon="mdi-refresh"
-            class="exercise-check-button" :disabled="disabled" @click="checkExercise(true)">
+        <v-btn v-if="active && current && (activity || (moduleLinked && !exerciseChecking))" size="small" variant="tonal" prepend-icon="mdi-refresh"
+            class="exercise-check-button" :disabled="disabled && !activity" @click="recheckStatus">
             <span class="d-flex flex-column align-start">
                 <span>Status erneut prüfen</span>
                 <span v-if="checkedAt && !hideCheckTime" class="text-caption text-none">Letzter Check: {{ checkTime }}</span>
             </span>
         </v-btn>
-        <v-btn v-if="active && current && !exerciseChecking && checkedStatus !== 'found' && (checkedStatus === 'unknown' || assessmentRun)"
-            size="small" variant="text" :disabled="disabled" @click="openDialog">Erstellungsauftrag anzeigen</v-btn>
-        <span v-if="exerciseMessage" role="status" class="exercise-check-message d-block text-caption mt-1">{{ exerciseMessage }}</span>
-        <WorkCheckProgress :state="checkProgressState" :unavailable="progressUnavailable" />
-        <p v-if="checkProgressState?.state === 'done' && checkedStatus === 'missing'" class="exercise-check-message text-caption" role="status">Statusprüfung abgeschlossen: Der Prüfungsordner ist noch nicht angelegt.</p>
+        <v-btn v-if="active && current && (activity || (!exerciseChecking && checkedStatus !== 'found' && (checkedStatus === 'unknown' || assessmentRun)))"
+            size="small" variant="text" :disabled="disabled && !activity" @click="openRunDialog">Erstellungsauftrag anzeigen</v-btn>
+        <span v-if="exerciseMessage && !activity" role="status" class="exercise-check-message d-block text-caption mt-1">{{ exerciseMessage }}</span>
+        <WorkCheckProgress v-if="!activity" :state="checkProgressState" :unavailable="progressUnavailable" />
+        <p v-if="!activity && checkProgressState?.state === 'done' && checkedStatus === 'missing'" class="exercise-check-message text-caption" role="status">Statusprüfung abgeschlossen: Der Prüfungsordner ist noch nicht angelegt.</p>
     </div>
     <span v-if="!needsPreparation && linkedMcTest && !hideMcTest" class="exercise-folder text-body-2">MC-Test: {{ linkedMcTest }}</span>
-    <WorkProgressCheck v-if="workAutomationEnabled(work) && shouldCheckProgress && !needsPreparation && active && current" :work="work" :disabled="disabled"
+    <WorkProgressCheck v-if="!activity && workAutomationEnabled(work) && shouldCheckProgress && !needsPreparation && active && current" :work="work" :disabled="disabled"
         :check-key="workDropboxKey(admin.config?.user?.id, work)" @checked="emit('progress-checked', $event)"
         @saved="emit('deadline-saved', $event)" @busy="emit('check-busy', $event)" />
     <v-dialog v-if="opened" :model-value="opened" max-width="640" :persistent="dialogBusy"
@@ -58,9 +58,10 @@
                 </div>
                 <p v-if="assessmentRun?.state === 'queued' && !runStatusUnknown" class="text-body-2 mb-3" role="status">Die Anlage wartet auf den Start.</p>
                 <p v-else-if="assessmentRun?.state === 'running' && !creationProgress" class="text-body-2 mb-3" role="status">Die Anlage läuft im Hintergrund.</p>
-                <p v-if="!mcOnly && !runLookup && !assessmentRun && !runStatusUnknown && !pendingRunRequest && checkedStatus !== 'missing'"
+                <p v-else-if="!assessmentRun && activity && !creationProgress" class="text-body-2 mb-3" role="status">{{ assessmentActivityLabel(activity) }}</p>
+                <p v-if="!mcOnly && !runLookup && !assessmentRun && !runStatusUnknown && !pendingRunRequest && !activity && checkedStatus !== 'missing'"
                     class="text-body-2 mb-3" role="status">Für diese Durchführung ist kein Erstellungsauftrag gespeichert.</p>
-                <template v-if="mcOnly ? !mcAdded : (!runLookup && !runInProgress && !runStatusUnknown && !pendingRunRequest && !completion && checkedStatus !== 'found' && (checkedStatus === 'missing' || assessmentRun))">
+                <template v-if="mcOnly ? !mcAdded && !activity : (!activity && !runLookup && !runInProgress && !runStatusUnknown && !pendingRunRequest && !completion && checkedStatus !== 'found' && (checkedStatus === 'missing' || assessmentRun))">
                 <p v-if="!mcOnly" class="text-body-2 mb-3">Prüfungsvorlage, Kandidaten und Zielordner prüfen und die Leistungsfeststellung anlegen.</p>
                 <div class="exercise-deadline-fields mb-3">
                     <v-text-field v-model="deadlineDate" label="Endgültige Abgabefrist" type="date" :disabled="loading"
@@ -162,17 +163,17 @@
             </v-card-text>
             <v-card-actions v-if="!templateLoading || assessmentRun" class="flex-wrap ga-2">
                 <v-spacer />
-                <v-btn v-if="runInProgress && !runStatusUnknown" @click="opened = false">Im Hintergrund weiterlaufen lassen</v-btn>
+                <v-btn v-if="(runInProgress || activity?.state === 'queued' || activity?.state === 'running') && !runStatusUnknown" @click="opened = false">Im Hintergrund weiterlaufen lassen</v-btn>
                 <v-btn v-else :disabled="dialogBusy" @click="updateDialog(false)">{{ completion || mcAdded || runStatusUnknown ? 'Schließen' : 'Abbrechen' }}</v-btn>
                 <template v-if="mcOnly">
                     <v-btn v-if="!mcAdded" color="primary" :loading="loading"
-                        :disabled="dialogBusy || !deadlineValid || !newTestDeadlineValid || !includeMc || !!selectionError || mcSelectionBlocked"
+                        :disabled="dialogBusy || !!activity || !deadlineValid || !newTestDeadlineValid || !includeMc || !!selectionError || mcSelectionBlocked"
                         @click="addMcTest">Test hinzufügen</v-btn>
                 </template>
                 <v-btn v-else-if="runStatusUnknown" color="primary" :loading="runLookup" :disabled="runLookup" @click="loadAssessmentRun(true)">Auftragsstatus erneut abrufen</v-btn>
-                <v-btn v-else-if="pendingRunRequest && !runInProgress" color="primary" :loading="loading" :disabled="dialogBusy" @click="resendAssessmentRun">Auftrag erneut senden</v-btn>
+                <v-btn v-else-if="pendingRunRequest && !runInProgress" color="primary" :loading="loading" :disabled="dialogBusy || activity?.state !== 'unconfirmed'" @click="resendAssessmentRun">Auftrag erneut senden</v-btn>
                 <v-btn v-else-if="templateError && !runInProgress" color="primary" @click="loadTemplatePoints(dialogSequence)">Erneut prüfen</v-btn>
-                <v-btn v-else-if="!completion && !runInProgress && !runLookup && checkedStatus !== 'found' && (checkedStatus === 'missing' || assessmentRun)" color="primary" :loading="loading"
+                <v-btn v-else-if="!activity && !completion && !runInProgress && !runLookup && checkedStatus !== 'found' && (checkedStatus === 'missing' || assessmentRun)" color="primary" :loading="loading"
                     :disabled="loading || !current || !deadlineValid || !!deadlineError || selectionLoading || !!selectionError || mcSelectionBlocked"
                     @click="prepareAssessment">{{ assessmentRun ? 'Erstellung erneut versuchen' : 'Leistungsfeststellung erstellen' }}</v-btn>
             </v-card-actions>
@@ -188,6 +189,8 @@ import { confirmCreatedWorkExercise, loadWorkExercise, workDropboxBinding, workD
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { workLinkedMcTestTitle, workNeedsPreparation } from '@/helpers/workOverview'
 import { workAutomationEnabled } from '@/helpers/workAutomation'
+import { assessmentActivityLabel, observeAssessmentRun, pendingAssessmentRun, prepareAssessmentRequest, rememberAssessmentRequest,
+    workAssessmentActivity } from '@/helpers/workAssessmentRun'
 import { workDeadlineExpired } from '@/helpers/date'
 import WorkProgressCheck from './WorkProgressCheck.vue'
 import WorkCheckProgress from './WorkCheckProgress.vue'
@@ -195,8 +198,10 @@ import WorkExerciseStatus from './WorkExerciseStatus.vue'
 import { createWorkCheckStream, useWorkCheckProgress } from './workCheckProgress'
 
 const props = defineProps({ work: Object, course: Object, date: { type: String, default: '' }, disabled: Boolean, active: { type: Boolean, default: true }, hideFolderName: Boolean, hideActivator: Boolean, hideMcTest: Boolean, hideCheckTime: Boolean, checkProgress: Boolean, passiveStatus: Boolean, deadlineDraft: { type: Object, default: null } })
-const emit = defineEmits(['exercise-status', 'progress-checked', 'deadline-saved', 'check-busy', 'busy'])
+const emit = defineEmits(['exercise-status', 'progress-checked', 'deadline-saved', 'check-busy', 'busy', 'assessment-recheck'])
 const admin = useAdminStore()
+const assessmentKey = computed(() => workDropboxKey(admin.config?.user?.id, props.work))
+const activity = computed(() => workAssessmentActivity(admin.config?.user?.id, props.work))
 const current = computed(() => Boolean(props.work?.id && props.course?.id && String(props.work.teaching_course_id) === String(props.course.id)))
 const opened = ref(false)
 const mcOnly = ref(false)
@@ -307,6 +312,9 @@ const dialogBusy = computed(() => loading.value || templateLoading.value || sele
     || (runLookup.value && !runStatusUnknown.value))
 const operationBusy = computed(() => exerciseChecking.value || checkProgressState.value?.state === 'running'
     || (opened.value && dialogBusy.value))
+watch(() => activity.value?.state, state => {
+    if (state && checkProgressState.value?.state === 'done') resetProgressPolling()
+})
 watch(operationBusy, value => emit('busy', value), { immediate: true, flush: 'sync' })
 
 async function checkExercise(fresh = false, opening = false) {
@@ -421,19 +429,31 @@ function clear() {
 
 function openDialog() {
     if (opened.value || !props.active || !needsPreparation.value || !current.value || props.disabled
-        || exerciseChecking.value || checkedStatus.value === 'found') return
+        || activity.value || exerciseChecking.value || checkedStatus.value === 'found') return
     showPreparationDialog(false)
+}
+
+function openRunDialog() {
+    if (opened.value || !props.active || !current.value || (props.disabled && !activity.value)) return
+    showPreparationDialog(false)
+}
+
+function recheckStatus() {
+    if (!activity.value) checkExercise(true)
+    else if (props.passiveStatus) emit('assessment-recheck')
+    else openRunDialog()
 }
 
 function openMcSelection() {
     if (opened.value || !props.active || !current.value || props.disabled || !moduleLinked.value
-        || exerciseChecking.value || checkedStatus.value !== 'found' || linkedMcTest.value) return
+        || activity.value || exerciseChecking.value || checkedStatus.value !== 'found' || linkedMcTest.value) return
     showPreparationDialog(true)
 }
 
 function showPreparationDialog(onlyMc) {
     clear()
     mcOnly.value = onlyMc
+    pendingRunRequest.value = onlyMc ? null : pendingAssessmentRun(assessmentKey.value)
     assessmentRun.value = null
     templateLoading.value = false
     templatePoints.value = null
@@ -453,7 +473,8 @@ function showPreparationDialog(onlyMc) {
     else loadAssessmentRun(true)
 }
 
-defineExpose({ openDialog, openMcSelection, recheck: () => checkExercise(true) })
+defineExpose({ openDialog, openMcSelection, recheck: recheckStatus,
+    refreshStored: () => { if (!opened.value) checkExercise(false) } })
 
 function updateDialog(value) {
     if (!value && dialogBusy.value) return
@@ -627,7 +648,7 @@ async function saveMcSelection(operation, workId, courseId) {
 }
 
 async function addMcTest() {
-    if (!opened.value || !mcOnly.value || props.disabled || !current.value || dialogBusy.value
+    if (!opened.value || !mcOnly.value || props.disabled || activity.value || !current.value || dialogBusy.value
         || mcAdded.value || !deadlineValid.value || !newTestDeadlineValid.value || !includeMc.value || selectionError.value || mcSelectionBlocked.value) return
     const operation = sequence
     const workId = props.work.id
@@ -642,6 +663,7 @@ async function addMcTest() {
     if (operation !== sequence || !opened.value) return
     mcProgressTarget.value?.scrollIntoView?.({ block: 'nearest' })
     try {
+        creationProgress.value = { state: 'starting', detail: 'Abgabefrist prüfen und bei Änderung speichern.' }
         const updatedDeadline = await saveDeadlineDraft(operation, workId, courseId)
         if (!updatedDeadline) return
         deadlineSaved = updatedDeadline.changed
@@ -697,33 +719,38 @@ async function saveDeadlineDraft(operation, workId, courseId) {
 async function prepareAssessment() {
     if (!opened.value || props.disabled || !current.value || !moduleLinked.value || loading.value || !deadlineValid.value || deadlineError.value
         || templateLoading.value || templateError.value || selectionLoading.value || selectionError.value || mcSelectionBlocked.value
-        || runLookup.value || runInProgress.value || runStatusUnknown.value || pendingRunRequest.value || completion.value || checkedStatus.value === 'found') return
+        || activity.value || runLookup.value || runInProgress.value || runStatusUnknown.value || pendingRunRequest.value || completion.value || checkedStatus.value === 'found') return
     clear()
     const operation = sequence
     const workId = props.work.id
     const courseId = props.course.id
+    const key = assessmentKey.value
     controller = new AbortController()
     loading.value = true
-    creationProgress.value = { state: 'running', active: null, completed: [], skipped: [], steps: [] }
-    await nextTick()
-    if (operation !== sequence || !opened.value || !current.value) return
-    creationProgressTarget.value?.scrollIntoView?.({ block: 'start' })
+    prepareAssessmentRequest(key, true)
+    creationProgress.value = { state: 'starting', detail: 'Angaben speichern und Erstellungsauftrag übermitteln.' }
     let deadlineSaved = false
     let selectionSaved = false
     serverTestErrors.value = {}
     try {
+        await nextTick()
+        if (operation !== sequence || !opened.value || !current.value) return
+        creationProgressTarget.value?.scrollIntoView?.({ block: 'start' })
+        creationProgress.value = { state: 'starting', detail: 'Abgabefrist prüfen und bei Änderung speichern.' }
         const updatedDeadline = await saveDeadlineDraft(operation, workId, courseId)
         if (!updatedDeadline) return
         deadlineSaved = updatedDeadline.changed
         if (deadlineSaved && updatedDeadline.exercise?.status !== 'missing' && updatedDeadline.exercise?.preparation?.status !== 'ready') {
             throw new Error('Der Anlagezustand hat sich geändert. Bitte den Dialog erneut öffnen und prüfen.')
         }
+        creationProgress.value = { state: 'starting', detail: 'Auswahl für den Multiple-Choice-Teil speichern.' }
         const selection = await saveMcSelection(operation, workId, courseId)
         if (!selection) return
         selectionSaved = selection.changed
         pendingRunRequest.value = { request_id: crypto.randomUUID(), approved: true,
             template_points_snapshot: templatePoints.value, expected_test_id: savedTestId.value,
             ...(props.date ? { date: props.date } : {}) }
+        creationProgress.value = { state: 'starting', detail: 'Erstellungsauftrag an die Warteschlange übermitteln.' }
         await dispatchAssessmentRun(operation)
     } catch (failure) {
         if (operation === sequence) {
@@ -741,6 +768,7 @@ async function prepareAssessment() {
             }
         }
     } finally {
+        prepareAssessmentRequest(key, false)
         if (operation === sequence) loading.value = false
     }
 }
@@ -776,6 +804,7 @@ function applyRun(run) {
     if (run !== null && (typeof run?.id !== 'string' || !['queued', 'running', 'completed', 'failed', 'interrupted'].includes(run.state))) {
         throw new Error('Der Erstellungsauftrag konnte nicht bestätigt werden.')
     }
+    observeAssessmentRun(assessmentKey.value, run)
     const awaiting = pendingRunRequest.value
     if (awaiting) {
         const sameOrActive = run?.request_id === awaiting.request_id || run?.id === awaiting.request_id || ['queued', 'running'].includes(run?.state)
@@ -813,7 +842,7 @@ function applyRun(run) {
     if (run.state === 'failed' || run.state === 'interrupted') {
         error.value = run.message || (run.state === 'interrupted' ? 'Die Anlage wurde unterbrochen. Der vorhandene Bestand wird beim nächsten Versuch geprüft.' : 'Die Anlage konnte nicht abgeschlossen werden.')
     }
-    if (run.state !== 'completed') return
+    if (run.state !== 'completed' || (props.date && run.date && props.date !== run.date)) return
     const done = run.result
     if (done?.status !== 'created' || typeof done.folder?.id !== 'string' || typeof done.folder?.path !== 'string'
         || !Number.isInteger(done.participants_count) || done.participants_count < 1
@@ -840,14 +869,15 @@ async function loadAssessmentRun(showLoading = false) {
     if (!opened.value || !current.value || runLookup.value) return
     clearTimeout(runTimer)
     const operation = sequence
-    const params = props.date ? { date: props.date } : {}
+    const date = activity.value?.date || props.date
+    const params = date ? { date } : {}
     runLookup.value = true
     try {
         const { data } = await axios.get(showExerciseRun.url(props.work.id), { params, signal: controller.signal, timeout: 10000 })
         if (operation !== sequence || !opened.value || !current.value) return
         applyRun(data?.run)
-        if (runInProgress.value) watchRunAgain()
-        else if ((checkedStatus.value === 'missing' || assessmentRun.value) && !completion.value && !pendingRunRequest.value
+        if (runInProgress.value || ['queued', 'running'].includes(activity.value?.state)) watchRunAgain()
+        else if (!activity.value && (checkedStatus.value === 'missing' || assessmentRun.value) && !completion.value && !pendingRunRequest.value
             && templatePoints.value === null && !templateLoading.value) loadDialogData()
     } catch (failure) {
         if (operation !== sequence) return
@@ -859,9 +889,12 @@ async function loadAssessmentRun(showLoading = false) {
 }
 
 async function dispatchAssessmentRun(operation) {
+    const key = assessmentKey.value
+    const request = pendingRunRequest.value
+    rememberAssessmentRequest(key, request)
     try {
-        const request = pendingRunRequest.value
         const { data } = await axios.post(storeExerciseRun.url(props.work.id), request, { signal: controller.signal, timeout: 15000 })
+        observeAssessmentRun(key, data?.run)
         if (operation !== sequence || !opened.value || !current.value) return
         applyRun(data?.run)
         if (runInProgress.value) watchRunAgain()
@@ -875,6 +908,7 @@ async function dispatchAssessmentRun(operation) {
                 error.value = failure.response.data.message
             }
         } else {
+            rememberAssessmentRequest(key, null)
             pendingRunRequest.value = null
             if (creationProgress.value) creationProgress.value = { ...creationProgress.value, state: 'failed' }
             error.value = Object.values(failure.response?.data?.errors || {}).flat()[0]
@@ -884,7 +918,8 @@ async function dispatchAssessmentRun(operation) {
 }
 
 async function resendAssessmentRun() {
-    if (!pendingRunRequest.value || loading.value || runLookup.value || runStatusUnknown.value || runInProgress.value) return
+    if (!pendingRunRequest.value || loading.value || runLookup.value || runStatusUnknown.value || runInProgress.value
+        || activity.value?.state !== 'unconfirmed') return
     const operation = sequence
     loading.value = true
     try {

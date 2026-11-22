@@ -41,7 +41,20 @@ class McAttempt extends Model
 
     public function closingDeadline(?McTest $test = null): ?CarbonImmutable
     {
-        return $this->closes_at ?? ($test ?? $this->test)->closes_at;
+        $test ??= $this->test;
+
+        return $this->closes_at ?? ($test->start_mode === 'individual' ? $test->individualClosingDeadline() : $test->closes_at);
+    }
+
+    public function fixedWorkDeadline(McTest $test): ?CarbonImmutable
+    {
+        if ($test->deadlineWorks()->isEmpty()) {
+            return null;
+        }
+
+        $closing = $test->capDeadline($test->individualClosingDeadline());
+
+        return $this->closes_at === null ? $closing : ($closing === null ? $this->closes_at : $closing->min($this->closes_at));
     }
 
     /** @return array<string, mixed> */
@@ -76,12 +89,17 @@ class McAttempt extends Model
         if (! $this->startsIndividually($test)) {
             $deadline = $this->reopened_until ?? $test->ends_at;
 
-            return $deadline?->addSeconds((int) ($this->control()['individual_pause_seconds'] ?? 0));
+            if ($deadline === null) {
+                return null;
+            }
+            $personal = $deadline->addSeconds((int) ($this->control()['individual_pause_seconds'] ?? 0));
+            $closing = $this->fixedWorkDeadline($test);
+        } else {
+            $personal = $this->reopened_until ?? $this->started_at?->addSeconds($test->duration_seconds + (int) $this->pause_seconds);
+            $closing = $this->fixedWorkDeadline($test) ?? $this->closingDeadline($test);
         }
-        $closing = $this->closingDeadline($test);
-        $personal = $this->reopened_until ?? $this->started_at?->addSeconds($test->duration_seconds + (int) $this->pause_seconds);
 
-        return $personal === null ? $closing : ($closing === null || $personal->lessThan($closing) ? $personal : $closing);
+        return $personal === null ? $closing : ($closing === null ? $personal : $personal->min($closing));
     }
 
     public function test(): BelongsTo

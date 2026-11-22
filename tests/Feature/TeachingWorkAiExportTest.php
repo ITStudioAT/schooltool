@@ -24,6 +24,7 @@ use App\Services\TeachingWorkMultipleChoice;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Str;
 use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
@@ -31,6 +32,7 @@ uses(RefreshDatabase::class);
 test('submission collection exports the selected work without collecting sending grading or modifying it', function (string $mode): void {
     Http::preventStrayRequests();
     Mail::fake();
+    $this->work->update(['status' => ['student_distribution' => ['ended_at' => '2026-10-21T12:00:00+02:00']]]);
     $before = $this->work->fresh()->getAttributes();
     $data = $this->getJson($this->url.'?purpose=submission_collection&collection_mode='.$mode.'&date=2026-10-20')
         ->assertOk()->json('data');
@@ -53,6 +55,7 @@ test('submission collection exports the selected work without collecting sending
 
 test('submission collection rejects invalid mode and changed dates', function (string $query): void {
     Http::preventStrayRequests();
+    $this->work->update(['status' => ['student_distribution' => ['ended_at' => '2026-10-21T12:00:00+02:00']]]);
     $this->getJson($this->url.'?purpose=submission_collection'.$query)->assertUnprocessable();
     Http::assertNothingSent();
 })->with(['', '&collection_mode=invalid', '&collection_mode=collect&date=2026-10-21']);
@@ -63,23 +66,28 @@ test('collection handoff distinguishes active student-area availability from ema
     $release = ['published_at' => '2026-10-19T12:00:00+02:00', 'withdrawn_at' => null, 'student_ids' => [$this->student->id]];
     $this->work->update(['groups' => [['name' => 'Gruppe', 'date' => '2026-10-20', 'student_ids' => [$this->student->id]]],
         'status' => ['student_distribution' => $release]]);
+    $url = $this->url.'?purpose=submission_collection&collection_mode=collect&date=2026-10-20';
+    $this->getJson($url)->assertConflict();
+    $release['ended_at'] = '2026-10-21T12:00:00+02:00';
+    $this->work->update(['status' => ['student_distribution' => $release]]);
     $before = $this->work->fresh()->getAttributes();
-    $data = $this->getJson($this->url.'?purpose=submission_collection&collection_mode=collect&date=2026-10-20')->assertOk()->json('data');
+    $data = $this->getJson($url)->assertOk()->json('data');
     expect($data['context']['student_distribution'])->toBe(['source' => 'schooltool_student_distribution',
         'published_at' => $release['published_at'], 'student_ids' => [$this->student->id]])
         ->and($data['context']['task_delivery'])->toBeNull()
         ->and($data['text'])->toContain('weder einen E-Mail-Versand noch einen individuellen Download')
         ->and($this->work->fresh()->getAttributes())->toBe($before);
     $release['withdrawn_at'] = '2026-10-20T12:00:00+02:00';
+    unset($release['ended_at']);
     $this->work->update(['status' => ['student_distribution' => $release]]);
-    $this->getJson($this->url.'?purpose=submission_collection&collection_mode=collect&date=2026-10-20')
-        ->assertOk()->assertJsonPath('data.context.student_distribution', null);
+    $this->getJson($url)->assertConflict();
     Http::assertNothingSent();
     Mail::assertNothingSent();
 });
 
 test('submission collection reuses the confirmed folder without a new Dropbox scan', function (): void {
     Http::preventStrayRequests();
+    $this->work->update(['status' => ['student_distribution' => ['ended_at' => '2026-10-21T12:00:00+02:00']]]);
     $connection = DropboxConnection::factory()->create(['user_id' => $this->teacher->id]);
     TeachingWorkModuleLink::query()->create(['teaching_course_work_id' => $this->work->id, 'dropbox_connection_id' => $connection->id,
         'account_id' => $connection->account_id, 'module_id' => 'a263b873-4f27-4167-90f0-7d94ea0f67fa', 'schema_version' => 1,
@@ -95,12 +103,33 @@ test('submission collection reuses the confirmed folder without a new Dropbox sc
 test('submission collection preserves course access and manual mode boundaries', function (): void {
     Http::preventStrayRequests();
     $url = $this->url.'?purpose=submission_collection&collection_mode=repeat';
-    $this->work->update(['status' => ['automation_enabled' => false]]);
+    $this->work->update(['status' => ['automation_enabled' => false, 'student_distribution' => ['ended_at' => '2026-10-21T12:00:00+02:00']]]);
     $this->getJson($url)->assertUnprocessable();
     $this->work->update(['status' => []]);
     $foreign = User::factory()->create(['school_id' => School::factory()->create()->id]);
     $foreign->assignRole('teacher');
     $this->actingAs($foreign, 'sanctum')->getJson($url)->assertForbidden();
+    Http::assertNothingSent();
+});
+
+test('portal collection reads only the selected group and excludes withdrawn files without a mail or Dropbox call', function (): void {
+    Http::preventStrayRequests();
+    $peer = User::factory()->create(['school_id' => $this->teacher->school_id]);
+    $receipt = fn (User $student, string $name, ?string $withdrawn = null): array => [
+        'id' => (string) Str::uuid(), 'student_id' => $student->id,
+        'student_name' => 'Beispielperson', 'name' => $name, 'sha256' => hash('sha256', $name), 'withdrawn_at' => $withdrawn,
+    ];
+    $status = ['automation_enabled' => false, 'submission_method' => ['channel' => 'portal'],
+        'portal_submissions' => [$receipt($this->student, 'Abgabe.pdf'), $receipt($this->student, 'Zurückgezogen.pdf', '2026-10-20T13:00:00+02:00'),
+            $receipt($peer, 'Andere Gruppe.pdf')]];
+    $this->work->update(['groups' => [['date' => '2026-10-20', 'student_ids' => [$this->student->id]], ['date' => '2026-10-21', 'student_ids' => [$peer->id]]],
+        'status' => $status]);
+    $url = $this->url.'?purpose=submission_collection&collection_mode=collect&date=2026-10-20';
+    $this->getJson($url)->assertConflict();
+    $status['student_distribution']['ended_at'] = '2026-10-21T12:00:00+02:00';
+    $this->work->update(['status' => $status]);
+    $this->getJson($url)->assertOk()->assertJsonPath('data.channel', 'portal')->assertJsonCount(1, 'data.files')
+        ->assertJsonPath('data.files.0.name', 'Abgabe.pdf')->assertJsonMissingPath('data.text');
     Http::assertNothingSent();
 });
 

@@ -9,7 +9,7 @@
                     <p v-else class="text-body-2 mb-2">Für diese Verknüpfung ist kein Lernmodulpfad gespeichert.</p>
                     <p v-if="exerciseFolderName" class="folder-browser-path text-body-1 text-primary">{{ exerciseFolderName }}</p>
                     <p v-else class="text-body-2">LF-Ordner nicht bestätigt.</p>
-                    <p v-if="hasModuleLink && !unlinkBlocked" class="text-body-2 mt-2">
+                    <p v-if="hasModuleLink && !unlinkBlocked && !activity" class="text-body-2 mt-2">
                         Beim Trennen löscht Schooltool auch den zugehörigen unvorbereiteten Prüfungsordner in Dropbox, falls vorhanden.
                     </p>
                     <v-progress-linear v-if="loading" indeterminate aria-label="Verknüpfung wird geladen" />
@@ -37,9 +37,9 @@
                 <v-alert v-if="!section && unlinkHint?.message" :type="unlinkHint.status === 'blocked' ? 'warning' : 'info'" variant="tonal" class="mt-3">{{ unlinkHint.message }}</v-alert>
             </v-card-text>
             <v-card-actions class="flex-wrap">
-                <v-btn v-if="!section" color="error" variant="text" prepend-icon="mdi-link-variant-off" :loading="unlinking"
+                <v-btn v-if="!section && !activity" color="error" variant="text" prepend-icon="mdi-link-variant-off" :loading="unlinking"
                     :disabled="disabled || loading || unlinking || checkingUnlink || !linkVersion || unlinkBlocked" @click="unlink">Verbindung trennen</v-btn>
-                <v-btn v-if="!section && linkVersion && unlinkBlocked" variant="text" :loading="checkingUnlink"
+                <v-btn v-if="!section && !activity && linkVersion && unlinkBlocked" variant="text" :loading="checkingUnlink"
                     :disabled="disabled || loading || unlinking || checkingUnlink" @click="checkUnlink">LF-Stand prüfen</v-btn>
                 <v-spacer />
                 <v-btn :disabled="unlinking" @click="close">Schließen</v-btn>
@@ -53,12 +53,14 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { folders, show, storeFolder } from '@/actions/App/Http/Controllers/Admin/Teaching/WorkDropboxController'
 import { workDropboxKey, workDropboxStates, workExerciseCheck } from '@/helpers/workDropbox'
 import { confirmedExerciseFolder } from '@/helpers/workOverview'
+import { workAssessmentActivity } from '@/helpers/workAssessmentRun'
 import { workAutomationEnabled } from '@/helpers/workAutomation'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 
 const props = defineProps({ work: Object, disabled: Boolean, module: Boolean, exercise: Boolean, date: { type: String, default: '' }, section: { type: String, default: '' } })
 const unlinkTimeout = 120000
 const admin = useAdminStore()
+const activity = computed(() => workAssessmentActivity(admin.config?.user?.id, props.work))
 const key = computed(() => workDropboxKey(admin.config?.user?.id, props.work))
 const hasModuleLink = computed(() => Boolean(workDropboxStates.get(key.value)?.module_link?.folder?.id))
 const opened = ref(false)
@@ -208,7 +210,7 @@ async function navigate(folder, index) {
 }
 
 async function checkUnlink() {
-    if (props.disabled || loading.value || unlinking.value || checkingUnlink.value || !linkVersion.value) return
+    if (props.disabled || activity.value || loading.value || unlinking.value || checkingUnlink.value || !linkVersion.value) return
     const request = operation
     const currentKey = key.value
     checkingUnlink.value = true
@@ -235,7 +237,7 @@ async function checkUnlink() {
 }
 
 async function unlink() {
-    if (props.disabled || loading.value || unlinking.value || checkingUnlink.value || !linkVersion.value || unlinkBlocked.value) return
+    if (props.disabled || activity.value || loading.value || unlinking.value || checkingUnlink.value || !linkVersion.value || unlinkBlocked.value) return
     const request = operation
     const currentKey = key.value
     unlinking.value = true

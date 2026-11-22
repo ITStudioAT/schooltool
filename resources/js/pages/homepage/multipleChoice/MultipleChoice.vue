@@ -38,7 +38,17 @@
                     <div><dt>Fragen</dt><dd>{{ attempt.question_count }}</dd></div>
                     <div><dt>Gesamtpunkte</dt><dd>{{ formatNumber(attempt.total_points) }}</dd></div>
                     <div><dt>Bearbeitungsdauer</dt><dd>{{ minutes(attempt.duration_seconds) }} Minuten</dd></div>
-                    <div v-if="attempt.start_mode === 'individual' && attempt.closes_at"><dt>Schlussfrist</dt><dd>{{ deadlineLabel(attempt.closes_at) }}</dd></div>
+                    <div v-if="attempt.work_deadline?.date">
+                        <dt>Abgabefrist der Arbeit</dt>
+                        <dd aria-live="polite">{{ workDeadlineLabel(attempt.work_deadline) }}</dd>
+                    </div>
+                    <div v-if="attempt.earlier_deadline_kind && attempt.closes_at">
+                        <dt>{{ attempt.earlier_deadline_kind === 'personal' ? 'Frühere persönliche Schlussfrist' : 'Frühere MC-Schlussfrist' }}</dt>
+                        <dd>{{ deadlineLabel(attempt.closes_at) }}</dd>
+                    </div>
+                    <div v-else-if="!attempt.work_deadline?.date && attempt.start_mode === 'individual' && attempt.closes_at">
+                        <dt>Schlussfrist</dt><dd>{{ deadlineLabel(attempt.closes_at) }}</dd>
+                    </div>
                 </dl>
             </section>
 
@@ -196,6 +206,7 @@ import { studentTasksUrl } from '@/pages/homepage/student/studentTasksNavigation
 import { useStudentStore } from '@/stores/student/StudentStore'
 import StudentNavigationDrawer from '../student/components/StudentNavigationDrawer.vue'
 import McQuestionReview from '@/components/McQuestionReview.vue'
+import { formatMcClock as clock } from '@/helpers/mcClock'
 import { useMultipleChoiceSession } from './useMultipleChoiceSession'
 
 const route = useRoute()
@@ -258,12 +269,14 @@ function deadlineLabel(value) {
     return value ? new Intl.DateTimeFormat('de-AT', { timeZone: 'Europe/Vienna', dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) : '—'
 }
 
-function minutes(seconds) {
-    return formatNumber(Number(seconds || 0) / 60)
+function workDeadlineLabel({ date, time }) {
+    const day = new Intl.DateTimeFormat('de-AT', { dateStyle: 'medium', timeZone: 'Europe/Vienna' })
+        .format(new Date(`${date}T12:00:00Z`))
+    return time ? `${day}, ${time} Uhr` : day
 }
 
-function clock(seconds) {
-    return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
+function minutes(seconds) {
+    return formatNumber(Number(seconds || 0) / 60)
 }
 
 function statusLabel(item) {

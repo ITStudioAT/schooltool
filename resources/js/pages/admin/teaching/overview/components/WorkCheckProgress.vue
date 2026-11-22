@@ -1,6 +1,9 @@
 <template>
     <section v-if="state" class="check-progress mt-2" :aria-label="creation ? 'Fortschritt der Erstellung' : deletion ? 'Fortschritt der Löschung' : 'Fortschritt der Prüfung'" aria-live="polite">
         <strong class="check-progress-title">{{ progressTitle }}</strong>
+        <p v-if="creation && candidateSteps.length" class="text-caption mt-1">
+            {{ candidateSteps.filter(step => state.completed?.includes(step)).length }} von {{ candidateSteps.length }} Kandidatenordnern bestätigt
+        </p>
         <span v-if="state.state === 'running' && !state.active && !state.completed?.length" class="check-progress-start text-caption">{{ creation ? 'Erstellung wird gestartet …' : deletion ? 'Löschung wird gestartet …' : 'Prüfung wird gestartet …' }}</span>
         <ul v-if="state.steps?.length" class="check-progress-list">
             <li v-for="step in state.steps" :key="step" :class="stepClass(step)">
@@ -18,7 +21,9 @@
 import { computed } from 'vue'
 
 const props = defineProps({ state: { type: Object, default: null }, unavailable: Boolean, deletion: Boolean, creation: Boolean })
+const candidateSteps = computed(() => (props.state?.steps ?? []).filter(step => step.startsWith('assessment_candidate_')))
 const progressTitle = computed(() => {
+    if (props.state?.state === 'starting') return 'Erstellungsauftrag wird vorbereitet'
     if (props.state?.state === 'unconfirmed') return 'Aktueller Stand nicht bestätigt'
     if (props.state?.state === 'interrupted') return 'Erstellung unterbrochen'
     const operation = props.creation ? 'Erstellung' : props.deletion ? 'Löschung' : 'Prüfung'

@@ -55,11 +55,13 @@ it('continues the already confirmed creation handshake through resolve and store
         .mockResolvedValueOnce({ data: { connected: true, module_link: { folder: { id: 'id:module' } }, link_preparation: { status: 'initialized' } } })
     const wrapper = mountLink(post, true)
     try {
-        await (wrapper.vm as any).openLink(work, { filename: 'handshake.json', contents: handshake }, true)
+        const requestId = '6a630584-8849-4495-beb2-cb1f1b36bb65'
+        await (wrapper.vm as any).openLink({ ...work, status: { creation_receipt: { id: requestId } } },
+            { filename: 'handshake.json', contents: handshake }, true)
         await flushPromises()
         expect(post.mock.calls.map(([, body]) => body)).toEqual([
             { handshake, filename: 'handshake.json', resolve: true },
-            { handshake, filename: 'handshake.json', proof: 'proof' },
+            { handshake, filename: 'handshake.json', proof: 'proof', creation_request_id: requestId },
         ])
         expect(wrapper.emitted('linked')).toHaveLength(1)
         expect(wrapper.find('[data-testid="work-module-inline"]').exists()).toBe(false)

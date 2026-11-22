@@ -1,7 +1,7 @@
 <template>
     <span v-if="workAutomationEnabled(work) && (linked || needsPreparation || !state)" class="d-inline-flex">
         <v-btn v-if="labelled && linked" size="small" min-height="44" variant="tonal" prepend-icon="mdi-link-variant"
-            :disabled="disabled" @click.stop="openFolder">Verbindung verwalten</v-btn>
+            :disabled="disabled" @click.stop="openFolder">{{ activity ? 'Lernmodul ansehen' : 'Verbindung verwalten' }}</v-btn>
         <span v-else-if="!labelled" class="d-inline-flex" :class="{ 'cursor-pointer': linked }"
             :role="linked ? 'button' : undefined" :tabindex="linked ? 0 : undefined" :aria-label="tooltip" :title="tooltip"
             @click.stop="openFolder" @keydown.enter.stop.prevent="openFolder" @keydown.space.stop.prevent="openFolder">
@@ -21,6 +21,7 @@
 
 <script setup>
 import { computed, ref, watch } from 'vue'
+import { workAssessmentActivity } from '@/helpers/workAssessmentRun'
 import { workAutomationEnabled } from '@/helpers/workAutomation'
 import { workNeedsPreparation } from '@/helpers/workOverview'
 import { useAdminStore } from '@/stores/admin/AdminStore'
@@ -29,6 +30,7 @@ import WorkFolderBrowser from './WorkFolderBrowser.vue'
 
 const props = defineProps({ work: { type: Object, required: true }, size: { type: [Number, String], default: 13 }, date: { type: String, default: '' }, labelled: Boolean, disabled: Boolean })
 const admin = useAdminStore()
+const activity = computed(() => workAssessmentActivity(admin.config?.user?.id, props.work))
 const loadError = ref(false)
 const browser = ref(null)
 const key = computed(() => workDropboxKey(admin.config?.user?.id, props.work))

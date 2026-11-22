@@ -116,7 +116,8 @@ class DropboxWorkImport
         abort_unless(preg_match('/\Aid:[A-Za-z0-9_-]+\z/', $folderId) === 1, 409, 'Die Ordnerkennung ist ungültig.');
         try {
             $response = Http::withToken($this->accessToken($connection))->connectTimeout(5)->timeout(20)
-                ->withOptions(['allow_redirects' => false])->post('https://api.dropboxapi.com/2/files/get_metadata', ['path' => $folderId]);
+                ->withOptions(['allow_redirects' => false])->post('https://api.dropboxapi.com/2/files/get_metadata',
+                    ['path' => $folderId, 'include_has_explicit_shared_members' => true]);
         } catch (ConnectionException) {
             $this->fail('Dropbox ist momentan nicht erreichbar. Bitte später erneut versuchen.');
         }
@@ -130,8 +131,12 @@ class DropboxWorkImport
         return $entry;
     }
 
-    /** @param array{id: string, rev: string}|null $expectedStatus */
-    public function deleteExamFolder(DropboxConnection $connection, string $folderId, string $expectedPath, ?array $expectedStatus = null): void
+    /**
+     * Reuse a recursive content check only when the caller has just verified this exact folder.
+     *
+     * @param  array{id: string, rev: string}|null  $expectedStatus
+     */
+    public function deleteExamFolder(DropboxConnection $connection, string $folderId, string $expectedPath, ?array $expectedStatus = null, bool $contentsVerified = false): void
     {
         abort_unless($this->canWrite($connection), 409, 'Für das Löschen fehlt die Dropbox-Schreibfreigabe.');
         $current = $this->findFolderById($connection, $folderId);
@@ -141,7 +146,10 @@ class DropboxWorkImport
         abort_unless($current['path_lower'] === mb_strtolower($expectedPath)
             && in_array(basename(dirname($current['path_lower'])), ['leistungsfeststellung', 'leistungsfeststellungen'], true),
             409, 'Der Prüfungsordner wurde verschoben. Bitte die Zuordnung erneut prüfen.');
-        $this->examFolderContents($connection, $folderId, $expectedPath, $expectedStatus);
+        $this->assertExamFolderUnshared($current);
+        if (! $contentsVerified || $expectedStatus !== null) {
+            $this->examFolderContents($connection, $folderId, $expectedPath, $expectedStatus);
+        }
         $this->api($connection, 'files/delete_v2', ['path' => $folderId]);
         abort_unless($this->findFolderById($connection, $folderId) === null, 409, 'Das Löschen des Prüfungsordners konnte nicht bestätigt werden.');
     }
@@ -161,6 +169,14 @@ class DropboxWorkImport
         }
 
         return [$folderId, ...array_column($entries, 'id')];
+    }
+
+    /** @return list<array<string, mixed>>|null */
+    public function examFolderInventory(DropboxConnection $connection, string $folderId, string $expectedPath): ?array
+    {
+        $root = $this->findFolderById($connection, $folderId);
+
+        return $root === null ? null : $this->examFolderEntries($connection, $folderId, $expectedPath, $root);
     }
 
     public function clearExamFolder(DropboxConnection $connection, string $folderId, string $expectedPath, string $statusRevision, ?Closure $onProgress = null): void
@@ -194,14 +210,11 @@ class DropboxWorkImport
     }
 
     /** @return list<array<string, mixed>> */
-    private function examFolderEntries(DropboxConnection $connection, string $folderId, string $expectedPath): array
+    private function examFolderEntries(DropboxConnection $connection, string $folderId, string $expectedPath, ?array $root = null): array
     {
-        $root = $this->findFolderById($connection, $folderId);
+        $root ??= $this->findFolderById($connection, $folderId);
         abort_unless($root && $root['path_lower'] === mb_strtolower($expectedPath), 409, 'Der Prüfungsordner wurde verschoben.');
-        if (isset($root['sharing_info']['shared_folder_id']) || isset($root['sharing_info']['parent_shared_folder_id'])
-            || ($root['has_explicit_shared_members'] ?? false) === true) {
-            throw new TeachingWorkDeletionConflict('Der Prüfungsordner ist geteilt.');
-        }
+        $this->assertExamFolderUnshared($root);
         $listing = $this->api($connection, 'files/list_folder', ['path' => $folderId, 'recursive' => true,
             'include_deleted' => false, 'include_mounted_folders' => true, 'include_has_explicit_shared_members' => true, 'limit' => 200])->json();
         $entries = [];
@@ -230,6 +243,14 @@ class DropboxWorkImport
             abort_if($page >= 49 || ! is_string($listing['cursor'] ?? null), 409,
                 'Der Inhalt des Prüfungsordners konnte nicht vollständig geprüft werden.');
             $listing = $this->api($connection, 'files/list_folder/continue', ['cursor' => $listing['cursor']])->json();
+        }
+    }
+
+    private function assertExamFolderUnshared(array $folder): void
+    {
+        if (isset($folder['sharing_info']['shared_folder_id']) || isset($folder['sharing_info']['parent_shared_folder_id'])
+            || ($folder['has_explicit_shared_members'] ?? false) === true) {
+            throw new TeachingWorkDeletionConflict('Der Prüfungsordner ist geteilt.');
         }
     }
 
@@ -410,23 +431,49 @@ class DropboxWorkImport
         return ['contents' => $contents, 'rev' => $entry['rev']];
     }
 
+    /** @return array<string, mixed>|null */
+    public function findExerciseChildFolder(DropboxConnection $connection, array $parent, string $name): ?array
+    {
+        $response = $this->exerciseRequest($connection, 'folder_parent_metadata',
+            ['path' => $parent['id'].'/'.$name, 'include_has_explicit_shared_members' => true], allowMissing: true);
+        if ($this->exerciseNotFound($response)) {
+            return null;
+        }
+        $folder = $response->json();
+        abort_unless($this->validFolderMetadata($folder) && preg_match('/\Aid:[A-Za-z0-9_-]+\z/', $folder['id']) === 1
+            && $folder['path_lower'] === $parent['path_lower'].'/'.mb_strtolower($name)
+            && empty($folder['sharing_info']) && ($folder['has_explicit_shared_members'] ?? false) !== true,
+            409, 'Der Prüfungsordner oder sein Überordner ist geteilt oder nicht eindeutig.');
+
+        return $folder;
+    }
+
     /** @return array<string, mixed> */
-    public function createExerciseChildFolder(DropboxConnection $connection, string $parentId, string $name, string $expectedParentPath): array
+    public function createExerciseChildFolder(DropboxConnection $connection, string $parentId, string $name, string $expectedParentPath, bool $verifyCreated = true): array
     {
         abort_unless($this->canWrite($connection) && $name !== '' && mb_strlen($name) <= 200
             && ! preg_match('/[\/\\\\\x00-\x1f]/u', $name) && ! in_array($name, ['.', '..'], true), 422,
             'Dropbox-Schreibfreigabe oder gültiger neuer Ordnername fehlt.');
         $parent = $this->exerciseFolderMetadata($connection, $parentId, 'folder_parent_metadata');
         abort_unless(strcasecmp($parent['path_lower'], $expectedParentPath) === 0, 409, 'Der Zielordner wurde inzwischen verschoben.');
+        abort_if(! $verifyCreated && ! empty($parent['sharing_info']), 409, 'Der Zielordner ist geteilt.');
         $path = rtrim($parent['path_display'] ?? $parent['path_lower'], '/').'/'.$name;
         $created = $this->exerciseRequest($connection, 'folder_create', ['path' => $path, 'autorename' => false])->json('metadata');
         if (! is_array($created) || ! is_string($created['id'] ?? null) || ! preg_match('/\Aid:[A-Za-z0-9_-]+\z/', $created['id'])) {
             throw new DropboxFolderCreationFailed('malformed_response');
         }
-        $confirmed = $this->exerciseFolderMetadata($connection, $created['id'], 'folder_child_metadata');
-        if ($confirmed['path_lower'] !== mb_strtolower($path) || $confirmed['name'] !== $name) {
+        // create_folder_v2 returns concrete FolderMetadata, so Dropbox can omit the subtype tag.
+        $created += ['.tag' => 'folder'];
+        if (! $verifyCreated && $created['.tag'] !== 'folder') {
             throw new DropboxExerciseRequestFailed('folder_child_metadata', 'malformed_response');
         }
+        $confirmed = $verifyCreated || ! isset($created['path_lower'], $created['name'])
+            ? $this->exerciseFolderMetadata($connection, $created['id'], 'folder_child_metadata') : $created;
+        if (! $this->validFolderMetadata($confirmed) || $confirmed['path_lower'] !== mb_strtolower($path) || $confirmed['name'] !== $name) {
+            throw new DropboxExerciseRequestFailed('folder_child_metadata', 'malformed_response');
+        }
+        abort_if(! $verifyCreated && (! empty($confirmed['sharing_info']) || ($confirmed['has_explicit_shared_members'] ?? false) === true),
+            409, 'Der neu angelegte Ordner ist geteilt.');
 
         return $confirmed;
     }
@@ -436,7 +483,7 @@ class DropboxWorkImport
         return $this->writeBoundDocument($connection, $folderId, $this->documentPath($folderId, $filename), $contents, $revision);
     }
 
-    public function writeExerciseDocument(DropboxConnection $connection, string $folderId, string $filename, string $contents, ?string $revision): string
+    public function writeExerciseDocument(DropboxConnection $connection, string $folderId, string $filename, string $contents, ?string $revision, ?string $expectedFolderPath = null): string
     {
         $path = $this->exerciseDocumentPath($folderId, $filename);
         if (! $this->canWrite($connection)) {
@@ -445,7 +492,9 @@ class DropboxWorkImport
         if (strlen($contents) > self::MAX_BYTES) {
             throw new DropboxExerciseRequestFailed('document_upload', 'document_too_large');
         }
-        $this->exerciseFolderMetadata($connection, $folderId, 'document_parent_metadata');
+        $parent = $this->exerciseFolderMetadata($connection, $folderId, 'document_parent_metadata');
+        abort_if($expectedFolderPath !== null && ($parent['path_lower'] !== $expectedFolderPath || ! empty($parent['sharing_info'])),
+            409, 'Der Prüfungsordner wurde verschoben oder geteilt.');
         $parameters = ['path' => $path, 'mode' => $revision === null ? 'add' : ['.tag' => 'update', 'update' => $revision],
             'autorename' => false, 'strict_conflict' => true];
         $data = $this->exerciseRequest($connection, 'document_upload', $parameters, $contents)->json();
@@ -1079,7 +1128,7 @@ class DropboxWorkImport
      * @param  array<string, array{endpoint: string, parameters: array<string, mixed>}>  $requests
      * @return array<string, Response>
      */
-    public function readModuleBatch(DropboxConnection $connection, array $requests): array
+    public function readModuleBatch(DropboxConnection $connection, array $requests, int $concurrency = 4): array
     {
         foreach ($requests as $request) {
             abort_unless(in_array($request['endpoint'], ['files/download', 'files/get_metadata', 'files/list_folder', 'files/list_folder/continue'], true), 422);
@@ -1099,7 +1148,7 @@ class DropboxWorkImport
                     $client->post('https://api.dropboxapi.com/2/'.$request['endpoint'], $request['parameters']);
                 }
             }
-        }, concurrency: 4);
+        }, concurrency: $concurrency);
         foreach ($requests as $key => $request) {
             $response = $responses[$key] ?? null;
             if (! $response instanceof Response) {

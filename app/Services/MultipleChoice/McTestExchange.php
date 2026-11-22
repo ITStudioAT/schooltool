@@ -191,6 +191,7 @@ class McTestExchange
     {
         return DB::transaction(function () use ($test, $actor, $package, $hash): array {
             $locked = McTest::query()->lockForUpdate()->findOrFail($test->id);
+            $locked->assertWorkReleaseOpen();
             $locked->attempts()->orderBy('id')->lockForUpdate()->get();
             $plan = $this->preview($locked, $package);
             if (! hash_equals($plan['hash'], $hash) || $plan['conflicts'] !== []) {

@@ -1581,6 +1581,54 @@ test('a teacher selects a provision method independently of submission release a
     Http::assertNothingSent();
 });
 
+test('preparation saves both independent channels without touching release or submitted files', function (string $provision, string $submissionChannel): void {
+    $work = prepareWorkDispatchImport($this);
+    $receipts = [['id' => 'already-submitted', 'name' => 'Datei.pdf']];
+    $work->update(['status' => ['portal_submissions' => $receipts]]);
+    $url = "/api/admin/teaching/course_works/{$work->id}/provision-method";
+    $submission = ['channel' => $submissionChannel, 'email' => $submissionChannel === 'email' ? 'abgabe@example.test' : null];
+    $choice = ['channel' => $provision, 'expected' => null, 'submission' => $submission, 'expected_submission' => null];
+    Queue::fake();
+    Mail::fake();
+    Http::preventStrayRequests();
+
+    $this->putJson($url, $choice)->assertOk()
+        ->assertJsonPath('data.status.provision_method.channel', $provision)
+        ->assertJsonPath('data.status.submission_method', $submission)
+        ->assertJsonPath('data.status.portal_submissions', $receipts)
+        ->assertJsonMissingPath('data.status.student_distribution')
+        ->assertJsonMissingPath('data.status.assignment_mail');
+    $this->putJson($url, $choice)->assertOk();
+    expect($work->fresh()->status['portal_submissions'])->toBe($receipts);
+    Queue::assertNothingPushed();
+    Mail::assertNothingOutgoing();
+    Http::assertNothingSent();
+})->with([['portal', 'portal'], ['portal', 'email'], ['email', 'portal'], ['email', 'email']]);
+
+test('invalid or conflicting preparation leaves both methods and existing submissions intact', function (): void {
+    $work = prepareWorkDispatchImport($this);
+    $portal = ['channel' => 'portal', 'email' => null];
+    $email = ['channel' => 'email', 'email' => 'abgabe@example.test'];
+    $existing = ['provision_method' => ['channel' => 'portal'], 'submission_method' => $portal,
+        'portal_submissions' => [['id' => 'already-submitted', 'name' => 'Datei.pdf']]];
+    $work->update(['status' => $existing]);
+    $url = "/api/admin/teaching/course_works/{$work->id}/provision-method";
+    $choice = ['channel' => 'email', 'expected' => 'portal', 'submission' => $email, 'expected_submission' => $portal];
+    $this->putJson($url, array_replace($choice, ['submission' => ['channel' => 'email']]))
+        ->assertUnprocessable()->assertJsonValidationErrors('submission.email');
+    $this->putJson($url, array_replace($choice, ['submission' => ['channel' => 'email', 'email' => 'ungueltig']]))
+        ->assertUnprocessable()->assertJsonValidationErrors('submission.email');
+    $this->putJson($url, array_diff_key($choice, ['expected_submission' => true]))
+        ->assertUnprocessable()->assertJsonValidationErrors('expected_submission');
+    $this->putJson($url, array_replace($choice, ['expected_submission' => null]))->assertConflict()
+        ->assertJsonPath('current', 'portal')->assertJsonPath('current_submission', $portal);
+    $this->putJson($url, array_replace($choice, ['expected' => null]))->assertConflict()
+        ->assertJsonPath('current', 'portal')->assertJsonPath('current_submission', $portal);
+    $other = User::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->schoolyear->id])->assignRole('teacher');
+    $this->actingAs($other, 'sanctum')->putJson($url, $choice)->assertForbidden();
+    expect($work->fresh()->status)->toEqual($existing);
+});
+
 test('a title-only correction without an assigned folder needs no Dropbox call and rejects another teacher', function () {
     $work = prepareWorkDispatchImport($this);
     $groups = $work->groups;

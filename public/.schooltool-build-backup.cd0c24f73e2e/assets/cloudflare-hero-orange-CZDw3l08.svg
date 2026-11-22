@@ -1,0 +1,51 @@
+<svg width="1920" height="750" viewBox="0 0 1920 750" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1920" y2="750" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F7901E"/>
+      <stop offset="0.55" stop-color="#F8941F"/>
+      <stop offset="1" stop-color="#F67E1B"/>
+    </linearGradient>
+    <radialGradient id="glowTopRight" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(1605 120) rotate(135) scale(520 350)">
+      <stop stop-color="#FFD56A" stop-opacity="0.9"/>
+      <stop offset="0.45" stop-color="#FFC24F" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#FFC24F" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowBottomLeft" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(315 570) rotate(10) scale(430 260)">
+      <stop stop-color="#FFD07A" stop-opacity="0.45"/>
+      <stop offset="0.55" stop-color="#FFD07A" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="#FFD07A" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="midBloom" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(980 430) rotate(0) scale(700 280)">
+      <stop stop-color="#FFB03F" stop-opacity="0.25"/>
+      <stop offset="1" stop-color="#FFB03F" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="curve" x1="0" y1="260" x2="1920" y2="415" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FAA233"/>
+      <stop offset="0.6" stop-color="#F89B2D"/>
+      <stop offset="1" stop-color="#F58823"/>
+    </linearGradient>
+    <linearGradient id="diagonal" x1="430" y1="-60" x2="940" y2="760" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFD494" stop-opacity="0.12"/>
+      <stop offset="1" stop-color="#FFD494" stop-opacity="0.04"/>
+    </linearGradient>
+    <filter id="softBlur" x="-200" y="-200" width="2320" height="1150" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="34"/>
+    </filter>
+  </defs>
+
+  <rect width="1920" height="750" fill="url(#bg)"/>
+  <rect width="1920" height="750" fill="url(#glowTopRight)"/>
+  <rect width="1920" height="750" fill="url(#glowBottomLeft)"/>
+  <rect width="1920" height="750" fill="url(#midBloom)"/>
+
+  <path d="M0 233C302 168 540 144 824 144C1186 144 1532 206 1920 379V750H0V233Z" fill="url(#curve)" opacity="0.95"/>
+
+  <path d="M447 -58L939 747H668L447 -58Z" fill="url(#diagonal)" opacity="0.9"/>
+
+  <g filter="url(#softBlur)" opacity="0.35">
+    <ellipse cx="675" cy="365" rx="270" ry="120" fill="#FFBE63"/>
+    <ellipse cx="1328" cy="372" rx="360" ry="140" fill="#FFB04A"/>
+  </g>
+
+  <path d="M0 235C300 170 547 147 824 147C1209 147 1530 213 1920 380" stroke="#FFBE6A" stroke-opacity="0.28" stroke-width="2"/>
+</svg>

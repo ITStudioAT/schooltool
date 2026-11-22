@@ -1,5 +1,6 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import axios from 'axios'
+import { mcRemainingSeconds } from '@/helpers/mcClock'
 import { useMcExamMode } from './useMcExamMode'
 import { rateLimitRetrySeconds } from './rateLimitRetry'
 import { access, index, ready, save, show, start, submit } from '@/actions/App/Http/Controllers/MultipleChoiceParticipantController'
@@ -48,7 +49,8 @@ export function useMultipleChoiceSession(route) {
         if (!value) {
             return 0
         }
-        return Math.max(0, Math.ceil((Date.parse(value) - (attempt.value?.paused_at ? Date.parse(attempt.value.paused_at) : now.value + serverOffset.value)) / 1000))
+        const referenceTime = attempt.value?.paused_at ? Date.parse(attempt.value.paused_at) : now.value + serverOffset.value
+        return mcRemainingSeconds(value, referenceTime)
     }
 
     function requestConfig() {

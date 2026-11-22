@@ -1,20 +1,15 @@
 <template>
     <v-btn variant="tonal" size="small" min-height="44" prepend-icon="mdi-inbox-arrow-down-outline"
         :disabled="disabled || !work?.id" @click="open">
-        {{ method ? 'Abgabeweg verwalten' : 'Abgabeweg festlegen' }}
+        {{ method || releaseEnded ? 'Abgabeweg verwalten' : 'Abgabeweg festlegen' }}
     </v-btn>
     <v-dialog v-model="dialog" max-width="590" scrollable :persistent="saving">
         <v-card v-if="dialog">
-            <v-card-title class="text-wrap">Abgabe · {{ work.title }}</v-card-title>
+            <v-card-title class="text-wrap">Abgabeweg {{ method || releaseEnded ? 'verwalten' : 'festlegen' }} · {{ work.title }}</v-card-title>
             <v-card-text>
-                <fieldset class="submission-methods" :disabled="saving">
-                    <legend>Wo sollen die Schüler:innen abgeben?</legend>
-                    <label><input v-model="channel" type="radio" :name="radioGroup" value="portal" /> Datei unter „Meine Aufgaben“ hochladen</label>
-                    <label><input v-model="channel" type="radio" :name="radioGroup" value="email" /> Datei per E-Mail schicken</label>
-                </fieldset>
-                <v-text-field v-if="channel === 'email'" v-model.trim="email" type="email"
-                    label="E-Mail-Adresse für die Abgabe" :disabled="saving" class="mt-3" hide-details="auto" />
-                <div v-if="submissions.length" class="mt-5">
+                <WorkSubmissionFields v-model:channel="channel" v-model:email="email" :disabled="saving || disabled" :lock-reason="lockReason" />
+                <p v-if="!releaseEnded" class="text-body-2 mt-4">Abgaben können erst nach „Freigabe beenden“ eingesammelt werden.</p>
+                <div v-if="releaseEnded && submissions.length" class="mt-5">
                     <h3 class="text-subtitle-1 font-weight-bold">Abgaben im Schülerbereich</h3>
                     <ul class="submission-files">
                         <li v-for="file in submissions" :key="file.id">
@@ -32,10 +27,9 @@
                 <v-alert v-if="error" type="error" variant="tonal" class="mt-3" role="alert">{{ error }}</v-alert>
             </v-card-text>
             <v-card-actions class="flex-wrap">
-                <v-btn v-if="method" variant="text" min-height="44" :disabled="saving" @click="save(null)">Abgabeweg entfernen</v-btn>
                 <v-spacer />
                 <v-btn variant="text" min-height="44" :disabled="saving" @click="dialog = false">Schließen</v-btn>
-                <v-btn color="primary" variant="flat" min-height="44" :loading="saving"
+                <v-btn v-if="!lockReason" color="primary" variant="flat" min-height="44" :loading="saving"
                     :disabled="saving || !channel || (channel === 'email' && !email)" @click="save(channel)">Speichern</v-btn>
             </v-card-actions>
         </v-card>
@@ -43,12 +37,14 @@
 </template>
 
 <script setup>
-import { computed, ref, useId, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { download, update } from '@/actions/App/Http/Controllers/Admin/Teaching/WorkSubmissionController'
+
+import WorkSubmissionFields from './WorkSubmissionFields.vue'
 
 const props = defineProps({ work: { type: Object, required: true }, disabled: Boolean })
 const emit = defineEmits(['saved'])
-const radioGroup = useId()
+const releaseEnded = computed(() => Boolean(props.work.status?.student_distribution?.ended_at))
 const method = computed(() => props.work.status?.submission_method || null)
 const submissions = computed(() => [...(props.work.status?.portal_submissions || [])].reverse())
 const dialog = ref(false)
@@ -57,6 +53,12 @@ const email = ref('')
 const expected = ref(null)
 const error = ref('')
 const saving = ref(false)
+const serverLock = ref(null)
+const lockReason = computed(() => {
+    const reason = serverLock.value || props.work.submission_lock_reason
+    if (releaseEnded.value) return 'ended'
+    return expected.value || reason === 'email_pending' ? reason : null
+})
 const dateFormatter = new Intl.DateTimeFormat('de-AT', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Vienna' })
 const dateTime = value => dateFormatter.format(new Date(value))
 
@@ -65,12 +67,13 @@ function open() {
     expected.value = method.value ? { ...method.value } : null
     channel.value = expected.value?.channel || null
     email.value = expected.value?.email || ''
+    serverLock.value = null
     error.value = ''
     dialog.value = true
 }
 
 async function save(selection) {
-    if (saving.value || props.disabled) return
+    if (saving.value || props.disabled || lockReason.value || !selection) return
     const workId = props.work.id
     saving.value = true
     error.value = ''
@@ -82,6 +85,13 @@ async function save(selection) {
         emit('saved', data.data)
         dialog.value = false
     } catch (failure) {
+        const conflict = failure.response?.data
+        if (workId === props.work.id && conflict?.submission_lock_reason) {
+            serverLock.value = conflict.submission_lock_reason
+            expected.value = conflict.current_submission
+            channel.value = expected.value?.channel ?? null
+            email.value = expected.value?.email ?? ''
+        }
         if (workId === props.work.id) error.value = Object.values(failure.response?.data?.errors || {}).flat()[0]
             || failure.response?.data?.message || 'Der Abgabeweg konnte nicht gespeichert werden.'
     } finally {
@@ -93,10 +103,6 @@ watch(() => props.work.id, () => { dialog.value = false })
 </script>
 
 <style scoped>
-.submission-methods { padding: 0; border: 0; }
-.submission-methods legend { font-weight: 600; }
-.submission-methods label { display: flex; gap: .6rem; align-items: center; min-height: 44px; cursor: pointer; }
-.submission-methods input { accent-color: rgb(var(--v-theme-primary)); }
 .submission-files { list-style: none; padding: 0; margin: .25rem 0 0; }
 .submission-files li { display: flex; justify-content: space-between; align-items: center; gap: .75rem; border-top: 1px solid rgba(var(--v-theme-on-surface), .15); padding: .5rem 0; }
 .submission-files li > div { display: grid; min-width: 0; overflow-wrap: anywhere; }

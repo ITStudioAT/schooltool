@@ -16,7 +16,6 @@ class TeachingAssessmentRunController extends Controller
         abort_unless($actor && $course_work->teachingCourse, 403);
         $this->authorizeTeachingCourseAccess($course_work->teachingCourse, $actor);
         $data = $request->validate(['date' => ['nullable', 'date_format:Y-m-d'], 'progress_only' => ['sometimes', 'boolean']]);
-        $run = $runs->show($course_work, $actor, $data['date'] ?? null);
         if ($request->boolean('progress_only')) {
             $mail = [];
             foreach ($course_work->status['assignment_mail']['batches'] ?? [] as $slot => $batch) {
@@ -30,12 +29,12 @@ class TeachingAssessmentRunController extends Controller
                     'counts' => array_count_values(array_column($batch['recipients'], 'state')),
                 ];
             }
-            $progress = $run === null ? null : array_intersect_key($run, array_flip(['state', 'progress', 'message', 'finished_at']));
 
-            return response()->json(['run' => $progress, 'mail' => $mail])->header('Cache-Control', 'private, no-store');
+            return response()->json($runs->progressForWork($course_work, $actor, $data['date'] ?? null) + ['mail' => $mail])
+                ->header('Cache-Control', 'private, no-store');
         }
 
-        return response()->json(['run' => $run])
+        return response()->json(['run' => $runs->show($course_work, $actor, $data['date'] ?? null)])
             ->header('Cache-Control', 'private, no-store');
     }
 

@@ -47,6 +47,7 @@ class CourseWorkTaskController extends Controller
     {
         $works = $course->teachingCourseWorks()
             ->where(fn (Builder $query) => $query->whereJsonContains('status->student_distribution->student_ids', (int) $student->id)
+                ->orWhereJsonContains('status->student_distribution->ended_email_student_ids', (int) $student->id)
                 ->orWhereRaw("JSON_CONTAINS(JSON_EXTRACT(status, '$.assignment_mail.batches.*.recipients[*].student_id'), ?)", [(string) (int) $student->id]))
             ->orderBy('id')
             ->select(['id', 'teaching_course_id', 'finish_until_date', 'finish_until_time', 'groups'])
@@ -55,10 +56,12 @@ class CourseWorkTaskController extends Controller
                     'submission_method', JSON_EXTRACT(status, '$.submission_method'),
                     'student_distribution', JSON_OBJECT(
                         'student_ids', JSON_EXTRACT(status, '$.student_distribution.student_ids'),
+                        'ended_email_student_ids', JSON_EXTRACT(status, '$.student_distribution.ended_email_student_ids'),
                         'prepared_at', JSON_EXTRACT(status, '$.student_distribution.prepared_at'),
                         'published_at', JSON_EXTRACT(status, '$.student_distribution.published_at'),
                         'withdrawn_at', JSON_EXTRACT(status, '$.student_distribution.withdrawn_at'),
-                        'deleted_at', JSON_EXTRACT(status, '$.student_distribution.deleted_at')
+                        'deleted_at', JSON_EXTRACT(status, '$.student_distribution.deleted_at'),
+                        'ended_at', JSON_EXTRACT(status, '$.student_distribution.ended_at')
                     )
                 ) AS status
                 SQL)
@@ -89,6 +92,25 @@ class CourseWorkTaskController extends Controller
         return response()->json($data)->header('Cache-Control', 'private, no-store');
     }
 
+    public function start(int $courseId, TeachingCourseWork $course_work, ParentStudentAccessService $access, TeachingWorkStudentDistribution $distribution): JsonResponse
+    {
+        $student = $access->authenticatedStudent();
+        abort_unless($student && $access->currentStudent()?->is($student), 403);
+        $course = $this->authorizedCourse($courseId, $student);
+        DB::transaction(function () use ($course, $course_work, $student, $distribution): void {
+            $work = $course->teachingCourseWorks()->lockForUpdate()->findOrFail($course_work->id);
+            $work->assertStudentReleaseOpen();
+            abort_unless($distribution->studentTaskStatus($work, $student) === 'released', 404);
+            abort_if(TeachingWorkSubmissions::expired($work), 409, 'Die Abgabefrist ist abgelaufen.');
+            $started = $work->status['portal_started_student_ids'] ?? [];
+            if (! in_array((int) $student->id, $started, true)) {
+                $work->update(['status' => [...$work->status, 'portal_started_student_ids' => [...$started, (int) $student->id]]]);
+            }
+        }, 3);
+
+        return response()->json(['started' => true])->header('Cache-Control', 'private, no-store');
+    }
+
     public function submit(Request $request, int $courseId, TeachingCourseWork $course_work, ParentStudentAccessService $access,
         TeachingWorkStudentDistribution $distribution, TeachingWorkSubmissions $submissions, ?string $fileId = null): JsonResponse
     {
@@ -104,6 +126,7 @@ class CourseWorkTaskController extends Controller
                 $work->setRelation('teachingCourse', $course);
                 $status = $distribution->studentTaskStatus($work, $student);
                 abort_unless($status !== null, 404);
+                $work->assertStudentReleaseOpen();
                 abort_unless(in_array($status, ['released', 'email_delivery'], true), 409, 'Die Aufgabe ist derzeit nicht freigegeben.');
                 abort_unless((TeachingWorkSubmissions::method($work)['channel'] ?? null) === 'portal', 409, 'Für diese Aufgabe ist keine Abgabe im Schülerbereich vorgesehen.');
                 abort_if(TeachingWorkSubmissions::expired($work), 409, 'Die Abgabefrist ist abgelaufen.');

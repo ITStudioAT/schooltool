@@ -252,6 +252,7 @@
                                                     </span>
                                                 </div>
                                                 <span class="course-table-work-summary-title text-primary">{{ work.work.title || work.label }}</span>
+                                                <span v-if="assessmentActivity(work.work)" class="text-caption text-info">{{ assessmentLabel(work.work) }}</span>
                                                 <span v-if="work.work.finish_until_date" class="course-table-work-summary-deadline" data-work-deadline="second" :class="`text-${workDeadlineColor(work.work, deadlineNow)}`">
                                                     <v-icon icon="mdi-calendar-clock-outline" size="12" title="Abgabefrist" aria-label="Abgabefrist" role="img" :aria-hidden="false" />
                                                     {{ formatDateShort(work.work.finish_until_date) }}<template v-if="work.work.finish_until_time"> {{ work.work.finish_until_time }}</template>
@@ -277,6 +278,7 @@
                                             <span class="course-table-work-summary-title">
                                                 {{ work.work.title || work.label }}
                                             </span>
+                                            <span v-if="assessmentActivity(work.work)" class="text-caption text-info">{{ assessmentLabel(work.work) }}</span>
                                             <span class="course-table-work-summary-deadline" data-work-deadline="second"
                                                 :class="work.deadlineExpired ? 'text-error' : 'text-primary'">
                                                 <span class="d-inline-flex align-center ga-1" role="img" aria-label="Endgültige Abgabefrist" title="Endgültige Abgabefrist"><v-icon icon="mdi-calendar-clock-outline" size="12" aria-hidden="true" /></span> <template v-if="work.work.finish_until_date">{{ formatDateShort(work.work.finish_until_date) }}<template v-if="work.work.finish_until_time"> {{ work.work.finish_until_time }}</template></template><template v-else>—</template>
@@ -990,7 +992,7 @@
                         :aria-pressed="workMarkedComplete(savedWorkDialogWork)"
                         :aria-label="workCompletionActionLabel(savedWorkDialogWork)"
                         :title="workCompletionActionLabel(savedWorkDialogWork)"
-                        :disabled="workSaving || Boolean(workCompletionSavingId)"
+                        :disabled="assessmentLocked || workSaving || Boolean(workCompletionSavingId)"
                         :loading="workCompletionSavingId === savedWorkDialogWork.id"
                         @click.stop="toggleWorkCompletion(savedWorkDialogWork)" />
                     <v-icon v-else size="20">mdi-calendar-outline</v-icon>
@@ -1003,7 +1005,7 @@
                         density="compact"
                         hide-details
                         label="Datum"
-                        variant="outlined"
+                        variant="outlined" :disabled="assessmentLocked"
                         @update:model-value="applyWorkDialogDate">
                         <template #day="{ item, props }">
                             <v-btn
@@ -1020,9 +1022,9 @@
                             color="primary"
                             size="x-small"
                             variant="tonal"
-                            :class="{ 'cursor-pointer': workDialogFormOpen && !workSaving }"
+                            :class="{ 'cursor-pointer': workDialogFormOpen && !workSaving && !assessmentLocked }"
                             :role="workDialogFormOpen ? 'button' : undefined"
-                            :tabindex="workDialogFormOpen && !workSaving ? 0 : undefined"
+                            :aria-disabled="assessmentLocked" :tabindex="workDialogFormOpen && !workSaving && !assessmentLocked ? 0 : undefined"
                             @click="beginWorkDialogDateEditing"
                             @keydown.enter.prevent="beginWorkDialogDateEditing"
                             @keydown.space.prevent="beginWorkDialogDateEditing">
@@ -1041,11 +1043,11 @@
                     <v-spacer />
                     <v-btn v-if="workDialogFormOpen && savedWorkDialogWork" data-testid="work-dialog-delete"
                         color="error" prepend-icon="mdi-delete" variant="text" size="small"
-                        :disabled="workSaving || workDeleting || workExerciseBusy || Boolean(workCompletionSavingId)"
+                        :disabled="assessmentLocked || workSaving || workDeleting || workExerciseBusy || Boolean(workCompletionSavingId)"
                         @click.stop="openDeleteWorkDialog(savedWorkDialogWork)">Arbeit löschen</v-btn>
                     <WorkFinalDeadline v-if="workDialogFormOpen" :key="workDialogForm.id || 'new'"
                         class="course-table-final-deadline mt-3" :date="workDialogForm.finish_until_date" :time="workDialogForm.finish_until_time"
-                        :color="workDeadlineColor(workDialogForm, deadlineNow)" :disabled="workSaving || workDeleting"
+                        :color="workDeadlineColor(workDialogForm, deadlineNow)" :disabled="assessmentLocked || workSaving || workDeleting"
                         :pending="finalDeadlinePending"
                         @change="applyWorkDialogFinalDeadline" />
                 </v-card-title>
@@ -1077,13 +1079,14 @@
                                         </v-chip>
                                         <strong class="text-body-2">{{ assignment.work.title || assignment.label }}</strong>
                                         <WorkSimulationBadge :work="assignment.work" />
+                                        <span v-if="assessmentActivity(assignment.work)" class="text-caption text-info">{{ assessmentLabel(assignment.work) }}</span>
                                         <v-btn :data-testid="`work-completion-toggle-${assignment.work.id}`"
                                             :icon="workAutomationEnabled(assignment.work) ? 'mdi-brain' : 'mdi-account-check-outline'" size="small" variant="text"
                                             :color="workMarkedComplete(assignment.work) ? 'success' : 'error'"
                                             :aria-pressed="workMarkedComplete(assignment.work)"
                                             :aria-label="workCompletionActionLabel(assignment.work)"
                                             :title="workCompletionActionLabel(assignment.work)"
-                                            :disabled="workSaving || Boolean(workCompletionSavingId)"
+                                            :disabled="Boolean(assessmentActivity(assignment.work)) || workSaving || Boolean(workCompletionSavingId)"
                                             :loading="workCompletionSavingId === assignment.work.id"
                                             @click.stop="toggleWorkCompletion(assignment.work)" />
                                         <span v-if="formatImportDate(assignment.work.status?.folder_imported_at)" class="text-caption text-medium-emphasis">
@@ -1141,7 +1144,7 @@
                                         <template v-else>{{ assignment.completion.completed }} beurteilt</template>
                                     </div>
                                     <div class="work-import-actions d-flex flex-wrap align-start ga-2 mt-2">
-                                        <WorkImportActions :work="assignment.work" @open="openImport" @link="openLink" />
+                                        <WorkImportActions :work="assignment.work" :disabled="Boolean(assessmentActivity(assignment.work))" @open="openImport" @link="openLink" />
                                         <WorkEvaluationPdf :work="assignment.work" />
                                         <WorkExerciseExport :work="assignment.work" :course="selected_course" :date="workDialog.courseDate?.date || ''" :active="false" hide-activator />
                                     </div>
@@ -1155,7 +1158,7 @@
                                         size="x-small"
                                         title="Arbeit löschen"
                                         variant="text"
-                                        @click.stop="openDeleteWorkDialog(assignment.work)" />
+                                        :disabled="Boolean(assessmentActivity(assignment.work))" @click.stop="openDeleteWorkDialog(assignment.work)" />
                                 </div>
                             </div>
                         </div>
@@ -1192,7 +1195,7 @@
                                                     title="Arbeitstyp bearbeiten"
                                                     color="primary"
                                                     variant="tonal"
-                                                    :disabled="workSaving || workDialogModeEditing"
+                                                    :disabled="assessmentLocked || workSaving || workDialogModeEditing"
                                                     @click="beginDateWorkTypeEditing">
                                                     {{ selectedDateWorkTypeTitle }}
                                                 </v-chip>
@@ -1236,7 +1239,7 @@
                                                     title="Arbeitsform bearbeiten"
                                                     color="primary"
                                                     variant="tonal"
-                                                    :disabled="workSaving || workDialogTypeEditing"
+                                                    :disabled="assessmentLocked || workSaving || workDialogTypeEditing"
                                                     @click="beginDateWorkModeEditing">
                                                     {{ selectedDateWorkModeTitle }}
                                                 </v-chip>
@@ -1261,7 +1264,7 @@
                                     </div>
                                         <div class="text-caption text-medium-emphasis mb-2" id="date-work-assessment-mode-label">Beurteilung</div>
                                         <v-btn-toggle v-model="workDialogForm.automation_enabled" mandatory color="primary" variant="outlined"
-                                            :disabled="workSaving" aria-labelledby="date-work-assessment-mode-label" class="work-assessment-mode">
+                                            :disabled="workSaving || assessmentLocked" aria-labelledby="date-work-assessment-mode-label" class="work-assessment-mode">
                                             <v-btn :value="false" prepend-icon="mdi-account-check-outline">Manuelle Beurteilung</v-btn>
                                             <v-btn :value="true" prepend-icon="mdi-brain">Automatische Beurteilung</v-btn>
                                         </v-btn-toggle>
@@ -1275,7 +1278,7 @@
                                         <div v-if="workDialogForm.id" class="mb-3">
                                             <div class="text-caption text-medium-emphasis">Titel</div>
                                             <WorkTitleEditor :work-id="workDialogForm.id" :title="savedWorkDialogWork?.title ?? workDialogForm.title"
-                                                :can-edit="canEditWorkTitle(config, selected_course, savedWorkDialogWork)" :disabled="workSaving || workDialogTypeEditing || workDialogModeEditing" @saved="dateWorkTitleSaved" />
+                                                :can-edit="canEditWorkTitle(config, selected_course, savedWorkDialogWork)" :disabled="assessmentLocked || workSaving || workDialogTypeEditing || workDialogModeEditing" @saved="dateWorkTitleSaved" />
                                         </div>
                                         <v-text-field v-else
                                             v-model="workDialogForm.title"
@@ -1314,13 +1317,13 @@
                                     <v-text-field v-if="dateWorkRequiresMaximumPlus" v-model="workDialogForm.maximum_plus"
                                         label="Maximale Plusanzahl" type="text" inputmode="numeric" variant="outlined"
                                         hint="So viele Plus sind bei dieser Arbeit insgesamt möglich." persistent-hint
-                                        :error-messages="dateWorkMaximumPlusError" :disabled="workSaving" />
+                                        :error-messages="dateWorkMaximumPlusError" :disabled="assessmentLocked || workSaving" />
                                     <v-textarea
                                         v-model="workDialogForm.description"
                                         label="Beschreibung"
                                         rows="3"
                                         maxlength="1024"
-                                        :disabled="workSaving" />
+                                        :disabled="assessmentLocked || workSaving" />
                                 </div>
                                 <div
                                     v-if="!workDialogForm.is_group_work"
@@ -1805,7 +1808,7 @@
                 </v-card-text>
                 <v-card-actions class="flex-wrap justify-end ga-2">
                     <v-btn data-testid="work-delete-cancel" :disabled="workDeleting" variant="text" @click="closeDeleteWorkDialog">Abbrechen</v-btn>
-                    <v-btn data-testid="work-delete-confirm" color="error" :loading="workDeleting" :disabled="workDeleting" variant="flat" @click="confirmDeleteDateWork">
+                    <v-btn data-testid="work-delete-confirm" color="error" :loading="workDeleting" :disabled="workDeleting || Boolean(assessmentActivity(deleteWorkDialog.work))" variant="flat" @click="confirmDeleteDateWork">
                         Endgültig löschen
                     </v-btn>
                 </v-card-actions>
@@ -2082,7 +2085,7 @@
                                     <v-divider class="my-3" />
                                     <div class="course-table-cell-work-heading d-flex align-center flex-wrap ga-2 mb-2">
                                         <div class="text-subtitle-2 font-weight-bold">Bewertung für diese:n Schüler:in</div>
-                                        <WorkImportActions :work="courseWorkForCellEntry(entry)" :disabled="Boolean(courseWorkEntrySavingUid)" @open="openImport" @link="openLink" />
+                                        <WorkImportActions :work="courseWorkForCellEntry(entry)" :disabled="Boolean(courseWorkEntrySavingUid || assessmentActivity(courseWorkForCellEntry(entry)))" @open="openImport" @link="openLink" />
                                     </div>
                                     <div class="course-table-cell-work-entry-fields">
                                         <v-textarea
@@ -2178,7 +2181,7 @@
                                             prepend-icon="mdi-content-save"
                                             variant="flat"
                                             :loading="courseWorkEntrySavingUid === entry.uid"
-                                            :disabled="Boolean(courseWorkEntrySavingUid) || !courseWorkEntryHasChanges(entry)"
+                                            :disabled="Boolean(courseWorkEntrySavingUid || assessmentActivity(courseWorkForCellEntry(entry))) || !courseWorkEntryHasChanges(entry)"
                                             @click="saveCourseWorkCellEntry(entry)">
                                             Bewertung speichern
                                         </v-btn>
@@ -2588,6 +2591,8 @@
             </v-card>
         </v-dialog>
         <CourseStudentNotes ref="studentNotes" :course="selected_course" />
+        <WorkQueueProgress v-for="work in backgroundAssessmentWorks" :key="work.id" :work="work"
+            :user-id="config?.user?.id" monitor-only />
     </ItsGridBox>
 </template>
 
@@ -2625,6 +2630,8 @@ import WorkTitleEditor from './WorkTitleEditor.vue'
 import { canEditWorkTitle } from '@/helpers/workTitlePermission'
 import WorkHandshakeDraft from './WorkHandshakeDraft.vue'
 import { clearWorkCreation, pendingWorkCreation, workCreationRequest } from '@/helpers/workCreationReceipt'
+import { assessmentActivityLabel, forgetAssessmentRun, workAssessmentActivity } from '@/helpers/workAssessmentRun'
+import WorkQueueProgress from './WorkQueueProgress.vue'
 import WorkWorkflowOverview from './WorkWorkflowOverview.vue'
 import WorkCreationProgress from './WorkCreationProgress.vue'
 import WorkSimulationBadge from './WorkSimulationBadge.vue'
@@ -2656,7 +2663,7 @@ const courseContentBlockedTags = new Set([
 ])
 
 export default {
-    components: { ItsRichTextEditor, CourseStudentNotes, CourseGamesRow, CourseStudentIndicators, CurriculumPdfPreview, WorkEvaluationImport, WorkImportActions, WorkExerciseExport, WorkCheckProgress, WorkDropboxLink, WorkTitleEditor, WorkHandshakeDraft, WorkWorkflowOverview, WorkCreationProgress, WorkSimulationBadge, WorkContextCopy, WorkEvaluationPdf, WorkDispatchLog, WorkDispatchStatus, WorkCellStatus, WorkFinalDeadline },
+    components: { ItsRichTextEditor, CourseStudentNotes, CourseGamesRow, CourseStudentIndicators, CurriculumPdfPreview, WorkEvaluationImport, WorkImportActions, WorkExerciseExport, WorkCheckProgress, WorkDropboxLink, WorkTitleEditor, WorkHandshakeDraft, WorkWorkflowOverview, WorkQueueProgress, WorkCreationProgress, WorkSimulationBadge, WorkContextCopy, WorkEvaluationPdf, WorkDispatchLog, WorkDispatchStatus, WorkCellStatus, WorkFinalDeadline },
 
     emits: ['update:activeSemester', 'manage-curriculum'],
 
@@ -2925,6 +2932,13 @@ export default {
     },
 
     computed: {
+        backgroundAssessmentWorks() {
+            const foregroundWorkId = (this.workDialog.open && this.workDialogTab === 'work' && this.workDialogFormOpen) ? this.savedWorkDialogWork?.id : null
+            return (this.courseWorks ?? []).filter(work => work.id !== foregroundWorkId && this.assessmentActivity(work))
+        },
+        assessmentLocked() {
+            return Boolean(this.assessmentActivity(this.savedWorkDialogWork))
+        },
         attendanceVisible() {
             return this.config?.user?.teaching_show_attendance !== false
         },
@@ -3353,6 +3367,7 @@ export default {
             return requiresWorkMaximumPlus(this.selected_course, this.workDialogForm.type) ? workMaximumPlusError(this.workDialogForm.maximum_plus) : ''
         },
         canSaveDateWork() {
+            if (this.assessmentLocked) return false
             const hasAvailableType = this.availableWorkTypes.some((item) => item.value === this.workDialogForm.type)
             const hasIncompleteNewGroup = this.workDialogForm.is_group_work
                 && this.workDialogGroups.some((group) => group?._is_new && !group.student_ids?.length)
@@ -3472,6 +3487,12 @@ export default {
     },
 
     methods: {
+        assessmentActivity(work) {
+            return workAssessmentActivity(this.config?.user?.id, work)
+        },
+        assessmentLabel(work) {
+            return assessmentActivityLabel(this.assessmentActivity(work))
+        },
         workDropboxKey,
         rememberWorkDialogCheck(check) {
             const key = workDropboxKey(this.config?.user?.id, this.savedWorkDialogWork)
@@ -3920,13 +3941,13 @@ export default {
         },
         openLink(work) {
             const savedWork = this.courseWorks.find(item => String(item.id) === String(work?.id))
-            if (!savedWork || String(savedWork.teaching_course_id) !== String(this.selected_course?.id)) return
+            if (!savedWork || workAssessmentActivity(this.config?.user?.id, savedWork) || String(savedWork.teaching_course_id) !== String(this.selected_course?.id)) return
             this.$refs.moduleLink.openLink(savedWork)
         },
         openImport(work, quick = false, results = null) {
             if (!workAutomationEnabled(work)) return
             const savedWork = this.courseWorks.find(item => String(item.id) === String(work?.id))
-            if (!savedWork || String(savedWork.teaching_course_id) !== String(this.selected_course?.id)) return
+            if (!savedWork || workAssessmentActivity(this.config?.user?.id, savedWork) || String(savedWork.teaching_course_id) !== String(this.selected_course?.id)) return
             if (results) this.$refs.evaluationImport.openImport(savedWork, false, results)
             else if (quick) this.$refs.evaluationImport.openImport(savedWork, true)
             else this.$refs.evaluationImport.openImport(savedWork)
@@ -4233,6 +4254,7 @@ export default {
             return `${work.title || 'Arbeit'}: ${this.workMarkedComplete(work) ? 'manuell als offen markieren' : 'manuell als abgeschlossen markieren'}`
         },
         async toggleWorkCompletion(work) {
+            if (this.assessmentActivity(work)) return
             if (!work?.id || this.workSaving || this.workCompletionSavingId
                 || String(work.teaching_course_id) !== String(this.selected_course?.id)) return
             const courseId = this.selected_course.id
@@ -4603,6 +4625,7 @@ export default {
             }))
         },
         beginDateWorkTypeEditing() {
+            if (this.assessmentLocked) return
             this.workDialogTypeDraft = this.workDialogForm.type
             this.workDialogTypeEditing = true
         },
@@ -4627,6 +4650,7 @@ export default {
             this.workDialogTypeEditing = false
         },
         beginDateWorkModeEditing() {
+            if (this.assessmentLocked) return
             this.workDialogModeDraft = !!this.workDialogForm.is_group_work
             this.workDialogModeEditing = true
         },
@@ -4642,11 +4666,13 @@ export default {
             this.workDialogModeEditing = false
         },
         beginWorkDialogDateEditing() {
+            if (this.assessmentLocked) return
             if (!this.workDialogFormOpen || this.workSaving) return
 
             this.workDialogDateEditing = true
         },
         applyWorkDialogDate(value) {
+            if (this.assessmentLocked) return
             const date = this.normalizeDateKey(value)
             if (!date) return
 
@@ -4664,6 +4690,7 @@ export default {
             this.workDialogDateEditing = false
         },
         applyWorkDialogFinalDeadline({ date, time }) {
+            if (this.assessmentLocked) return
             if (this.workSaving) return
             this.workDialogForm.finish_until_date = this.normalizeDateKey(date) || null
             this.workDialogForm.finish_until_time = time
@@ -4919,7 +4946,7 @@ export default {
                 : 'Die Arbeit ist gespeichert. Die Lernmodul-Verknüpfung ist noch nicht bestätigt.'
         },
         openDeleteWorkDialog(work) {
-            if (!work?.id || this.workSaving || this.workDeleting || this.workExerciseBusy || this.workCompletionSavingId) return
+            if (!work?.id || this.assessmentActivity(work) || this.workSaving || this.workDeleting || this.workExerciseBusy || this.workCompletionSavingId) return
 
             this.workDeleteProgress = null
             this.deleteWorkDialog = {
@@ -4937,7 +4964,7 @@ export default {
         },
         async confirmDeleteDateWork() {
             const work = this.deleteWorkDialog.work
-            if (!work?.id || this.workDeleting || this.workSaving) return
+            if (!work?.id || workAssessmentActivity(this.config?.user?.id, work) || this.workDeleting || this.workSaving) return
 
             this.workDeleting = true
             this.workDeleteProgress = { state: 'running', active: null, completed: [], skipped: [], steps: ['delete_check', 'delete_folders', 'delete_mc_files', 'delete_records'] }
@@ -4948,6 +4975,7 @@ export default {
                     return
                 }
 
+                forgetAssessmentRun(workDropboxKey(this.config?.user?.id, work))
                 if (String(this.workDialogForm.id) === String(work.id)) {
                     this.cancelDateWorkForm(true)
                 }
@@ -6155,6 +6183,7 @@ export default {
             if (!entry?.uid || this.courseWorkEntrySavingUid) return
 
             const work = this.courseWorkForCellEntry(entry)
+            if (workAssessmentActivity(this.config?.user?.id, work)) return
             const draft = this.courseWorkEntryDraft(entry)
             const gradeInputMode = this.courseWorkEntryGradeInputMode(entry)
             if ((['plus', 'plus_minus', 'points'].includes(gradeInputMode) || ['NA', 'VL', 'F'].includes(String(draft.grade ?? '').trim()))

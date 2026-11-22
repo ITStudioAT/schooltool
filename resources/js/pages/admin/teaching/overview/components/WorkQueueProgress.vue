@@ -1,5 +1,5 @@
 <template>
-    <aside v-if="run || mailBatches.length || unavailable" class="work-queue" aria-label="Auftragsverlauf">
+    <aside v-if="!monitorOnly && (run || mailBatches.length || unavailable)" class="work-queue" aria-label="Auftragsverlauf">
         <details v-if="run" :open="expanded" @toggle="expanded = $event.currentTarget.open">
             <summary>
                 <span>{{ run.state === 'completed' ? 'Letzter Auftrag · Leistungsfeststellung' : 'Auftrag zur Leistungsfeststellung' }}</span>
@@ -30,10 +30,12 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { show } from '@/actions/App/Http/Controllers/Admin/Teaching/TeachingAssessmentRunController'
 import { assessmentTimeText } from '@/helpers/workAssessmentTimes'
+import { observeAssessmentRun, workAssessmentActivity } from '@/helpers/workAssessmentRun'
+import { workDropboxKey } from '@/helpers/workDropbox'
 import WorkCheckProgress from './WorkCheckProgress.vue'
 
-const props = defineProps({ work: { type: Object, required: true }, date: { type: String, default: '' } })
-const emit = defineEmits(['assessment-running'])
+const props = defineProps({ work: { type: Object, required: true }, date: { type: String, default: '' }, userId: [Number, String], monitorOnly: Boolean })
+const emit = defineEmits(['assessment-completed'])
 const stateLabels = {
     queued: 'In der Warteschlange', running: 'Läuft', completed: 'Abgeschlossen', failed: 'Fehlgeschlagen', interrupted: 'Unterbrochen',
 }
@@ -47,10 +49,12 @@ const expanded = ref(false)
 const unavailable = ref(false)
 const progress = computed(() => run.value?.state === 'interrupted'
     ? { ...run.value.progress, state: 'interrupted' } : run.value?.progress)
-const assessmentRunning = computed(() => ['queued', 'running'].includes(run.value?.state))
-watch(assessmentRunning, value => emit('assessment-running', value))
+const key = computed(() => workDropboxKey(props.userId, props.work))
+const activity = computed(() => workAssessmentActivity(props.userId, props.work))
+const assessmentRunning = computed(() => Boolean(activity.value) || ['queued', 'running'].includes(run.value?.state))
 let timer
 let controller
+let announcedCompletion
 
 function stop() {
     clearTimeout(timer)
@@ -73,6 +77,13 @@ async function refresh() {
             expanded.value = ['queued', 'running', 'failed', 'interrupted'].includes(data.run?.state)
         }
         run.value = data.run
+        const latest = data.activity ?? data.run
+        observeAssessmentRun(key.value, latest)
+        if (latest?.state === 'completed' && latest.id && latest.id !== announcedCompletion
+            && (!latest.date || !props.date || latest.date === props.date)) {
+            announcedCompletion = latest.id
+            emit('assessment-completed', latest)
+        }
         mailBatches.value = (data.mail ?? []).filter(batch => batch && (batch.withdrawn || Object.hasOwn(mailStates, batch.state)))
         unavailable.value = false
     } catch {
@@ -81,7 +92,7 @@ async function refresh() {
         if (controller === request) {
             controller = null
             const active = assessmentRunning.value || mailBatches.value.some(batch => batch.state === 'sending')
-            timer = setTimeout(refresh, active && !unavailable.value ? 2000 : 15000)
+            timer = setTimeout(refresh, active ? (unavailable.value ? 5000 : 2000) : 15000)
         }
     }
 }
@@ -91,13 +102,18 @@ function restart() {
     refresh()
 }
 
-watch([() => props.work?.id, () => props.date], () => {
+watch([() => props.work?.id, () => props.date, () => props.userId], () => {
     run.value = null
     mailBatches.value = []
     unavailable.value = false
     expanded.value = false
+    announcedCompletion = null
     restart()
 })
+watch(() => activity.value?.state, (state) => {
+    if (state && state !== 'starting' && !controller) restart()
+}, { flush: 'sync' })
+defineExpose({ restart })
 onMounted(() => {
     document.addEventListener('visibilitychange', restart)
     refresh()
@@ -105,7 +121,6 @@ onMounted(() => {
 onBeforeUnmount(() => {
     document.removeEventListener('visibilitychange', restart)
     stop()
-    if (assessmentRunning.value) emit('assessment-running', false)
 })
 </script>
 

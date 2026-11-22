@@ -17,6 +17,26 @@ vi.mock('@laravel/echo-vue', () => ({
 
 afterEach(() => vi.unstubAllGlobals())
 
+it('records a deliberate opening before showing the released task instructions', async () => {
+    const post = vi.fn().mockResolvedValue({ data: { started: true } })
+    const get = vi.fn().mockResolvedValue({ data: { tasks: [{ id: 12, title: 'Dateien', status: 'released',
+        task_started: false, can_start_task: true, instructions: 'Ordne die Dateien.' }] } })
+    vi.stubGlobal('axios', { get, post })
+    const wrapper = mount(StudentCourseTasks, { props: { courseId: 4 }, global: {
+        stubs: { 'v-btn': { template: '<button><slot /></button>' } },
+    } })
+    try {
+        await flushPromises()
+        expect(post).not.toHaveBeenCalled()
+        expect(wrapper.text()).not.toContain('Ordne die Dateien.')
+        const button = wrapper.findAll('button').find(item => item.text() === 'Aufgabenstellung öffnen')
+        await button!.trigger('click')
+        await flushPromises()
+        expect(post).toHaveBeenCalledExactlyOnceWith('/api/homepage/student/courses/4/works/12/start')
+        expect(wrapper.text()).toContain('Ordne die Dateien.')
+    } finally { wrapper.unmount() }
+})
+
 it('opens the tasks tab through the course navigation and preserves existing route state', () => {
     const context = { $route: { query: { panel: 'overview', keep: 'value' }, hash: '#course' }, $router: { replace: vi.fn() } }
     const tab = (MyCourse as any).computed.currentTab

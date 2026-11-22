@@ -1,22 +1,33 @@
 <template>
-    <v-btn v-if="work?.id && workAutomationEnabled(work) && work.status?.submission_method?.channel !== 'portal'" size="small" variant="tonal" prepend-icon="mdi-inbox-arrow-down-outline" :disabled="disabled || !hasSentTasks" @click.stop="openAction">{{ repeat ? 'Erneut einsammeln' : 'Abgaben einsammeln' }}</v-btn>
+    <v-btn v-if="work?.id" min-height="44" size="small" variant="tonal" prepend-icon="mdi-inbox-arrow-down-outline"
+        :disabled="disabled || !available" @click.stop="openAction">{{ repeat && !portal ? 'Erneut einsammeln' : 'Abgaben einsammeln' }}</v-btn>
     <v-dialog v-if="opened" v-model="opened" max-width="720" scrollable :persistent="loading">
         <v-card>
-            <v-card-title class="text-wrap">{{ repeat ? 'Abgaben erneut einsammeln' : 'Abgaben einsammeln' }} · {{ work.title }}</v-card-title>
+            <v-card-title class="text-wrap">{{ portal ? 'Abgaben im Schülerbereich' : repeat ? 'Abgaben erneut einsammeln' : 'Abgaben einsammeln' }} · {{ work.title }}</v-card-title>
             <v-card-text>
-                <p class="mb-3">KI-Auftrag kopieren und an die KI übergeben. Vorhandene Abgaben und Bewertungen bleiben erhalten.</p>
-                <p v-if="work.status?.submission_method?.email" class="text-body-2 mb-3">Abgabepostfach: {{ work.status.submission_method.email }}</p>
-                <p v-if="loading" role="status">KI-Auftrag wird geladen …</p>
+                <p v-if="!portal" class="mb-3">KI-Auftrag für das Einsammeln per E-Mail kopieren.</p>
+                <p v-if="!portal && work.status?.submission_method?.email" class="text-body-2 mb-3">Abgabepostfach: {{ work.status.submission_method.email }}</p>
+                <p v-if="loading" role="status">{{ portal ? 'Abgaben werden geladen …' : 'KI-Auftrag wird geladen …' }}</p>
                 <v-alert v-if="error" type="error" variant="tonal" class="mb-3" role="alert">{{ error }}</v-alert>
-                <template v-if="result">
+                <template v-if="portal && result">
+                    <p v-if="!result.files.length">Für diese Auswahl sind keine Portalabgaben gespeichert.</p>
+                    <ul v-else class="collection-files">
+                        <li v-for="file in result.files" :key="file.id">
+                            <span><strong>{{ file.student_name }}</strong><br />{{ file.name }}</span>
+                            <v-btn icon="mdi-download-outline" variant="text" :href="file.download_url" :download="file.name"
+                                :aria-label="file.name + ' herunterladen'" />
+                        </li>
+                    </ul>
+                </template>
+                <template v-else-if="result">
                     <details><summary>Übergabetext anzeigen</summary><textarea ref="copyText" :value="result.text" readonly rows="10" aria-label="KI-Auftrag zum Einsammeln" class="collection-order-text" /></details>
                     <p v-if="message" role="status" class="mt-3" :class="copied ? 'text-success' : 'text-warning'">{{ message }}</p>
                 </template>
             </v-card-text>
             <v-card-actions>
                 <v-spacer />
-                <v-btn :disabled="!result || loading || copying || disabled || !hasSentTasks" :color="copied ? 'success' : 'primary'" :prepend-icon="copied ? 'mdi-check' : 'mdi-content-copy'" @click="copyOrder">{{ copied ? 'Kopiert' : 'Auftrag kopieren' }}</v-btn>
-                <v-btn :disabled="loading" @click="opened = false">Schließen</v-btn>
+                <v-btn v-if="!portal" min-height="44" :disabled="!result || loading || copying || disabled || !available" :color="copied ? 'success' : 'primary'" :prepend-icon="copied ? 'mdi-check' : 'mdi-content-copy'" @click="copyOrder">{{ copied ? 'Kopiert' : 'Auftrag kopieren' }}</v-btn>
+                <v-btn min-height="44" :disabled="loading" @click="opened = false">Schließen</v-btn>
             </v-card-actions>
         </v-card>
     </v-dialog>
@@ -26,33 +37,11 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { aiExport } from '@/actions/App/Http/Controllers/Admin/Teaching/CourseWorkController'
 import { workAutomationEnabled } from '@/helpers/workAutomation'
-import { workDropboxKey, workDropboxStates, workExerciseCheck } from '@/helpers/workDropbox'
-import { workDispatchNotifications, workStudentDistribution, workTaskDispatchCompleted } from '@/helpers/workDispatch'
-import { useAdminStore } from '@/stores/admin/AdminStore'
-
-const props = defineProps({ work: { type: Object, required: true }, date: { type: String, default: '' }, repeat: Boolean, disabled: Boolean, dispatch: { type: Object, default: null } })
-const admin = useAdminStore()
-const hasSentTasks = computed(() => {
-    const date = props.date || props.work.date_for_all_groups || ''
-    if (props.work.status?.submission_method?.channel === 'portal') return false
-    const batches = props.work.status?.assignment_mail?.batches || {}
-    const scoped = date ? [batches[date]] : Object.values(batches)
-    if (scoped.some(batch => batch?.transport === 'postmark' && batch.recipients?.some(row => row.state === 'accepted' && row.accepted_at))) return true
-    const releaseGroups = (props.work.groups || []).filter(group => !date || (group.date || props.work.date_for_all_groups) === date)
-    const releaseStudents = new Set(releaseGroups.flatMap(group => group.student_ids || []).map(String))
-    const release = workStudentDistribution(props.work)
-    if (release?.student_ids?.some(id => releaseStudents.has(String(id)))) return true
-    if (workTaskDispatchCompleted(props.work)) return true
-    const key = workDropboxKey(admin.config?.user?.id, props.work)
-    const cached = workExerciseCheck(key, props.work, date)?.data
-    const checked = cached?.exercise?.email_dispatch ? cached : workDropboxStates.get(key)
-    const status = props.dispatch || (checked?.exercise?.status === 'found' && (!date || checked.exercise.folder?.name?.startsWith(`${date}_`))
-        ? checked.exercise.email_dispatch : null)
-    if (status) return ['sent', 'partial'].includes(status.status) && Number(status.confirmed_count) > 0
-    const groups = (props.work.groups || []).filter(group => !date || !group.date || group.date === date)
-    const students = new Set(groups.flatMap(group => group.student_ids || []).map(String))
-    return workDispatchNotifications(props.work, 'tasks').some(notification => students.has(String(notification.student_id)))
-})
+const props = defineProps({ work: { type: Object, required: true }, date: { type: String, default: '' }, repeat: Boolean, disabled: Boolean })
+const channel = computed(() => props.work.status?.submission_method?.channel)
+const portal = computed(() => channel.value === 'portal' || (!channel.value && !!props.work.status?.portal_submissions?.length))
+const available = computed(() => Boolean(props.work.status?.student_distribution?.ended_at)
+    && (portal.value || channel.value === 'email' || workAutomationEnabled(props.work)))
 const opened = ref(false)
 const loading = ref(false)
 const copying = ref(false)
@@ -76,7 +65,7 @@ function clear() {
 }
 
 async function openAction() {
-    if (props.disabled || !hasSentTasks.value || !props.work?.id || !workAutomationEnabled(props.work)) return
+    if (props.disabled || !available.value || !props.work?.id) return
     clear()
     opened.value = true
     loading.value = true
@@ -88,6 +77,11 @@ async function openAction() {
             ...(props.date ? { date: props.date } : {}) }, signal: controller.signal })
         if (operation !== sequence || !opened.value) return
         const data = response.data?.data
+        if (portal.value && data?.channel === 'portal' && String(data.work_id) === String(props.work.id)
+            && String(data.course_id) === String(props.work.teaching_course_id) && Array.isArray(data.files)) {
+            result.value = data
+            return
+        }
         if (String(data?.work_id) !== String(props.work.id) || String(data?.course_id) !== String(props.work.teaching_course_id)
             || data.roster_complete !== true || data.context?.purpose !== 'collect-exercise-submissions' || data.context?.mode !== mode
             || data.context?.operation?.collect_submissions !== true || data.context?.operation?.preserve_existing !== true
@@ -102,7 +96,7 @@ async function openAction() {
 }
 
 async function copyOrder() {
-    if (!result.value || loading.value || copying.value || props.disabled || !hasSentTasks.value) return
+    if (portal.value || !result.value || loading.value || copying.value || props.disabled || !available.value) return
     const operation = sequence
     copying.value = true
     copied.value = false
@@ -126,11 +120,13 @@ async function copyOrder() {
 }
 
 watch(() => [props.work?.id, props.work?.teaching_course_id, props.work?.updated_at, props.date, props.repeat], () => { opened.value = false; clear() })
-watch(hasSentTasks, value => { if (!value && opened.value) { opened.value = false; clear() } })
+watch(available, value => { if (!value && opened.value) { opened.value = false; clear() } })
 watch(opened, value => { if (!value) clear() })
 onBeforeUnmount(clear)
 </script>
 
 <style scoped>
 .collection-order-text { width: 100%; margin-top: 12px; padding: 10px; border: 1px solid #aaa; border-radius: 4px; font: 12px/1.5 monospace; white-space: pre-wrap; }
+.collection-files { list-style: none; padding: 0; }
+.collection-files li { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding-block: .5rem; border-bottom: 1px solid rgba(var(--v-border-color), .16); overflow-wrap: anywhere; }
 </style>

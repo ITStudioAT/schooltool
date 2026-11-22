@@ -16,7 +16,8 @@ class TeachingCourseWork extends Model
     use HasFactory;
 
     /** These fields are written only by their individual workflow actions. */
-    public const ManagedWorkflowFields = ['provision_method', 'submission_method', 'portal_submissions', 'assignment_mail', 'grade_visibility'];
+    public const ManagedWorkflowFields = ['provision_method', 'submission_method', 'submission_started_at', 'portal_started_student_ids',
+        'portal_submissions', 'assignment_mail', 'grade_visibility'];
 
     public function scopeLinkedToMultipleChoiceTest(Builder $query, int $testId): Builder
     {
@@ -56,6 +57,16 @@ class TeachingCourseWork extends Model
     public function teachingCourse(): BelongsTo
     {
         return $this->belongsTo(TeachingCourse::class);
+    }
+
+    public function studentReleaseEnded(): bool
+    {
+        return ! empty($this->status['student_distribution']['ended_at']);
+    }
+
+    public function assertStudentReleaseOpen(): void
+    {
+        abort_if($this->studentReleaseEnded(), 409, 'Die Freigabe dieser Arbeit wurde endgültig beendet.');
     }
 
     public function automationEnabled(): bool

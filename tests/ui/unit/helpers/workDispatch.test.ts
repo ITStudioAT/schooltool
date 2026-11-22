@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
-import { dispatchNotificationText, workDispatchNotification, workDispatchRecord, workDispatchReady, workProvisionRecords } from '@/helpers/workDispatch'
+import { workProvisionEvidence, dispatchNotificationText, workDispatchNotification, workDispatchRecord, workDispatchReady, workProvisionRecords } from '@/helpers/workDispatch'
 
 it('uses a confirmed Mailpit dispatch ahead of preparation while keeping real delivery evidence separate', () => {
     const log = { origin: 'dispatch_import', purpose: 'tasks', sha256: 'mailpit-proof' }
@@ -228,5 +228,71 @@ describe('Imported work dispatch notifications', () => {
             expect(wrapper.text()).toContain('Kein bestätigter Aufgabenversand.')
             expect(wrapper.text()).not.toContain('Aufgabenversand am')
         } finally { wrapper.unmount() }
+    })
+})
+
+
+describe('provision evidence for the selected work or group', () => {
+    const date = '2026-11-20'
+    const otherDate = '2026-11-21'
+    const time = date + 'T09:00:00Z'
+    const recipient = { student_id: 12, state: 'accepted', accepted_at: time }
+    const groups = [{ date, student_ids: [12, 14] }, { date: otherDate, student_ids: [13, 14] }]
+    const work = { id: 65, groups }
+    const labels = (status: object, selectedDate = date) => workProvisionEvidence({ ...work, status }, selectedDate).map(entry => entry.label)
+
+    it('distinguishes a chosen portal, a prepared portal and a released portal with its status', () => {
+        expect(labels({ provision_method: { channel: 'portal' } })).toEqual(['Schülerbereich gewählt'])
+        expect(labels({ student_distribution: { prepared_at: time, student_ids: [12] } })).toEqual(['Schülerbereich vorbereitet'])
+        const release = { published_at: time, withdrawn_at: time, student_ids: [12] }
+        expect(workProvisionEvidence({ ...work, status: { student_distribution: release } }, date)[0])
+            .toMatchObject({ label: 'Im Schülerbereich bereitgestellt', state: 'Freigabe pausiert' })
+        expect(workProvisionEvidence({ ...work, status: { student_distribution: { ...release, ended_at: time } } }, date)[0])
+            .toMatchObject({ label: 'Im Schülerbereich bereitgestellt', state: 'Freigabe beendet' })
+        expect(labels({ student_distribution: { ...release, student_ids: [13] } })).toEqual(['Bereitstellungsweg offen'])
+    })
+
+    it('keeps provider acceptance separate from preparations, tests and another group', () => {
+        const batches = {
+            all: { state: 'partial', transport: 'postmark', recipients: [recipient, { student_id: 13, state: 'queued' }] },
+            [otherDate]: { state: 'sent', transport: 'postmark', recipients: [{ ...recipient, student_id: 14 }] },
+        }
+        const status = { assignment_mail: { batches } }
+        const rows = workProvisionEvidence({ ...work, status }, date)
+        expect(rows).toHaveLength(1)
+        expect(rows[0]).toMatchObject({ label: 'Per E-Mail versandt',
+            detail: 'Postmark hat 1 Nachricht angenommen. Zustellung nicht bestätigt.' })
+        expect(labels({ assignment_mail: { batches: { [date]: { transport: 'postmark', state: 'draft', recipients: [{ student_id: 12, state: 'draft' }] } } } }))
+            .toEqual(['E-Mail vorbereitet'])
+        expect(labels({ assignment_mail: { batches: { [date]: { transport: 'postmark', state: 'queued', recipients: [{ student_id: 12, state: 'queued' }] } } } }))
+            .toEqual(['E-Mail-Versand geplant'])
+        expect(labels({ assignment_mail: { batches: { [date]: { transport: 'postmark', state: 'sent', recipients: [] } } } }))
+            .toEqual(['E-Mail-Versand nicht bestätigt'])
+        expect(labels({ assignment_mail: { batches: { [date]: { transport: 'mailpit', state: 'sent', recipients: [recipient] } } } }))
+            .toEqual(['Lokaler Mailpit-Test'])
+    })
+
+    it('uses only unambiguous historical receipts from the selected group and keeps direct issue distinct', () => {
+        const log = { origin: 'dispatch_import', purpose: 'tasks', sha256: 'd'.repeat(64) }
+        const teacherLog = { ...log, sha256: 'e'.repeat(64), recipient_scope: 'teacher' }
+        const provision = { origin: 'provision_import', purpose: 'provision', sha256: 'f'.repeat(64) }
+        const notification = { ...log, sent_at: time, log_sha256: log.sha256 }
+        const status = { dispatch_logs: [log, teacherLog, provision],
+            dispatch_notifications: [{ ...notification, student_id: 13 }, { ...notification, student_id: 14 },
+                { ...notification, student_id: 12, log_sha256: teacherLog.sha256 }],
+            provision_events: [{ student_id: 12, available_at: time, log_sha256: provision.sha256,
+                origin: 'provision_import', method: 'direct_issue' }],
+        }
+        expect(labels(status)).toEqual(['Direkt ausgegeben'])
+        expect(labels({ ...status, dispatch_notifications: [...status.dispatch_notifications, { ...notification, student_id: 12 }] }))
+            .toEqual(['Per E-Mail versandt', 'Direkt ausgegeben'])
+    })
+
+    it('only uses an aggregated legacy folder receipt when the work has one unambiguous group date', () => {
+        const dispatch = { transport: 'office_outlook', status: 'partial', confirmed_count: 1, sent_at: time }
+        expect(workProvisionEvidence(work, date, dispatch).map(entry => entry.label)).toEqual(['Bereitstellungsweg offen'])
+        const single = { ...work, groups: [{ date, student_ids: [12] }] }
+        expect(workProvisionEvidence(single, date, dispatch)[0]).toMatchObject({ label: 'Per E-Mail versandt', detail: 'Versandbeleg im Prüfungsordner' })
+        expect(workProvisionEvidence(single, date, { ...dispatch, transport: 'mailpit' })[0].label).toBe('Lokaler Mailpit-Test')
     })
 })

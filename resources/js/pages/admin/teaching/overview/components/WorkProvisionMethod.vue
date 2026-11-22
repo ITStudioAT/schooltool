@@ -1,5 +1,5 @@
 <template>
-    <v-btn min-height="44" size="small" variant="tonal" prepend-icon="mdi-share-variant-outline"
+    <v-btn v-if="!hideActivator" min-height="44" size="small" variant="tonal" prepend-icon="mdi-share-variant-outline"
         :disabled="disabled || !work.id" @click.stop="open">Bereitstellungsweg vorbereiten</v-btn>
     <v-dialog v-model="opened" max-width="510" scrollable :persistent="saving">
         <v-card v-if="opened">
@@ -12,17 +12,18 @@
                         <span><strong>{{ option.label }}</strong><small>{{ option.detail }}</small></span>
                     </label>
                 </fieldset>
+                <WorkSubmissionFields v-model:channel="submissionChannel" v-model:email="submissionEmail"
+                    :disabled="saving || disabled" :lock-reason="submissionLock" class="mt-5" />
                 <p v-if="selected === 'portal' && !portalAvailable" class="text-body-2 mt-3">
                     Du kannst den Weg schon festlegen. Die Freigabe wird nach der Vorbereitung der Leistungsfeststellung verfügbar.
                 </p>
                 <v-alert v-if="error" type="error" variant="tonal" class="mt-3" role="alert">{{ error }}</v-alert>
             </v-card-text>
             <v-card-actions class="flex-wrap">
-                <v-btn v-if="current" min-height="44" variant="text" :disabled="saving || disabled" @click="apply(null)">Auswahl entfernen</v-btn>
                 <v-spacer />
                 <v-btn min-height="44" variant="text" :disabled="saving" @click="opened = false">Schließen</v-btn>
-                <v-btn min-height="44" color="primary" variant="flat" :disabled="!selected || saving || disabled"
-                    :loading="saving" @click="apply(selected)">
+                <v-btn min-height="44" color="primary" variant="flat" :disabled="!canContinue || saving || disabled"
+                    :loading="saving" @click="apply">
                     {{ selected === 'portal' && !portalAvailable ? 'Auswahl speichern' : 'Weiter' }}
                 </v-btn>
             </v-card-actions>
@@ -34,8 +35,10 @@
 import { computed, nextTick, ref, useId, watch } from 'vue'
 import { updateProvisionMethod } from '@/actions/App/Http/Controllers/Admin/Teaching/WorkSubmissionController'
 
+import WorkSubmissionFields from './WorkSubmissionFields.vue'
+
 const props = defineProps({ work: { type: Object, required: true }, disabled: Boolean,
-    date: { type: String, default: '' }, portalAvailable: Boolean })
+    date: { type: String, default: '' }, portalAvailable: Boolean, hideActivator: Boolean })
 const emit = defineEmits(['saved', 'portal', 'mail'])
 const options = [
     { value: 'portal', label: 'Im Schülerbereich', detail: 'Aufgabe unter „Meine Aufgaben“ vorbereiten und freigeben.' },
@@ -47,26 +50,60 @@ const saving = ref(false)
 const error = ref('')
 const selected = ref(null)
 const expected = ref(null)
-const current = computed(() => props.work.status?.provision_method?.channel || null)
+const submissionChannel = ref(null)
+const submissionEmail = ref('')
+const expectedSubmission = ref(null)
+const serverLock = ref(null)
+const submissionLock = computed(() => {
+    if (props.work.status?.student_distribution?.ended_at) return 'ended'
+    const reason = serverLock.value || props.work.submission_lock_reason
+    return expectedSubmission.value || reason === 'email_pending' ? reason : null
+})
+const canContinue = computed(() => selected.value && submissionChannel.value
+    && (submissionChannel.value !== 'email' || submissionEmail.value.trim() !== ''))
 let context = 0
+
+function loadSubmission(method) {
+    const channel = method?.channel
+    expectedSubmission.value = channel === 'portal' || (channel === 'email' && method.email)
+        ? { channel, email: channel === 'email' ? method.email : null } : null
+    submissionChannel.value = expectedSubmission.value?.channel ?? null
+    submissionEmail.value = expectedSubmission.value?.email ?? ''
+}
 
 function open() {
     if (props.disabled || !props.work.id) return
-    expected.value = current.value
-    selected.value = current.value
+    expected.value = props.work.status?.provision_method?.channel ?? null
+    selected.value = expected.value
+    loadSubmission(props.work.status?.submission_method)
+    serverLock.value = null
     error.value = ''
     opened.value = true
 }
 
-async function apply(channel) {
-    if (saving.value || props.disabled) return
+async function apply() {
+    if (saving.value || props.disabled || !canContinue.value) return
+    const workId = props.work.id
+    const channel = selected.value
+    const submission = submissionLock.value && expectedSubmission.value ? expectedSubmission.value : {
+        channel: submissionChannel.value,
+        email: submissionChannel.value === 'email' ? submissionEmail.value.trim() : null,
+    }
+    const request = { channel, expected: expected.value, submission, expected_submission: expectedSubmission.value }
     const version = context
     saving.value = true
     error.value = ''
     try {
-        const { data } = await axios.put(updateProvisionMethod.url(props.work.id), { channel, expected: expected.value })
+        const { data } = await axios.put(updateProvisionMethod.url(workId), request)
         if (version !== context) return
-        emit('saved', data.data)
+        const saved = data?.data
+        const savedSubmission = saved?.status?.submission_method
+        if (String(saved?.id) !== String(workId) || saved?.status?.provision_method?.channel !== channel
+            || savedSubmission?.channel !== submission.channel || (savedSubmission.email ?? null) !== submission.email) {
+            error.value = 'Die Speicherung der Auswahl konnte nicht bestätigt werden.'
+            return
+        }
+        emit('saved', saved)
         opened.value = false
         await nextTick()
         if (version === context && !props.disabled) {
@@ -80,7 +117,12 @@ async function apply(channel) {
             expected.value = response.data.current
             selected.value = response.data.current
         }
-        error.value = response?.data?.message || 'Der Bereitstellungsweg konnte nicht gespeichert werden.'
+        if (response?.status === 409 && Object.hasOwn(response.data || {}, 'current_submission')) {
+            loadSubmission(response.data.current_submission)
+            serverLock.value = response.data.submission_lock_reason ?? null
+        }
+        error.value = Object.values(response?.data?.errors || {}).flat()[0]
+            || response?.data?.message || 'Bereitstellungsweg und Abgabeweg konnten nicht gespeichert werden.'
     } finally {
         if (version === context) saving.value = false
     }

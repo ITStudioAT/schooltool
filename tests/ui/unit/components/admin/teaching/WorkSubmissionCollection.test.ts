@@ -2,93 +2,50 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createVuetify } from 'vuetify'
 import { VBtn } from 'vuetify/components'
-import { createTestingPinia } from '@pinia/testing'
 import WorkSubmissionCollection from '@/pages/admin/teaching/overview/components/WorkSubmissionCollection.vue'
 
-const work = { id: 86, teaching_course_id: 16, title: 'E-Mails' }
+const work = { id: 86, teaching_course_id: 16, title: 'E-Mails', status: { student_distribution: { ended_at: '2026-10-16T12:00:00Z' } } }
 const response = mode => ({ data: { data: { work_id: 86, course_id: 16, roster_complete: true, text: 'Verbindlicher Einsammelauftrag',
     context: { purpose: 'collect-exercise-submissions', mode, operation: { collect_submissions: true, preserve_existing: true, grade: false, send: false, schooltool_import: false } } } } })
 function mountCollection(repeat = false) {
-    return mount(WorkSubmissionCollection, { props: { work, repeat, date: '2026-10-16', dispatch: { status: 'sent', confirmed_count: 1 } }, global: { plugins: [createTestingPinia({ createSpy: vi.fn }), createVuetify({ components: { VBtn } })],
+    return mount(WorkSubmissionCollection, { props: { work, repeat, date: '2026-10-16' }, global: { plugins: [createVuetify({ components: { VBtn } })],
         components: { 'v-btn': VBtn }, stubs: { 'v-btn': false, VBtn: false,
             'v-dialog': { props: ['modelValue'], template: '<section v-if="modelValue" role="dialog"><slot /></section>' } } } })
 }
 afterEach(() => vi.unstubAllGlobals())
 
-it('blocks the collection action until a task email has been sent', async () => {
+it.each([
+    { published_at: '2026-10-15T12:00:00Z' },
+    { published_at: '2026-10-15T12:00:00Z', withdrawn_at: '2026-10-16T11:00:00Z' },
+    {},
+])('requires the terminal state even after dispatch, manual completion or a pause: %j', async distribution => {
     const get = vi.fn()
     vi.stubGlobal('axios', { get })
     const wrapper = mountCollection()
     try {
-        await wrapper.setProps({ dispatch: { status: 'missing', confirmed_count: 0 } })
+        await wrapper.setProps({ work: { ...work, status: {
+            task_dispatch_completed: true, student_distribution: distribution,
+            assignment_mail: { batches: { all: { transport: 'postmark', recipients: [{ state: 'accepted' }] } } },
+        } } })
         expect(wrapper.get('button').element.disabled).toBe(true)
         await wrapper.get('button').trigger('click')
         expect(get).not.toHaveBeenCalled()
-        await wrapper.setProps({ dispatch: { status: 'partial', confirmed_count: 1 } })
-        expect(wrapper.get('button').element.disabled).toBe(false)
-    } finally { wrapper.unmount() }
-})
-
-it('opens the collection order after manual completion even when no task emails were sent', async () => {
-    const get = vi.fn().mockResolvedValue(response('collect'))
-    vi.stubGlobal('axios', { get })
-    const wrapper = mountCollection()
-    try {
-        await wrapper.setProps({ work: { ...work, status: { task_dispatch_completed: true } },
-            dispatch: { status: 'missing', confirmed_count: 0 } })
-        expect(wrapper.get('button').element.disabled).toBe(false)
-        await wrapper.get('button').trigger('click')
-        await flushPromises()
-        expect(get.mock.calls[0][1].params.purpose).toBe('submission_collection')
-        expect(wrapper.get('[role="dialog"]').text()).toContain('KI-Auftrag kopieren')
-    } finally { wrapper.unmount() }
-})
-
-it('allows collection for a matching active student-area release without a task email', async () => {
-    const get = vi.fn().mockResolvedValue(response('collect'))
-    vi.stubGlobal('axios', { get })
-    const wrapper = mountCollection()
-    const release = { published_at: '2026-10-15T12:00:00Z', student_ids: [12] }
-    try {
-        await wrapper.setProps({ work: { ...work, date_for_all_groups: '2026-10-16', groups: [{ student_ids: [12] }],
-            status: { student_distribution: release } }, dispatch: { status: 'missing', confirmed_count: 0 } })
-        expect(wrapper.get('button').element.disabled).toBe(false)
-        await wrapper.get('button').trigger('click'); await flushPromises()
-        expect(get).toHaveBeenCalledOnce()
-        expect(wrapper.get('[role="dialog"]').text()).toContain('KI-Auftrag kopieren')
-        await wrapper.setProps({ work: { ...work, date_for_all_groups: '2026-10-16', groups: [{ student_ids: [12] }],
-            status: { student_distribution: { ...release, withdrawn_at: '2026-10-16T12:00:00Z' } } } })
-        expect(wrapper.get('button').element.disabled).toBe(true)
         expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
     } finally { wrapper.unmount() }
 })
 
-it('does not use a student-area release for a different group or date', async () => {
-    vi.stubGlobal('axios', { get: vi.fn() })
+it('shows the existing portal originals with a download and without a copy action', async () => {
+    const get = vi.fn().mockResolvedValue({ data: { data: { work_id: 86, course_id: 16, channel: 'portal',
+        files: [{ id: 'one', name: 'Abgabe.pdf', student_name: 'Beispiel', download_url: '/api/submission-download' }] } } })
+    vi.stubGlobal('axios', { get })
     const wrapper = mountCollection()
     try {
-        await wrapper.setProps({ work: { ...work, date_for_all_groups: '2026-10-15', groups: [
-            { date: '2026-10-15', student_ids: [12] }, { date: '2026-10-16', student_ids: [13] },
-        ], status: { student_distribution: { published_at: '2026-10-15T12:00:00Z', student_ids: [12] } } },
-        dispatch: { status: 'missing', confirmed_count: 0 } })
-        expect(wrapper.get('button').element.disabled).toBe(true)
-    } finally { wrapper.unmount() }
-})
-
-it('collects the chosen mailbox after a confirmed real send and reserves online submissions for the student area', async () => {
-    const wrapper = mountCollection()
-    const receipt = { recipients: [{ state: 'accepted', accepted_at: '2026-10-16T09:00:00Z' }] }
-    try {
-        const setMethod = (channel, transport) => wrapper.setProps({ work: { ...work, status: {
-            submission_method: { channel, email: channel === 'email' ? 'schule@example.test' : null },
-            assignment_mail: { batches: { '2026-10-16': { ...receipt, transport } } },
-        } }, dispatch: { status: 'missing', confirmed_count: 0 } })
-        await setMethod('email', 'mailpit')
-        expect(wrapper.get('button').element.disabled).toBe(true)
-        await setMethod('email', 'postmark')
-        expect(wrapper.get('button').element.disabled).toBe(false)
-        await setMethod('portal', 'postmark')
-        expect(wrapper.find('button').exists()).toBe(false)
+        await wrapper.setProps({ work: { ...work, status: { ...work.status, submission_method: { channel: 'portal' } } } })
+        await wrapper.get('button').trigger('click')
+        await flushPromises()
+        expect(wrapper.get('[role="dialog"]').text()).toContain('Abgabe.pdf')
+        expect(wrapper.get('[aria-label="Abgabe.pdf herunterladen"]').attributes('href')).toBe('/api/submission-download')
+        expect(wrapper.text()).not.toContain('Auftrag kopieren')
     } finally { wrapper.unmount() }
 })
 

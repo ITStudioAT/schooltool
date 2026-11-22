@@ -550,11 +550,14 @@ class WorkDropboxController extends Controller
             $request->validate(['retry_preparation' => ['required', 'accepted']]);
             abort_unless(app(DropboxModuleLinks::class)->current($course_work), 409, 'Für diese Arbeit ist keine Modulverbindung bestätigt.');
 
-            return $this->prepareLinkedFolderResponse($course_work, $actor, $dropbox);
+            $receipt = $course_work->status['creation_receipt'] ?? [];
+            $resumeCreation = isset($receipt['id']) && ($receipt['user_id'] ?? null) === $request->user()?->id;
+
+            return $this->prepareLinkedFolderResponse($course_work, $actor, $dropbox, resumeCreation: $resumeCreation);
         }
         if ($request->has('handshake')) {
             $data = $request->validate(['handshake' => ['required', 'string', 'max:4096'],
-                'filename' => ['required', 'string', 'regex:/\Ahandshake\.json\z/i'],
+                'filename' => ['required', 'string', 'regex:/\Ahandshake\.json\z/i'], 'creation_request_id' => ['sometimes', 'uuid'],
                 'resolve' => ['sometimes', 'boolean'], 'proof' => [$request->boolean('resolve') ? 'nullable' : 'required', 'string', 'max:8192']], [
                     'filename.required' => 'Bitte die Datei handshake.json auswählen.',
                     'filename.regex' => 'Zulässig ist ausschließlich die Datei handshake.json.',
@@ -569,9 +572,16 @@ class WorkDropboxController extends Controller
             if ($request->boolean('resolve')) {
                 return response()->json($modules->resolve($connection, $course_work, $data['handshake']));
             }
-            $modules->store($connection, $course_work, $data['handshake'], $data['proof']);
+            $creating = isset($data['creation_request_id']);
+            if ($creating) {
+                $receipt = $course_work->status['creation_receipt'] ?? [];
+                abort_unless(($receipt['id'] ?? null) === $data['creation_request_id']
+                    && ($receipt['user_id'] ?? null) === $request->user()?->id && $modules->current($course_work) === null,
+                    409, 'Die Neuanlage ist nicht mehr eindeutig. Bitte die Arbeit erneut öffnen.');
+            }
+            $module = $modules->store($connection, $course_work, $data['handshake'], $data['proof']);
 
-            return $this->prepareLinkedFolderResponse($course_work, $actor, $dropbox);
+            return $this->prepareLinkedFolderResponse($course_work, $actor, $dropbox, $creating ? $module : null);
         }
         $data = $request->validate(['folder_id' => ['required', 'string', 'max:255', 'regex:/\Aid:[A-Za-z0-9_-]+\z/'],
             'verify' => ['sometimes', 'boolean'], 'folder_proof' => ['nullable', 'string', 'max:8192']]);
@@ -634,10 +644,13 @@ class WorkDropboxController extends Controller
         return $dropbox->withImportFiles($actor, $course_work, $consume, $resultsOnly, $data['date'] ?? null);
     }
 
-    private function prepareLinkedFolderResponse(TeachingCourseWork $work, User $actor, DropboxWorkImport $dropbox): JsonResponse
+    private function prepareLinkedFolderResponse(TeachingCourseWork $work, User $actor, DropboxWorkImport $dropbox, ?array $newModule = null, bool $resumeCreation = false): JsonResponse
     {
         try {
-            $preparation = app(TeachingDirectAssessment::class)->initializeLinkedFolder($work, $actor);
+            $assessments = app(TeachingDirectAssessment::class);
+            $preparation = $newModule !== null || $resumeCreation
+                ? $assessments->initializeNewLinkedFolder($work, $actor, $newModule)
+                : $assessments->initializeLinkedFolder($work, $actor);
             $preparation = ['status' => $preparation['status'], 'folder' => $preparation['folder']['path_display'] ?? $preparation['folder']['path'] ?? null];
         } catch (\Throwable $exception) {
             $detail = $exception instanceof ValidationException ? collect($exception->errors())->flatten()->first()

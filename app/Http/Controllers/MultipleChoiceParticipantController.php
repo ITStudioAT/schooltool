@@ -172,6 +172,7 @@ class MultipleChoiceParticipantController extends Controller
         if (! $ownerPreview) {
             $blocked = app(TeachingWorkStudentDistribution::class)->mcAccessBlockStatus($attempt);
             abort_if($blocked === 404, 404);
+            abort_if($blocked === 410, 410, 'Die Freigabe der zugehörigen Arbeit wurde endgültig beendet.');
             abort_if($blocked === 423, 423, 'Die Aufgabe ist vorbereitet und noch nicht freigegeben.');
         }
 
@@ -209,6 +210,18 @@ class MultipleChoiceParticipantController extends Controller
         $status = $attempt->completed_at
             ? ($attempt->completion_reason === 'submitted' ? 'submitted' : 'timeout')
             : ($attempt->started_at ? 'in_progress' : ($attempt->ready_at ? 'ready' : 'not_started'));
+        $fixed = $attempt->fixedWorkDeadline($test);
+        $workDeadline = $test->workDeadline();
+        $earlierDeadlineKind = $workDeadline !== null && $fixed?->lessThan($workDeadline)
+            ? ($attempt->closes_at?->equalTo($fixed) ? 'personal' : 'test')
+            : null;
+        if ($attempt->completed_at === null && $attempt->started_at === null && $fixed?->isNowOrPast()) {
+            $status = 'timeout';
+            $released = $ownerPreview;
+        }
+        if (! $ownerPreview && $test->hasWorkDeadlineConflict() && $attempt->completed_at === null) {
+            $released = false;
+        }
         $questions = $released && $includeQuestions ? $attempt->questions : [];
         $result = null;
         if ($attempt->completed_at && $test->results_released_at && ($ownerPreview || $this->workResultsVisible($attempt))) {
@@ -237,7 +250,9 @@ class MultipleChoiceParticipantController extends Controller
             'question_count' => $test->question_count, 'total_points' => $test->total_points,
             'duration_seconds' => $test->duration_seconds, 'lead_seconds' => $test->lead_seconds,
             'start_mode' => $individual ? 'individual' : 'common', 'attempt_version' => (int) ($attempt->control()['version'] ?? 0),
-            'closes_at' => $attempt->closingDeadline($test)?->toIso8601String(),
+            'closes_at' => ($fixed ?? $attempt->closingDeadline($test))?->toIso8601String(),
+            'work_deadline' => $workDeadline === null ? null : $test->deadlineWorks()->first()->finalDeadline(),
+            'earlier_deadline_kind' => $earlierDeadlineKind,
             'starts_at' => ($individual ? $attempt->started_at : $test->starts_at)?->toIso8601String(), 'ends_at' => $attempt->effectiveDeadline($test)?->toIso8601String(),
             'exam_mode' => (bool) $test->exam_mode, 'paused_at' => $pausedAt?->toIso8601String(),
             'server_now' => now()->toIso8601String(), 'status' => $status,

@@ -28,8 +28,7 @@ class TeachingWorkDeletion
             array_push($history, ...app(McTestExchange::class)->historyForDeletion($test, $actor));
         }
         $receipt = $this->receipt($work);
-        $permittedMissing = array_column($receipt['folders'] ?? [], 'id');
-        $targets = app(DropboxModuleLinks::class)->deletionTargets($work, $actor, $permittedMissing);
+        $targets = app(DropboxModuleLinks::class)->deletionTargets($work, $actor, $receipt, preferInitializedFolder: true);
         if ($receipt !== null) {
             abort_unless($targets && (int) $targets['connection']->id === $receipt['connection_id']
                 && hash_equals($receipt['account_hash'], hash('sha256', $targets['connection']->account_id)),
@@ -57,6 +56,9 @@ class TeachingWorkDeletion
             $payload = ['work_id' => (int) $work->id, 'fingerprint' => $this->fingerprint($work),
                 'connection_id' => (int) $targets['connection']->id, 'account_hash' => hash('sha256', $targets['connection']->account_id),
                 'folders' => $targets['folders']];
+            if (isset($targets['initialized_folder'])) {
+                $payload['initialized_folder'] = $targets['initialized_folder'];
+            }
             $payload['signature'] = $this->sign($payload);
             $status = $work->status ?? [];
             $status['deletion_receipt'] = $payload;

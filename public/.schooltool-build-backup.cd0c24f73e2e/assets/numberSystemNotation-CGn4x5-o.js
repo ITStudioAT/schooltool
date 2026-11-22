@@ -1,0 +1,1 @@
+const i={2:{prefix:"",subscript:"2",unicodeSubscript:"₂"},10:{prefix:"",subscript:"",unicodeSubscript:""},16:{prefix:"#",subscript:"",unicodeSubscript:""}};function e(t){return i[t]||i[10]}function n(t){return String(t??"").replace(/\b([01]+(?:[ \t]+[01]+)*)\s*\(dual\)/gi,(u,r)=>`${r}${e(2).unicodeSubscript}`)}export{n as f,e as n};

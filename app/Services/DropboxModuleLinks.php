@@ -69,15 +69,20 @@ class DropboxModuleLinks
     }
 
     /** @param array<string, mixed> $folder */
-    public function rememberInitializedExercise(DropboxConnection $connection, TeachingCourseWork $work, TeachingWorkModuleLink $link, string $date, array $folder): void
+    public function rememberInitializedExercise(DropboxConnection $connection, TeachingCourseWork $work, TeachingWorkModuleLink $link, string $date, array $folder, bool $lock = true): void
     {
         $key = $this->exerciseCacheKey($connection, $work, $link);
         $checks = Cache::store('database');
-        $checks->lock($key.':lock', 120)->block(55, function () use ($checks, $key, $work, $date, $folder): void {
+        $record = function () use ($checks, $key, $work, $date, $folder): void {
             $checks->forever($key, ['schedule' => $this->exerciseSchedule($work), 'checked_at' => now()->toIso8601String(),
                 'result' => ['status' => 'found', 'matches' => [['date' => $date, 'reusable' => 'linked',
                     'folder' => ['id' => $folder['id'], 'name' => $folder['name'], 'path' => $folder['path_display'] ?? $folder['path_lower']]]]]]);
-        });
+        };
+        if ($lock) {
+            $checks->lock($key.':lock', 120)->block(55, $record);
+        } else {
+            $record();
+        }
     }
 
     private function exerciseSchedule(TeachingCourseWork $work): string
@@ -206,21 +211,23 @@ class DropboxModuleLinks
     }
 
     /** @return array<string, mixed> */
-    private function inspectExercises(DropboxConnection $connection, TeachingCourseWork $work, TeachingWorkModuleLink $link, bool $includeEmailStatus = true, bool $includePrepared = true, bool $detectRenamed = true): array
+    private function inspectExercises(DropboxConnection $connection, TeachingCourseWork $work, TeachingWorkModuleLink $link, bool $includeEmailStatus = true, bool $includePrepared = true, bool $detectRenamed = true, ?array $module = null, ?array $moduleChildren = null, bool $legacyFallback = true): array
     {
         $missing = ['status' => 'missing', 'folder' => null];
         if ($link->dropbox_connection_id !== $connection->id || $link->account_id !== $connection->account_id) {
             return $missing;
         }
         try {
-            $module = $this->inspect($connection, $link->handshake_file_id);
-            abort_unless(strcasecmp($module['module_id'], $link->module_id) === 0 && $module['folder_id'] === $link->folder_id,
-                409, 'Die Modulbindung konnte online nicht bestätigt werden.');
-            $modern = $includePrepared ? $this->inspectPreparedExercise($connection, $work, $link, $module, $detectRenamed) : null;
+            $module ??= $this->verifyExerciseModule($connection, $link);
+            $moduleChildren ??= $this->exerciseChildren($connection, $module['folder_id']);
+            $modern = $includePrepared ? $this->inspectPreparedExercise($connection, $work, $link, $module, $detectRenamed, $moduleChildren) : null;
             if ($modern !== null) {
                 return $modern;
             }
-            $roots = array_values(array_filter($this->exerciseChildren($connection, $module['folder_id']),
+            if ($includePrepared && ! $legacyFallback) {
+                return $missing;
+            }
+            $roots = array_values(array_filter($moduleChildren,
                 fn (array $entry): bool => ($entry['.tag'] ?? null) === 'folder' && strcasecmp($entry['name'] ?? '', 'Leistungsfeststellung') === 0));
             if ($roots === []) {
                 return $missing;
@@ -349,15 +356,32 @@ class DropboxModuleLinks
         }
     }
 
+    private function verifyExerciseModule(DropboxConnection $connection, TeachingWorkModuleLink $link): array
+    {
+        $file = $this->handshakeMetadata($connection, $link->handshake_file_id);
+        if ($file['rev'] === $link->handshake_revision) {
+            $folder = $this->dropbox->metadata($connection, $link->folder_id);
+            if ($folder['id'] === $link->folder_id && $file['path_lower'] === $folder['path_lower'].'/handshake.json') {
+                return ['module_id' => $link->module_id, 'folder_id' => $folder['id'],
+                    'folder_path' => $folder['path_display'] ?? $folder['path_lower']];
+            }
+        }
+        $module = $this->inspectHandshake($connection, $link->handshake_file_id, $file);
+        abort_unless(strcasecmp($module['module_id'], $link->module_id) === 0 && $module['folder_id'] === $link->folder_id,
+            409, 'Die Modulbindung konnte online nicht bestätigt werden.');
+
+        return $module;
+    }
+
     /**
      * Inspect only the dated folder identified by the saved course, group, title and date.
      *
      * @param  array<string, mixed>  $module
      * @return array<string, mixed>|null
      */
-    private function inspectPreparedExercise(DropboxConnection $connection, TeachingCourseWork $work, TeachingWorkModuleLink $link, array $module, bool $detectRenamed = true): ?array
+    private function inspectPreparedExercise(DropboxConnection $connection, TeachingCourseWork $work, TeachingWorkModuleLink $link, array $module, bool $detectRenamed = true, ?array $moduleChildren = null): ?array
     {
-        $roots = array_values(array_filter($this->exerciseChildren($connection, $module['folder_id']),
+        $roots = array_values(array_filter($moduleChildren ?? $this->exerciseChildren($connection, $module['folder_id']),
             fn (array $entry): bool => ($entry['.tag'] ?? null) === 'folder' && strcasecmp($entry['name'] ?? '', 'Leistungsfeststellungen') === 0));
         if ($roots === []) {
             return null;
@@ -420,33 +444,9 @@ class DropboxModuleLinks
                 continue;
             }
             abort_unless($raw !== null, 409, 'Im passenden Prüfungsordner fehlt die Statusdatei.');
-            $record = json_decode($raw, true, 32, JSON_THROW_ON_ERROR);
-            abort_unless(is_array($record) && $this->hasUniqueJsonKeys($raw), 409, 'Die Statusdatei ist ungültig oder enthält doppelte Schlüssel.');
-            if (array_key_exists('progress', $record)) {
-                abort_unless(is_bool($record['prepared'] ?? null)
-                    && TeachingAssessmentProgress::valid($record['progress'], $record['prepared']),
-                    409, 'Der gespeicherte Fortschritt der Leistungsfeststellung ist ungültig.');
-                unset($record['progress']);
-            }
-            $keys = fn (mixed $value, array $expected): bool => is_array($value)
-                && count($value) === count($expected) && array_diff(array_keys($value), $expected) === [];
-            abort_unless($keys($record, ['schema_version', 'kind', 'schooltool', 'folder_group', 'scheduled_date', 'prepared', 'components', 'total_points'])
-                && $keys($record['schooltool'], ['work_id', 'course_id'])
-                && $keys($record['components'], ['aufgabenblatt', 'multiple_choice'])
-                && $keys($record['components']['aufgabenblatt'], ['included', 'points'])
-                && $keys($record['components']['multiple_choice'], ['included', 'points']),
-                409, 'Die Statusdatei entspricht nicht dem vereinbarten Schema.');
             $date = substr($folder['name'], 0, 10);
-            abort_unless(($record['schema_version'] ?? null) === 1 && ($record['kind'] ?? null) === 'leistungsfeststellung.status'
-                && ($record['schooltool']['work_id'] ?? null) === $work->id
-                && ($record['schooltool']['course_id'] ?? null) === $work->teaching_course_id
-                && ($record['folder_group'] ?? null) === $group && ($record['scheduled_date'] ?? null) === $date,
-                409, 'Statusdatei, Arbeit, Kurs, Gruppe oder Durchführungstermin stimmen nicht überein.');
-            abort_unless(is_bool($record['prepared'] ?? null), 409, 'Der Vorbereitungsstatus ist ungültig.');
-            $linkedInitial = ! $record['prepared'] && ($record['components']['aufgabenblatt'] ?? null) === ['included' => false, 'points' => null]
-                && ($record['components']['multiple_choice'] ?? null) === ['included' => false, 'points' => null]
-                && array_key_exists('total_points', $record) && $record['total_points'] === null;
-            if ($linkedInitial) {
+            $record = $this->parsePreparedExerciseStatus($raw, $work, $group, $date);
+            if ($this->isInitializedExerciseStatus($record)) {
                 abort_unless(count($children) === 1 && ($children[0]['name'] ?? null) === 'status.json'
                     && empty($confirmed['sharing_info']),
                     409, 'Der verknüpfte Prüfungsordner enthält unklare oder geteilte Daten und muss geprüft werden.');
@@ -459,11 +459,16 @@ class DropboxModuleLinks
             $assignment = $record['components']['aufgabenblatt'] ?? null;
             $mc = $record['components']['multiple_choice'] ?? null;
             $points = fn (mixed $value): bool => (is_int($value) || is_float($value)) && is_finite((float) $value) && $value >= 0 && $value <= 100000;
-            abort_unless(is_array($assignment) && ($assignment['included'] ?? null) === true && $points($assignment['points'] ?? null)
+            $validAssignment = is_array($assignment) && (
+                (($assignment['included'] ?? null) === true && $points($assignment['points'] ?? null))
+                || ($record['prepared'] && ($assignment['included'] ?? null) === false && array_key_exists('points', $assignment)
+                    && $assignment['points'] === null && ($mc['included'] ?? null) === true)
+            );
+            abort_unless($validAssignment
                 && is_array($mc) && is_bool($mc['included'] ?? null)
                 && ($mc['included'] ? ($points($mc['points'] ?? null) && $mc['points'] > 0) : array_key_exists('points', $mc) && $mc['points'] === null)
                 && $points($record['total_points'] ?? null)
-                && abs($record['total_points'] - $assignment['points'] - ($mc['points'] ?? 0)) < 0.000001,
+                && abs($record['total_points'] - ($assignment['points'] ?? 0) - ($mc['points'] ?? 0)) < 0.000001,
                 409, 'Die Bestandteile oder Punkte der Statusdatei sind ungültig oder widersprüchlich.');
             if (! $record['prepared']) {
                 $matches[] = ['date' => $date, 'reusable' => 'partial',
@@ -498,6 +503,42 @@ class DropboxModuleLinks
         }
 
         return ['status' => 'found', 'matches' => $matches];
+    }
+
+    /** @return array<string, mixed> */
+    private function parsePreparedExerciseStatus(string $raw, TeachingCourseWork $work, string $group, string $date): array
+    {
+        $record = json_decode($raw, true, 32, JSON_THROW_ON_ERROR);
+        abort_unless(is_array($record) && $this->hasUniqueJsonKeys($raw), 409, 'Die Statusdatei ist ungültig oder enthält doppelte Schlüssel.');
+        if (array_key_exists('progress', $record)) {
+            abort_unless(is_bool($record['prepared'] ?? null)
+                && TeachingAssessmentProgress::valid($record['progress'], $record['prepared']),
+                409, 'Der gespeicherte Fortschritt der Leistungsfeststellung ist ungültig.');
+            unset($record['progress']);
+        }
+        $keys = fn (mixed $value, array $expected): bool => is_array($value)
+            && count($value) === count($expected) && array_diff(array_keys($value), $expected) === [];
+        abort_unless($keys($record, ['schema_version', 'kind', 'schooltool', 'folder_group', 'scheduled_date', 'prepared', 'components', 'total_points'])
+            && $keys($record['schooltool'], ['work_id', 'course_id'])
+            && $keys($record['components'], ['aufgabenblatt', 'multiple_choice'])
+            && $keys($record['components']['aufgabenblatt'], ['included', 'points'])
+            && $keys($record['components']['multiple_choice'], ['included', 'points']),
+            409, 'Die Statusdatei entspricht nicht dem vereinbarten Schema.');
+        abort_unless(($record['schema_version'] ?? null) === 1 && ($record['kind'] ?? null) === 'leistungsfeststellung.status'
+            && ($record['schooltool']['work_id'] ?? null) === $work->id
+            && ($record['schooltool']['course_id'] ?? null) === $work->teaching_course_id
+            && ($record['folder_group'] ?? null) === $group && ($record['scheduled_date'] ?? null) === $date,
+            409, 'Statusdatei, Arbeit, Kurs, Gruppe oder Durchführungstermin stimmen nicht überein.');
+        abort_unless(is_bool($record['prepared'] ?? null), 409, 'Der Vorbereitungsstatus ist ungültig.');
+
+        return $record;
+    }
+
+    private function isInitializedExerciseStatus(array $record): bool
+    {
+        return ! $record['prepared'] && ($record['components']['aufgabenblatt'] ?? null) === ['included' => false, 'points' => null]
+            && ($record['components']['multiple_choice'] ?? null) === ['included' => false, 'points' => null]
+            && $record['total_points'] === null;
     }
 
     /**
@@ -699,19 +740,7 @@ class DropboxModuleLinks
         abort_unless($connection && (! $link || $link->account_id === $connection->account_id), 409,
             'Der Titel kann nicht geändert werden: Die zugehörige Dropbox-Verbindung ist nicht verfügbar.');
         if ($folder) {
-            $bound = $allowMissingBoundFolder ? $this->dropbox->findFolderById($connection, $folder->folder_id)
-                : $this->dropbox->metadata($connection, $folder->folder_id);
-            abort_if($bound === null && ! in_array($folder->folder_id, $permittedMissingFolderIds, true), 409,
-                'Der alte zugeordnete Ordner fehlt und seine Identität konnte nicht bestätigt werden.');
-            if ($bound !== null) {
-                $parent = basename(dirname($bound['path_lower']));
-                abort_if(in_array($parent, ['leistungsfeststellung', 'leistungsfeststellungen'], true) && ! in_array($bound['id'], $permittedFolderIds, true), 409,
-                    'Der Titel kann nicht geändert werden: Ein Prüfungsordner ist bereits zugeordnet. Der Ordnername bleibt sonst unverändert.');
-                abort_if($allowMissingBoundFolder && $bound['id'] !== $link?->folder_id && ! in_array($bound['id'], $permittedFolderIds, true), 409,
-                    'Die alte Ordnerzuordnung ist nicht eindeutig. Bitte die Zuordnung prüfen.');
-            }
-            abort_unless($link && $folder->dropbox_connection_id === $link->dropbox_connection_id, 409,
-                'Der Titel kann nicht geändert werden: Der zugeordnete Ordner kann nicht eindeutig als Lernmodul geprüft werden.');
+            $this->assertLegacyExerciseBinding($connection, $link, $folder, $permittedFolderIds, $allowMissingBoundFolder, $permittedMissingFolderIds);
         }
         if ($permittedFolderIds === []) {
             $result = $this->exerciseFolder($connection, $work, $link, null);
@@ -728,10 +757,27 @@ class DropboxModuleLinks
         $this->assertNoUnexpectedExerciseEvidence($connection, $work, $module['folder_id'], $module['folder_path'], $permittedFolderIds);
     }
 
-    /** @param list<string> $permittedFolderIds */
-    private function assertNoUnexpectedExerciseEvidence(DropboxConnection $connection, TeachingCourseWork $work, string $moduleId, string $modulePath, array $permittedFolderIds): void
+    private function assertLegacyExerciseBinding(DropboxConnection $connection, ?TeachingWorkModuleLink $link, TeachingWorkDropboxFolder $folder, array $permittedFolderIds, bool $allowMissingBoundFolder, array $permittedMissingFolderIds): void
     {
-        $roots = array_values(array_filter($this->exerciseChildren($connection, $moduleId),
+        $bound = $allowMissingBoundFolder ? $this->dropbox->findFolderById($connection, $folder->folder_id)
+            : $this->dropbox->metadata($connection, $folder->folder_id);
+        abort_if($bound === null && ! in_array($folder->folder_id, $permittedMissingFolderIds, true), 409,
+            'Der alte zugeordnete Ordner fehlt und seine Identität konnte nicht bestätigt werden.');
+        if ($bound !== null) {
+            $parent = basename(dirname($bound['path_lower']));
+            abort_if(in_array($parent, ['leistungsfeststellung', 'leistungsfeststellungen'], true) && ! in_array($bound['id'], $permittedFolderIds, true), 409,
+                'Der Titel kann nicht geändert werden: Ein Prüfungsordner ist bereits zugeordnet. Der Ordnername bleibt sonst unverändert.');
+            abort_if($allowMissingBoundFolder && $bound['id'] !== $link?->folder_id && ! in_array($bound['id'], $permittedFolderIds, true), 409,
+                'Die alte Ordnerzuordnung ist nicht eindeutig. Bitte die Zuordnung prüfen.');
+        }
+        abort_unless($link && $folder->dropbox_connection_id === $link->dropbox_connection_id, 409,
+            'Der Titel kann nicht geändert werden: Der zugeordnete Ordner kann nicht eindeutig als Lernmodul geprüft werden.');
+    }
+
+    /** @param list<string> $permittedFolderIds */
+    private function assertNoUnexpectedExerciseEvidence(DropboxConnection $connection, TeachingCourseWork $work, string $moduleId, string $modulePath, array $permittedFolderIds, ?array $moduleChildren = null): void
+    {
+        $roots = array_values(array_filter($moduleChildren ?? $this->exerciseChildren($connection, $moduleId),
             fn (array $entry): bool => ($entry['.tag'] ?? null) === 'folder'
                 && in_array(mb_strtolower($entry['name'] ?? ''), ['leistungsfeststellung', 'leistungsfeststellungen'], true)));
         foreach ($roots as $rootEntry) {
@@ -781,10 +827,11 @@ class DropboxModuleLinks
     }
 
     /**
-     * @return array{connection: DropboxConnection, folders: list<array{id: string, path: string}>}|null
+     * @return array{connection: DropboxConnection, folders: list<array{id: string, path: string}>, initialized_folder?: array}|null
      */
-    public function deletionTargets(TeachingCourseWork $work, User $actor, array $permittedMissingFolderIds = []): ?array
+    public function deletionTargets(TeachingCourseWork $work, User $actor, ?array $receipt = null, bool $preferInitializedFolder = false): ?array
     {
+        $permittedMissingFolderIds = array_column($receipt['folders'] ?? [], 'id');
         $link = $this->current($work);
         $legacy = TeachingWorkDropboxFolder::query()->where('teaching_course_work_id', $work->id)->first();
         if (! $link && ! $legacy) {
@@ -801,10 +848,33 @@ class DropboxModuleLinks
         if (! $connection || $connection->account_id !== $link->account_id) {
             throw new TeachingWorkDeletionConflict('Die zugehörige Dropbox-Verbindung ist nicht verfügbar.');
         }
+        if (isset($receipt['initialized_folder'])) {
+            abort_unless($legacy === null, 409, 'Seit dem Löschversuch wurde eine weitere Ordnerzuordnung gespeichert.');
+        }
+        if ($preferInitializedFolder && $legacy === null && ($receipt === null || isset($receipt['initialized_folder']))) {
+            $target = $this->initializedDeletionTargets($connection, $work, $link, $receipt);
+            if ($target !== null) {
+                return $target;
+            }
+        }
+        try {
+            $module = $this->verifyExerciseModule($connection, $link);
+            $moduleChildren = $this->exerciseChildren($connection, $module['folder_id']);
+        } catch (ValidationException|HttpExceptionInterface|JsonException $exception) {
+            if ($exception instanceof ValidationException
+                && ! isset($exception->errors()['dropbox']) && ! isset($exception->errors()['handshake'])) {
+                throw $exception;
+            }
+            if ($exception instanceof HttpExceptionInterface && ! in_array($exception->getStatusCode(), [409, 422], true)) {
+                throw $exception;
+            }
+            throw new TeachingWorkDeletionConflict('Die Dropbox-Modulzuordnung konnte nicht bestätigt werden. '.$exception->getMessage());
+        }
         $folders = [];
         $dates = [];
         foreach ([true, false] as $includePrepared) {
-            $state = $this->inspectExercises($connection, $work, $link, includeEmailStatus: false, includePrepared: $includePrepared);
+            $state = $this->inspectExercises($connection, $work, $link, includeEmailStatus: false, includePrepared: $includePrepared,
+                module: $module, moduleChildren: $moduleChildren, legacyFallback: false);
             if (($state['deletion_conflict'] ?? false) || ($state['external_check_failed'] ?? false)) {
                 throw new TeachingWorkDeletionConflict($state['message']);
             }
@@ -831,7 +901,10 @@ class DropboxModuleLinks
             throw new TeachingWorkDeletionConflict('Die importierte Leistungsfeststellung konnte nicht eindeutig gefunden werden.');
         }
         try {
-            $this->assertTitleChangeSafe($work, $actor, $ids, allowMissingBoundFolder: true, permittedMissingFolderIds: $permittedMissingFolderIds);
+            if ($legacy) {
+                $this->assertLegacyExerciseBinding($connection, $link, $legacy, $ids, true, $permittedMissingFolderIds);
+            }
+            $this->assertNoUnexpectedExerciseEvidence($connection, $work, $module['folder_id'], $module['folder_path'], $ids, $moduleChildren);
         } catch (ValidationException|HttpExceptionInterface $exception) {
             $knownConflicts = [
                 'Der alte zugeordnete Ordner fehlt und seine Identität konnte nicht bestätigt werden.',
@@ -879,8 +952,103 @@ class DropboxModuleLinks
         if ($folders !== [] && ! $this->dropbox->canWrite($connection)) {
             throw new TeachingWorkDeletionConflict('Für die Prüfungsordner fehlt die Dropbox-Schreibfreigabe.');
         }
+        $currentConnection = $connection->fresh();
+        abort_unless($this->current($work)?->getAttributes() === $link->getAttributes()
+            && $currentConnection?->account_id === $link->account_id && ! $currentConnection?->revoked_at,
+            409, 'Die Modulverbindung wurde während der Prüfung geändert.');
 
         return ['connection' => $connection, 'folders' => array_values($folders)];
+    }
+
+    /** @return array{connection: DropboxConnection, folders: list<array{id: string, path: string}>, initialized_folder?: array}|null */
+    private function initializedDeletionTargets(DropboxConnection $connection, TeachingCourseWork $work, TeachingWorkModuleLink $link, ?array $receipt): ?array
+    {
+        if ($receipt === null && (! is_string($work->status['creation_receipt']['id'] ?? null)
+            || ! empty($work->status['assessment_json_packages']) || ! empty($work->status['assessment_json_imports']))) {
+            return null;
+        }
+        $proof = $receipt['initialized_folder'] ?? null;
+        if ($proof === null) {
+            $cached = $this->storedExerciseCheck($this->exerciseCacheKey($connection, $work, $link));
+            $matches = $cached['result']['matches'] ?? [];
+            if (! is_array($matches) || count($matches) !== 1 || ($matches[0]['reusable'] ?? null) !== 'linked'
+                || ($cached['schedule'] ?? null) !== $this->exerciseSchedule($work)) {
+                return null;
+            }
+            $folder = $matches[0]['folder'] ?? [];
+        } else {
+            abort_unless(count($receipt['folders']) === 1
+                && ($proof['link_fingerprint'] ?? null) === $this->fingerprint($link), 409,
+                'Die Modulverknüpfung hat sich seit dem Löschversuch geändert.');
+            $folder = $receipt['folders'][0];
+        }
+
+        $dates = app(TeachingAssessmentTargetGuard::class)->dates($work);
+        $group = $this->preparedExerciseGroup($work);
+        $expectedPath = count($dates) === 1 && $group !== null
+            ? rtrim($link->folder_path, '/').'/Leistungsfeststellungen/'.$dates[0].' – '.$group.' – '.trim($work->title)
+            : null;
+        if (! is_string($folder['id'] ?? null) || ! is_string($folder['path'] ?? null) || $expectedPath === null
+            || mb_strtolower($folder['path']) !== mb_strtolower($expectedPath)) {
+            abort_if($receipt !== null, 409, 'Der bestätigte Prüfungsordner passt nicht mehr zur Arbeit.');
+
+            return null;
+        }
+        $target = ['id' => $folder['id'], 'path' => $folder['path']];
+        try {
+            if ($proof === null) {
+                $module = $this->dropbox->metadata($connection, $link->folder_id);
+                abort_unless($module['id'] === $link->folder_id && $module['path_lower'] === mb_strtolower($link->folder_path),
+                    409, 'Das verbundene Lernmodul wurde verschoben.');
+            }
+            $entries = $this->dropbox->examFolderInventory($connection, $target['id'], $target['path']);
+            if ($entries === null) {
+                abort_if($proof === null, 409, 'Der bestätigte Prüfungsordner ist nicht mehr am Ziel vorhanden.');
+
+                return ['connection' => $connection, 'folders' => []];
+            }
+            $file = $entries[0] ?? [];
+            $onlyStatus = count($entries) === 1 && ($file['.tag'] ?? null) === 'file'
+                && ($file['path_lower'] ?? null) === mb_strtolower($target['path']).'/status.json'
+                && is_string($file['rev'] ?? null) && $file['rev'] !== '';
+            if ($proof !== null) {
+                abort_unless($onlyStatus && $file['id'] === $proof['status_file']['id'] && $file['rev'] === $proof['status_file']['rev'],
+                    409, 'Der Prüfungsordner wurde seit der Löschprüfung verändert.');
+            } else {
+                if (! $onlyStatus) {
+                    return null;
+                }
+                abort_unless(is_int($file['size'] ?? null) && $file['size'] <= 128 * 1024, 422, 'Die Statusdatei ist ungültig oder zu groß.');
+                $raw = $this->dropbox->readModuleApi($connection, 'files/download', ['path' => 'rev:'.$file['rev']])->body();
+                abort_unless(strlen($raw) === $file['size'], 422, 'Die Statusdatei wurde nicht vollständig gelesen.');
+                if (! $this->isInitializedExerciseStatus($this->parsePreparedExerciseStatus($raw, $work, $group, $dates[0]))) {
+                    return null;
+                }
+                $proof = ['link_fingerprint' => $this->fingerprint($link), 'status_file' => ['id' => $file['id'], 'rev' => $file['rev']]];
+            }
+        } catch (ValidationException|HttpExceptionInterface|JsonException $exception) {
+            if ($exception instanceof ValidationException && ! isset($exception->errors()['dropbox'])) {
+                throw $exception;
+            }
+            if ($exception instanceof HttpExceptionInterface && ! in_array($exception->getStatusCode(), [409, 422], true)) {
+                throw $exception;
+            }
+            if ($receipt !== null) {
+                abort(409, 'Der Prüfungsordner konnte für die Wiederaufnahme nicht bestätigt werden. '.$exception->getMessage());
+            }
+            throw new TeachingWorkDeletionConflict('Der bestätigte Prüfungsordner konnte nicht geprüft werden. '.$exception->getMessage());
+        }
+
+        $this->assertExamContentsUnshared($work, [$target['id'], $file['id']]);
+        $currentConnection = $connection->fresh();
+        abort_unless($this->current($work)?->getAttributes() === $link->getAttributes()
+            && $currentConnection?->account_id === $link->account_id && ! $currentConnection?->revoked_at,
+            409, 'Die Modulverbindung wurde während der Prüfung geändert.');
+        if (! $this->dropbox->canWrite($currentConnection)) {
+            throw new TeachingWorkDeletionConflict('Für die Prüfungsordner fehlt die Dropbox-Schreibfreigabe.');
+        }
+
+        return ['connection' => $currentConnection, 'folders' => [$target], 'initialized_folder' => $proof];
     }
 
     /** @param list<string> $contents */
@@ -1648,7 +1816,7 @@ class DropboxModuleLinks
             abort_unless($folder['id'] === $local['dropbox_folder_id'], 409, 'Der angegebene Dropbox-Ordner konnte nicht bestätigt werden.');
             $file = $this->dropbox->readModuleApi($connection, 'files/get_metadata', ['path' => $folder['path_lower'].'/handshake.json'])->json();
             abort_unless(is_string($file['id'] ?? null), 422, 'Die Online-Handshake-Datei konnte nicht bestätigt werden.');
-            $candidate = $this->inspect($connection, $file['id']);
+            $candidate = $this->inspectHandshake($connection, $file['id'], $file, $folder);
             abort_unless($candidate['schema_version'] === 2 && $candidate['folder_id'] === $local['dropbox_folder_id']
                 && strcasecmp($candidate['module_id'], $local['module_id']) === 0,
                 409, 'Die Kennung im Dropbox-Ordner stimmt nicht mit der ausgewählten Datei überein.');
@@ -1705,7 +1873,13 @@ class DropboxModuleLinks
                 throw $exception;
             }
             if (strcasecmp($candidate['module_id'], $local['module_id']) === 0) {
-                $matches[] = $this->inspect($connection, $entry['id']);
+                $current = $this->handshakeMetadata($connection, $entry['id']);
+                $cachedContents = $current['rev'] === $entry['rev'] && $current['size'] === $entry['size']
+                    ? $contentsById[$entry['id']] : null;
+                $confirmed = $this->inspectHandshake($connection, $entry['id'], $current, contents: $cachedContents);
+                abort_unless(strcasecmp($confirmed['module_id'], $local['module_id']) === 0,
+                    409, 'Die Online-Datei wurde während der Prüfung verändert.');
+                $matches[] = $confirmed;
             }
         }
         if ($matches === []) {
@@ -1742,7 +1916,7 @@ class DropboxModuleLinks
                 $requests[$id] = ['endpoint' => 'files/download', 'parameters' => ['path' => 'rev:'.$entry['rev']]];
             }
         }
-        foreach ($this->dropbox->readModuleBatch($connection, $requests) as $id => $response) {
+        foreach ($this->dropbox->readModuleBatch($connection, $requests, concurrency: 8) as $id => $response) {
             $download = $response->body();
             abort_unless(strlen($download) === $entries[$id]['size'], 422, 'Die Online-Datei wurde nicht vollständig gelesen.');
             $contents[$id] = $download;
@@ -1773,7 +1947,8 @@ class DropboxModuleLinks
                 : 'Online-Datei geprüft. Vor dem Speichern muss die neue Datenbankmigration freigegeben und ausgeführt werden.'];
     }
 
-    public function store(DropboxConnection $connection, TeachingCourseWork $work, string $contents, string $proof): void
+    /** @return array<string, mixed> */
+    public function store(DropboxConnection $connection, TeachingCourseWork $work, string $contents, string $proof): array
     {
         abort_unless($this->installed(), 409, 'Die Datenbankmigration für Modulverknüpfungen wurde noch nicht ausgeführt.');
         $local = $this->handshake->parse($contents);
@@ -1788,8 +1963,17 @@ class DropboxModuleLinks
             && ($pending['candidate']['schema_version'] ?? null) === $local['schema_version']
             && ($local['schema_version'] !== 2 || ($pending['candidate']['folder_id'] ?? null) === $local['dropbox_folder_id']),
             409, 'Konto, Arbeit oder Bestätigung hat sich geändert. Bitte erneut auswählen.');
-        $candidate = $this->inspect($connection, $pending['candidate']['handshake_file_id']);
-        abort_unless($candidate === $pending['candidate'], 409, 'Die Online-Datei oder ihr Ordner hat sich geändert. Bitte erneut auswählen.');
+        $candidate = $pending['candidate'];
+        $file = $this->handshakeMetadata($connection, $candidate['handshake_file_id']);
+        $folder = $this->dropbox->metadata($connection, $candidate['folder_id']);
+        // The proof already authenticates the parsed contents of this immutable Dropbox revision.
+        abort_unless($file['rev'] === $candidate['handshake_revision']
+            && $file['path_lower'] === $folder['path_lower'].'/handshake.json'
+            && $folder['id'] === $candidate['folder_id']
+            && $folder['name'] === $candidate['folder_name']
+            && ($folder['path_display'] ?? $folder['path_lower']) === $candidate['folder_path']
+            && ($folder['sharing_info']['parent_shared_folder_id'] ?? $folder['sharing_info']['shared_folder_id'] ?? null) === $candidate['namespace_id'],
+            409, 'Die Online-Datei oder ihr Ordner hat sich geändert. Bitte erneut auswählen.');
         DB::transaction(function () use ($connection, $work, $candidate, $pending): void {
             $locked = DropboxConnection::query()->lockForUpdate()->find($connection->id);
             abort_unless($locked && ! $locked->revoked_at && $locked->user_id === $connection->user_id
@@ -1805,29 +1989,49 @@ class DropboxModuleLinks
             TeachingWorkModuleLink::query()->updateOrCreate(['teaching_course_work_id' => $work->id], $candidate + [
                 'dropbox_connection_id' => $connection->id, 'account_id' => $connection->account_id]);
         });
+
+        return $folder;
     }
 
     /** @return array<string, mixed> */
     public function inspect(DropboxConnection $connection, string $fileId): array
     {
+        return $this->inspectHandshake($connection, $fileId, $this->handshakeMetadata($connection, $fileId));
+    }
+
+    private function handshakeMetadata(DropboxConnection $connection, string $fileId): array
+    {
         $entry = $this->dropbox->readModuleApi($connection, 'files/get_metadata', ['path' => $fileId])->json();
+        $this->assertHandshakeMetadata($entry, $fileId);
+
+        return $entry;
+    }
+
+    private function assertHandshakeMetadata(mixed $entry, string $fileId): void
+    {
         $path = $entry['path_lower'] ?? null;
         abort_unless(($entry['.tag'] ?? null) === 'file' && ($entry['id'] ?? null) === $fileId
             && strtolower($entry['name'] ?? '') === 'handshake.json' && is_string($entry['rev'] ?? null)
             && is_int($entry['size'] ?? null) && $entry['size'] <= ModuleHandshake::MAX_BYTES
             && is_string($path) && str_starts_with($path, '/') && ! preg_match('/[\x00-\x1f]/u', $path),
             422, 'Die Online-Handshake-Datei konnte nicht bestätigt werden.');
+        abort_unless($this->materialRoot($path) !== null, 409, 'Die Online-Datei liegt außerhalb des Lerninhalte-Bestands. Bitte erneut auswählen.');
+    }
+
+    private function inspectHandshake(DropboxConnection $connection, string $fileId, array $entry, ?array $folder = null, ?string $contents = null): array
+    {
+        $this->assertHandshakeMetadata($entry, $fileId);
+        $path = $entry['path_lower'];
         $root = $this->materialRoot($path);
-        abort_unless($root !== null, 409, 'Die Online-Datei liegt außerhalb des Lerninhalte-Bestands. Bitte erneut auswählen.');
         $rootMetadata = $this->dropbox->metadata($connection, $root);
         abort_unless($rootMetadata['path_lower'] === $root, 409, 'Die Lerninhalte-Wurzel hat sich geändert.');
-        $contents = $this->dropbox->readModuleApi($connection, 'files/download', ['path' => 'rev:'.$entry['rev']])->body();
+        $contents ??= $this->dropbox->readModuleApi($connection, 'files/download', ['path' => 'rev:'.$entry['rev']])->body();
         abort_unless(strlen($contents) === $entry['size'], 422, 'Die Online-Datei wurde nicht vollständig gelesen.');
         $parsed = $this->handshake->parse($contents);
         $parent = substr($path, 0, strrpos($path, '/'));
         abort_if($parent === '', 422, 'Die Handshake-Datei muss in einem Modulordner liegen.');
-        $folder = $this->dropbox->metadata($connection, $parent);
-        abort_unless(! isset($parsed['dropbox_folder_id']) || $parsed['dropbox_folder_id'] === $folder['id'],
+        $folder ??= $this->dropbox->metadata($connection, $parent);
+        abort_unless($folder['path_lower'] === $parent && (! isset($parsed['dropbox_folder_id']) || $parsed['dropbox_folder_id'] === $folder['id']),
             409, 'Die Handshake-Datei verweist auf einen anderen Dropbox-Ordner.');
         $listing = $this->dropbox->readModuleApi($connection, 'files/list_folder', ['path' => $folder['id'], 'recursive' => false, 'limit' => 200])->json();
         $handshakes = [];

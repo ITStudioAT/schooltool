@@ -1,9 +1,17 @@
 <template>
-    <span v-if="portalRelease && !hidePortal" class="d-inline-flex align-center ga-1 text-caption text-success" :title="`Im Schülerbereich bereitgestellt am ${assessmentTimeText(portalRelease.published_at)}`">
+    <ul v-if="provisionSummary" class="provision-evidence">
+        <li v-for="entry in provisionSummary" :key="entry.key">
+            <span>{{ entry.label }}</span>
+            <span v-if="entry.state" class="provision-evidence__detail"> · {{ entry.state }}</span>
+            <span v-if="entry.at" class="provision-evidence__detail"> · <time :datetime="entry.at">{{ assessmentTimeText(entry.at) }}</time></span>
+            <span v-if="entry.detail" class="provision-evidence__detail d-block">{{ entry.detail }}</span>
+        </li>
+    </ul>
+    <span v-else-if="portalRelease && !hidePortal" class="d-inline-flex align-center ga-1 text-caption text-success" :title="`Im Schülerbereich bereitgestellt am ${assessmentTimeText(portalRelease.published_at)}`">
         <v-icon icon="mdi-account-school-outline" size="16" aria-label="Im Schülerbereich bereitgestellt" />
         <span v-if="!compact">Im Schülerbereich bereitgestellt</span>
     </span>
-    <span v-if="records.length || showAssessmentTimes" :class="!compact && (aggregate || showResultTime) ? 'd-flex flex-column ga-1' : 'd-inline-flex align-center ga-1'">
+    <span v-if="!provisionSummary && (records.length || showAssessmentTimes)" :class="!compact && (aggregate || showResultTime) ? 'd-flex flex-column ga-1' : 'd-inline-flex align-center ga-1'">
         <template v-for="item in records" :key="item.purpose + (item.record.method || '') + (item.pendingCount ? item.record.mode : '')">
             <template v-if="showAssessmentTimes && item.purpose === 'results' && !item.pendingCount">
                 <span class="d-inline-flex align-start ga-1 text-caption"><v-icon icon="mdi-inbox-arrow-down" size="16" />Abgabe eingesammelt: {{ assessmentTimeText(assessment?.email_collected_at) }}</span>
@@ -39,6 +47,7 @@ const props = defineProps({
     nativeTitle: { type: Boolean, default: true },
     hidePortal: Boolean,
     purposes: Array,
+    provisionSummary: { type: Array, default: null },
 })
 const portalRelease = computed(() => workStudentDistribution(props.work, props.aggregate ? null : props.studentId))
 const resultSentText = sentAt => dispatchNotificationText(sentAt)
@@ -94,3 +103,9 @@ const records = computed(() => {
     return items.filter(item => item.record)
 })
 </script>
+
+<style scoped>
+.provision-evidence { list-style: none; padding: 0; margin: 0; font-size: .875rem; overflow-wrap: anywhere; }
+.provision-evidence li + li { margin-block-start: .375rem; }
+.provision-evidence__detail { color: rgba(var(--v-theme-on-surface), .72); font-size: .8125rem; }
+</style>

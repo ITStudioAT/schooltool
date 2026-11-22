@@ -443,11 +443,12 @@ describe('CourseTable manual work completion', () => {
             confirmCreatedWorkExercise(key, work, date.date, workDropboxBinding(missing), folder, preparation)
             await flushPromises()
             expect(form.get('[aria-label="Ablauf der Arbeit"]').text()).toContain('Aufgabenstellung bestätigt')
-            expect(facts.findAll('dd').slice(0, 4).map(detail => detail.text())).toEqual(['35 Punkte', '5 Punkte', '10 Fragen', '8 Minuten'])
+            const fact = (label: string) => facts.findAll('dl > div').find(item => item.find('dt').text() === label)!
+            expect(fact('Aufgabenblatt').text()).toContain('35 Punkte')
+            expect(fact('Multiple-Choice-Test').findAll('dd').map(detail => detail.text())).toEqual(['5 Punkte', '10 Fr./8 min.'])
             expect(facts.text()).not.toContain('MC Word')
-            const scale = facts.get('[role="img"]')
-            expect(scale.findAll('span').map(item => item.text())).toEqual(['40 Punkte', '↓', '35 Punkte'])
-            expect(scale.attributes('aria-label')).toBe('Höchstwert der Leistungsfeststellung 40 Punkte, Zielwert auf der Schooltool-Bewertungsskala der Arbeit 35 Punkte')
+            expect(fact('Gesamtpunkte').text()).toContain('40 Punkte')
+            expect(fact('Schooltool').text()).toContain('35 Punkte')
             expect(facts.element.lastElementChild?.textContent?.trim()).toBe(`Prüfungsordner${folder.path}`)
             expect(wrapper.get('[aria-label="Nächste Aktion: Aufgaben bereitstellen"]').exists()).toBe(true)
             expect(delivery.props('disabled')).toBe(false)
@@ -458,6 +459,27 @@ describe('CourseTable manual work completion', () => {
             await flushPromises()
             expect(wrapper.find('[aria-label="Nächste Aktion: LF erstellen"]').exists()).toBe(false)
             expect(delivery.props('disabled')).toBe(false)
+        } finally { wrapper.unmount(); clearWorkDropboxStates(); vi.unstubAllGlobals() }
+    })
+
+    it('loads verified points and the portal path in the date work form without a stored folder check', async () => {
+        const get = vi.fn().mockResolvedValue({ data: { connected: true, exercise: { status: 'unknown', email_dispatch: null } } })
+        vi.stubGlobal('axios', { get })
+        const { wrapper, works, first, date } = mountCompletionTable()
+        try {
+            useAdminStore().config = { user: { id: 7 } } as never
+            works.courseWorks = [{ ...first, assessment_run: { date: date.date, state: 'completed', assignment_points: 35 },
+                multiple_choice_test_details: { 4: { points: 5 } },
+                status: { student_distribution: { published_at: `${date.date}T10:00:00Z`, student_ids: [12] },
+                    submission_method: { channel: 'portal' }, multiple_choice_tests: { [date.date]: { work_id: first.id, test_id: 4 } } },
+            }] as never
+            await flushPromises()
+            await wrapper.get('.course-table-work-summary-title').trigger('click')
+            await flushPromises()
+            const summary = wrapper.get('.course-table-date-work-form [aria-label="Prüfungsdetails"]')
+            expect(summary.text()).toContain('Gesamtpunkte40 Punkte')
+            expect(summary.get('.work-assessment-ways').text()).toContain('Im Schülerbereich bereitgestellt')
+            expect(summary.get('.work-assessment-ways').text()).toContain('Datei-Upload')
         } finally { wrapper.unmount(); clearWorkDropboxStates(); vi.unstubAllGlobals() }
     })
 
@@ -6405,7 +6427,7 @@ describe('CourseTable', () => {
         expect(source).toContain('@click="selectDateWorkType(item.value)"')
         expect(source).toContain('@click="cancelDateWorkTypeEditing">Abbrechen</v-btn>')
         expect(source).toContain('@click="confirmDateWorkTypeEditing">OK</v-btn>')
-        expect(source).toContain(':disabled="workSaving || workDialogTypeEditing || workDialogModeEditing"')
+        expect(source).toContain(':disabled="assessmentLocked || workSaving || workDialogTypeEditing || workDialogModeEditing"')
         expect(source).toContain('data-testid="course-table-date-edit-work-mode"')
         expect(source).toMatch(/<v-chip\s+data-testid="course-table-date-edit-work-mode"/)
         expect(source).not.toMatch(/<v-btn\s+data-testid="course-table-date-edit-work-mode"/)

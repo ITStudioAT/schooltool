@@ -30,6 +30,64 @@ class TeachingAssessmentRuns
         return $this->visible($run);
     }
 
+    public function progressForWork(TeachingCourseWork $work, User $actor, ?string $date): array
+    {
+        $run = $this->latest($work->id);
+        $visible = $run && $run['actor_id'] === $actor->id
+            && ($date === null || $date === $run['date'] || $this->isActive($run));
+
+        return ['activity' => $this->summary($run),
+            'run' => $visible ? Arr::only($run, ['id', 'date', 'state', 'queued_at', 'progress', 'message', 'finished_at']) : null];
+    }
+
+    /** @param list<int> $workIds */
+    public function summaries(array $workIds): array
+    {
+        if ($workIds === []) {
+            return [];
+        }
+
+        $keys = array_map($this->key(...), $workIds);
+        $pointers = $this->state()->many($keys);
+        $runKeys = [];
+        foreach ($workIds as $index => $id) {
+            $key = $keys[$index];
+            if (is_string($pointers[$key] ?? null)) {
+                $runKeys[$id] = $key.':'.$pointers[$key];
+            }
+        }
+        $runs = $this->state()->many(array_values($runKeys));
+
+        return array_map(fn (string $key): ?array => $this->summary($runs[$key] ?? null), $runKeys);
+    }
+
+    public function assertNoActiveCreation(TeachingCourseWork $work): void
+    {
+        abort_if($this->isActive($this->latest($work->id)), 409, 'Für diese Arbeit läuft noch ein Erstellungsauftrag.');
+    }
+
+    private function summary(?array $run): ?array
+    {
+        if ($run === null) {
+            return null;
+        }
+        $summary = Arr::only($run, ['id', 'date', 'state', 'queued_at']);
+        $result = $run['result'] ?? [];
+        $points = $result['points'] ?? null;
+        if ($run['state'] === 'completed' && ($result['status'] ?? null) === 'created'
+            && ($result['scheduled_date'] ?? null) === $run['date'] && is_string($result['folder']['id'] ?? null)
+            && (is_int($points) || is_float($points)) && is_finite((float) $points) && $points >= 0) {
+            $summary['assignment_points'] = $points;
+        }
+
+        return $summary;
+    }
+
+    private function isActive(?array $run): bool
+    {
+        return in_array($run['state'] ?? null, ['queued', 'running'], true);
+    }
+
     public function deleteExercise(TeachingCourseWork $work, User $actor, ?string $date, string $folderId, ?\Closure $progress = null): void
     {
         $cache = $this->state()->getStore();
@@ -97,6 +155,7 @@ class TeachingAssessmentRuns
             $work = TeachingCourseWork::query()->lockForUpdate()->findOrFail($work->id);
             $this->assertAccess($work, $actor);
             abort_if($this->pendingExerciseDeletion($work), 409, 'Zuerst die offene LF-Löschung abschließen.');
+            abort_if(isset($work->status['deletion_receipt']), 409, 'Zuerst die offene Löschung der Arbeit abschließen.');
             $alias = $this->state()->get($this->key($work->id).':request:'.$requestId);
             $existing = $this->get($work->id, is_string($alias) ? $alias : $requestId);
             if ($existing) {
@@ -114,7 +173,7 @@ class TeachingAssessmentRuns
             }
 
             $run = ['id' => $requestId, 'request_id' => $requestId, 'actor_id' => $actor->id, 'date' => $date,
-                'input' => $input, 'snapshot' => $this->snapshot($work), 'state' => 'queued',
+                'input' => $input, 'snapshot' => $this->snapshot($work), 'state' => 'queued', 'queued_at' => now()->toISOString(),
                 'progress' => null, 'generation' => null, 'result' => null, 'message' => null];
             $this->save($work->id, $run);
             $this->state()->put($this->key($work->id), $run['id'], now()->addDays(7));
@@ -148,10 +207,15 @@ class TeachingAssessmentRuns
             switch ($event) {
                 case 'start':
                     $progress['active'] = $step;
+                    $progress['detail'] = is_string($details) ? $details : null;
                     break;
                 case 'completed':
                     $progress['completed'][] = $step;
                     $progress['active'] = null;
+                    $progress['detail'] = null;
+                    break;
+                case 'detail':
+                    $progress['detail'] = $details;
                     break;
                 case 'configure_mc':
                     if ($details === true && ! in_array('assessment_mc', $progress['steps'], true)) {
@@ -165,6 +229,7 @@ class TeachingAssessmentRuns
                 case 'replayed':
                     $progress['skipped'] = array_values(array_diff($progress['steps'], $progress['completed']));
                     $progress['active'] = null;
+                    $progress['detail'] = null;
                     break;
             }
             $this->save($workId, $run);
@@ -255,7 +320,7 @@ class TeachingAssessmentRuns
 
     private function visible(array $run): array
     {
-        return Arr::only($run, ['id', 'request_id', 'date', 'state', 'progress', 'generation', 'result', 'message', 'finished_at']);
+        return Arr::only($run, ['id', 'request_id', 'date', 'state', 'queued_at', 'progress', 'generation', 'result', 'message', 'finished_at']);
     }
 
     private function latest(int $workId): ?array

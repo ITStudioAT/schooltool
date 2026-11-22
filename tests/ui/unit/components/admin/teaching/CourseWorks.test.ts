@@ -95,6 +95,28 @@ describe('New work overview and assessment mode', () => {
         } finally { wrapper.unmount() }
     })
 
+    it('shows confirmed sheet and MC points beside the portal and submission choices without a folder check', async () => {
+        const date = '2026-10-20'
+        const work = { id: 65, teaching_course_id: 2, type: 'A5', title: 'Fiktive Prüfung', date_for_all_groups: date,
+            groups: [{ student_ids: [12] }], assessment_run: { date, state: 'completed', assignment_points: 35 },
+            multiple_choice_test_details: { 4: { points: 5, question_count: 10, duration_seconds: 480 } },
+            status: { multiple_choice_tests: { [date]: { work_id: 65, test_id: 4 } }, submission_method: { channel: 'portal' },
+                student_distribution: { published_at: `${date}T10:00:00Z`, student_ids: [12], instructions: 'Synthetisches Arbeitsblatt' } } }
+        const get = vi.fn().mockResolvedValue({ data: { connected: true, exercise: { status: 'unknown', email_dispatch: null } } })
+        vi.stubGlobal('axios', { get })
+        const wrapper = mountOverview(work, null, true)
+        try {
+            await flushPromises()
+            await wrapper.get('.work-row').trigger('click')
+            await flushPromises()
+            const summary = wrapper.get('[aria-label="Prüfungsdetails"]')
+            expect(summary.get('.work-assessment-ways').text()).toContain('Im Schülerbereich bereitgestellt')
+            expect(summary.get('.work-assessment-ways').text()).toContain('Datei-Upload')
+            expect(summary.text()).toContain('Aufgabenblatt35 Punkte')
+            expect(summary.text()).toContain('Gesamtpunkte40 Punkte')
+        } finally { wrapper.unmount() }
+    })
+
     it('keeps the work editor open while the LF component is busy and allows closing afterwards', async () => {
         const work = { id: 65, teaching_course_id: 2, type: 'A5', title: 'Beispiel', groups: [], status: {}, date_for_all_groups: '2026-10-20' }
         const status = vi.fn().mockResolvedValue({ data: { connected: true, module_link: { folder: { id: 'id:module' } }, exercise: { status: 'missing' } } })

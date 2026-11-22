@@ -1,7 +1,8 @@
 <template>
     <section class="submission" aria-label="Meine Abgabe">
         <h4>Abgabe</h4>
-        <p v-if="!method">Die Lehrkraft hat den Abgabeweg noch nicht festgelegt.</p>
+        <p v-if="task.status === 'ended'">Die Abgabe ist geschlossen.</p>
+        <p v-else-if="!method">Die Lehrkraft hat den Abgabeweg noch nicht festgelegt.</p>
         <p v-else-if="method.channel === 'email'">
             <template v-if="released && !expired && method.email">
                 Sende deine Datei per E-Mail an

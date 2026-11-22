@@ -1,29 +1,34 @@
 <template>
     <section class="work-workflow" aria-label="Ablauf der Arbeit">
-        <WorkAssessmentSummary :work="work" :course="course" :date="date" :assessment="assessment"
+        <WorkAssessmentSummary :work="work" :course="course" :date="date" :assessment="assessment" :assessment-run="confirmedRun"
             :can-add-test="active && automation && linked && assessment?.status === 'found' && !assessment.deletionPending
                 && !work.status?.student_distribution?.published_at"
-            :disabled="disabled || queueInProgress" @add-test="exercise?.openMcSelection()" />
+            :disabled="mutationDisabled" @add-test="exercise?.openMcSelection()" />
         <header class="work-workflow__header">
             <h3>Ablauf der Arbeit</h3>
-            <p v-if="lastCheck" data-testid="work-dialog-last-check">Zuletzt geprüft: {{ lastCheck }}</p>
+            <p v-if="lastCheck && !activity" data-testid="work-dialog-last-check">Zuletzt geprüft: {{ lastCheck }}</p>
         </header>
+        <v-alert v-if="activity" role="status" type="info" variant="tonal" density="compact" class="mb-3" data-testid="assessment-background-status">
+            {{ assessmentActivityLabel(activity) }}
+        </v-alert>
+        <WorkQueueProgress v-if="active" ref="queueProgress" :work="work" :date="date" :user-id="admin.config?.user?.id"
+            @assessment-completed="assessmentCompleted" />
         <WorkDeliveryStatus :work="work" :date="date" :state="assessment" :exercise-ready="exerciseReady"
-            :disabled="disabled" @import="forwardImport" @saved="emit('saved', $event)">
+            :disabled="mutationDisabled" @import="forwardImport" @saved="emit('saved', $event)">
             <template #workflow="{ stages, openStage, release, releasePrepared, releasePaused, releaseAvailable, openRelease, dispatch, legacyMail, openLegacyMail }">
                 <div class="work-workflow__phases">
                     <article v-for="phase in phasesFor(stages, { release, releasePrepared, releasePaused }, dispatch)"
                         :key="phase.key" class="work-phase"
                         :class="{ 'work-phase--current': phase.current && phase.primary, 'work-phase--open': phaseOpen(phase) }">
                         <h4 class="work-phase__heading">
-                            <button type="button" class="work-phase__toggle" :aria-expanded="phaseOpen(phase)"
+                            <button type="button" class="work-phase__toggle" :disabled="phaseLocked(phase)" :aria-expanded="phaseOpen(phase)"
                                 :aria-controls="panelId + phase.key" @click="togglePhase(phase)">
                                 <span class="work-phase__icon"><v-icon :icon="phase.icon" size="19" aria-hidden="true" /></span>
                                 <span class="work-phase__caption">
                                     <span class="work-phase__title">{{ phase.title }}</span>
-                                    <span class="work-phase__status">{{ phase.status }}</span>
+                                    <span class="work-phase__status">{{ phaseLocked(phase) ? 'Während der Erstellung gesperrt' : phase.status }}</span>
                                 </span>
-                                <v-icon :icon="phaseOpen(phase) ? 'mdi-chevron-up' : 'mdi-chevron-down'" size="19" aria-hidden="true" />
+                                <v-icon :icon="phaseLocked(phase) ? 'mdi-lock-outline' : phaseOpen(phase) ? 'mdi-chevron-up' : 'mdi-chevron-down'" size="19" aria-hidden="true" />
                             </button>
                         </h4>
                         <div v-show="phaseOpen(phase)" :id="panelId + phase.key" class="work-phase__body">
@@ -35,7 +40,7 @@
                                     </div>
                                     <div class="work-phase__actions">
                                         <div class="workflow-command" :data-primary="phase.primary === 'link'">
-                                            <WorkImportActions :work="work" :date="date" link-only :disabled="disabled" @link="emit('link', $event)" />
+                                            <WorkImportActions :work="work" :date="date" link-only :disabled="mutationDisabled" @link="emit('link', $event)" />
                                         </div>
                                         <div class="workflow-management-actions">
                                             <div class="workflow-command">
@@ -43,7 +48,7 @@
                                             </div>
                                             <div class="workflow-command" :data-primary="phase.primary === 'create'">
                                                 <WorkExerciseStatus :work="work" :course="course" :date="date" :state="assessment" labelled
-                                                    :can-create="automation && linked" :disabled="disabled || !linked"
+                                                    :can-create="automation && linked && !activity" :disabled="disabled || !linked"
                                                     @create="exercise?.openDialog()" @deleted="exercise?.recheck()" />
                                             </div>
                                         </div>
@@ -51,36 +56,35 @@
                                             <WorkExerciseExport :ref="trackExercise" :work="work" :course="course" :date="date" :active="active"
                                                 :disabled="disabled" :check-progress="checkProgress" passive-status hide-folder-name hide-activator hide-mc-test hide-check-time
                                                 @exercise-status="emit('exercise-status', $event)" @progress-checked="emit('progress-checked', $event)"
-                                                @deadline-saved="emit('deadline-saved', $event)" @check-busy="emit('check-busy', $event)" @busy="emit('busy', $event)" />
+                                                @assessment-recheck="queueProgress?.restart()" @deadline-saved="emit('deadline-saved', $event)" @check-busy="emit('check-busy', $event)" @busy="emit('busy', $event)" />
                                         </div>
                                     </div>
                                 </div>
                             </template>
                             <template v-else-if="phase.key === 'provision'">
                                 <div class="work-phase__item" role="group" aria-label="Bereitstellung">
-                                    <div class="work-phase__item-label">
-                                        <span v-if="phase.portalStatus && phase.portalStatus !== phase.status">{{ phase.portalStatus }}</span>
-                                        <span v-if="mailStatus && mailStatus !== phase.status">{{ mailStatus }}</span>
-                                        <WorkDispatchStatus v-if="savedTaskDispatch" :work="work" aggregate hide-portal :purposes="['tasks', 'provision']" />
-                                        <span v-else-if="dispatch.confirmed_count > 0 && dispatch.transport === 'mailpit'">{{ dispatch.confirmed_count }} Nachrichten im lokalen Mailpit bestätigt.</span>
-                                        <span v-else-if="['sent', 'partial'].includes(dispatch.status) && dispatch.confirmed_count > 0">
-                                            Aufgabenversand für {{ dispatch.confirmed_count }} Schüler:innen belegt<template v-if="dispatch.sent_at"> · {{ assessmentTimeText(dispatch.sent_at) }}</template>
-                                        </span>
+                                    <div class="work-phase__item-label work-phase__item-label--provision">
+                                        <strong>Bereitstellung</strong>
+                                        <WorkDispatchStatus :provision-summary="phase.provisionSummary" />
                                     </div>
                                     <div class="work-phase__actions">
                                         <div class="workflow-command" :data-primary="phase.primary === 'provision'">
-                                            <v-btn v-if="release || releasePrepared || releasePaused" aria-haspopup="dialog"
-                                                :prepend-icon="release ? 'mdi-pause' : 'mdi-play'"
-                                                :disabled="disabled || !releaseAvailable" @click="openProvisionDialog(openRelease)">
-                                                {{ release ? 'Freigabe verwalten' : releasePaused ? 'Freigabe fortsetzen' : 'Jetzt freigeben' }}
+                                            <v-btn v-if="showPortalAction(release, releasePrepared, releasePaused)" aria-haspopup="dialog"
+                                                :prepend-icon="releaseEnded ? 'mdi-lock-outline' : release ? 'mdi-pause' : releasePaused ? 'mdi-pencil-outline' : 'mdi-play'"
+                                                :disabled="mutationDisabled || !releaseAvailable" @click="openProvisionDialog(openRelease)">
+                                                {{ releaseEnded ? 'Freigabe ansehen' : release ? 'Freigabe verwalten' : releasePaused ? 'Freigabe bearbeiten' : work.can_end_email_release ? 'Freigabe verwalten' : 'Jetzt freigeben' }}
                                             </v-btn>
-                                            <WorkProvisionMethod v-else :work="work" :date="date" :disabled="disabled" :portal-available="releaseAvailable"
+                                            <WorkProvisionMethod v-if="!releaseEnded" :work="work" :date="date" :disabled="mutationDisabled" :portal-available="releaseAvailable"
+                                                :hide-activator="showPortalAction(release, releasePrepared, releasePaused)"
                                                 @saved="emit('saved', $event)" @portal="openProvisionDialog(openRelease)"
                                                 @mail="openProvisionDialog(openAssignmentMail)" />
+                                            <v-btn v-if="!releaseEnded && (release || work.can_end_email_release) && provisionChannel === 'email' && submissionChannel" variant="text"
+                                                prepend-icon="mdi-email-outline" :disabled="mutationDisabled"
+                                                @click="openProvisionDialog(openAssignmentMail)">Aufgabenmail verwalten</v-btn>
                                         </div>
                                     </div>
                                     <details v-if="hasTaskLogs" class="work-phase__details">
-                                        <summary>Bereitstellungsbelege</summary>
+                                        <summary>Bereitstellungsbelege der Arbeit</summary>
                                         <div class="workflow-command"><WorkDispatchLog :work="work" :purposes="['tasks', 'provision']" /></div>
                                     </details>
                                 </div>
@@ -96,11 +100,14 @@
                                     </div>
                                     <div class="work-phase__actions">
                                         <div class="workflow-command" :data-primary="phase.primary === 'submission'">
-                                            <WorkSubmissionMethod :work="work" :disabled="disabled" @saved="emit('saved', $event)" />
+                                            <WorkSubmissionMethod :work="work" :disabled="mutationDisabled" @saved="emit('saved', $event)" />
                                         </div>
                                         <div class="workflow-command" :data-primary="phase.primary === 'collect'">
-                                            <v-btn v-if="stages[0] && !stages[0].blocked && submissionChannel !== 'portal'" :disabled="disabled"
-                                                variant="text" :prepend-icon="stages[0].icon" @click.stop="openStage(stages[0])">{{ stages[0].complete ? 'Abgaben ansehen' : 'Abgaben verwalten' }}</v-btn>
+                                            <WorkSubmissionCollection v-if="releaseEnded && !stages[0]?.simulation" :work="work" :date="date"
+                                                :repeat="Boolean(lastCollection)" :disabled="mutationDisabled" />
+                                            <v-btn v-if="stages[0] && !stages[0].blocked && (stages[0].complete || lastCollection || stages[0].simulation)"
+                                                min-height="44" :disabled="mutationDisabled" variant="text" :prepend-icon="stages[0].icon"
+                                                @click.stop="openStage(stages[0])">Abgabestatus ansehen</v-btn>
                                         </div>
                                     </div>
                                 </div>
@@ -114,14 +121,14 @@
                                     </div>
                                     <div class="work-phase__actions">
                                         <div class="workflow-command" :data-primary="phase.primary === 'manual'">
-                                            <v-btn :disabled="disabled" variant="text" prepend-icon="mdi-pencil-outline" @click.stop="emit('edit-grades')">Bewertung eintragen</v-btn>
+                                            <v-btn :disabled="mutationDisabled" variant="text" prepend-icon="mdi-pencil-outline" @click.stop="emit('edit-grades')">Bewertung eintragen</v-btn>
                                         </div>
                                         <div class="workflow-command" :data-primary="phase.primary === 'grade'">
-                                            <v-btn v-if="stages[1] && !stages[1].blocked" :disabled="disabled" variant="text"
+                                            <v-btn v-if="stages[1] && !stages[1].blocked" :disabled="mutationDisabled" variant="text"
                                                 :prepend-icon="stages[1].icon" @click.stop="openStage(stages[1])">{{ stages[1].complete ? 'Bewertung ansehen' : 'Bewertung verwalten' }}</v-btn>
                                         </div>
                                         <div class="workflow-command">
-                                            <v-btn v-if="automation" :disabled="disabled" variant="text" prepend-icon="mdi-file-import-outline" @click.stop="emit('import', work)">Importieren</v-btn>
+                                            <v-btn v-if="automation" :disabled="mutationDisabled" variant="text" prepend-icon="mdi-file-import-outline" @click.stop="emit('import', work)">Importieren</v-btn>
                                         </div>
                                         <div class="workflow-command"><WorkEvaluationPdf :work="work" /></div>
                                     </div>
@@ -135,10 +142,10 @@
                                     </div>
                                     <div class="work-phase__actions">
                                         <div class="workflow-command" :data-primary="phase.primary === 'visibility'">
-                                            <WorkGradeVisibility mode="visibility" :work="work" :disabled="disabled" @saved="emit('saved', $event)" />
+                                            <WorkGradeVisibility mode="visibility" :work="work" :disabled="mutationDisabled" @saved="emit('saved', $event)" />
                                         </div>
                                         <div class="workflow-command" :data-primary="phase.primary === 'publish'">
-                                            <v-btn v-if="stages[2] && !stages[2].blocked" :disabled="disabled" variant="text"
+                                            <v-btn v-if="stages[2] && !stages[2].blocked" :disabled="mutationDisabled" variant="text"
                                                 :prepend-icon="stages[2].icon" @click.stop="openStage(stages[2])">{{ stages[2].complete ? 'Übernahme ansehen' : stages[2].title }}</v-btn>
                                         </div>
                                     </div>
@@ -150,10 +157,10 @@
                                     </div>
                                     <div class="work-phase__actions">
                                         <div class="workflow-command" :data-primary="phase.primary === 'notice'">
-                                            <WorkGradeVisibility mode="notice" :work="work" :disabled="disabled" @saved="emit('saved', $event)" />
+                                            <WorkGradeVisibility mode="notice" :work="work" :disabled="mutationDisabled" @saved="emit('saved', $event)" />
                                         </div>
                                         <div class="workflow-command">
-                                            <v-btn v-if="stages[3] && !stages[3].blocked" :disabled="disabled" variant="text"
+                                            <v-btn v-if="stages[3] && !stages[3].blocked" :disabled="mutationDisabled" variant="text"
                                                 :prepend-icon="stages[3].icon" @click.stop="openStage(stages[3])">{{ stages[3].complete ? 'Verständigung ansehen' : stages[3].title }}</v-btn>
                                         </div>
                                         <div class="workflow-command"><WorkDispatchLog :work="work" :purposes="['results']" /></div>
@@ -164,10 +171,10 @@
                         </div>
                     </article>
                 </div>
-                <WorkAssignmentMail ref="assignmentMail" :work="work" :date="date" :disabled="disabled" hide-activator
+                <WorkAssignmentMail v-if="!releaseEnded" ref="assignmentMail" :work="work" :date="date" :disabled="mutationDisabled" hide-activator
                     @saved="emit('saved', $event)">
                     <template v-if="legacyMail" #secondary-actions="{ close }">
-                        <v-btn variant="text" min-height="44" prepend-icon="mdi-email-outline" :disabled="disabled"
+                        <v-btn variant="text" min-height="44" prepend-icon="mdi-email-outline" :disabled="mutationDisabled"
                             @click="close(); openProvisionDialog(openLegacyMail)">Früheren Versand ansehen</v-btn>
                     </template>
                 </WorkAssignmentMail>
@@ -175,16 +182,15 @@
         </WorkDeliveryStatus>
         <footer class="work-workflow__footer">
             <div v-if="$slots['secondary-actions']" class="workflow-command"><slot name="secondary-actions" /></div>
-            <WorkQueueProgress v-if="active" :work="work" :date="date" @assessment-running="queueInProgress = $event" />
         </footer>
     </section>
 </template>
 
 <script setup>
 import { computed, nextTick, ref, useId, watch } from 'vue'
-import { assessmentTimeText } from '@/helpers/workAssessmentTimes'
+import { assessmentActivityLabel, workAssessmentActivity } from '@/helpers/workAssessmentRun'
 import { workAutomationEnabled } from '@/helpers/workAutomation'
-import { workDispatchRecord, workProvisionRecords } from '@/helpers/workDispatch'
+import { workDispatchRecord, workProvisionEvidence } from '@/helpers/workDispatch'
 import { workDropboxKey, workDropboxStates, workExerciseCheck } from '@/helpers/workDropbox'
 import { confirmedExerciseFolder, workFolderNeedsRetry } from '@/helpers/workOverview'
 import { useAdminStore } from '@/stores/admin/AdminStore'
@@ -202,6 +208,7 @@ import WorkImportActions from './WorkImportActions.vue'
 import WorkProvisionMethod from './WorkProvisionMethod.vue'
 import WorkQueueProgress from './WorkQueueProgress.vue'
 import WorkSubmissionMethod from './WorkSubmissionMethod.vue'
+import WorkSubmissionCollection from './WorkSubmissionCollection.vue'
 
 const props = defineProps({ work: { type: Object, required: true }, course: Object, date: { type: String, default: '' },
     active: { type: Boolean, default: true }, disabled: Boolean, linkError: Boolean,
@@ -211,12 +218,22 @@ const emit = defineEmits(['link', 'import', 'saved', 'edit-grades', 'exercise-st
 const admin = useAdminStore()
 const panelId = `${useId()}-workflow-`
 const selectedPhase = ref(null)
-const queueInProgress = ref(false)
+const queueProgress = ref(null)
+const activity = computed(() => workAssessmentActivity(admin.config?.user?.id, props.work))
+const mutationDisabled = computed(() => props.disabled || Boolean(activity.value))
 const assignmentMail = ref(null)
+const confirmedRun = ref(null)
 let exercise = null
 
 function trackExercise(component) {
     exercise = component
+}
+
+function assessmentCompleted(run) {
+    if (!run.date || !props.date || run.date === props.date) {
+        confirmedRun.value = run
+        exercise?.refreshStored()
+    }
 }
 
 function openAssignmentMail() {
@@ -227,13 +244,13 @@ async function openProvisionDialog(open) {
     const workId = props.work.id
     const date = props.date
     await nextTick()
-    if (props.work.id === workId && props.date === date && props.active && !props.disabled) open()
+    if (props.work.id === workId && props.date === date && props.active && !mutationDisabled.value) open()
 }
 
-watch([() => props.work.id, () => props.date], () => {
+watch([() => props.work.id, () => props.date, () => Boolean(activity.value)], () => {
     selectedPhase.value = null
-    queueInProgress.value = false
 })
+watch([() => props.work.id, () => props.date], () => { confirmedRun.value = null })
 
 const key = computed(() => workDropboxKey(admin.config?.user?.id, props.work))
 const binding = computed(() => workDropboxStates.get(key.value))
@@ -246,19 +263,18 @@ const connectionStatus = computed(() => {
     return binding.value ? 'Kein Lernmodul verknüpft' : 'Verknüpfung wird geladen …'
 })
 const assessmentStatus = computed(() => {
+    if (activity.value) return assessmentActivityLabel(activity.value)
     if (!linked.value) return connectionStatus.value
-    if (queueInProgress.value) return 'Leistungsfeststellung wird erstellt'
     if (props.assessment?.deletionPending) return 'Löschung noch nicht bestätigt'
     if (props.exerciseReady) return 'Aufgabenstellung bestätigt'
     if (props.assessment?.status === 'missing' && confirmedExerciseFolder(checked.value)?.id) return 'Prüfungsordner bestätigt'
     return { found: 'Prüfungsordner bestätigt', missing: 'Noch nicht erstellt', unknown: 'Status nicht bestätigt',
         checking: 'Statusprüfung läuft …' }[props.assessment?.status] || 'Noch nicht geprüft'
 })
-const savedTaskDispatch = computed(() => Boolean(workDispatchRecord(props.work, null, 'tasks', true))
-    || workProvisionRecords(props.work, null, true).length > 0)
 const hasTaskLogs = computed(() => (props.work.status?.dispatch_logs ?? []).some(log => log.sha256
     && ['dispatch_import', 'provision_import'].includes(log.origin) && ['tasks', 'provision'].includes(log.purpose)))
 const savedResultDispatch = computed(() => Boolean(workDispatchRecord(props.work, null, 'results', true)))
+const releaseEnded = computed(() => Boolean(props.work.status?.student_distribution?.ended_at))
 const provisionChannel = computed(() => props.work.status?.provision_method?.channel)
 const submissionChannel = computed(() => props.work.status?.submission_method?.channel)
 const portalSubmissionCount = computed(() => new Set((props.work.status?.portal_submissions || [])
@@ -275,28 +291,12 @@ const submissionStatus = computed(() => {
     if (method?.channel === 'email') return method.email ? `Abgabe per E-Mail an ${method.email}` : 'Abgabe per E-Mail'
     return 'Abgabeweg noch nicht festgelegt'
 })
-const mailStatus = computed(() => {
-    const batch = mailBatch.value
-    if (!batch) return null
-    if (['sent', 'partial'].includes(batch.state)) {
-        const partial = batch.state === 'partial' ? ' teilweise' : ''
-        const receipt = !hasMailReceipt.value ? 'Bisher keine Aufgabenmail bestätigt'
-            : batch.transport === 'mailpit' ? `Aufgabenmail${partial} im lokalen Mailpit bestätigt`
-            : batch.transport === 'postmark' ? `Aufgabenmail${partial} vom Versanddienst angenommen` : 'Versandstand nicht vollständig bestätigt'
-        return batch.withdrawn_at ? `${receipt} · Verteilung zurückgezogen` : receipt
-    }
-    if (batch.withdrawn_at) return 'Aufgabenmail zurückgezogen'
-    return { draft: batch.prepared_at ? 'Aufgabenmail vorbereitet' : 'Aufgabenmail als Entwurf gespeichert',
-        queued: 'Versand eingeplant', sending: 'Versand läuft', rejected: 'Aufgabenmail abgelehnt',
-        uncertain: 'Versandstand nicht vollständig bestätigt' }[batch.state] || null
-})
-
-function releaseStatus({ release, releasePrepared, releasePaused }) {
-    if (release) return 'Im Schülerbereich freigegeben'
-    if (releasePaused) return 'Freigabe pausiert'
-    if (releasePrepared) return 'Bereit zur Freigabe'
-    if (props.work.status?.student_distribution?.deleted_at) return 'Bereitstellung entfernt'
-    return 'Bereitstellung offen'
+function showPortalAction(release, releasePrepared, releasePaused) {
+    const method = props.work.status?.submission_method
+    const submissionChosen = method?.channel === 'portal'
+        || (method?.channel === 'email' && typeof method.email === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(method.email))
+    return Boolean(releaseEnded.value || release || props.work.can_end_email_release
+        || ((releasePrepared || releasePaused) && provisionChannel.value === 'portal' && submissionChosen))
 }
 
 function nextAction([collection, evaluation, publication], releaseState, previousMailSent) {
@@ -308,9 +308,9 @@ function nextAction([collection, evaluation, publication], releaseState, previou
     const evaluated = props.allAssessed || evaluation?.complete || evaluation?.count || props.lastEvaluation
     const prepared = props.exerciseReady || props.work.local_task_copy
 
-    if (queueInProgress.value) return ['preparation', null]
+    if (activity.value) return ['preparation', null]
     if (releasePaused || releasePrepared) return ['provision', 'provision']
-    if (!release && !mailed && !mailBatch.value && !collected && !evaluated && automation.value && !prepared) {
+    if (!releaseEnded.value && !release && !mailed && !mailBatch.value && !collected && !evaluated && automation.value && !prepared) {
         if (!binding.value) return ['preparation', null]
         if (!linked.value) return ['preparation', 'link']
         if (props.assessment?.status === 'missing') {
@@ -320,8 +320,8 @@ function nextAction([collection, evaluation, publication], releaseState, previou
         if (props.assessment?.status !== 'found') return ['preparation', 'check']
     }
 
-    if (!release && !mailed && !collected && !evaluated) return ['provision', 'provision']
-    if (!submissionChannel.value && !collected && !evaluated) return ['submission', 'submission']
+    if (!releaseEnded.value && !release && !mailed && !collected && !evaluated) return ['provision', 'provision']
+    if (!releaseEnded.value && !submissionChannel.value && !collected && !evaluated) return ['submission', 'submission']
     if (!evaluated && !collection?.blocked && !collection?.complete && submissionChannel.value !== 'portal') {
         return ['submission', 'collect']
     }
@@ -335,36 +335,35 @@ function nextAction([collection, evaluation, publication], releaseState, previou
 function phasesFor(stages, releaseState, dispatch) {
     const previousMailSent = ['sent', 'partial'].includes(dispatch.status) && dispatch.confirmed_count > 0 && dispatch.transport !== 'mailpit'
     const [nextPhase, primary] = nextAction(stages, releaseState, previousMailSent)
-    const releaseKnown = releaseState.release || releaseState.releasePaused || releaseState.releasePrepared
-        || props.work.status?.student_distribution?.deleted_at
-    const portalStatus = releaseKnown ? releaseStatus(releaseState) : provisionChannel.value === 'portal' ? 'Schülerbereich gewählt' : null
-    const emailStatus = mailStatus.value || (previousMailSent ? 'Aufgabenversand belegt' : null)
-    const hasPortalRelease = releaseState.release || releaseState.releasePrepared || releaseState.releasePaused
-    const provisionStatus = hasPortalRelease ? portalStatus : provisionChannel.value === 'email'
-        ? emailStatus || 'E-Mail gewählt'
-        : portalStatus || emailStatus || 'Bereitstellungsweg offen'
+    const provisionSummary = workProvisionEvidence(props.work, props.date, dispatch)
     const submissionSummary = submissionChannel.value === 'portal' ? 'Portalabgabe'
         : submissionChannel.value === 'email' ? 'Abgabe per E-Mail' : 'Abgabeweg offen'
 
     return [
         { key: 'preparation', title: 'Vorbereiten', icon: 'mdi-clipboard-text-outline', status: assessmentStatus.value },
-        { key: 'provision', title: 'Bereitstellen', icon: 'mdi-send-outline', status: provisionStatus, portalStatus },
+        { key: 'provision', title: 'Bereitstellen', icon: 'mdi-send-outline', status: provisionSummary.map(entry => entry.key === 'portal' && entry.state ? entry.state : entry.label).join(' · '), provisionSummary },
         { key: 'submission', title: 'Abgeben', icon: 'mdi-inbox-arrow-down-outline', status: submissionSummary },
         { key: 'assessment', title: 'Bewerten', icon: 'mdi-clipboard-check-outline',
             status: props.assessmentCount ?? stepStatus(stages[1]) },
     ].map(phase => ({ ...phase, current: phase.key === nextPhase, primary: phase.key === nextPhase ? primary : null }))
 }
 
+function phaseLocked(phase) {
+    return Boolean(activity.value) && phase.key !== 'preparation'
+}
+
 function phaseOpen(phase) {
+    if (phaseLocked(phase)) return false
     return selectedPhase.value === null ? phase.current : selectedPhase.value === phase.key
 }
 
 function togglePhase(phase) {
+    if (phaseLocked(phase)) return
     selectedPhase.value = phaseOpen(phase) ? '' : phase.key
 }
 
 function forwardImport(...args) {
-    emit('import', ...args)
+    if (!mutationDisabled.value) emit('import', ...args)
 }
 
 function stepStatus(stage) {
@@ -412,7 +411,8 @@ function stepStatus(stage) {
     color: rgb(var(--v-theme-on-surface));
     cursor: pointer;
 }
-.work-phase__toggle:hover { background: rgba(var(--v-theme-on-surface), .04); }
+.work-phase__toggle:disabled { cursor: default; opacity: .7; }
+.work-phase__toggle:not(:disabled):hover { background: rgba(var(--v-theme-on-surface), .04); }
 .work-phase--open .work-phase__toggle { border-end-start-radius: 0; border-end-end-radius: 0; }
 .work-phase--current .work-phase__toggle { background: rgba(var(--v-theme-primary), .065); }
 .work-phase__icon {
@@ -440,6 +440,7 @@ function stepStatus(stage) {
     font-size: .8125rem;
     overflow-wrap: anywhere;
 }
+.work-phase__item-label--provision { display: grid; gap: .25rem; }
 .work-phase__item-label strong { color: rgb(var(--v-theme-on-surface)); font-weight: 650; }
 .work-phase__actions, .workflow-management-actions, .work-workflow__footer {
     display: flex;
@@ -489,7 +490,6 @@ function stepStatus(stage) {
     outline-offset: -2px;
 }
 .work-workflow__footer { margin-block-start: .25rem; }
-.work-workflow__footer :deep(.work-queue) { flex-basis: 100%; }
 @media (max-width: 420px) {
     .work-phase__toggle { padding-inline: .625rem; gap: .5rem; }
     .work-phase__body { padding-inline: .625rem; }

@@ -150,7 +150,7 @@ it('offers removal of a paused release directly in the delivery dialog and requi
         await wrapper.get('[aria-label="Pausierte Aufgaben verwalten"]').trigger('click')
         await flushPromises()
         expect(wrapper.get('[role="dialog"]').text()).toContain('Die Aufgabenfreigabe ist pausiert')
-        expect(wrapper.get('[role="dialog"]').text()).toContain('Jetzt freigeben')
+        expect(wrapper.get('[role="dialog"]').text()).toContain('Freigabe fortsetzen')
         expect(wrapper.find('[data-workflow-stage="send"]').exists()).toBe(false)
         expect(wrapper.get('[data-workflow-stage="collection"]').attributes('disabled')).toBeDefined()
         const click = async (label: string) => wrapper.findAll('button').find(button => button.text() === label)!.trigger('click')
@@ -169,120 +169,182 @@ it('offers removal of a paused release directly in the delivery dialog and requi
     } finally { wrapper.unmount() }
 })
 
-it('shows released students and their actual MC test status in the preparation dialog', async () => {
-    vi.stubGlobal('axios', { get: vi.fn().mockResolvedValue({ data: { attempts: [
-        { student_id: 12, status: 'in_progress' }, { student_id: 13, status: 'submitted' },
-    ] } }) })
+const releasedWork = { id: 64, teaching_course_id: 16, title: 'Dateimanagement', student_distribution_version: 'a'.repeat(64),
+    date_for_all_groups: '2026-10-20', groups: [{ student_ids: [12, 13] }], status: {
+        student_distribution: { published_at: '2026-10-28T12:00:00Z', student_ids: [12, 13], file_ids: ['pdf'], instructions: 'Dateien ordnen.' },
+        student_task_files: [{ id: 'pdf', name: 'Aufgabe.pdf' }], submission_method: { channel: 'portal' },
+        multiple_choice_tests: { '2026-10-20': { work_id: 64, test_id: 4 } },
+    },
+}
+const releasedTest = { id: 4, title: 'MC Dateimanagement', status: 'published', start_mode: 'individual',
+    version: 'b'.repeat(64), pause_version: 'c'.repeat(64), can_pause: true, can_control_attempts: true,
+    lifecycle_actions: ['reset', 'delete'], attempt_count: 2,
+}
+const attemptRows = [
+    { id: 1, student_id: 12, status: 'in_progress', started_at: '2026-10-29T09:55:00Z' as string | null, control_revision: 'd'.repeat(64) },
+    { id: 2, student_id: 13, status: 'submitted', started_at: '2026-10-29T09:55:00Z' as string | null, control_revision: 'e'.repeat(64) },
+]
+
+function renderRelease(work = releasedWork, useWorkflow = false) {
     const pinia = createTestingPinia({ createSpy: vi.fn })
     useCourseStore(pinia).selected_course = { id: 16, students_info: [
         { user_id: 12, first_name: 'Ada', last_name: 'Alpha' }, { user_id: 13, first_name: 'Ben', last_name: 'Beta' },
     ] } as never
-    const wrapper = mount(WorkDeliveryStatus, { props: { work: { id: 64, teaching_course_id: 16, title: 'E-Mails',
-        date_for_all_groups: '2026-10-20', groups: [{ student_ids: [12, 13] }], status: {
-            student_distribution: { published_at: '2026-10-28T12:00:00Z', student_ids: [12, 13] },
-            multiple_choice_tests: { '2026-10-20': { test_id: 2 } },
-        } } }, global: { plugins: [pinia], stubs: {
-        'v-btn': { template: '<button><slot /></button>' },
-        'v-dialog': { props: ['modelValue'], template: '<section v-if="modelValue" role="dialog"><slot /></section>' },
-    } } })
+    return mount(WorkDeliveryStatus, {
+        props: { work }, global: { plugins: [pinia], stubs: {
+            'v-btn': { props: ['disabled', 'ariaLabel'], template: '<button :disabled="disabled" :aria-label="ariaLabel"><slot /></button>' },
+            'v-dialog': { props: ['modelValue'], template: '<section v-if="modelValue" role="dialog"><slot /></section>' },
+        } },
+        ...(useWorkflow ? { slots: { workflow: '<template #default="{ openRelease }"><button @click="openRelease">Freigabe verwalten</button></template>' } } : {}),
+    })
+}
+
+function releaseResponses(test = releasedTest, attempts = attemptRows) {
+    return vi.fn().mockImplementation(async (url: string) => {
+        if (url.endsWith('-preview')) return { data: { data: { tests: [test] } } }
+        if (url.endsWith('/4')) return { data: { test, attempts } }
+        return { data: { data: releasedWork } }
+    })
+}
+
+function releaseButton(wrapper: ReturnType<typeof renderRelease>, label: string) {
+    return wrapper.get('[role="dialog"]').findAll('button').find(button => button.text() === label)!
+}
+
+async function expandStudents(wrapper: ReturnType<typeof renderRelease>) {
+    const group = wrapper.get('.release-students')
+    ;(group.element as HTMLDetailsElement).open = true
+    await group.trigger('toggle')
+    await flushPromises()
+}
+
+it.each([false, true])('opens the same single release dialog from the workflow and status entry (%s)', async useWorkflow => {
+    const get = releaseResponses()
+    vi.stubGlobal('axios', { get })
+    const wrapper = renderRelease(releasedWork, useWorkflow)
     try {
-        await wrapper.get('[aria-label="Aufgaben im Schülerbereich bereitgestellt"]').trigger('click')
+        await wrapper.get(useWorkflow ? 'button' : '[aria-label="Aufgaben im Schülerbereich bereitgestellt"]').trigger('click')
         await flushPromises()
         const dialog = wrapper.get('[role="dialog"]')
+        expect(wrapper.findAll('[role="dialog"]')).toHaveLength(1)
+        expect(dialog.text()).toContain('Aufgaben verwalten')
+        expect(dialog.text()).toContain('Im Schülerbereich freigegeben')
+        expect(dialog.text()).toContain('Aufgabe.pdf')
+        expect(dialog.text()).toContain('Datei-Upload')
+        expect(dialog.text()).not.toContain('Freigabe verwalten')
+        expect(dialog.text()).not.toContain('Versandbereitschaft')
+        expect(get.mock.calls.some(([url]) => url.endsWith('/4'))).toBe(false)
+        await expandStudents(wrapper)
         expect(dialog.text()).toContain('Alpha Ada')
         expect(dialog.text()).toContain('In Bearbeitung')
         expect(dialog.text()).toContain('Beta Ben')
         expect(dialog.text()).toContain('Abgegeben')
-        expect(dialog.text()).toContain('Freigabe verwalten')
+        await releaseButton(wrapper, 'Status aktualisieren').trigger('click')
+        await flushPromises()
+        expect(get.mock.calls.filter(([url]) => url.endsWith('/4'))).toHaveLength(2)
     } finally { wrapper.unmount() }
 })
 
-it('withdraws the release only after confirmation and a fresh version check', async () => {
-    const work = { id: 64, teaching_course_id: 16, title: 'Aufgabe', groups: [{ student_ids: [12] }], status: {
-        student_distribution: { published_at: '2026-10-28T12:00:00Z', student_ids: [12] },
-    } }
-    const get = vi.fn().mockResolvedValue({ data: { data: { ...work, student_distribution_version: 'a'.repeat(64) } } })
-    const post = vi.fn().mockResolvedValue({ data: { data: work } })
-    vi.stubGlobal('axios', { get, post })
-    const wrapper = mount(WorkDeliveryStatus, { props: { work }, global: {
-        plugins: [createTestingPinia({ createSpy: vi.fn })], stubs: {
-            'v-btn': { template: '<button><slot /></button>' },
-            'v-dialog': { props: ['modelValue'], template: '<section v-if="modelValue" role="dialog"><slot /></section>' },
-        },
-    } })
+it('names each MC test next to its own attempt status and leaves other dates out of the student list', async () => {
+    const second = { ...releasedTest, id: 5, title: 'Dateiformate' }
+    const other = { ...releasedTest, id: 6, title: 'Anderer Termin' }
+    const work = { ...releasedWork, status: { ...releasedWork.status, multiple_choice_tests: {
+        ...releasedWork.status.multiple_choice_tests, all: { test_id: 5 }, '2026-10-21': { test_id: 6 },
+    } } }
+    const get = vi.fn().mockImplementation(async (url: string) => {
+        if (url.endsWith('-preview')) return { data: { data: { tests: [releasedTest, second, other] } } }
+        if (url.endsWith('/4')) return { data: { test: releasedTest, attempts: attemptRows } }
+        if (url.endsWith('/5')) return { data: { test: second, attempts: [{ ...attemptRows[0], id: 10, status: 'submitted' }] } }
+        return { data: { data: work } }
+    })
+    vi.stubGlobal('axios', { get })
+    const wrapper = renderRelease(work)
     try {
         await wrapper.get('[aria-label="Aufgaben im Schülerbereich bereitgestellt"]').trigger('click')
-        await wrapper.findAll('button').find(button => button.text() === 'Freigabe pausieren')!.trigger('click')
+        await flushPromises()
+        expect(wrapper.get('.release-students summary').text()).toContain('Bearbeitungsstand der Multiple-Choice-Tests')
+        await expandStudents(wrapper)
+        const participant = wrapper.findAll('.release-students__list > li').find(row => row.text().includes('Alpha Ada'))!
+        const tests = participant.findAll('.release-students__test').map(row => row.text())
+        expect(tests).toEqual([expect.stringMatching(/MC Dateimanagement\s*In Bearbeitung/), expect.stringMatching(/Dateiformate\s*Abgegeben/)])
+        expect(get.mock.calls.some(([url]) => url.endsWith('/6'))).toBe(false)
+    } finally { wrapper.unmount() }
+})
+
+it('pauses the release inside the same dialog after confirming against a fresh version', async () => {
+    const work = { ...releasedWork, status: { ...releasedWork.status, multiple_choice_tests: {} } }
+    const paused = { ...work, status: { ...work.status, student_distribution: {
+        ...work.status.student_distribution, withdrawn_at: '2026-10-28T13:00:00Z',
+    } } }
+    const get = vi.fn().mockResolvedValueOnce({ data: { data: work } })
+        .mockResolvedValueOnce({ data: { data: { ...work, student_distribution_version: 'f'.repeat(64) } } })
+    const post = vi.fn().mockResolvedValue({ data: { data: paused } })
+    vi.stubGlobal('axios', { get, post })
+    const wrapper = renderRelease(work)
+    try {
+        await wrapper.get('[aria-label="Aufgaben im Schülerbereich bereitgestellt"]').trigger('click')
+        await flushPromises()
+        await releaseButton(wrapper, 'Freigabe pausieren').trigger('click')
         expect(post).not.toHaveBeenCalled()
-        const confirmation = wrapper.findAll('[role="dialog"]').find(dialog => dialog.text().includes('Aufgabenfreigabe pausieren?'))!
-        expect(confirmation.text()).toContain('Laufende und startbare verknüpfte MC-Tests werden mitpausiert')
-        await confirmation.findAll('button').find(button => button.text() === 'Freigabe pausieren')!.trigger('click')
+        expect(wrapper.findAll('[role="dialog"]')).toHaveLength(1)
+        expect(wrapper.get('[role="dialog"]').text()).toContain('Aufgabenfreigabe pausieren?')
+        await releaseButton(wrapper, 'Freigabe pausieren').trigger('click')
         await flushPromises()
         expect((post.mock.calls[0][1] as FormData).get('publish')).toBe('0')
-        expect((post.mock.calls[0][1] as FormData).get('expected_version')).toBe('a'.repeat(64))
-        expect(wrapper.emitted('saved')).toHaveLength(1)
+        expect((post.mock.calls[0][1] as FormData).get('expected_version')).toBe('f'.repeat(64))
+        expect(wrapper.emitted('saved')).toEqual([[paused]])
+        expect(wrapper.findAll('[role="dialog"]')).toHaveLength(1)
+        expect(releaseButton(wrapper, 'Freigabe fortsetzen')).toBeDefined()
     } finally { wrapper.unmount() }
 })
 
-it('offers the test-wide pause before any student has started', async () => {
-    const work = { id: 64, teaching_course_id: 16, title: 'Aufgabe', date_for_all_groups: '2026-10-20', groups: [{ student_ids: [12] }], status: {
-        student_distribution: { published_at: '2026-10-28T12:00:00Z', student_ids: [12] },
-        multiple_choice_tests: { '2026-10-20': { test_id: 4 } },
-    } }
-    const get = vi.fn().mockResolvedValueOnce({ data: { test: { id: 4, title: 'MC E-Mails', status: 'published' },
-        server_now: '2026-10-29T10:00:00Z', attempts: [{ student_id: 12, status: 'not_started', completed_at: null }] } })
-        .mockResolvedValueOnce({ data: { test: { id: 4, title: 'MC E-Mails', status: 'published', paused_at: '2026-10-29T10:00:00Z' }, attempts: [] } })
-    const post = vi.fn().mockResolvedValue({ data: {} })
+it('offers one work-scoped global pause before the first start', async () => {
+    const get = releaseResponses(releasedTest, [{ ...attemptRows[0], status: 'not_started', started_at: null }])
+    const post = vi.fn().mockResolvedValue({ data: { data: { tests: [{
+        ...releasedTest, paused_at: '2026-10-29T10:00:00Z', can_pause: false, management_action: 'resume',
+    }] } } })
     vi.stubGlobal('axios', { get, post })
-    const wrapper = mount(WorkDeliveryStatus, { props: { work }, global: {
-        plugins: [createTestingPinia({ createSpy: vi.fn })], stubs: {
-            'v-btn': { template: '<button><slot /></button>' },
-            'v-dialog': { props: ['modelValue'], template: '<section v-if="modelValue" role="dialog"><slot /></section>' },
-        },
-    } })
+    const wrapper = renderRelease()
     try {
-        await wrapper.get('[aria-label="Aufgaben im Schülerbereich bereitgestellt"]').trigger('click'); await flushPromises()
-        await wrapper.findAll('button').find(button => button.text() === 'Alle pausieren · MC E-Mails')!.trigger('click'); await flushPromises()
-        expect(post.mock.calls[0][0]).toContain('/4/pause')
-        expect(wrapper.text()).toContain('Alle fortsetzen · MC E-Mails')
-        expect(wrapper.text()).toContain('können ihn derzeit weder starten noch fortsetzen')
+        await wrapper.get('[aria-label="Aufgaben im Schülerbereich bereitgestellt"]').trigger('click')
+        await flushPromises()
+        expect(wrapper.findAll('button').filter(button => button.text() === 'MC-Test pausieren')).toHaveLength(1)
+        await releaseButton(wrapper, 'MC-Test pausieren').trigger('click')
+        await flushPromises()
+        expect(post).toHaveBeenCalledExactlyOnceWith(expect.stringContaining('/64/student-distribution/test-action'), {
+            action: 'pause', test_id: 4, expected_version: releasedWork.student_distribution_version, expected_test_version: releasedTest.pause_version,
+        })
+        expect(releaseButton(wrapper, 'MC-Test fortsetzen')).toBeDefined()
+        expect(releaseButton(wrapper, 'Freigabe pausieren')).toBeDefined()
     } finally { wrapper.unmount() }
 })
 
-it('offers individual controls and requires confirmation before resetting all attempts', async () => {
-    const work = { id: 64, teaching_course_id: 16, title: 'Aufgabe', date_for_all_groups: '2026-10-20', groups: [{ student_ids: [12, 13] }], status: {
-        student_distribution: { published_at: '2026-10-28T12:00:00Z', student_ids: [12, 13] },
-        multiple_choice_tests: { '2026-10-20': { test_id: 4 } },
-    } }
-    const test = { id: 4, title: 'MC E-Mails', status: 'published' }
-    const attempts = [{ id: 1, student_id: 12, status: 'in_progress', control_revision: 'a'.repeat(64) },
-        { id: 2, student_id: 13, status: 'timeout', completed_at: '2026-10-29T09:00:00Z', control_revision: 'b'.repeat(64) }]
-    let paused = false
-    const get = vi.fn().mockImplementation(async () => ({ data: { test, attempts: attempts.map(attempt => attempt.id === 1
-        ? { ...attempt, individual_paused_at: paused ? '2026-10-29T10:00:00Z' : null } : attempt) } }))
-    const post = vi.fn().mockImplementation(async (_url, payload) => { if (payload.action === 'pause') paused = true; return { data: {} } })
+it('limits individual controls to the linked test and confirms the reset in the same dialog', async () => {
+    const attempts = attemptRows.map(attempt => ({ ...attempt, individual_paused_at: null as string | null }))
+    const get = releaseResponses(releasedTest, attempts)
+    const post = vi.fn().mockImplementation(async (_url, payload) => {
+        if (payload.action === 'pause') attempts[0].individual_paused_at = '2026-10-29T10:00:00Z'
+        return { data: {} }
+    })
     vi.stubGlobal('axios', { get, post })
-    const pinia = createTestingPinia({ createSpy: vi.fn })
-    useCourseStore(pinia).selected_course = { id: 16, students_info: [{ user_id: 12, first_name: 'Ada', last_name: 'Alpha' },
-        { user_id: 13, first_name: 'Ben', last_name: 'Beta' }] } as never
-    const wrapper = mount(WorkDeliveryStatus, { props: { work }, global: { plugins: [pinia], stubs: {
-        'v-btn': { props: ['disabled', 'ariaLabel'], template: '<button :disabled="disabled" :aria-label="ariaLabel"><slot /></button>' },
-        'v-dialog': { props: ['modelValue'], template: '<section v-if="modelValue" role="dialog"><slot /></section>' },
-    } } })
+    const wrapper = renderRelease()
     try {
-        await wrapper.get('[aria-label="Aufgaben im Schülerbereich bereitgestellt"]').trigger('click'); await flushPromises()
-        expect(wrapper.get('[aria-label="Pausieren: Alpha Ada · MC E-Mails"]').text()).toContain('mdi-pause-circle-outline')
-        expect(wrapper.get('[aria-label="Zurücksetzen: Alpha Ada · MC E-Mails"]').text()).toContain('mdi-backup-restore')
-        await wrapper.get('[aria-label="Pausieren: Alpha Ada · MC E-Mails"]').trigger('click'); await flushPromises()
+        await wrapper.get('[aria-label="Aufgaben im Schülerbereich bereitgestellt"]').trigger('click')
+        await flushPromises()
+        await expandStudents(wrapper)
+        await wrapper.get('[aria-label="Pausieren: Alpha Ada · MC Dateimanagement"]').trigger('click')
+        await flushPromises()
         expect(post).toHaveBeenCalledWith(expect.stringContaining('/4/attempts/control'), { action: 'pause', attempt_ids: [1] })
-        expect(wrapper.get('[aria-label="Fortsetzen: Alpha Ada · MC E-Mails"]').text()).toContain('mdi-play-circle-outline')
-        await wrapper.findAll('button').find(button => button.text() === 'Alle zurücksetzen · MC E-Mails')!.trigger('click')
+        expect(wrapper.find('[aria-label="Fortsetzen: Alpha Ada · MC Dateimanagement"]').exists()).toBe(true)
+        expect(wrapper.find('[aria-label="Pausieren: Beta Ben · MC Dateimanagement"]').exists()).toBe(false)
+        await wrapper.get('[aria-label="Zurücksetzen: Alpha Ada · MC Dateimanagement"]').trigger('click')
         expect(post).toHaveBeenCalledTimes(1)
-        const dialog = wrapper.findAll('[role="dialog"]').find(item => item.text().includes('MC-Test zurücksetzen?'))!
-        expect(dialog.text()).toContain('Alle 2 Versuche')
-        await dialog.findAll('button').find(button => button.text() === 'Zurücksetzen')!.trigger('click'); await flushPromises()
-        expect(post).toHaveBeenLastCalledWith(expect.stringContaining('/4/attempts/control'), { action: 'reset', attempt_ids: [1, 2],
-            expected: { 1: 'a'.repeat(64), 2: 'b'.repeat(64) }, all: true, confirmed: true })
+        expect(wrapper.findAll('[role="dialog"]')).toHaveLength(1)
+        await releaseButton(wrapper, 'Versuch zurücksetzen').trigger('click')
+        await flushPromises()
+        expect(post).toHaveBeenLastCalledWith(expect.stringContaining('/4/attempts/control'), { action: 'reset', attempt_ids: [1],
+            expected: { 1: attemptRows[0].control_revision }, confirmed: true })
+        expect(wrapper.findAll('.release-test__more')).toHaveLength(0)
     } finally { wrapper.unmount() }
 })
 
@@ -311,9 +373,9 @@ it('places preparation and student release inside the preparation icon dialog', 
 })
 
 it('allows submission collection after portal publication without email preparation or dispatch', async () => {
-    const wrapper = mount(WorkDeliveryStatus, { props: { work: { id: 64, title: 'Aufgabe', groups: [{ student_ids: [12] }], status: {
-        student_distribution: { published_at: '2026-10-28T12:00:00Z', student_ids: [12] },
-    } } }, global: {
+    const work = { ...releasedWork, status: { ...releasedWork.status, multiple_choice_tests: {} } }
+    vi.stubGlobal('axios', { get: vi.fn().mockResolvedValue({ data: { data: work } }) })
+    const wrapper = mount(WorkDeliveryStatus, { props: { work }, global: {
         plugins: [createTestingPinia({ createSpy: vi.fn })],
         stubs: { 'v-textarea': true, 'v-file-input': true, 'v-checkbox': true,
             'v-btn': { props: ['disabled'], template: '<button :disabled="disabled"><slot /></button>' },
@@ -323,7 +385,8 @@ it('allows submission collection after portal publication without email preparat
         expect(wrapper.find('[data-workflow-stage="preparation"]').exists()).toBe(false)
         expect(wrapper.find('[data-workflow-stage="send"]').exists()).toBe(false)
         await wrapper.get('[aria-label="Aufgaben im Schülerbereich bereitgestellt"]').trigger('click')
-        expect(wrapper.text()).toContain('Im Schülerbereich bereitgestellt')
+        await flushPromises()
+        expect(wrapper.text()).toContain('Im Schülerbereich freigegeben')
         await wrapper.findAll('button').find(button => button.text() === 'Schließen')!.trigger('click')
         expect(wrapper.get('[data-workflow-stage="collection"]').attributes('disabled')).toBeUndefined()
         await wrapper.get('[data-workflow-stage="collection"]').trigger('click')
@@ -544,7 +607,7 @@ it('offers reversible manual completion for all six steps in order', async () =>
     } finally { wrapper.unmount() }
 })
 
-it('saves a reversible manual dispatch completion and unlocks collection without claiming sent mail', async () => {
+it('saves a reversible dispatch marker and exposes the status without enabling collection', async () => {
     const work = { id: 64, teaching_course_id: 16, title: 'Übung', groups: [{ student_ids: [1] }], status: { email_preparation_completed: true } }
     const saved = { ...work, status: { ...work.status, task_dispatch_completed: true } }
     const put = vi.fn().mockResolvedValueOnce({ data: { data: saved } })
@@ -565,7 +628,7 @@ it('saves a reversible manual dispatch completion and unlocks collection without
         await wrapper.setProps({ work: saved })
         expect(wrapper.get('[data-workflow-stage="collection"]').element.disabled).toBe(false)
         await wrapper.get('[aria-label="E-Mail-Versand: manuell erledigt"]').trigger('click')
-        expect(wrapper.get('[role="dialog"]').text()).toContain('Nächster Schritt: Abgaben einsammeln.')
+        expect(wrapper.get('[role="dialog"]').text()).toContain('erst nach „Freigabe beenden“')
         expect(wrapper.get('[role="dialog"]').text()).toContain('bestätigt keinen E-Mail-Versand')
         expect(wrapper.get('[role="dialog"]').text()).not.toContain('Nachrichten bestätigt')
         await wrapper.findAll('button').find(button => button.text() === 'Markierung aufheben')!.trigger('click')
