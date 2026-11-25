@@ -550,6 +550,63 @@ test('new task preparation defaults to locked access until an explicit release',
     Notification::assertNothingSent();
 });
 
+test('the task list shows only the personal released result and removes it again after withdrawal', function (string $mode, string $grade): void {
+    $this->year->update(['concerns' => '2026/27']);
+    $scope = ['school_id' => $this->school->id, 'schoolyear_id' => $this->year->id, 'user_id' => $this->teacher->id];
+    $area = TeachingEntryArea::factory()->create($scope);
+    TeachingEntryDefinition::factory()->create($scope + ['teaching_entry_area_id' => $area->id,
+        'short_name' => 'TW', 'category' => 'Benotung', 'has_properties' => true, 'properties_mode' => $mode,
+        'maximum_points' => $mode === 'points' ? 35 : null]);
+    $this->course->update(['teaching_entry_area_id' => $area->id]);
+    $pdfBytes = '%PDF-1.4 personal report';
+    $reports = [];
+    foreach ([[null, 'overview.pdf'], [$this->student->id, 'personal.pdf'], [$this->peer->id, 'missing.pdf']] as [$studentId, $name]) {
+        $sha256 = hash('sha256', $name);
+        $path = "teaching/work_evaluations/{$this->school->id}/{$this->work->id}/{$sha256}.pdf";
+        if ($studentId !== $this->peer->id) {
+            Storage::disk('local')->put($path, $pdfBytes);
+        }
+        $reports[] = ['student_id' => $studentId, 'name' => $name, 'sha256' => $sha256,
+            'file_path' => $path, 'storage_disk' => 'local', 'origin' => 'evaluation_import'];
+    }
+    $this->work->update(['type' => 'TW', 'groups' => [
+        ['student_ids' => [$this->student->id], 'comment' => 'Eigene Rückmeldung'],
+        ['student_ids' => [$this->peer->id], 'comment' => 'Weitere private Rückmeldung'],
+    ], 'status' => [
+        'grade_visibility' => ['visible' => false], 'evaluation_pdfs' => $reports, 'submission_method' => ['channel' => 'portal'],
+        'student_distribution' => ['student_ids' => [$this->student->id, $this->peer->id],
+            'published_at' => now()->toISOString(), 'instructions' => 'Aufgabentext', 'file_ids' => []],
+    ]]);
+    foreach ([[$this->student, $grade], [$this->peer, '2']] as [$student, $studentGrade]) {
+        $this->work->teachingCourseStudentEntries()->create(['teaching_course_id' => $this->course->id,
+            'user_id' => $student->id, 'type' => 'TW', 'grade' => $studentGrade, 'source' => 'course_work']);
+    }
+
+    $this->actingAs($this->student, 'web')->getJson($this->tasksUrl)->assertOk()
+        ->assertJsonPath('tasks.0.instructions', 'Aufgabentext')->assertJsonMissingPath('tasks.0.result');
+    $this->work->update(['status' => [...$this->work->status, 'grade_visibility' => ['visible' => true]]]);
+    $this->travelTo(CarbonImmutable::parse('2026-11-05 13:00', 'Europe/Vienna'));
+    $response = $this->getJson($this->tasksUrl)->assertOk()
+        ->assertJsonPath('tasks.0.can_submit', false)->assertJsonPath('tasks.0.result.comment', 'Eigene Rückmeldung')
+        ->assertJsonPath('tasks.0.result.points', $mode === 'points' ? 0 : null)
+        ->assertJsonPath('tasks.0.result.maximum_points', $mode === 'points' ? 35 : null)
+        ->assertJsonPath('tasks.0.result.grade', $mode === 'points' ? null : $grade)
+        ->assertJsonPath('tasks.0.result.evaluation_pdf', ['name' => 'personal.pdf', 'sha256' => $reports[1]['sha256']])
+        ->assertJsonMissingPath('tasks.0.result.evaluation_pdf.file_path');
+    expect($response->getContent())->not->toContain('Weitere private Rückmeldung', 'overview.pdf', 'missing.pdf');
+    $pdfUrl = "/api/homepage/student/courses/{$this->course->id}/works/{$this->work->id}/evaluations/{$reports[1]['sha256']}";
+    $this->get($pdfUrl)->assertOk()->assertStreamedContent($pdfBytes);
+    $this->getJson($this->tasksUrl.'?view=deadlines')->assertOk()->assertJsonMissingPath('tasks.0.result');
+
+    $this->actingAs($this->peer, 'web')->getJson($this->tasksUrl)->assertOk()
+        ->assertJsonPath('tasks.0.result.comment', 'Weitere private Rückmeldung')->assertJsonPath('tasks.0.result.evaluation_pdf', null);
+    $this->get($pdfUrl)->assertNotFound();
+    $this->work->update(['status' => [...$this->work->status, 'grade_visibility' => ['visible' => false]]]);
+    $this->actingAs($this->student, 'web')->getJson($this->tasksUrl)->assertOk()
+        ->assertJsonPath('tasks.0.instructions', 'Aufgabentext')->assertJsonMissingPath('tasks.0.result');
+    $this->get($pdfUrl)->assertNotFound();
+})->with(['0 points' => ['points', '0'], 'grade' => ['free', 'Gut']]);
+
 test('an announcement exposes the assigned date, confirmed exam points and course grading value', function (): void {
     $this->year->update(['concerns' => '2026/27']);
     $scope = ['school_id' => $this->school->id, 'schoolyear_id' => $this->year->id, 'user_id' => $this->teacher->id];
@@ -677,7 +734,8 @@ test('teachers can remove their prepared or paused distribution and revoke acces
     $this->get($download)->assertForbidden();
     $this->actingAs($this->student, 'web')->getJson($this->tasksUrl)->assertOk()->assertExactJson(['tasks' => [
         ['id' => $this->work->id, 'title' => 'Dateimanagement', 'status' => $released ? 'paused' : 'not_released', 'dates' => ['2026-10-28'],
-            'deadline' => ['date' => '2026-11-05', 'time' => '12:00'], 'assignment_kind' => 'worksheet', 'has_multiple_choice' => true, 'mc_points' => 2],
+            'deadline' => ['date' => '2026-11-05', 'time' => '12:00'], 'assignment_kind' => 'worksheet', 'has_multiple_choice' => true, 'mc_points' => 2,
+            'result' => ['points' => null, 'maximum_points' => null, 'grade' => '2', 'comment' => 'Feedback bleibt privat', 'evaluation_pdf' => null]],
     ]]);
     $this->get($download)->assertNotFound();
     if (! $released) {

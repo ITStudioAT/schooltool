@@ -1,14 +1,15 @@
 <template>
     <v-dialog v-model="import_open" persistent scrollable max-width="850">
         <v-card>
-            <v-card-title class="work-import-title text-wrap text-body-1 font-weight-bold px-4 py-3">{{ results_options ? 'Ergebnisse übernehmen' : 'Beurteilungen importieren' }} · {{ import_work?.title }}</v-card-title>
+            <v-card-title class="work-import-title text-wrap text-body-1 font-weight-bold px-4 py-3">{{ results_options && !results_options.automatic ? 'Ergebnisse übernehmen' : 'Beurteilungen importieren' }} · {{ import_work?.title }}</v-card-title>
             <v-card-text class="px-4 pt-0 pb-3">
+                <p v-if="results_options?.automatic" class="text-body-2 mb-2">Dropbox · {{ results_options.folder.name }}</p>
                 <p v-if="results_options" class="text-body-2 mb-2">Die Ergebnisse werden den Schülern dieser Arbeit zugeordnet. Prüfen Sie die Punkte und übernehmen Sie die Bewertungen.</p>
                 <v-alert v-if="results_options && results_simulation" type="warning" variant="tonal" class="mb-3">Simulation: Mit „Testbewertungen übernehmen“ werden Testpunkte, Kommentare und Auswertungs-PDFs in die lokalen Schülerbewertungen dieser Arbeit eingetragen.</v-alert>
                 <template v-if="!results_options">
                 <p class="text-caption mb-2">Ordner prüfen, Vorschau ansehen, Änderungen übernehmen.</p>
                 <p class="text-caption mb-2">Importiert wird die gespeicherte Arbeit. Ungespeicherte Änderungen werden verworfen.</p>
-                <WorkDropboxSource :work="import_work" :active="import_open" :busy="import_busy" @preview="previewDropbox(false)" @changed="json_preview = null; import_summary = null" />
+                <WorkDropboxSource v-if="!assessment_lookup_pending" :work="import_work" :active="import_open" :busy="import_busy" @preview="previewDropbox(false)" @changed="json_preview = null; import_summary = null" />
                 <v-file-input
                     v-if="!directory_access_supported"
                     v-model="import_files"
@@ -30,7 +31,7 @@
                     <p v-if="import_selection" class="work-import-selection mt-2">{{ import_selection }}</p>
                 </div>
                 </template>
-                <p v-if="import_busy" class="text-caption mt-2">{{ results_options ? 'Ergebnisse prüfen …' : deadline_saving ? 'Abgabefrist speichern …' : import_source === 'dropbox' ? 'Dropbox-Dateien prüfen …' : 'Dateien prüfen …' }}</p>
+                <p v-if="import_busy" class="text-caption mt-2" role="status">{{ assessment_lookup_pending ? 'Prüfungsordner prüfen …' : results_options ? 'Ergebnisse prüfen …' : deadline_saving ? 'Abgabefrist speichern …' : import_source === 'dropbox' ? 'Dropbox-Dateien prüfen …' : 'Dateien prüfen …' }}</p>
                 <v-alert v-if="import_error" type="error" variant="tonal" class="mt-2" density="compact">{{ import_error }}</v-alert>
                 <v-btn v-if="import_error && (results_options || json_uploads || import_source === 'dropbox')" class="mt-2" variant="outlined" size="small"
                     :disabled="import_busy" :loading="import_busy" @click="sendJson(false)">
@@ -141,6 +142,7 @@
                 </div>
             </v-card-text>
             <v-card-actions class="work-import-actions">
+                <v-btn v-if="results_options?.automatic" :disabled="import_busy" @click="openImport(import_work)">Andere Quelle wählen</v-btn>
                 <v-spacer />
                 <v-btn v-if="json_preview" color="primary" :disabled="import_busy || !json_preview.can_import" @click="applyJson">{{ results_options ? (results_simulation ? 'Testbewertungen übernehmen' : 'Ergebnisse übernehmen') : 'Angezeigte Änderungen übernehmen' }}</v-btn>
                 <v-btn :disabled="import_busy" @click="import_open = false">Schließen</v-btn>
@@ -181,7 +183,7 @@ import { workSimulationCollection } from '@/helpers/workProgress'
 import { assessmentTimeText, assessmentCompletionText } from '@/helpers/workAssessmentTimes'
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
 import { importFolder, importJson, update } from '@/actions/App/Http/Controllers/Admin/Teaching/CourseWorkController'
-import { importMethod as importDropbox } from '@/actions/App/Http/Controllers/Admin/Teaching/WorkDropboxController'
+import { importMethod as importDropbox, show as showDropbox } from '@/actions/App/Http/Controllers/Admin/Teaching/WorkDropboxController'
 import { loadWorkDropbox, workDropboxKey } from '@/helpers/workDropbox'
 import WorkDropboxSource from './WorkDropboxSource.vue'
 
@@ -189,7 +191,7 @@ export default {
     components: { WorkDropboxSource },
     emits: ['imported', 'deadline-updated'],
     data() {
-        return { results_options: null, results_simulation: false, import_open: false, import_work: null, import_busy: false, import_summary: null, import_error: '', import_selection: '', import_files: [], import_mode: 'markdown', import_source: 'upload', json_files: [], json_preview: null, json_uploads: null, directory_access_supported: supportsWorkImportDirectory(), pending_directory: null, deadline_error: '', deadline_saving: false }
+        return { results_options: null, results_simulation: false, assessment_lookup_pending: false, import_open: false, import_work: null, import_busy: false, import_summary: null, import_error: '', import_selection: '', import_files: [], import_mode: 'markdown', import_source: 'upload', json_files: [], json_preview: null, json_uploads: null, directory_access_supported: supportsWorkImportDirectory(), pending_directory: null, deadline_error: '', deadline_saving: false }
     },
     computed: {
         ...mapState(useCourseStore, ['selected_course']),
@@ -347,8 +349,8 @@ export default {
         },
         openImport(work, quick = false, results = null) {
             if (!this.isSelectedCourseWork(work) || this.import_busy) return
-            this.results_options = results
-            this.results_simulation = Boolean(results && workSimulationCollection(work))
+            this.results_options = results?.automatic ? null : results
+            this.results_simulation = Boolean(this.results_options && workSimulationCollection(work))
             this.import_work = work
             this.deadline_error = ''
             this.import_error = ''
@@ -362,8 +364,31 @@ export default {
             this.pending_directory = null
             this.import_source = 'upload'
             this.import_open = true
+            if (results?.automatic) return this.previewLinkedAssessment(results.date || work.date_for_all_groups || null)
             if (results) return this.previewResults(false)
             if (quick) return this.previewDropbox(false)
+        },
+        async previewLinkedAssessment(date) {
+            const work = this.import_work
+            this.assessment_lookup_pending = true
+            this.import_busy = true
+            try {
+                const { data } = await axios.get(showDropbox.url(work.id), {
+                    params: { include_exercise: 1, refresh: 1, ...(date ? { date } : {}) }, timeout: 45000,
+                })
+                if (!this.import_open || this.import_work !== work || !this.isSelectedCourseWork(work)) return
+                const exercise = data.exercise
+                if (data.folder || !data.module_link?.folder?.id || exercise?.status !== 'found'
+                    || exercise.deletion_pending || exercise.preparation?.status !== 'ready' || !exercise.folder?.id) return
+                this.results_options = { automatic: true, date: exercise.scheduled_date || date, folder: exercise.folder }
+            } catch {
+                // The regular folder selection remains available when the check fails.
+                return
+            } finally {
+                this.assessment_lookup_pending = false
+                this.import_busy = false
+            }
+            return this.previewResults(false)
         },
         resultPoints(row) {
             if (row.total_minor !== null) return `${this.minorPoints(row.total_minor)} / ${this.minorPoints(this.json_preview.maximum_minor)}`

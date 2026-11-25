@@ -17,6 +17,39 @@ vi.mock('@laravel/echo-vue', () => ({
 
 afterEach(() => vi.unstubAllGlobals())
 
+it('renders a released zero and personal PDF after the deadline and removes the result when the list is refreshed', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] })
+    vi.setSystemTime(new Date('2026-11-25T13:00:00Z'))
+    const sha256 = 'a'.repeat(64)
+    const task = { id: 12, title: 'Testarbeit', status: 'released', deadline: { date: '2026-11-24', time: '12:00' },
+        submission_method: { channel: 'portal' }, can_submit: false, files: [{ id: 'test-pdf', name: 'Aufgabe.pdf' }] }
+    const get = vi.fn().mockResolvedValueOnce({ data: { tasks: [{ ...task, result: { points: 0, maximum_points: 35,
+        comment: '<b>Eigene Rückmeldung</b>', evaluation_pdf: { name: 'Bericht.pdf', sha256 } } }] } })
+        .mockResolvedValueOnce({ data: { tasks: [task] } })
+    vi.stubGlobal('axios', { get })
+    const wrapper = mount(StudentCourseTasks, { props: { courseId: 4 } })
+    try {
+        await flushPromises()
+        const result = wrapper.get('[aria-label="Bewertung"]')
+        expect(result.text()).toContain('0 / 35 Punkte')
+        expect(result.text()).toContain('<b>Eigene Rückmeldung</b>')
+        expect(result.find('b').exists()).toBe(false)
+        expect(result.get('[href]').attributes('href')).toBe(`/api/homepage/student/courses/4/works/12/evaluations/${sha256}`)
+        expect(wrapper.get('[aria-label="Meine Abgabe"]').text()).toContain('Die Abgabe ist geschlossen.')
+
+        await wrapper.get('.task-heading-actions v-btn').trigger('click')
+        await vi.advanceTimersByTimeAsync(650)
+        await flushPromises()
+
+        expect(wrapper.find('[aria-label="Bewertung"]').exists()).toBe(false)
+        expect(wrapper.get('article').text()).toContain('Aufgabe.pdf')
+        expect(wrapper.get('[aria-label="Meine Abgabe"]').text()).toContain('Die Abgabe ist geschlossen.')
+    } finally {
+        wrapper.unmount()
+        vi.useRealTimers()
+    }
+})
+
 it('records a deliberate opening before showing the released task instructions', async () => {
     const post = vi.fn().mockResolvedValue({ data: { started: true } })
     const get = vi.fn().mockResolvedValue({ data: { tasks: [{ id: 12, title: 'Dateien', status: 'released',

@@ -187,6 +187,8 @@ import { exerciseOptions, prepareExercise } from '@/actions/App/Http/Controllers
 import { show as showExerciseRun, store as storeExerciseRun } from '@/actions/App/Http/Controllers/Admin/Teaching/TeachingAssessmentRunController'
 import { confirmCreatedWorkExercise, loadWorkExercise, workDropboxBinding, workDropboxKey, workDropboxStates, workExerciseCheck } from '@/helpers/workDropbox'
 import { useAdminStore } from '@/stores/admin/AdminStore'
+import { useSchoolHourStore } from '@/stores/admin/teaching/SchoolHourStore'
+import { activeCourseDateHours } from '@/helpers/courseDateHours'
 import { workLinkedMcTestTitle, workNeedsPreparation } from '@/helpers/workOverview'
 import { workAutomationEnabled } from '@/helpers/workAutomation'
 import { assessmentActivityLabel, observeAssessmentRun, pendingAssessmentRun, prepareAssessmentRequest, rememberAssessmentRequest,
@@ -200,6 +202,7 @@ import { createWorkCheckStream, useWorkCheckProgress } from './workCheckProgress
 const props = defineProps({ work: Object, course: Object, date: { type: String, default: '' }, disabled: Boolean, active: { type: Boolean, default: true }, hideFolderName: Boolean, hideActivator: Boolean, hideMcTest: Boolean, hideCheckTime: Boolean, checkProgress: Boolean, passiveStatus: Boolean, deadlineDraft: { type: Object, default: null } })
 const emit = defineEmits(['exercise-status', 'progress-checked', 'deadline-saved', 'check-busy', 'busy', 'assessment-recheck'])
 const admin = useAdminStore()
+const schoolHourStore = useSchoolHourStore()
 const assessmentKey = computed(() => workDropboxKey(admin.config?.user?.id, props.work))
 const activity = computed(() => workAssessmentActivity(admin.config?.user?.id, props.work))
 const current = computed(() => Boolean(props.work?.id && props.course?.id && String(props.work.teaching_course_id) === String(props.course.id)))
@@ -214,8 +217,9 @@ const deadlineTime = ref('')
 const deadlineError = ref('')
 const savingDeadline = ref(false)
 let pendingSavedDeadline = null
+const deadlineTimePattern = /^(?:[01]\d|2[0-3]):[0-5]\d$/
 const deadlineValid = computed(() => (!deadlineDate.value || /^\d{4}-\d{2}-\d{2}$/.test(deadlineDate.value))
-    && (!deadlineTime.value || (deadlineDate.value && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(deadlineTime.value))))
+    && (!deadlineTime.value || (deadlineDate.value && deadlineTimePattern.test(deadlineTime.value))))
 const dialogTitle = ref(null)
 const templateStatus = ref(null)
 const creationProgressTarget = ref(null)
@@ -304,6 +308,7 @@ let creationBinding = null
 let runTimer = null
 let exerciseSequence = 0
 let openingCheck = null
+let exerciseStateBinding = null
 const { state: checkProgressState, unavailable: progressUnavailable, start: startProgressPolling,
     update: updateProgress, finish: finishProgressPolling, reset: resetProgressPolling } = useWorkCheckProgress()
 const dialogBusy = computed(() => loading.value || templateLoading.value || selectionLoading.value
@@ -321,34 +326,52 @@ async function checkExercise(fresh = false, opening = false) {
     if (!fresh && opened.value && (loading.value || runInProgress.value)) return
     const operation = ++exerciseSequence
     const storedOnly = !fresh && props.passiveStatus
-    exerciseFolder.value = null
-    moduleLinked.value = false
-    opened.value = false
-    exerciseMessage.value = ''
-    checkedAt.value = null
     const key = workDropboxKey(admin.config?.user?.id, props.work)
-    const previousCheck = !fresh && openExerciseContext.value ? workExerciseCheck(key, props.work, props.date) : null
+    const requestContext = openExerciseContext.value
+    const shouldLoad = Boolean(key && requestContext && (needsPreparation.value || storedOnly))
+    if (storedOnly && !requestContext) {
+        exerciseChecking.value = false
+        return
+    }
+    const context = { userId: admin.config?.user?.id, workId: props.work?.id, courseId: props.course?.id, date: props.date }
+    const previous = exerciseState.value
+    const retainStoredStatus = storedOnly && previous && !previous.initialCheckPending && previous.status !== 'checking'
+        && previous.userId === context.userId && previous.workId === context.workId
+        && previous.courseId === context.courseId && previous.date === context.date
+        && exerciseStateBinding === workDropboxBinding(binding.value)
+    if (!retainStoredStatus) {
+        exerciseFolder.value = null
+        moduleLinked.value = false
+        opened.value = false
+        exerciseMessage.value = ''
+        checkedAt.value = null
+    }
+    const previousCheck = !fresh && requestContext ? workExerciseCheck(key, props.work, props.date) : null
     const verifyMissing = !props.passiveStatus && opening && needsPreparation.value && previousCheck?.status === 'missing'
         && Boolean(previousCheck.data.connected && previousCheck.data.module_link?.folder?.id)
     const cached = verifyMissing ? null : previousCheck
-    exerciseChecking.value = props.active && current.value && needsPreparation.value && !cached && (fresh || !props.passiveStatus)
-    const context = { userId: admin.config?.user?.id, workId: props.work?.id, courseId: props.course?.id, date: props.date }
+    exerciseChecking.value = shouldLoad && needsPreparation.value && !cached && (fresh || !props.passiveStatus)
+    let initialCheckPending = storedOnly && shouldLoad && !cached && !retainStoredStatus
     const publish = (status, folder = null, emailPreparation = null, emailDispatch = null, assignmentStatus = null, prepared = null, deletionPending = false) => {
+        exerciseStateBinding = workDropboxBinding(binding.value)
         checkedStatus.value = status
         exerciseState.value = { ...context, status, folder, emailPreparation, emailDispatch, assignmentStatus, preparation: prepared, checkedAt: checkedAt.value, checking: exerciseChecking.value,
+            ...(initialCheckPending ? { initialCheckPending: true } : {}),
             ...(deletionPending ? { deletionPending: true } : {}) }
         emit('exercise-status', exerciseState.value)
     }
     if (props.passiveStatus) moduleLinked.value = Boolean(binding.value?.connected && binding.value?.module_link?.folder?.id)
-    if (cached) {
-        checkedAt.value = cached.checkedAt
-        moduleLinked.value = Boolean(cached.data.connected && cached.data.module_link?.folder?.id)
-        exerciseFolder.value = cached.status === 'found' ? cached.folder : null
+    if (!retainStoredStatus) {
+        if (cached) {
+            checkedAt.value = cached.checkedAt
+            moduleLinked.value = Boolean(cached.data.connected && cached.data.module_link?.folder?.id)
+            exerciseFolder.value = cached.status === 'found' ? cached.folder : null
+        }
+        publish(cached ? cached.status : exerciseChecking.value ? 'checking' : storedOnly && shouldLoad ? 'unchecked' : 'unknown', cached?.folder,
+            cached?.data?.exercise?.email_preparation, cached?.data?.exercise?.email_dispatch, cached?.data?.exercise?.assignment_status, cached?.data?.exercise?.preparation, cached?.data?.exercise?.deletion_pending)
     }
-    publish(cached ? cached.status : exerciseChecking.value ? 'checking' : props.passiveStatus ? 'unchecked' : 'unknown', cached?.folder,
-        cached?.data?.exercise?.email_preparation, cached?.data?.exercise?.email_dispatch, cached?.data?.exercise?.assignment_status, cached?.data?.exercise?.preparation, cached?.data?.exercise?.deletion_pending)
-    if (!props.active || !current.value || (!needsPreparation.value && !storedOnly)) return
-    const openingRequest = verifyMissing || storedOnly ? { context: openExerciseContext.value } : null
+    if (!shouldLoad) return
+    const openingRequest = verifyMissing || storedOnly ? { context: requestContext } : null
     if (openingRequest) openingCheck = openingRequest
     const progressId = fresh ? crypto.randomUUID() : null
     let progressOperation = null
@@ -363,7 +386,8 @@ async function checkExercise(fresh = false, opening = false) {
         const recheck = fresh || verifyMissing
         const data = await loadWorkExercise(key, props.work, props.date, recheck, fresh ? props.deadlineDraft : null,
             fresh && props.checkProgress, progressId, stream, recheck, storedOnly)
-        if (operation !== exerciseSequence) return
+        if (operation !== exerciseSequence || requestContext !== openExerciseContext.value) return
+        initialCheckPending = false
         if (storedOnly) context.fromStoredProof = true
         if (fresh && data.progress) finalProgress = data.progress
         const savedWork = data.saved_work
@@ -386,15 +410,17 @@ async function checkExercise(fresh = false, opening = false) {
             if (!mcOnly.value) opened.value = false
             exerciseMessage.value = data.deadline_sync?.message || ''
         } else {
+            exerciseFolder.value = null
             publish(data.exercise?.status === 'missing' ? 'missing'
                 : storedOnly && !data.exercise?.checked_at ? 'unchecked' : 'unknown')
-            if (checkedStatus.value === 'unknown') {
-                exerciseMessage.value = data.exercise.message || 'Der Anlagezustand konnte nicht bestätigt werden.'
-            }
+            exerciseMessage.value = checkedStatus.value === 'unknown'
+                ? data.exercise?.message || 'Der Anlagezustand konnte nicht bestätigt werden.' : ''
         }
     } catch (failure) {
         progressFailed = true
-        if (operation === exerciseSequence) {
+        if (operation === exerciseSequence && requestContext === openExerciseContext.value) {
+            initialCheckPending = false
+            exerciseFolder.value = null
             checkedAt.value = workExerciseCheck(workDropboxKey(admin.config?.user?.id, props.work), props.work, props.date)?.checkedAt || null
             publish('unknown')
             exerciseMessage.value = Object.values(failure.response?.data?.errors || {}).flat()[0]
@@ -430,7 +456,7 @@ function clear() {
 function openDialog() {
     if (opened.value || !props.active || !needsPreparation.value || !current.value || props.disabled
         || activity.value || exerciseChecking.value || checkedStatus.value === 'found') return
-    showPreparationDialog(false)
+    showPreparationDialog(false, true)
 }
 
 function openRunDialog() {
@@ -450,7 +476,35 @@ function openMcSelection() {
     showPreparationDialog(true)
 }
 
-function showPreparationDialog(onlyMc) {
+function assessmentDateForDeadline() {
+    const { work, date } = props
+    const dates = [...new Set([work.date_for_all_groups, ...(work.groups || []).map(group => group.date)].filter(Boolean))]
+    const scheduledDate = date || (dates.length === 1 ? dates[0] : '')
+    if (!dates.includes(scheduledDate) || !/^\d{4}-\d{2}-\d{2}$/.test(scheduledDate)) return ''
+
+    const parsedDate = new Date(`${scheduledDate}T00:00:00Z`)
+    return Number.isFinite(parsedDate.getTime()) && parsedDate.toISOString().slice(0, 10) === scheduledDate ? scheduledDate : ''
+}
+
+function initializeDeadline(suggestDeadline) {
+    const { deadlineDraft, work, course } = props
+    deadlineDate.value = deadlineDraft ? deadlineDraft.date || '' : work.finish_until_date?.slice(0, 10) || ''
+    deadlineTime.value = deadlineDraft ? deadlineDraft.time || '' : work.finish_until_time || ''
+    if (!suggestDeadline || deadlineDraft || work.status?.final_deadline_saved) return
+
+    const assessmentDate = assessmentDateForDeadline()
+    deadlineDate.value ||= assessmentDate
+    if (!assessmentDate || deadlineDate.value !== assessmentDate || deadlineTime.value) return
+
+    const hours = (course.course_dates || []).filter(courseDate => courseDate.date === assessmentDate).flatMap(activeCourseDateHours)
+    if (!hours.length) return
+
+    const lastHour = Math.max(...hours)
+    const endTime = schoolHourStore.school_hours.find(entry => Number(entry.hour) === lastHour)?.until?.slice(0, 5) || ''
+    if (deadlineTimePattern.test(endTime)) deadlineTime.value = endTime
+}
+
+function showPreparationDialog(onlyMc, suggestDeadline = false) {
     clear()
     mcOnly.value = onlyMc
     pendingRunRequest.value = onlyMc ? null : pendingAssessmentRun(assessmentKey.value)
@@ -465,8 +519,7 @@ function showPreparationDialog(onlyMc) {
     creationBinding = workDropboxBinding(binding.value)
     newTestSettings.value = null
     serverTestErrors.value = {}
-    deadlineDate.value = props.deadlineDraft ? props.deadlineDraft.date || '' : props.work?.finish_until_date?.slice(0, 10) || ''
-    deadlineTime.value = props.deadlineDraft ? props.deadlineDraft.time || '' : props.work?.finish_until_time || ''
+    initializeDeadline(suggestDeadline)
     opened.value = true
     nextTick(() => { if (opened.value) dialogTitle.value?.focus() })
     if (onlyMc) loadDialogData()
@@ -860,6 +913,7 @@ function applyRun(run) {
     exerciseFolder.value = done.folder
     checkedStatus.value = 'found'
     checkedAt.value = confirmedAt
+    exerciseStateBinding = creationBinding
     exerciseState.value = { userId, workId: props.work.id, courseId: props.course.id, date: props.date,
         status: 'found', folder: done.folder, preparation: prepared, checkedAt: confirmedAt, checking: false }
     emit('exercise-status', exerciseState.value)

@@ -9,6 +9,7 @@ use App\Models\TeachingCourse;
 use App\Models\TeachingCourseBehaviourEntry;
 use App\Models\TeachingCourseDate;
 use App\Models\TeachingCourseDateMaterialAttachment;
+use App\Models\TeachingCourseStudent;
 use App\Models\TeachingCourseWork;
 use App\Models\TeachingSchoolHour;
 use App\Models\User;
@@ -22,6 +23,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use RuntimeException;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -237,38 +239,12 @@ class CourseController extends Controller
             abort(404, 'Fach nicht gefunden');
         }
 
-        $studentData = $course->teachingCourseStudents()
-            ->forStudentAccount($auth_user, $active_schoolyear_id)
-            ->whereNull('canceled_at')
-            ->first();
-
-        if (! $studentData) {
-            abort(403, 'Sie sind nicht in diesem Fach eingeschrieben');
-        }
+        $studentData = $this->courseEnrollment($course, $auth_user);
 
         $showBehaviour = (bool) ($course->user?->teaching_show_behaviour ?? true);
         $studentGradeColumns = $this->teachingStudentGradeColumnsForCourse($course);
         $showSemesterGrade = $studentGradeColumns['show_semester_grade'];
         $showBehaviourGrade = $showBehaviour && $studentGradeColumns['show_behaviour_grade'];
-
-        // Get notifications (TeachingCourseBehaviourEntry where kind == 'notification')
-        $notifications = TeachingCourseBehaviourEntry::where('teaching_course_id', $course->id)
-            ->where('user_id', $auth_user->id)
-            ->where('kind', 'notification')
-            ->orderBy('date', 'desc')
-            ->orderBy('id', 'desc')
-            ->get()
-            ->map(function ($notification) {
-                return [
-                    'id' => $notification->id,
-                    'date' => $notification->date?->format('Y-m-d'),
-                    'due_date' => $notification->due_date?->format('Y-m-d'),
-                    'done_date' => $notification->done_date?->format('Y-m-d'),
-                    'description' => $notification->description,
-                    'type' => $notification->type,
-                    'is_open' => ! $notification->done_date,
-                ];
-            });
 
         // Get behaviour entries (TeachingCourseBehaviourEntry where kind == 'behaviour')
         $behaviourEntries = $showBehaviour
@@ -373,7 +349,8 @@ class CourseController extends Controller
             'behaviour_1_grade' => $showBehaviourGrade ? $studentData->behaviour_1_grade : null,
             'behaviour_2_grade' => $showBehaviourGrade ? $studentData->behaviour_2_grade : null,
             'behaviour_grade' => $showBehaviourGrade ? $studentData->behaviour_grade : null,
-            'notifications' => $notifications->concat($this->workResultNotices($course, $auth_user))->sortByDesc('date')->values(),
+            'notifications' => $this->courseNotificationsWithReadState($course, $auth_user),
+            'can_mark_notifications_read' => $parentAccess->authenticatedStudent()?->is($auth_user) === true,
             'behaviour_entries' => $behaviourEntries,
             'show_behaviour' => $showBehaviour,
             'course_dates' => $courseDates,
@@ -386,6 +363,69 @@ class CourseController extends Controller
         ])->header('Cache-Control', 'private, no-store');
     }
 
+    public function markNotificationRead(int $courseId, string $notificationKey, ParentStudentAccessService $parentAccess): JsonResponse
+    {
+        $student = $parentAccess->authenticatedStudent();
+        abort_unless($student, 403);
+        $yearId = SchoolTool::where('school_id', $student->school_id)->value('active_schoolyear_id') ?? $student->schoolyear_id;
+        $course = TeachingCourse::query()->where('school_id', $student->school_id)->where('schoolyear_id', $yearId)->findOrFail($courseId);
+        $this->courseEnrollment($course, $student);
+        abort_unless($this->courseNotifications($course, $student)
+            ->contains(fn (array $notification): bool => $notification['read_key'] === $notificationKey), 404);
+
+        $identity = ['teaching_course_id' => $course->id, 'user_id' => $student->id, 'notification_key' => $notificationKey];
+        DB::table('teaching_course_notification_reads')->insertOrIgnore($identity + ['read_at' => now()->utc()]);
+        $readAt = DB::table('teaching_course_notification_reads')->where($identity)->value('read_at');
+        abort_unless($readAt, 404);
+
+        return response()->json(['read_at' => CarbonImmutable::parse($readAt, 'UTC')->toISOString()])
+            ->header('Cache-Control', 'private, no-store');
+    }
+
+    private function courseEnrollment(TeachingCourse $course, User $student): TeachingCourseStudent
+    {
+        $enrollment = $course->teachingCourseStudents()->forStudentAccount($student, $course->schoolyear_id)
+            ->whereNull('canceled_at')->first();
+        abort_unless($enrollment, 403, 'Sie sind nicht in diesem Fach eingeschrieben');
+
+        return $enrollment;
+    }
+
+    private function courseNotificationsWithReadState(TeachingCourse $course, User $student): Collection
+    {
+        $notifications = $this->courseNotifications($course, $student);
+        if ($notifications->isEmpty()) {
+            return $notifications;
+        }
+        $readTimes = DB::table('teaching_course_notification_reads')->where('teaching_course_id', $course->id)
+            ->where('user_id', $student->id)->whereIn('notification_key', $notifications->pluck('read_key'))
+            ->pluck('read_at', 'notification_key');
+
+        return $notifications->map(function (array $notification) use ($readTimes): array {
+            $readAt = $readTimes->get($notification['read_key']);
+            $notification['read_at'] = $readAt === null ? null : CarbonImmutable::parse($readAt, 'UTC')->toISOString();
+            $notification['is_open'] = $notification['is_open'] && $readAt === null;
+
+            return $notification;
+        });
+    }
+
+    private function courseNotifications(TeachingCourse $course, User $student): Collection
+    {
+        return TeachingCourseBehaviourEntry::query()->where('teaching_course_id', $course->id)->where('user_id', $student->id)
+            ->where('kind', 'notification')->orderByDesc('date')->orderByDesc('id')->get()
+            ->map(fn (TeachingCourseBehaviourEntry $notification): array => [
+                'id' => $notification->id,
+                'read_key' => hash('sha256', 'course-notification-'.$notification->id),
+                'date' => $notification->date?->format('Y-m-d'),
+                'due_date' => $notification->due_date?->format('Y-m-d'),
+                'done_date' => $notification->done_date?->format('Y-m-d'),
+                'description' => $notification->description,
+                'type' => $notification->type,
+                'is_open' => ! $notification->done_date,
+            ])->concat($this->workResultNotices($course, $student))->sortByDesc('date')->values();
+    }
+
     private function workResultNotices(TeachingCourse $course, User $student): Collection
     {
         return $course->teachingCourseWorks()->whereJsonContains('status->grade_visibility->student_notice->student_ids', (int) $student->id)
@@ -396,6 +436,7 @@ class CourseController extends Controller
                 && $work->teachingCourseStudentEntries->contains(fn ($entry): bool => $work->hasResultForEntry($entry)))
             ->map(fn (TeachingCourseWork $work): array => [
                 'id' => 'work-result-'.$work->id,
+                'read_key' => hash('sha256', 'work-result-'.$work->id.'|'.$work->status['grade_visibility']['student_notice']['changed_at']),
                 'date' => CarbonImmutable::parse($work->status['grade_visibility']['student_notice']['changed_at'])->timezone('Europe/Vienna')->toDateString(),
                 'type' => 'Bewertung',
                 'description' => 'Deine Bewertung'.(filled($work->title) ? ' zu „'.$work->title.'“' : '').' ist unter „Leistungen“ verfügbar.',

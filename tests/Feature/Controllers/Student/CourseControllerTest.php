@@ -10,11 +10,13 @@ use App\Models\TeachingCourseBehaviourEntry;
 use App\Models\TeachingCourseDate;
 use App\Models\TeachingCourseDateMaterial;
 use App\Models\TeachingCourseDateMaterialAttachment;
+use App\Models\TeachingCourseWork;
 use App\Models\TeachingHoliday;
 use App\Models\TeachingSchoolHour;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\Models\Role;
 
@@ -76,6 +78,61 @@ beforeEach(function () {
         'short' => 'TT',
     ]);
     $this->teacher->assignRole('teacher');
+});
+
+test('explicit reading persists independently for each recipient and keeps sender notices intact', function (): void {
+    $course = TeachingCourse::factory()->create(['school_id' => $this->school->id,
+        'schoolyear_id' => $this->activeSchoolyear->id, 'user_id' => $this->teacher->id]);
+    foreach ([$this->studentA, $this->studentB] as $student) {
+        $course->teachingCourseStudents()->create(['user_id' => $student->id]);
+    }
+    $legacy = TeachingCourseBehaviourEntry::query()->create(['teaching_course_id' => $course->id, 'user_id' => $this->studentA->id,
+        'kind' => 'notification', 'type' => 'Info', 'description' => 'Nur für den eigenen Empfänger', 'date' => '2026-10-04', 'due_date' => '2026-10-08']);
+    TeachingCourseBehaviourEntry::query()->create(['teaching_course_id' => $course->id, 'user_id' => $this->studentA->id,
+        'kind' => 'notification', 'type' => 'Info', 'description' => 'Bisher erledigt', 'date' => '2026-10-02', 'done_date' => '2026-10-03']);
+    $workStatus = ['grade_visibility' => ['visible' => true, 'student_notice' => ['student_ids' => [$this->studentA->id, $this->studentB->id],
+        'changed_at' => '2026-10-06T08:00:00.000000Z', 'changed_by' => $this->teacher->id]]];
+    $work = TeachingCourseWork::factory()->create(['teaching_course_id' => $course->id, 'title' => 'Testarbeit', 'type' => 'TW', 'status' => $workStatus]);
+    $savedWorkStatus = $work->fresh()->status;
+    foreach ([$this->studentA, $this->studentB] as $student) {
+        $work->teachingCourseStudentEntries()->create(['teaching_course_id' => $course->id, 'user_id' => $student->id,
+            'type' => 'TW', 'grade' => '0', 'source' => 'course_work']);
+    }
+    $courseUrl = "/api/homepage/student/courses/{$course->id}";
+
+    $notices = $this->actingAs($this->studentA, 'web')->getJson($courseUrl)->assertOk()
+        ->assertJsonPath('course.can_mark_notifications_read', true)->assertJsonCount(3, 'course.notifications')
+        ->assertJsonPath('course.notifications.0.date', '2026-10-06')->assertJsonPath('course.notifications.0.type', 'Bewertung')
+        ->assertJsonPath('course.notifications.0.is_open', true)->assertJsonPath('course.notifications.1.is_open', true)
+        ->assertJsonPath('course.notifications.2.is_open', false)->json('course.notifications');
+    $workReadUrl = "{$courseUrl}/notifications/{$notices[0]['read_key']}/read";
+    $legacyReadUrl = "{$courseUrl}/notifications/{$notices[1]['read_key']}/read";
+    $this->getJson($courseUrl)->assertJsonPath('course.notifications.0.read_at', null);
+    expect(DB::table('teaching_course_notification_reads')->count())->toBe(0);
+
+    $readAt = $this->patchJson($workReadUrl)->assertOk()->json('read_at');
+    expect($readAt)->toBeString();
+    $this->travel(5)->minutes();
+    $this->patchJson($workReadUrl)->assertOk()->assertJsonPath('read_at', $readAt);
+    expect(DB::table('teaching_course_notification_reads')->count())->toBe(1);
+    $this->patchJson($legacyReadUrl)->assertOk();
+    $this->getJson($courseUrl)->assertOk()->assertJsonCount(3, 'course.notifications')
+        ->assertJsonPath('course.notifications.0.is_open', false)->assertJsonPath('course.notifications.0.read_at', $readAt)
+        ->assertJsonPath('course.notifications.1.is_open', false)->assertJsonPath('course.notifications.1.due_date', '2026-10-08');
+    expect($legacy->fresh()->done_date)->toBeNull()
+        ->and($work->fresh()->status)->toBe($savedWorkStatus);
+
+    $this->actingAs($this->studentB, 'web')->getJson($courseUrl)->assertOk()->assertJsonCount(1, 'course.notifications')
+        ->assertJsonPath('course.notifications.0.is_open', true)->assertJsonPath('course.notifications.0.read_at', null);
+    $this->patchJson($legacyReadUrl)->assertNotFound();
+    $this->patchJson($workReadUrl)->assertOk();
+    expect(DB::table('teaching_course_notification_reads')->count())->toBe(3);
+
+    $workStatus['grade_visibility']['student_notice']['changed_at'] = '2026-10-07T08:00:00.000000Z';
+    $work->update(['status' => $workStatus]);
+    $this->patchJson($workReadUrl)->assertNotFound();
+    $this->getJson($courseUrl)->assertJsonPath('course.notifications.0.is_open', true)
+        ->assertJsonPath('course.notifications.0.date', '2026-10-07');
 });
 
 test('index returns only enrolled courses from active schoolyear', function () {

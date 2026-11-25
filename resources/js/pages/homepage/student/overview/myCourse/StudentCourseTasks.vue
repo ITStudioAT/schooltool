@@ -92,6 +92,18 @@
                     </div>
                     <StudentWorkSubmission :task="task" :course-id="courseId" :expired="submissionExpired(task)"
                         @saved="task.submission_files = $event" @refresh="refreshTasks" />
+                    <section v-if="task.result" class="task-result" aria-label="Bewertung">
+                        <h4>Bewertung</h4>
+                        <p v-if="Number.isFinite(task.result.points)" class="task-result-value">
+                            {{ Number.isFinite(task.result.maximum_points) ? `${pointsFormat.format(task.result.points)} / ${pointsLabel(task.result.maximum_points)}`
+                                : pointsLabel(task.result.points) }}
+                        </p>
+                        <p v-else-if="task.result.grade" class="task-result-value">{{ task.result.grade }}</p>
+                        <p v-if="task.result.comment" class="task-instructions">{{ task.result.comment }}</p>
+                        <v-btn v-if="task.result.evaluation_pdf" class="mt-2" min-height="44" variant="tonal"
+                            prepend-icon="mdi-file-pdf-box" :href="resultPdfUrl(task)" :title="task.result.evaluation_pdf.name"
+                            target="_blank" rel="noopener">Auswertung (PDF)</v-btn>
+                    </section>
                 </article>
             </div>
         </template>
@@ -120,6 +132,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { configureEcho, echo, echoIsConfigured } from '@laravel/echo-vue'
 import { resolveAdminEchoConfig } from '@/apps/adminEchoConfig'
 import { download, index, start } from '@/actions/App/Http/Controllers/Student/CourseWorkTaskController'
+import { evaluationPdf } from '@/actions/App/Http/Controllers/Student/CourseStudentEntryController'
 import { workDeadlineExpired } from '@/helpers/date'
 import CurriculumPdfPreview from '@/pages/admin/teaching/curricula/CurriculumPdfPreview.vue'
 import StudentWorkSubmission from './StudentWorkSubmission.vue'
@@ -267,6 +280,10 @@ function dateLabel(value) {
 const pointsFormat = new Intl.NumberFormat('de-AT', { maximumFractionDigits: 2 })
 function pointsLabel(value) {
     return `${pointsFormat.format(value)} ${value === 1 ? 'Punkt' : 'Punkte'}`
+}
+
+function resultPdfUrl(task) {
+    return evaluationPdf.url({ courseId: props.courseId, course_work: task.id, sha256: task.result.evaluation_pdf.sha256 })
 }
 
 async function load(preserveTasks = false) {
@@ -454,8 +471,10 @@ onBeforeUnmount(() => {
 .task-announcement-details dd { font-weight: 700; }
 .task-deadline-expired { color: #9a2525; font-size: .78rem; }
 .task-description { padding: 0 24px 22px; }
-.task-description h4, .task-materials h4 { color: #53617a; font-size: .8rem; font-weight: 800; margin-bottom: 7px; }
+.task-description h4, .task-materials h4, .task-result h4 { color: #53617a; font-size: .8rem; font-weight: 800; margin-bottom: 7px; }
 .task-instructions { white-space: pre-wrap; overflow-wrap: anywhere; }
+.task-result { padding: 18px 24px 22px; border-top: 1px solid #e7ecf5; }
+.task-result-value { color: #18243b; font-weight: 800; }
 .task-materials { padding: 18px 24px 22px; background: #f8faff; border-top: 1px solid #e7ecf5; }
 .task-actions { display: flex; flex-wrap: wrap; gap: 10px; }
 .task-action.v-btn { height: auto; min-height: 60px; max-width: 100%; padding: 11px 14px; border-radius: 12px; letter-spacing: normal; text-transform: none; }
@@ -474,7 +493,7 @@ onBeforeUnmount(() => {
     .task-card-header { align-items: stretch; flex-direction: column; gap: 14px; padding: 18px; }
     .task-announcement-details { padding: 0 18px 18px; }
     .task-description { padding: 0 18px 18px; }
-    .task-materials { padding: 16px 18px 18px; }
+    .task-materials, .task-result { padding: 16px 18px 18px; }
     .task-actions { flex-direction: column; }
     .task-action.v-btn { width: 100%; }
     .task-action-text { flex: 1; }

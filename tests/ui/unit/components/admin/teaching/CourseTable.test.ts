@@ -184,12 +184,13 @@ describe('CourseTable manual work completion', () => {
         const second = { ...first, id: 66, title: 'Zweite Arbeit', status: { custom: 'zweite' } }
         works.courseWorks = [first, second] as never
         const wrapper = mount(CourseTable, { ...(attachToBody ? { attachTo: document.body } : {}), props: { view: 'entries' }, global: {
-            plugins: [pinia, createVuetify({ components: { VBtn, VBtnToggle } })],
-            components: { 'v-btn': VBtn, 'v-btn-toggle': VBtnToggle }, stubs: {
+            plugins: [pinia, createVuetify({ components: { VBtn, VBtnToggle, VTextField } })],
+            components: { 'v-btn': VBtn, 'v-btn-toggle': VBtnToggle, ...(renderActionButtons ? { 'v-text-field': VTextField } : {}) }, stubs: {
                 ItsGridBox: { template: '<div><slot /></div>' }, WorkEvaluationImport: true,
                 WorkImportActions: true, WorkAiExport: true, WorkEvaluationPdf: true, WorkDropboxSource: true,
                 CourseStudentNotes: true, CourseStudentIndicators: true, CurriculumPdfPreview: true, ItsRichTextEditor: true,
                 'v-btn': renderActionButtons ? { template: '<button><slot /></button>' } : false, VBtn: false,
+                ...(renderActionButtons ? { 'v-text-field': false, VTextField: false } : {}),
                 'v-btn-toggle': false, VBtnToggle: false, 'v-tab': true, 'v-tabs': true, 'v-textarea': true,
                 'v-date-input': renderActionButtons ? { name: 'DeadlineDateInput', template: '<div />' } : true,
                 'v-list-subheader': true, 'v-divider': true, 'v-checkbox': true, 'v-switch': true,
@@ -198,6 +199,113 @@ describe('CourseTable manual work completion', () => {
         } })
         return { wrapper, works, courses, date, first, second }
     }
+
+    describe('horizontal mouse navigation', () => {
+        async function mountScrollableCourseTable(view: string) {
+            const { wrapper, courses, date } = mountCompletionTable()
+            const student = { id: 901, user_id: 12, first_name: 'Ada', last_name: 'Test' }
+            courses.selected_course.students_info = [student] as never
+            await wrapper.setProps({ view })
+            await flushPromises()
+
+            const scroll = wrapper.get('.course-table-scroll').element as HTMLElement
+            const capturePointer = vi.fn()
+            Object.defineProperties(scroll, {
+                clientWidth: { value: 400 },
+                scrollWidth: { value: 1200 },
+                setPointerCapture: { value: capturePointer },
+            })
+            return { wrapper, scroll, capturePointer, student, date, cell: wrapper.get('.course-table-entry-cell').element }
+        }
+
+        function pointer(target: Element, type: string, options: PointerEventInit = {}) {
+            target.dispatchEvent(new PointerEvent(type, {
+                bubbles: true, cancelable: true, pointerId: 1, pointerType: 'mouse', buttons: 1,
+                clientX: 150, clientY: 80, ...options,
+            }))
+        }
+
+        function mouseClick(target: Element) {
+            return target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 1 }))
+        }
+
+        it.each([
+            ['entries', 'openEntryDialog'],
+            ['attendance', 'toggleStudentAttendance'],
+        ])('scrolls with a horizontal drag and preserves ordinary cell clicks in the %s view', async (view, cellAction) => {
+            const { wrapper, scroll, capturePointer, student, date, cell } = await mountScrollableCourseTable(view)
+            const activateCell = vi.spyOn(wrapper.vm as any, cellAction).mockImplementation(() => {})
+            try {
+                pointer(cell, 'pointerdown')
+                pointer(cell, 'pointermove', { clientX: 147 })
+                expect(scroll.scrollLeft).toBe(0)
+                expect(capturePointer).not.toHaveBeenCalled()
+                pointer(cell, 'pointerup', { buttons: 0 })
+                expect(mouseClick(cell)).toBe(true)
+                expect(activateCell).toHaveBeenCalledExactlyOnceWith(student, date)
+
+                pointer(cell, 'pointerdown')
+                pointer(cell, 'pointermove', { clientX: 95, clientY: 84 })
+                expect(scroll.scrollLeft).toBe(55)
+                expect(capturePointer).toHaveBeenCalledExactlyOnceWith(1)
+                pointer(scroll, 'pointerup', { clientX: 95, buttons: 0 })
+                pointer(scroll, 'lostpointercapture', { buttons: 0 })
+                expect(mouseClick(cell)).toBe(false)
+                expect(activateCell).toHaveBeenCalledTimes(1)
+                pointer(cell, 'pointermove', { clientX: 40 })
+                expect(scroll.scrollLeft).toBe(55)
+
+                pointer(cell, 'pointerdown')
+                pointer(cell, 'pointerup', { buttons: 0 })
+                expect(mouseClick(cell)).toBe(true)
+                expect(activateCell).toHaveBeenCalledTimes(2)
+            } finally { wrapper.unmount() }
+        })
+
+        it.each(['pointercancel', 'lostpointercapture'])('ends a drag on %s and allows a fresh gesture', async (endEvent) => {
+            const { wrapper, scroll, cell } = await mountScrollableCourseTable('entries')
+            try {
+                pointer(cell, 'pointerdown')
+                pointer(cell, 'pointermove', { clientX: 120 })
+                expect(scroll.scrollLeft).toBe(30)
+                pointer(scroll, endEvent, { buttons: 0 })
+                pointer(cell, 'pointermove', { clientX: 70 })
+                expect(scroll.scrollLeft).toBe(30)
+
+                pointer(cell, 'pointerdown')
+                pointer(cell, 'pointermove', { clientX: 165 })
+                expect(scroll.scrollLeft).toBe(15)
+            } finally { wrapper.unmount() }
+        })
+
+        it('keeps vertical gestures, touch, and date and work controls outside horizontal dragging', async () => {
+            const { wrapper, scroll, capturePointer, date, cell } = await mountScrollableCourseTable('entries')
+            const dateButton = wrapper.get(`[data-testid="course-date-cancellation-${date.id}"]`).element
+            const workButton = wrapper.get('.course-table-work-summary').element
+            const openDate = vi.spyOn(wrapper.vm as any, 'openCancellationDialog').mockImplementation(() => {})
+            const openWork = vi.spyOn(wrapper.vm as any, 'openExistingWorkDialog').mockImplementation(() => {})
+            try {
+                pointer(cell, 'pointerdown')
+                pointer(cell, 'pointermove', { clientX: 148, clientY: 95 })
+                pointer(cell, 'pointermove', { clientX: 90, clientY: 98 })
+                pointer(cell, 'pointerup', { buttons: 0 })
+                pointer(cell, 'pointerdown', { pointerType: 'touch' })
+                pointer(cell, 'pointermove', { pointerType: 'touch', clientX: 80 })
+                pointer(cell, 'pointerup', { pointerType: 'touch', buttons: 0 })
+
+                for (const button of [dateButton, workButton]) {
+                    pointer(button, 'pointerdown')
+                    pointer(button, 'pointermove', { clientX: 80 })
+                    pointer(button, 'pointerup', { buttons: 0 })
+                    expect(mouseClick(button)).toBe(true)
+                }
+                expect(scroll.scrollLeft).toBe(0)
+                expect(capturePointer).not.toHaveBeenCalled()
+                expect(openDate).toHaveBeenCalledExactlyOnceWith(date)
+                expect(openWork).toHaveBeenCalledTimes(1)
+            } finally { wrapper.unmount() }
+        })
+    })
 
     it('carries the pencil edit through the ordinary work save and keeps the draft after a failed save', async () => {
         const { wrapper, works, courses, date, first } = mountCompletionTable(false, true)
@@ -329,6 +437,266 @@ describe('CourseTable manual work completion', () => {
             distribution.withdrawn_at = null
             await flushPromises()
             expect(marker().attributes('aria-label')).toBe('Schülerbereich: freigegeben')
+        } finally { wrapper.unmount() }
+    })
+
+    it('shows the closed upload and opens manual grading when the portal deadline passes without files', async () => {
+        vi.useFakeTimers({ toFake: ['Date'] })
+        const { wrapper, works, courses, date, first } = mountCompletionTable(false, true)
+        const deadline = '2026-11-26'
+        const beforeDeadline = Date.parse(`${deadline}T11:29:59Z`)
+        const afterDeadline = Date.parse(`${deadline}T11:30:01Z`)
+        const published = {
+            submission_method: { channel: 'portal' },
+            student_distribution: { published_at: `${date.date}T09:00:00Z`, student_ids: [12] },
+        }
+        const portalWork = { ...first, finish_until_date: deadline, finish_until_time: '12:30',
+            groups: [{ student_ids: [12] }], status: published }
+        vi.stubGlobal('axios', { get: vi.fn().mockResolvedValue({ data: { connected: false } }) })
+        try {
+            courses.selected_course.students_info = [{ id: 901, user_id: 12, first_name: 'Ada', last_name: 'Test' }] as never
+            works.courseWorks = [portalWork] as never
+            await wrapper.setData({ deadlineNow: beforeDeadline })
+            const card = () => wrapper.get('.course-table-work-summary')
+            expect(card().get('[aria-label^="Schülerbereich:"]').text()).toContain('freigegeben')
+            expect(card().get('[aria-label^="Nächste Aktion:"]').text()).toBe('Abgeben')
+
+            await wrapper.setData({ deadlineNow: afterDeadline })
+            const closedStatus = card().get('[aria-label="Abgabe geschlossen"]')
+            expect(closedStatus.text()).toBe('Abgabe geschlossen')
+            expect(closedStatus.attributes('title')).toBe('Abgabe geschlossen')
+            expect(card().get('[aria-label^="Nächste Aktion:"]').text()).toBe('Bewerten')
+
+            vi.setSystemTime(afterDeadline)
+            await card().trigger('click')
+            await flushPromises()
+            const workflow = wrapper.get('[aria-label="Ablauf der Arbeit"]')
+            expect(workflow.get('[data-testid="work-detail-progress"]').text()).toBe('0 von 1 beurteilt')
+            const grading = workflow.get<HTMLButtonElement>('[data-primary="true"] button')
+            expect(grading.text()).toBe('Bewertung eintragen')
+            expect(grading.element.disabled).toBe(false)
+            await grading.trigger('click')
+            expect((wrapper.vm as any).workDialogTab).toBe('students')
+        } finally { wrapper.unmount(); vi.unstubAllGlobals(); vi.useRealTimers() }
+    })
+
+    it('opens a closed portal submission directly with the confirmed primary grading action', async () => {
+        clearWorkDropboxStates()
+        const { wrapper, works, courses, date, first } = mountCompletionTable(true, true)
+        const connection = { connected: true, module_link: { folder: { id: 'id:module' } } }
+        const proof = { ...connection, exercise: { status: 'found', assignment_status: 'ready',
+            checked_at: '2026-10-12T11:00:00Z', folder: { id: 'id:exercise', name: 'Fiktive Prüfung' } } }
+        const checks: Array<(result: unknown) => void> = []
+        const get = vi.fn((_url, options) => options?.params?.include_exercise
+            ? new Promise(resolve => { checks.push(resolve) }) : Promise.resolve({ data: connection }))
+        vi.stubGlobal('axios', { get })
+        const workflow = () => wrapper.get('[aria-label="Ablauf der Arbeit"]')
+        const loading = () => workflow().findAll('[role="status"]').find(element => element.text() === 'Arbeitsstatus wird geladen …')
+        const manual = () => workflow().findAll('button').find(button => button.text() === 'Bewertung eintragen')!
+        const primary = () => workflow().get('[data-primary="true"] button')
+        try {
+            useAdminStore().config = { user: { id: 7 } } as never
+            courses.selected_course.students_info = [{ id: 901, user_id: 12, first_name: 'Ada', last_name: 'Test' }] as never
+            works.courseWorks = [{ ...first, groups: [{ student_ids: [12] }], status: {
+                submission_method: { channel: 'portal' },
+                student_distribution: { published_at: `${date.date}T08:00:00Z`, student_ids: [12], ended_at: `${date.date}T10:00:00Z` },
+            } }] as never
+            await flushPromises()
+            await wrapper.get('.course-table-work-summary').trigger('click')
+
+            expect(checks).toHaveLength(1)
+            expect(loading()?.isVisible()).toBe(true)
+            expect(manual().isVisible()).toBe(false)
+            checks[0]({ data: proof })
+            await flushPromises()
+            expect(loading()).toBeUndefined()
+            expect(primary().isVisible()).toBe(true)
+            expect(primary().text()).toBe('Bewertungskontext kopieren')
+            expect(workflow().get('summary').text()).toBe('Ergebnisse freigeben und mitteilen')
+            expect(workflow().findAll('button').find(button => button.text() === 'Importieren')?.isVisible()).toBe(true)
+
+            await manual().trigger('click')
+            await wrapper.findAll('button').find(button => button.text() === 'Abbrechen')!.trigger('click')
+            await flushPromises()
+            expect(checks).toHaveLength(2)
+            expect(loading()).toBeUndefined()
+            expect(primary().text()).toBe('Bewertungskontext kopieren')
+
+            ;(wrapper.vm as any).closeWorkDialog()
+            await flushPromises()
+            await wrapper.get('.course-table-work-summary').trigger('click')
+            expect(loading()).toBeUndefined()
+            expect(primary().text()).toBe('Bewertungskontext kopieren')
+            checks[1]({ data: proof })
+            await flushPromises()
+        } finally { wrapper.unmount(); clearWorkDropboxStates(); vi.unstubAllGlobals() }
+    })
+
+    it.each(['missing', 'unchecked', 'failed'])('ignores the previous appointment and exits loading when the current status is %s', async (outcome) => {
+        clearWorkDropboxStates()
+        const { wrapper, works, courses, date, first } = mountCompletionTable(false, true)
+        const otherDate = { id: 2, date: '2026-10-13' }
+        const connection = { connected: true, module_link: { folder: { id: 'id:module' } } }
+        const checks = new Map<string, { resolve: (value: unknown) => void, reject: (error: Error) => void }>()
+        vi.stubGlobal('axios', { get: vi.fn((_url, options) => options?.params?.include_exercise
+            ? new Promise((resolve, reject) => { checks.set(options.params.date, { resolve, reject }) })
+            : Promise.resolve({ data: connection })) })
+        const workflow = () => wrapper.get('[aria-label="Ablauf der Arbeit"]')
+        const loading = () => workflow().findAll('[role="status"]').find(element => element.text() === 'Arbeitsstatus wird geladen …')
+        try {
+            useAdminStore().config = { user: { id: 7 } } as never
+            courses.selected_course.course_dates = [date, otherDate] as never
+            courses.selected_course.students_info = [
+                { id: 901, user_id: 12, first_name: 'Ada', last_name: 'Test' },
+                { id: 902, user_id: 13, first_name: 'Bea', last_name: 'Test' },
+            ] as never
+            const work = { ...first, date_for_all_groups: null, is_group_work: true,
+                groups: [{ date: date.date, student_ids: [12] }, { date: otherDate.date, student_ids: [13] }],
+                status: { submission_method: { channel: 'portal' },
+                    student_distribution: { published_at: `${date.date}T08:00:00Z`, student_ids: [12, 13],
+                        ended_at: `${date.date}T10:00:00Z` } } }
+            works.courseWorks = [work] as never
+            await flushPromises()
+            const cards = wrapper.findAll('.course-table-work-summary')
+            expect(cards).toHaveLength(2)
+            await cards[0].trigger('click')
+            expect(loading()?.isVisible()).toBe(true)
+            ;(wrapper.vm as any).closeWorkDialog()
+            await flushPromises()
+            await cards[1].trigger('click')
+            expect(loading()?.isVisible()).toBe(true)
+
+            checks.get(date.date)!.resolve({ data: { ...connection, exercise: { status: 'found', assignment_status: 'ready',
+                checked_at: '2026-10-12T11:00:00Z', folder: { id: 'id:exercise', name: 'Erster Termin' } } } })
+            await flushPromises()
+            expect(loading()?.isVisible()).toBe(true)
+
+            const current = checks.get(otherDate.date)!
+            if (outcome === 'failed') current.reject(new Error('Offline'))
+            else current.resolve({ data: outcome === 'missing' ? { connected: false, exercise: { status: 'missing' } }
+                : { ...connection, exercise: { status: 'unknown', checked_at: null } } })
+            await flushPromises()
+            expect(loading()).toBeUndefined()
+            expect(workflow().findAll('button').find(button => button.text() === 'Bewertung eintragen')?.isVisible()).toBe(true)
+            expect(workflow().text()).not.toContain('Erster Termin')
+            expect((wrapper.vm as any).workDialogAssessment).toMatchObject({
+                date: otherDate.date, status: outcome === 'failed' ? 'unknown' : outcome,
+            })
+        } finally { wrapper.unmount(); clearWorkDropboxStates(); vi.unstubAllGlobals() }
+    })
+
+    function mountManualGradingWork(isGroupWork = false) {
+        const table = mountCompletionTable(false, true)
+        const { courses, date, first, works, second } = table
+        courses.uses_entry_areas_for_grading_schema = true
+        courses.selected_course.students_info = [{ id: 901, user_id: 12, first_name: 'Ada', last_name: 'Test' }] as never
+        const definition = courses.selected_course.teaching_entry_area!.entry_definitions[0]
+        definition.has_properties = true
+        const work = { ...first, automation_enabled: false, is_group_work: isGroupWork, finish_until_date: date.date,
+            groups: [{ date: date.date, student_ids: [12], use_individual_grades: true,
+                grades: [{ student_id: 12, grade: '' }] }],
+        }
+        works.courseWorks = [work, second] as never
+        return { ...table, work }
+    }
+
+    it.each(['students', 'groups'])('returns from %s grading without saving and keeps other work edits', async (gradingTab) => {
+        const { wrapper, works, date, work } = mountManualGradingWork(gradingTab === 'groups')
+        const workflow = () => wrapper.get('[aria-label="Ablauf der Arbeit"]')
+        const assessment = () => workflow().findAll('.work-phase__toggle').find(button => button.text().includes('Bewerten'))!
+        const editGrades = () => workflow().findAll('button').find(button => button.text() === 'Bewertung eintragen')!
+        const gradeInput = () => wrapper.get<HTMLInputElement>('input[inputmode="decimal"]')
+        try {
+            await flushPromises()
+            await wrapper.get(`.course-table-work-summary[aria-label="${work.title}: Arbeit öffnen"]`).trigger('click')
+            const vm = wrapper.vm as any
+            if (assessment().attributes('aria-expanded') === 'false') await assessment().trigger('click')
+            vm.applyWorkDialogFinalDeadline({ date: date.date, time: '15:30' })
+            await editGrades().trigger('click')
+
+            expect(wrapper.get(`[data-testid="course-table-work-${gradingTab}-panel"]`).isVisible()).toBe(true)
+            if (gradingTab === 'groups') await wrapper.get('[data-testid="course-table-work-group-card-0"]').trigger('click')
+            await gradeInput().setValue('4.5')
+            expect(gradeInput().element.value).toBe('4.5')
+            if (gradingTab === 'groups') {
+                await wrapper.findAll('button').find(button => button.text() === 'Schließen')!.trigger('click')
+            }
+            await wrapper.findAll('button').find(button => button.text() === 'Abbrechen')!.trigger('click')
+
+            expect(assessment().isVisible()).toBe(true)
+            expect(assessment().attributes('aria-expanded')).toBe('true')
+            expect(vm.workDialog.courseDate.id).toBe(date.id)
+            expect(vm.savedWorkDialogWork.id).toBe(work.id)
+            expect(vm.workDialogForm.finish_until_time).toBe('15:30')
+            expect(works.update).not.toHaveBeenCalled()
+            await editGrades().trigger('click')
+            if (gradingTab === 'groups') await wrapper.get('[data-testid="course-table-work-group-card-0"]').trigger('click')
+            expect(gradeInput().element.value).toBe('')
+        } finally { wrapper.unmount() }
+    })
+
+    it('keeps a failed grading draft and returns to the same work after saving it on retry', async () => {
+        const { wrapper, works, date, work, second } = mountManualGradingWork()
+        const savedGroup = { ...work.groups[0], grades: [{ student_id: 12, grade: '4.5' }] }
+        const savedWork = { ...work, groups: [savedGroup] }
+        vi.mocked(works.update).mockResolvedValueOnce(false).mockResolvedValueOnce({ data: savedWork })
+        const workflow = () => wrapper.get('[aria-label="Ablauf der Arbeit"]')
+        const assessment = () => workflow().findAll('.work-phase__toggle').find(button => button.text().includes('Bewerten'))!
+        const gradeInput = () => wrapper.get<HTMLInputElement>('input[inputmode="decimal"]')
+        const save = () => wrapper.findAll('button').find(button => button.text() === 'Speichern')!
+        try {
+            await flushPromises()
+            await wrapper.get(`.course-table-work-summary[aria-label="${work.title}: Arbeit öffnen"]`).trigger('click')
+            if (assessment().attributes('aria-expanded') === 'false') await assessment().trigger('click')
+            const vm = wrapper.vm as any
+            vi.mocked(vm.entryStore.indexTableData).mockResolvedValueOnce({ data: [], course_works: [savedWork, second] })
+            await workflow().findAll('button').find(button => button.text() === 'Bewertung eintragen')!.trigger('click')
+            await gradeInput().setValue('4.5')
+            await save().trigger('click')
+            await flushPromises()
+
+            expect(gradeInput().isVisible()).toBe(true)
+            expect(gradeInput().element.value).toBe('4.5')
+            expect(works.courseWorks.find(item => item.id === work.id)).toEqual(work)
+
+            await save().trigger('click')
+            await flushPromises()
+
+            expect(works.update).toHaveBeenCalledTimes(2)
+            expect(works.update).toHaveBeenLastCalledWith(expect.objectContaining({
+                id: work.id, teaching_course_id: work.teaching_course_id, groups: [expect.objectContaining(savedGroup)],
+            }))
+            expect(assessment().isVisible()).toBe(true)
+            expect(assessment().attributes('aria-expanded')).toBe('true')
+            expect(workflow().get('[data-testid="work-detail-progress"]').text()).toBe('1 von 1 beurteilt')
+            expect(vm.workDialog.courseDate.id).toBe(date.id)
+            expect(vm.savedWorkDialogWork.id).toBe(work.id)
+            expect(works.courseWorks.find(item => item.id === second.id)).toEqual(second)
+            await workflow().findAll('button').find(button => button.text() === 'Bewertung eintragen')!.trigger('click')
+            expect(gradeInput().element.value).toBe('4.5')
+        } finally { wrapper.unmount() }
+    })
+
+    it('shows an ended portal release and a later personal reopening on the same card', async () => {
+        const { wrapper, works, date, first } = mountCompletionTable()
+        const endedAt = '2026-10-12T10:00:00Z'
+        const ended = { ...first, groups: [{ student_ids: [12] }], status: {
+            submission_method: { channel: 'portal' },
+            student_distribution: { published_at: '2026-10-12T08:00:00Z', student_ids: [12], ended_at: endedAt },
+        } }
+        try {
+            works.courseWorks = [ended] as never
+            await wrapper.setData({ deadlineNow: Date.parse('2026-10-12T10:30:00Z') })
+            const card = () => wrapper.get('.course-table-work-summary')
+            expect(card().find('[aria-label="Abgabe geschlossen"]').exists()).toBe(true)
+            expect(card().get('[aria-label^="Nächste Aktion:"]').text()).toBe('Bewerten')
+
+            works.courseWorks = [{ ...ended, status: { ...ended.status, portal_submission_reopenings: [
+                { student_id: 12, date: date.date, release_ended_at: endedAt, ends_at: '2026-10-12T11:00:00+00:00' },
+            ] } }] as never
+            await flushPromises()
+            expect(card().find('[aria-label="Schülerbereich: Upload wieder geöffnet"]').exists()).toBe(true)
+            expect(card().get('[aria-label^="Nächste Aktion:"]').text()).toBe('Abgeben')
         } finally { wrapper.unmount() }
     })
 

@@ -5,9 +5,13 @@ namespace App\Http\Controllers\Student;
 use App\Http\Controllers\Controller;
 use App\Models\SchoolTool;
 use App\Models\TeachingCourse;
+use App\Models\TeachingCourseStudentEntry;
 use App\Models\TeachingCourseWork;
+use App\Models\TeachingEntryDefinition;
 use App\Models\User;
 use App\Services\ParentStudentAccessService;
+use App\Services\TeachingCourseStudentEntryService;
+use App\Services\TeachingWorkMarkdownImport;
 use App\Services\TeachingWorkPortalReopening;
 use App\Services\TeachingWorkStudentDistribution;
 use App\Services\TeachingWorkSubmissions;
@@ -23,7 +27,8 @@ use Throwable;
 
 class CourseWorkTaskController extends Controller
 {
-    public function index(Request $request, int $courseId, ParentStudentAccessService $access, TeachingWorkStudentDistribution $distribution): JsonResponse
+    public function index(Request $request, int $courseId, ParentStudentAccessService $access, TeachingWorkStudentDistribution $distribution,
+        TeachingCourseStudentEntryService $entryService, TeachingWorkMarkdownImport $importer): JsonResponse
     {
         $student = $access->currentStudent();
         abort_unless($student, 403);
@@ -32,8 +37,24 @@ class CourseWorkTaskController extends Controller
             return $this->deadlineSnapshot($request, $course, $student, $distribution);
         }
 
-        $tasks = $course->teachingCourseWorks()->orderByDesc('date_for_all_groups')->get()
-            ->map(fn (TeachingCourseWork $work): ?array => $distribution->taskForStudent($work->setRelation('teachingCourse', $course), $student))
+        $works = $course->teachingCourseWorks()->orderByDesc('date_for_all_groups')->get();
+        $entries = $course->teachingCourseStudentEntries()->where('user_id', $student->id)
+            ->whereIn('teaching_course_work_id', $works->filter->gradesVisibleToStudents()->modelKeys())
+            ->orderBy('date')->orderBy('id')->get(['id', 'teaching_course_id', 'teaching_course_work_id', 'user_id', 'type', 'grade'])
+            ->keyBy('teaching_course_work_id');
+        $definitions = $entries->isNotEmpty()
+            ? $entryService->entryDefinitionsForCourse($course->user ?: $student, $course)->keyBy('short_name')
+            : collect();
+        $tasks = $works->map(function (TeachingCourseWork $work) use ($course, $student, $distribution, $entries, $definitions, $importer): ?array {
+            $task = $distribution->taskForStudent($work->setRelation('teachingCourse', $course), $student);
+            $entry = $entries->get($work->id);
+            if ($task === null || ! $entry?->setRelation('teachingCourseWork', $work)->visibleInStudentResults()) {
+                return $task;
+            }
+            $result = $this->taskResult($work, $entry, $definitions->get($entry->type), $task['grading_points'] ?? null, $importer);
+
+            return $result === null ? $task : $task + ['result' => $result];
+        })
             ->filter()->values();
 
         $response = response()->json(['tasks' => $tasks])->header('Cache-Control', 'private, no-store');
@@ -42,6 +63,32 @@ class CourseWorkTaskController extends Controller
         }
 
         return $response;
+    }
+
+    /** @return array{points: ?float, maximum_points: ?float, grade: ?string, comment: ?string, evaluation_pdf: ?array{name: string, sha256: string}}|null */
+    private function taskResult(TeachingCourseWork $work, TeachingCourseStudentEntry $entry, ?TeachingEntryDefinition $definition,
+        ?float $maximumPoints, TeachingWorkMarkdownImport $importer): ?array
+    {
+        if ($definition && $definition->category !== 'Benotung') {
+            return null;
+        }
+
+        ['comment' => $comment, 'points' => $earnedPoints, 'evaluation_pdf' => $pdf] = $work->resultDetailsForStudent((int) $entry->user_id);
+        if ($pdf !== null && (! is_string($pdf['name']) || ! is_string($pdf['sha256'])
+            || ! $importer->studentPdfAvailable($work, (int) $entry->user_id, $pdf['sha256']))) {
+            $pdf = null;
+        }
+        $grade = filled($entry->grade) ? $entry->grade : null;
+        $numericGrade = str_replace(',', '.', trim($grade ?? ''));
+        $pointScale = ($definition?->properties_mode === 'points' || ($definition === null && $maximumPoints !== null))
+            && is_numeric($numericGrade) && is_finite((float) $numericGrade);
+        $points = $pointScale ? (float) $numericGrade : ($grade === null ? $earnedPoints : null);
+        if ($grade === null && $points === null && blank($comment) && $pdf === null) {
+            return null;
+        }
+
+        return ['points' => $points, 'maximum_points' => $pointScale ? $maximumPoints : null,
+            'grade' => $pointScale ? null : $grade, 'comment' => $comment, 'evaluation_pdf' => $pdf];
     }
 
     private function deadlineSnapshot(Request $request, TeachingCourse $course, User $student, TeachingWorkStudentDistribution $distribution): JsonResponse

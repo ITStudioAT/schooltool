@@ -61,6 +61,10 @@
                             <v-icon start>mdi-information-outline</v-icon>
                             Übersicht
                         </v-btn>
+                        <v-btn class="course-tab-mobile-btn" :aria-pressed="currentTab === 'notifications'" :variant="currentTab === 'notifications' ? 'flat' : 'text'" :color="currentTab === 'notifications' ? '#4056d6' : undefined" @click="currentTab = 'notifications'">
+                            <v-icon start>mdi-bell-outline</v-icon>
+                            Verständigungen<span v-if="openNotifications.length" class="ml-1">· {{ openNotifications.length }}</span>
+                        </v-btn>
                         <v-btn class="course-tab-mobile-btn" :aria-pressed="currentTab === 'tasks'" :variant="currentTab === 'tasks' ? 'flat' : 'text'" :color="currentTab === 'tasks' ? '#4056d6' : undefined" @click="currentTab = 'tasks'">
                             <v-icon start>mdi-clipboard-text-outline</v-icon>
                             Meine Aufgaben
@@ -80,9 +84,19 @@
                     </nav>
 
 
+                    <v-alert v-if="notificationReadError && ['overview', 'notifications'].includes(currentTab)" type="error" variant="tonal" class="mt-3" role="alert">{{ notificationReadError }}</v-alert>
                     <v-tabs-window v-model="currentTab" style="margin-top: 20px">
                         <v-tabs-window-item value="tasks">
                             <StudentCourseTasks :course-id="courseId" :active="currentTab === 'tasks'" />
+                        </v-tabs-window-item>
+                        <v-tabs-window-item value="notifications">
+                            <section class="profile-section" aria-label="Verständigungen">
+                                <h2 class="profile-section-title"><v-icon size="22">mdi-bell-outline</v-icon> Verständigungen</h2>
+                                <StudentCourseNotifications v-if="courseNotifications.length" :items="courseNotifications" :format-date="formatDate"
+                                    :type-labels="notificationTypeLabels" :can-mark="course.can_mark_notifications_read"
+                                    :marking="markingNotification" @mark-read="markCourseNotificationRead" />
+                                <p v-else class="text-body-2">Keine Verständigungen vorhanden.</p>
+                            </section>
                         </v-tabs-window-item>
                         <!-- Übersicht Tab -->
                         <v-tabs-window-item value="overview">
@@ -93,12 +107,12 @@
                                     <strong>{{ course.next_course_date?.date ? formatDate(course.next_course_date.date) : 'Noch kein Termin' }}</strong>
                                     <small>{{ course.next_course_date?.time_label || 'Alle Termine ansehen' }}</small>
                                 </button>
-                                <div class="student-summary-card student-summary-card--open">
+                                <button class="student-summary-card student-summary-card--open" type="button" @click="currentTab = 'notifications'">
                                     <v-icon size="24">mdi-bell-outline</v-icon>
                                     <span>Offene Verständigungen</span>
                                     <strong>{{ openNotifications.length }}</strong>
-                                    <small>{{ openNotifications.length ? 'Weiter unten im Überblick' : 'Du bist auf dem Laufenden' }}</small>
-                                </div>
+                                    <small>Alle Verständigungen ansehen</small>
+                                </button>
                                 <div v-if="showStarsEnabled" class="student-summary-card student-summary-card--stars">
                                     <v-icon size="24">mdi-star-outline</v-icon>
                                     <span>Deine Sterne</span>
@@ -142,23 +156,9 @@
                                     <v-icon size="22" color="#f44336">mdi-bell-alert</v-icon>
                                     Offene Verständigungen
                                 </h3>
-                                <div class="notifications-list">
-                                    <div v-for="notification in openNotifications" :key="notification.id" class="notification-item notification-open">
-                                        <div class="notification-icon">
-                                            <v-icon size="20" color="#f44336">mdi-bell-alert</v-icon>
-                                        </div>
-                                        <div class="notification-content">
-                                            <div class="notification-header">
-                                                <span v-if="notification.date" class="notification-date">{{ formatDate(notification.date) }}</span>
-                                                <span v-if="notification.type" class="notification-type">{{ getNotificationTypeLabel(notification.type) }}</span>
-                                            </div>
-                                            <div class="notification-description">{{ notification.description }}</div>
-                                            <div v-if="notification.due_date" class="notification-dates">
-                                                <span class="notification-due-date">Fällig: {{ formatDate(notification.due_date) }}</span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
+                                <StudentCourseNotifications :items="openNotifications" :format-date="formatDate"
+                                    :type-labels="notificationTypeLabels" :can-mark="course.can_mark_notifications_read"
+                                    :marking="markingNotification" @mark-read="markCourseNotificationRead" />
                             </div>
 
                             <!-- Stars Section (beautiful!) -->
@@ -185,33 +185,6 @@
                                     </div>
                                 </div>
                             </div>
-
-                            <!-- Closed Notifications Section -->
-                            <details v-if="closedNotifications.length" class="profile-section student-course-information" style="margin-top: 20px">
-                                <summary class="profile-section-title">
-                                    <v-icon size="20" color="#4caf50">mdi-bell-check</v-icon>
-                                    Erledigte Verständigungen ({{ closedNotifications.length }})
-                                    <v-icon class="ml-auto" size="20">mdi-chevron-down</v-icon>
-                                </summary>
-                                <div class="notifications-list">
-                                    <div v-for="notification in closedNotifications" :key="notification.id" class="notification-item notification-closed">
-                                        <div class="notification-icon">
-                                            <v-icon size="20" color="#4caf50">mdi-bell-check</v-icon>
-                                        </div>
-                                        <div class="notification-content">
-                                            <div class="notification-header">
-                                                <span v-if="notification.date" class="notification-date">{{ formatDate(notification.date) }}</span>
-                                                <span v-if="notification.type" class="notification-type">{{ getNotificationTypeLabel(notification.type) }}</span>
-                                            </div>
-                                            <div class="notification-description">{{ notification.description }}</div>
-                                            <div v-if="notification.due_date || notification.done_date" class="notification-dates">
-                                                <span v-if="notification.due_date" class="notification-due-date">Fällig: {{ formatDate(notification.due_date) }}</span>
-                                                <span v-if="notification.done_date" class="notification-done-date">Erledigt: {{ formatDate(notification.done_date) }}</span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </details>
 
                             <!-- Grades Section (last) -->
                             <div v-if="showSemesterGrade || showBehaviourGrade || showMissingRequiredNaHint" class="profile-section" style="margin-top: 20px">
@@ -540,16 +513,19 @@ import {
     teachingCategoryEvaluationValueLabels,
 } from '@/helpers/teachingCategoryEvaluation'
 import ParentAccessPanel from '../../components/ParentAccessPanel.vue'
+import { markNotificationRead } from '@/actions/App/Http/Controllers/Student/CourseController'
 import { evaluationPdf } from '@/actions/App/Http/Controllers/Student/CourseStudentEntryController'
 import { assessmentDeductionComment } from '@/helpers/assessmentDeductions'
 import StudentNavigationDrawer from '../../components/StudentNavigationDrawer.vue'
 import StudentFeedbackEntries from '../../components/StudentFeedbackEntries.vue'
 import StudentCourseTasks from './StudentCourseTasks.vue'
+import StudentCourseNotifications from './StudentCourseNotifications.vue'
 import '../../../../../../css/student.css'
 
 export default {
     components: {
         StudentCourseTasks,
+        StudentCourseNotifications,
         ParentAccessPanel,
         StudentNavigationDrawer,
         StudentFeedbackEntries,
@@ -588,6 +564,8 @@ export default {
             showDrawer: false,
             loading: true,
             course: null,
+            markingNotification: null,
+            notificationReadError: '',
             entries: [],
             entryAreaBehaviourEntries: [],
             additionalEntries: [],
@@ -635,12 +613,12 @@ export default {
                     return 'entries'
                 }
 
-                return ['overview', 'tasks', 'entries', 'additional', 'dates'].includes(panel) ? panel : 'overview'
+                return ['overview', 'notifications', 'tasks', 'entries', 'additional', 'dates'].includes(panel) ? panel : 'overview'
             },
             set(panel) {
                 const selectedPanel = panel === 'behaviour' ? 'entries' : panel
 
-                if (!['overview', 'tasks', 'entries', 'additional', 'dates'].includes(selectedPanel)
+                if (!['overview', 'notifications', 'tasks', 'entries', 'additional', 'dates'].includes(selectedPanel)
                     || this.$route.query.panel === selectedPanel) {
                     return
                 }
@@ -669,10 +647,6 @@ export default {
 
         openNotifications() {
             return this.courseNotifications.filter((n) => n.is_open)
-        },
-
-        closedNotifications() {
-            return this.courseNotifications.filter((n) => !n.is_open)
         },
 
         behaviourEntries() {
@@ -1150,6 +1124,7 @@ export default {
 
         async loadCourse() {
             this.loading = true
+            this.notificationReadError = ''
             try {
                 // Get course details with notifications
                 await this.courseStore.getCourse(this.courseId)
@@ -1166,6 +1141,28 @@ export default {
                 console.error('Error loading course:', error)
             } finally {
                 this.loading = false
+            }
+        },
+
+        async markCourseNotificationRead(notification) {
+            const course = this.course
+            const courseId = this.courseId
+            if (this.markingNotification || !course?.can_mark_notifications_read || !notification.is_open || !notification.read_key) return
+
+            this.markingNotification = notification.read_key
+            this.notificationReadError = ''
+            try {
+                const { data } = await axios.patch(markNotificationRead.url({ courseId, notificationKey: notification.read_key }))
+                if (this.course === course && this.courseId === courseId) {
+                    course.notifications = course.notifications.map(item => item.read_key === notification.read_key
+                        ? { ...item, read_at: data.read_at, is_open: false } : item)
+                }
+            } catch (error) {
+                if (this.course === course && this.courseId === courseId) {
+                    this.notificationReadError = error.response?.data?.message || 'Die Verständigung konnte nicht als gelesen markiert werden.'
+                }
+            } finally {
+                this.markingNotification = null
             }
         },
 
@@ -1467,11 +1464,6 @@ export default {
             }
 
             return (parts[0] * 60) + parts[1]
-        },
-
-        getNotificationTypeLabel(type) {
-            if (!type) return ''
-            return this.notificationTypeLabels[type] || type
         },
 
         getBehaviourTypeLabel(type) {
@@ -1793,7 +1785,6 @@ export default {
 
 .entry-main,
 .date-main,
-.notification-content,
 .behaviour-entry-content,
 .star-beautiful-content,
 .star-content {
@@ -2063,7 +2054,6 @@ export default {
 .entry-description,
 .entry-comment,
 .date-content,
-.notification-description,
 .behaviour-entry-description,
 .star-beautiful-comment,
 .star-comment {
@@ -2433,92 +2423,6 @@ export default {
     font-weight: 500;
 }
 
-/* Notifications */
-.notifications-list {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-}
-
-.notification-item {
-    display: flex;
-    align-items: flex-start;
-    gap: 12px;
-    padding: 14px;
-    border-radius: 8px;
-    border-left: 4px solid;
-}
-
-.notification-item.notification-open {
-    background-color: #ffebee;
-    border-left-color: #f44336;
-    border: 3px solid #f44336;
-    box-shadow: 0 3px 10px rgba(244, 67, 54, 0.25);
-}
-
-.notification-item.notification-closed {
-    background-color: #e8f5e9;
-    border: 2px solid #4caf50;
-}
-
-.notification-icon {
-    flex-shrink: 0;
-    padding-top: 2px;
-}
-
-.notification-content {
-    flex: 1;
-}
-
-.notification-header {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    margin-bottom: 6px;
-    flex-wrap: wrap;
-}
-
-.notification-date {
-    font-size: 0.85rem;
-    color: #666;
-    font-weight: 500;
-}
-
-.notification-type {
-    font-size: 0.8rem;
-    color: #314d5d;
-    font-weight: 600;
-    padding: 4px 10px;
-    background-color: rgba(49, 77, 93, 0.1);
-    border-radius: 4px;
-}
-
-.notification-description {
-    font-size: 1rem;
-    color: #314d5d;
-    line-height: 1.5;
-    margin-bottom: 6px;
-}
-
-.notification-dates {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 16px;
-    margin-top: 6px;
-}
-
-.notification-due-date {
-    font-size: 0.85rem;
-    color: #f44336;
-    font-weight: 600;
-}
-
-.notification-done-date {
-    font-size: 0.85rem;
-    color: #4caf50;
-    font-weight: 500;
-}
-
 /* Behaviour Entries Styles */
 .behaviour-entries-section {
     display: flex;
@@ -2738,7 +2642,6 @@ export default {
         font-size: 1.7rem;
     }
 
-    .notification-item,
     .behaviour-entry-item,
     .star-beautiful-item {
         padding: 12px;
@@ -2765,11 +2668,6 @@ export default {
         white-space: normal;
         height: auto;
         min-height: 26px;
-    }
-
-    .notification-dates {
-        flex-direction: column;
-        gap: 8px;
     }
 
     .star-beautiful-item {

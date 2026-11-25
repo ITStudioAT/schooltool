@@ -144,6 +144,52 @@ afterEach(() => {
     wrappers.splice(0).forEach((wrapper) => wrapper.unmount())
 })
 
+it('opens the complete course notification list and updates the unread badge only after an explicit read action', async () => {
+    const readAt = '2026-11-25T10:30:00Z'
+    const recent = { id: 'work-result-31', read_key: 'a'.repeat(64), is_open: true, read_at: null,
+        type: 'Bewertung', date: '2026-11-23', description: 'Neue Bewertung' }
+    const older = { id: 27, read_key: 'b'.repeat(64), is_open: false, read_at: readAt,
+        type: 'Info', date: '2026-11-20', description: 'Frühere Information' }
+    const patch = vi.fn().mockResolvedValue({ data: { read_at: readAt } })
+    vi.stubGlobal('axios', { patch })
+    try {
+        const wrapper = await mountFeedback({ courseOverrides: { notifications: [recent, older], can_mark_notifications_read: true } })
+        const summary = wrapper.get('button.student-summary-card--open')
+        expect(summary.get('strong').text()).toBe('1')
+        expect(wrapper.text()).toContain('Neue Bewertung')
+        expect(wrapper.text()).not.toContain('Frühere Information')
+        await summary.trigger('click')
+        await flushPromises()
+        const list = wrapper.get('[aria-label="Verständigungen"]')
+        expect(list.findAll('time').map(item => item.attributes('datetime'))).toEqual(['2026-11-23', '2026-11-20'])
+        expect(list.findAll('li').map(item => item.text())).toEqual([
+            expect.stringContaining('Ungelesen'), expect.stringContaining('Gelesen'),
+        ])
+        expect(patch).not.toHaveBeenCalled()
+
+        await list.get('button').trigger('click')
+        await flushPromises()
+        expect(patch).toHaveBeenCalledExactlyOnceWith(`/api/homepage/student/courses/18/notifications/${recent.read_key}/read`)
+        expect(list.findAll('li')).toHaveLength(2)
+        expect(list.findAll('li')[0].text()).toContain('Gelesen')
+        expect(list.find('button').exists()).toBe(false)
+        const overviewButton = wrapper.findAll('nav button').find(button => button.text().includes('Übersicht'))
+        await overviewButton!.trigger('click')
+        await flushPromises()
+        expect(wrapper.get('button.student-summary-card--open strong').text()).toBe('0')
+        expect(wrapper.text()).not.toContain('Neue Bewertung')
+
+        const reopened = await mountFeedback({ url: '/student/course/18?panel=notifications', courseOverrides: {
+            notifications: [{ ...recent, is_open: false, read_at: readAt }, older], can_mark_notifications_read: true,
+        } })
+        expect(reopened.get('[aria-label="Verständigungen"]').findAll('li').map(item => item.text()))
+            .toEqual([expect.stringContaining('Gelesen'), expect.stringContaining('Gelesen')])
+        expect(patch).toHaveBeenCalledTimes(1)
+    } finally {
+        vi.unstubAllGlobals()
+    }
+})
+
 describe('student combined performance and behaviour page', () => {
     it.each([undefined, true, false])('applies stars visibility %s to the header, summary and details independently of points', async (visible) => {
         const wrapper = await mountFeedback({ courseOverrides: { show_stars: visible, show_points_progress: true,

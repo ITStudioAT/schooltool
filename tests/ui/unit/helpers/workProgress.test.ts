@@ -280,6 +280,81 @@ it('shows manual completion without counting an earlier notification as proof fo
     expect(workWorkflowProgress(work)).toMatchObject({ completed: true, next: { phase: null, label: 'ABGESCHLOSSEN' } })
 })
 
+const portalDate = '2026-11-20'
+const portalDeadline = '2026-11-26'
+const portalNow = Date.parse(`${portalDeadline}T11:30:01Z`)
+const portalEnd = `${portalDeadline}T11:00:00Z`
+const portalRelease = { published_at: `${portalDate}T08:00:00Z`, student_ids: [12] }
+const portalWork = {
+    id: 65, teaching_course_id: 2, date_for_all_groups: portalDate,
+    groups: [{ student_ids: [12] }], finish_until_date: portalDeadline, finish_until_time: '12:30',
+    status: { submission_method: { channel: 'portal' }, student_distribution: portalRelease },
+}
+
+it.each([
+    { case: 'expired final deadline', distribution: portalRelease, time: portalNow, cutoff: 'deadline' },
+    { case: 'release ended early', distribution: { ...portalRelease, ended_at: portalEnd }, time: Date.parse(portalEnd), cutoff: 'ended' },
+])('advances to grading without fabricating any evidence after $case', ({ distribution, time, cutoff }) => {
+    const work = { ...portalWork, status: { ...portalWork.status, student_distribution: distribution } }
+    const progress = workWorkflowProgress(work, portalDate, time)
+    expect(progress).toMatchObject({ portalCutoff: cutoff, portalSubmissionClosed: true,
+        submissionComplete: false, assessmentComplete: false, completed: false,
+        next: { phase: 'assessment', label: 'Bewerten' } })
+    expect(progress.stages.map(stage => [stage.count, stage.complete])).toEqual(Array(4).fill([0, false]))
+    expect(progress.stages[1].blocked).toBe(true)
+    expect(progress.stages[2].blocked).toBe(true)
+})
+
+it.each([
+    { case: 'open deadline', channel: 'portal', distribution: portalRelease, time: portalNow - 2000, next: 'Abgeben' },
+    { case: 'paused release', channel: 'portal', distribution: { ...portalRelease, withdrawn_at: portalEnd }, time: portalNow, next: 'Bereitstellen' },
+    { case: 'unpublished release', channel: 'portal', distribution: { prepared_at: portalEnd }, time: portalNow, next: 'Bereitstellen' },
+    { case: 'email submission', channel: 'email', distribution: portalRelease, time: portalNow, next: 'Abgeben' },
+])('keeps the existing phase for $case', ({ channel, distribution, time, next }) => {
+    const work = { ...portalWork, status: { submission_method: { channel }, student_distribution: distribution } }
+    expect(workWorkflowProgress(work, portalDate, time)).toMatchObject({ portalSubmissionClosed: false,
+        submissionComplete: false, next: { label: next } })
+})
+
+it('keeps the affected date open only for a current personal deadline', () => {
+    const otherDate = '2026-11-23'
+    const reopening = { student_id: 12, date: portalDate, ends_at: `${portalDeadline}T13:00:00+00:00`, release_ended_at: portalEnd }
+    const work = { ...portalWork, groups: [{ date: portalDate, student_ids: [12] }, { date: otherDate, student_ids: [13] }],
+        status: { ...portalWork.status, student_distribution: { ...portalRelease, student_ids: [12, 13], ended_at: portalEnd },
+            portal_submission_reopenings: [reopening] } }
+    expect(workWorkflowProgress(work, portalDate, portalNow)).toMatchObject({ reopenedCount: 1,
+        portalSubmissionClosed: false, submissionComplete: false, next: { label: 'Abgeben' } })
+    expect(workWorkflowProgress(work, otherDate, portalNow)).toMatchObject({ reopenedCount: 0,
+        portalSubmissionClosed: true, next: { label: 'Bewerten' } })
+    expect(workWorkflowProgress(work, portalDate, Date.parse(reopening.ends_at) + 1000)).toMatchObject({
+        reopenedCount: 0, portalSubmissionClosed: true, next: { label: 'Bewerten' } })
+    const assignedTwice = { ...work, groups: [work.groups[0], { date: otherDate, student_ids: [12, 13] }] }
+    expect(workWorkflowProgress(assignedTwice, '', portalNow)).toMatchObject({
+        reopenedCount: 0, portalSubmissionClosed: true, next: { label: 'Bewerten' } })
+})
+
+it('closes the upload only for a date with a portal release or confirmed mail access', () => {
+    const otherDate = '2026-11-23'
+    const work = { ...portalWork, groups: [{ date: portalDate, student_ids: [12] }, { date: otherDate, student_ids: [13] }] }
+    expect(workWorkflowProgress(work, otherDate, portalNow)).toMatchObject({ portalSubmissionClosed: false })
+    const batch = { transport: 'postmark', recipients: [{ student_id: 13, state: 'accepted', accepted_at: `${otherDate}T09:00:00Z` }] }
+    const emailed = { ...work, status: { ...work.status, assignment_mail: { batches: { [otherDate]: batch } } } }
+    expect(workWorkflowProgress(emailed, otherDate, portalNow)).toMatchObject({ portalSubmissionClosed: true, next: { label: 'Bewerten' } })
+    const withdrawn = { ...emailed, status: { ...emailed.status, student_distribution: {
+        ...portalRelease, withdrawn_at: `${otherDate}T10:00:00Z`,
+    } } }
+    expect(workWorkflowProgress(withdrawn, otherDate, portalNow)).toMatchObject({ portalSubmissionClosed: false })
+})
+
+it('keeps the later steps and explicit completion for closed portal work with recorded grading', () => {
+    const graded = { ...portalWork, status: { ...portalWork.status, evaluation_completed: true } }
+    expect(workWorkflowProgress(graded, portalDate, portalNow)).toMatchObject({ portalSubmissionClosed: true,
+        assessmentComplete: true, next: { label: 'Ergebnisse übernehmen' } })
+    const completed = { ...graded, status: { ...graded.status, completion_override: true } }
+    expect(workWorkflowProgress(completed, portalDate, portalNow)).toMatchObject({ completed: true,
+        next: { label: 'ABGESCHLOSSEN' } })
+})
+
 it('does not infer collection or grading from an overall PDF or a sent notification', () => {
     const work = historicalWork()
     work.status.assessment_json_imports = []

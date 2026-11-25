@@ -6,6 +6,7 @@ import { VBtn, VDialog } from 'vuetify/components'
 import WorkExerciseExport from '@/pages/admin/teaching/overview/components/WorkExerciseExport.vue'
 import { forgetAssessmentRun } from '@/helpers/workAssessmentRun'
 import { clearWorkDropboxStates, loadWorkExercise, workDropboxStates, workExerciseCheck } from '@/helpers/workDropbox'
+import { useSchoolHourStore } from '@/stores/admin/teaching/SchoolHourStore'
 
 const work = { id: 65, teaching_course_id: 2, title: 'E-Mails' }
 const course = { id: 2, title: 'INF' }
@@ -28,6 +29,12 @@ const generationId = '11111111-1111-4111-8111-111111111111'
 const runId = '22222222-2222-4222-8222-222222222222'
 const runPath = '/api/admin/teaching/course_works/65/exercise-run'
 const examDate = '2026-10-20'
+const assessmentCourse = { ...course, course_dates: [
+    { date: examDate, hours: [3, 2] },
+    { date: examDate, hours: ['5', '4'], cancelled_hours: [5] },
+    { date: examDate, hours: [6], status: ['free'] },
+    { date: '2026-10-22', hours: [5, 6] },
+] }
 const previewSteps = ['assessment_candidates', 'assessment_assignment', 'assessment_criteria', 'assessment_target']
 const storeSteps = ['assessment_check', 'assessment_folder', 'assessment_documents', 'assessment_candidate_0', 'assessment_verify']
 
@@ -61,6 +68,66 @@ async function openCreation(wrapper: ReturnType<typeof mountExport>) {
     await button(wrapper, 'Leistungsfeststellung erstellen').trigger('click')
     await flushPromises()
 }
+
+function setAssessmentSchoolHours() {
+    useSchoolHourStore().school_hours = [
+        { hour: 2, until: '09:45' }, { hour: 3, until: '10:45' }, { hour: 4, until: '11:40' },
+        { hour: 5, until: '12:35' }, { hour: 6, until: '13:30' },
+    ]
+}
+
+it('suggests the selected group date and the last active lesson end without saving on open', async () => {
+    const wrapper = mountExport()
+    try {
+        setAssessmentSchoolHours()
+        await wrapper.setProps({ course: assessmentCourse, work: { ...work, date_for_all_groups: '2026-10-22',
+            groups: [{ date: '2026-10-22' }, { date: examDate }] } })
+        await openCreation(wrapper)
+
+        const date = wrapper.get<HTMLInputElement>('input[aria-label="Endgültige Abgabefrist"]')
+        const time = wrapper.get<HTMLInputElement>('input[aria-label="Uhrzeit (optional)"]')
+        expect(date.element.value).toBe(examDate)
+        expect(time.element.value).toBe('11:40')
+        await date.setValue('2026-10-21')
+        await time.setValue('10:30')
+        expect(date.element.value).toBe('2026-10-21')
+        expect(time.element.value).toBe('10:30')
+        await button(wrapper, 'Abbrechen').trigger('click')
+        expect(axios.post).not.toHaveBeenCalled()
+        expect(wrapper.emitted('deadline-saved')).toBeUndefined()
+    } finally { wrapper.unmount() }
+})
+
+it.each([
+    { name: 'a different saved deadline date', work: { finish_until_date: '2026-10-23' }, expected: ['2026-10-23', ''] },
+    { name: 'a saved deadline time', work: { finish_until_date: examDate, finish_until_time: '11:15' }, expected: [examDate, '11:15'] },
+    { name: 'an intentionally omitted saved time', work: { finish_until_date: examDate, status: { final_deadline_saved: true } }, expected: [examDate, ''] },
+    { name: 'an explicit blank draft', work: {}, draft: { date: '', time: '' }, expected: ['', ''] },
+])('preserves $name when opening the assessment', async ({ work: deadline, draft, expected }) => {
+    const wrapper = mountExport()
+    try {
+        setAssessmentSchoolHours()
+        await wrapper.setProps({ course: assessmentCourse, work: { ...work, date_for_all_groups: examDate, ...deadline }, deadlineDraft: draft ?? null })
+        await openCreation(wrapper)
+
+        expect(wrapper.get<HTMLInputElement>('input[aria-label="Endgültige Abgabefrist"]').element.value).toBe(expected[0])
+        expect(wrapper.get<HTMLInputElement>('input[aria-label="Uhrzeit (optional)"]').element.value).toBe(expected[1])
+    } finally { wrapper.unmount() }
+})
+
+it.each([
+    { name: 'the unique group date lacks a lesson end', dates: [examDate], expectedDate: examDate },
+    { name: 'several group dates lack a selection', dates: [examDate, '2026-10-22'], expectedDate: '' },
+])('leaves the unresolved deadline fields empty when $name', async ({ dates, expectedDate }) => {
+    const wrapper = mountExport()
+    try {
+        await wrapper.setProps({ course: assessmentCourse, work: { ...work, groups: dates.map(date => ({ date })) }, date: '' })
+        await openCreation(wrapper)
+
+        expect(wrapper.get<HTMLInputElement>('input[aria-label="Endgültige Abgabefrist"]').element.value).toBe(expectedDate)
+        expect(wrapper.get<HTMLInputElement>('input[aria-label="Uhrzeit (optional)"]').element.value).toBe('')
+    } finally { wrapper.unmount() }
+})
 
 it('queues a confirmed assessment from one click and reads the outcome without clipboard access', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
@@ -815,13 +882,15 @@ it.each([false, true])('saves the changed final deadline before preparing the ex
         : { connected: true, module_link: { folder: { id: 'id:module' } }, exercise: { status: 'missing' } } }))
     const get = vi.fn().mockResolvedValue({ data: { data: { work_id: 65, course_id: 2, roster_complete: true, participants_count: 3,
         text: 'Auftrag mit neuer Frist', context: { include_multiple_choice: false } } } })
-    const wrapper = mountExport(get, undefined, status, { ...work, finish_until_date: '2026-10-20', finish_until_time: null },
+    const wrapper = mountExport(get, undefined, status, { ...work, date_for_all_groups: examDate, finish_until_date: examDate, finish_until_time: null },
         { available: true, tests: [{ id: 9, title: 'Test' }], catalogs: [], linked_test_id: null })
     try {
-        await flushPromises()
-        await button(wrapper, 'Leistungsfeststellung erstellen').trigger('click')
-        await flushPromises()
-        expect((wrapper.get('input[aria-label="Endgültige Abgabefrist"]').element as HTMLInputElement).value).toBe('2026-10-20')
+        setAssessmentSchoolHours()
+        await wrapper.setProps({ course: assessmentCourse })
+        await openCreation(wrapper)
+        expect(wrapper.get<HTMLInputElement>('input[aria-label="Endgültige Abgabefrist"]').element.value).toBe(examDate)
+        expect(wrapper.get<HTMLInputElement>('input[aria-label="Uhrzeit (optional)"]').element.value).toBe('11:40')
+        expect(axios.post).not.toHaveBeenCalled()
         await wrapper.get('input[aria-label="Endgültige Abgabefrist"]').setValue('2026-10-25')
         await wrapper.get('input[aria-label="Uhrzeit (optional)"]').setValue('13:30')
         if (includeMc) {
@@ -1474,15 +1543,19 @@ it('adds an MC test to a confirmed worksheet without starting a new assessment r
     const status = vi.fn().mockResolvedValue({ data: { connected: true, module_link: { folder: { id: 'id:module' } },
         exercise: { status: 'found', folder: { id: 'id:exercise', name: 'Prüfung' }, preparation: { status: 'ready' } } } })
     const templateCheck = vi.fn()
-    const wrapper = mountExport(undefined, undefined, status, work,
+    const wrapper = mountExport(undefined, undefined, status, { ...work, date_for_all_groups: examDate },
         { tests: [{ id: 9, title: 'Passender Test' }], linked_test_id: null }, templateCheck)
     try {
+        setAssessmentSchoolHours()
+        await wrapper.setProps({ course: assessmentCourse })
         await flushPromises()
         wrapper.vm.openMcSelection()
         await flushPromises()
         const dialog = wrapper.get('[role="dialog"]')
         expect(dialog.text()).toContain('Multiple-Choice-Test hinzufügen')
         expect(dialog.text()).not.toContain('Leistungsfeststellung erstellen')
+        expect(dialog.get<HTMLInputElement>('input[aria-label="Endgültige Abgabefrist"]').element.value).toBe('')
+        expect(dialog.get<HTMLInputElement>('input[aria-label="Uhrzeit (optional)"]').element.value).toBe('')
         await dialog.get('select[aria-label="Multiple-Choice-Katalog"]').setValue('3')
         await flushPromises()
         let finish!: (value: object) => void

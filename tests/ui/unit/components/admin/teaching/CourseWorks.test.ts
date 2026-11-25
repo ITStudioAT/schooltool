@@ -45,7 +45,7 @@ describe('New work overview and assessment mode', () => {
         } finally { wrapper.unmount() }
     })
 
-    it('shows the same next submission step in the work row and the opened workflow after evidence changes', async () => {
+    it('shows grading for a closed portal in the work row and details while keeping collection accessible', async () => {
         const date = '2026-11-20'
         const file = student_id => ({ id: `file-${student_id}`, student_id, name: 'Beispiel.pdf',
             sha256: 'a'.repeat(64), submitted_at: '2026-11-20T10:00:00Z' })
@@ -59,12 +59,16 @@ describe('New work overview and assessment mode', () => {
         const wrapper = mountOverview(work, { folder: null }, true)
         try {
             await flushPromises()
-            expect(wrapper.get('.work-row .text-orange-darken-2').text()).toBe('Abgaben einsammeln')
+            expect(wrapper.get('.work-row .text-orange-darken-2').text()).toBe('Bewerten')
             await wrapper.get('.work-row').trigger('click')
             await flushPromises()
             const workflow = wrapper.get('[aria-label="Ablauf der Arbeit"]')
-            expect(workflow.get('.work-phase--current .work-phase__title').text()).toBe('Abgeben')
+            expect(workflow.get('.work-phase--current .work-phase__title').text()).toBe('Bewerten')
+            const submission = workflow.findAll('.work-phase__toggle').find(button => button.text().includes('Abgeben'))!
+            expect(submission.text()).toContain('Abgabe geschlossen')
+            await submission.trigger('click')
             const collection = workflow.getComponent(WorkSubmissionCollection)
+            expect(collection.isVisible()).toBe(true)
             expect(collection.props('date')).toBe(date)
             expect(collection.props('work').status?.portal_submissions).toEqual([file(12)])
 

@@ -4,6 +4,7 @@ import { personalWorkAssessment, workCollectionEvidence, workSubmissionStatus } 
 import { workEvaluationStatus, workCellPendingStatuses, workMarkedComplete } from '@/helpers/workCellStatus'
 import { workDispatchNotifications, workProvisionRecords, workTaskDispatchCompleted, workStudentDistribution } from '@/helpers/workDispatch'
 import { workAutomationEnabled } from '@/helpers/workAutomation'
+import { workDeadlineExpired } from '@/helpers/date'
 
 export const workCompletedLabel = 'ABGESCHLOSSEN'
 
@@ -181,28 +182,49 @@ export function workWorkflowProgress(work, date = '', now = Date.now(), dispatch
     const portalFiles = workHasPortalFiles(work, date)
     const portal = channel === 'portal' || (!channel && (work.status?.portal_submissions || []).length > 0)
     const scopedDate = date || work.date_for_all_groups || null
-    const reopenedCount = (status.portal_submission_reopenings || []).filter(record => record.date === scopedDate
-        && ids.includes(String(record.student_id)) && (record.release_ended_at ?? null) === (release.ended_at ?? null)
-        && Date.parse(record.ends_at) >= now).length
     const manual = !workAutomationEnabled(work)
     const assessed = manual ? ids.filter(id => groups.some(group =>
         (group.student_ids || []).some(studentId => String(studentId) === id) && hasSavedGrade(group, id))).length : evaluation.count
     const assessmentComplete = evaluation.complete || (manual && ids.length > 0 && assessed === ids.length)
     const verifiedCollection = Boolean(workLastCollectionRunAt(scoped) && scoped.collection_run?.checkpoint_state === 'complete')
-    const submissionComplete = !reopenedCount && (collection.complete || verifiedCollection || assessmentComplete)
     const covered = new Set([
         ...(release.published_at && (!release.withdrawn_at || release.ended_at) ? release.student_ids || [] : []),
         ...workDispatchNotifications(scoped, 'tasks').map(row => row.student_id),
         ...workProvisionRecords(scoped, null, true).map(row => row.student_id),
     ].map(String))
+    const workRelease = work.status?.student_distribution
+    const releaseRecipients = new Set([...(workRelease?.student_ids || []), ...(workRelease?.ended_email_student_ids || [])].map(String))
+    const releaseInScope = !releaseRecipients.size || !work.groups?.length || ids.some(id => releaseRecipients.has(id))
+    const mailWithdrawal = Math.max(Date.parse(release.deleted_at) || 0, Date.parse(release.withdrawn_at) || 0)
+    let portalAccessByMail = false
     for (const [slot, batch] of Object.entries(status.assignment_mail?.batches || {})) {
         if ((slot !== 'all' && scopedDate && slot !== scopedDate) || batch.transport !== 'postmark' || batch.withdrawn_at) continue
         for (const recipient of batch.recipients || []) {
-            if (['accepted', 'already_sent'].includes(recipient.state) && Number.isFinite(Date.parse(recipient.accepted_at))) {
+            const acceptedAt = Date.parse(recipient.accepted_at)
+            if (['accepted', 'already_sent'].includes(recipient.state) && Number.isFinite(acceptedAt)) {
                 covered.add(String(recipient.student_id))
+            }
+            if (recipient.state === 'accepted' && acceptedAt > mailWithdrawal && ids.includes(String(recipient.student_id))) {
+                portalAccessByMail = true
             }
         }
     }
+    const portalReleaseEnded = Boolean(release.ended_at && releaseInScope)
+    const portalAccess = (release.published_at && !release.withdrawn_at && releaseInScope) || portalAccessByMail
+    const portalDeadlineExpired = channel === 'portal' && (portalReleaseEnded || portalAccess)
+        && workDeadlineExpired(work, now)
+    const portalCutoff = channel === 'portal'
+        ? (portalDeadlineExpired ? 'deadline' : portalReleaseEnded ? 'ended' : null) : null
+    const reopenedCount = portalCutoff ? (status.portal_submission_reopenings || []).filter(record => {
+        const studentId = String(record.student_id)
+        if (!ids.includes(studentId) || (record.release_ended_at ?? null) !== (release.ended_at ?? null)
+            || !(Date.parse(record.ends_at) >= now)) return false
+        const dates = new Set(work.groups.filter(group => (group.student_ids || []).some(id => String(id) === studentId))
+            .map(group => group.date || work.date_for_all_groups || scopedDate))
+        return dates.size === 1 && dates.has(record.date)
+    }).length : 0
+    const portalSubmissionClosed = Boolean(portalCutoff) && !reopenedCount
+    const submissionComplete = !reopenedCount && (collection.complete || verifiedCollection || assessmentComplete)
     const legacyDelivery = scoped === work && ['sent', 'partial'].includes(dispatch?.status) && dispatch.transport !== 'mailpit'
         && Number(dispatch.confirmed_count) > 0
     const provisionComplete = submissionComplete || assessmentComplete || workTaskDispatchCompleted(scoped)
@@ -213,7 +235,7 @@ export function workWorkflowProgress(work, date = '', now = Date.now(), dispatch
     const collectionAvailable = Boolean(release.ended_at) && !collection.simulation
         && (portal ? portalFiles : channel === 'email' || workAutomationEnabled(work))
     let next = null
-    if (submissionComplete) {
+    if (submissionComplete || portalSubmissionClosed) {
         next = { phase: 'assessment', label: 'Bewerten' }
         if (assessmentComplete) {
             const informedIds = new Set((status.grade_visibility?.student_notice?.student_ids || []).map(String))
@@ -222,10 +244,10 @@ export function workWorkflowProgress(work, date = '', now = Date.now(), dispatch
             else if (notification.complete || (ids.length > 0 && ids.every(id => informedIds.has(id)))) next = { phase: null, label: workCompletedLabel }
             else next = { phase: 'assessment', label: notification.title, action: 'notice' }
         }
-    } else if (!release.ended_at && (release.withdrawn_at || (release.prepared_at && !release.published_at))) {
+    } else if (!reopenedCount && !release.ended_at && (release.withdrawn_at || (release.prepared_at && !release.published_at))) {
         next = { phase: 'provision', label: 'Bereitstellen', action: 'provision' }
     } else if (provisionStarted || portalFiles || collection.count || collectionAvailable || reopenedCount) {
-        next = collectionAvailable ? { phase: 'submission', label: collection.title, action: 'collect' }
+        next = collectionAvailable && !reopenedCount ? { phase: 'submission', label: collection.title, action: 'collect' }
             : { phase: 'submission', label: 'Abgeben', action: !channel ? 'submission' : null }
     } else if (status.email_preparation_completed === true) {
         next = { phase: 'provision', label: 'E-Mails versenden', action: 'provision' }
@@ -252,6 +274,7 @@ export function workWorkflowProgress(work, date = '', now = Date.now(), dispatch
     } else if (next?.label === workCompletedLabel) {
         next = { phase: null, label: 'Offen' }
     }
-    return { stages, scoped, assessed, total: ids.length, provisionComplete, reopenedCount,
-        preparationProven: provisionStarted || Boolean(collection.count) || assessmentComplete, submissionComplete, assessmentComplete, completed, next }
+    return { stages, scoped, assessed, total: ids.length, provisionComplete, reopenedCount, portalCutoff, portalSubmissionClosed,
+        preparationProven: provisionStarted || Boolean(collection.count) || assessmentComplete,
+        submissionComplete, assessmentComplete, completed, next }
 }

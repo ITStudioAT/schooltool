@@ -191,6 +191,9 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/homepage/student/change_password', [StudentController::class, 'changePassword'])->middleware(['auth:sanctum', 'tool-licensed:Lehrertool']);
         Route::get('/homepage/student/courses', [CourseController::class, 'index'])->middleware('tool-licensed:Lehrertool');
         Route::get('/homepage/student/courses/{courseId}', [CourseController::class, 'show'])->middleware('tool-licensed:Lehrertool');
+        Route::patch('/homepage/student/courses/{courseId}/notifications/{notificationKey}/read', [CourseController::class, 'markNotificationRead'])
+            ->whereNumber('courseId')->where('notificationKey', '[a-f0-9]{64}')
+            ->middleware(['auth:sanctum', 'tool-licensed:Lehrertool'])->name('student.course.notifications.read');
         Route::get('/homepage/student/courses/{courseId}/entries', [CourseStudentEntryController::class, 'index'])->middleware('tool-licensed:Lehrertool');
         Route::get('/homepage/student/courses/{courseId}/tasks', [CourseWorkTaskController::class, 'index'])->middleware('tool-licensed:Lehrertool')->name('student.course-work.tasks');
         Route::post('/homepage/student/courses/{courseId}/works/{course_work}/start', [CourseWorkTaskController::class, 'start'])->middleware(['auth:sanctum', 'tool-licensed:Lehrertool', 'throttle:30,1'])->name('student.course-work.start');

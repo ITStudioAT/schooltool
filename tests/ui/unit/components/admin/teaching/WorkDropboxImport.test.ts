@@ -35,6 +35,66 @@ function mountImportFlow() {
 afterEach(() => { clearWorkDropboxStates(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
 describe('Dropbox Quick-Import', () => {
+    const assessmentFolder = { id: 'id:exam', name: '2026-11-30 – 5L1_Gruppe-1 – Word-lokal' }
+    const linkedModule = { ...connected, folder: null, module_link: { folder: { id: 'id:word-module' } } }
+    const confirmedAssessment = { status: 'found', folder: assessmentFolder, scheduled_date: '2026-11-30', preparation: { status: 'ready' } }
+
+    it('previews the confirmed assessment for the selected grading date and keeps manual import available', async () => {
+        const get = vi.fn()
+            .mockResolvedValueOnce({ data: { ...linkedModule, exercise: confirmedAssessment } })
+            .mockResolvedValue({ data: connected })
+        const post = vi.fn().mockResolvedValue({ data: { preview } })
+        vi.stubGlobal('axios', { get, post })
+        const wrapper = mountImportFlow()
+        try {
+            await (wrapper.vm as any).openImport({ ...work, date_for_all_groups: '2026-11-20' }, false, { date: '2026-11-30', automatic: true })
+            expect(get).toHaveBeenCalledExactlyOnceWith(expect.stringMatching(/\/dropbox$/), expect.objectContaining({
+                params: { include_exercise: 1, refresh: 1, date: '2026-11-30' },
+            }))
+            expect(post).toHaveBeenCalledExactlyOnceWith(expect.stringMatching(/\/dropbox\/import$/), {
+                results_only: true, simulation: false, date: '2026-11-30',
+            })
+            expect(wrapper.text()).toContain(assessmentFolder.name)
+            expect(wrapper.get('[aria-label="Schülerergebnisse"]').exists()).toBe(true)
+            expect(wrapper.emitted('imported')).toBeUndefined()
+            await wrapper.findAll('button').find(button => button.text() === 'Andere Quelle wählen')!.trigger('click')
+            await flushPromises()
+            expect(wrapper.findComponent(WorkDropboxSource).exists()).toBe(true)
+            expect(wrapper.find('[aria-label="Schülerergebnisse"]').exists()).toBe(false)
+            expect(post).toHaveBeenCalledTimes(1)
+        } finally { wrapper.unmount() }
+    })
+
+    it('preserves an existing legacy folder and its explicit Dropbox preview in the grading dialog', async () => {
+        const get = vi.fn().mockResolvedValue({ data: { ...connected, module_link: linkedModule.module_link, exercise: confirmedAssessment } })
+        const post = vi.fn().mockResolvedValue({ data: { preview } })
+        vi.stubGlobal('axios', { get, post })
+        const wrapper = mountImportFlow()
+        try {
+            await (wrapper.vm as any).openImport(work, false, { date: '2026-11-30', automatic: true })
+            await flushPromises()
+            expect(wrapper.get('[data-testid="dropbox-bound-folder"]').text()).toContain(connected.folder.path)
+            expect(post).not.toHaveBeenCalled()
+            await wrapper.findAll('button').find(button => button.text() === 'Dropbox-Vorschau laden')!.trigger('click')
+            await flushPromises()
+            expect(post).toHaveBeenCalledExactlyOnceWith(expect.stringMatching(/\/dropbox\/import$/), {})
+        } finally { wrapper.unmount() }
+    })
+
+    it.each(['missing', 'unknown'])('leaves manual selection available without importing for an assessment marked %s', async status => {
+        const get = vi.fn().mockResolvedValueOnce({ data: { ...linkedModule, exercise: { status, folder: null } } })
+            .mockResolvedValueOnce({ data: linkedModule }).mockResolvedValueOnce({ data: { suggestions: [] } })
+        const post = vi.fn()
+        vi.stubGlobal('axios', { get, post })
+        const wrapper = mountImportFlow()
+        try {
+            await (wrapper.vm as any).openImport(work, false, { date: '2026-11-30', automatic: true })
+            await flushPromises()
+            expect(wrapper.text()).toContain('Ordner manuell wählen')
+            expect(post).not.toHaveBeenCalled()
+        } finally { wrapper.unmount() }
+    })
+
     it('identifies simulation results explicitly and requests the dedicated local source', async () => {
         const simulated = { ...work, groups: [{ student_ids: [1] }], simulation_collection: {
             origin: 'mailpit_simulation', simulation: true, run_id: 'simulator-run', work_id: work.id, course_id: work.teaching_course_id,

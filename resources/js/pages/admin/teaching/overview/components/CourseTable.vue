@@ -32,6 +32,9 @@
                     <v-btn :value="2" size="small">2. Sem</v-btn>
                     <v-btn :value="3" size="small">Sem 1+2</v-btn>
                 </v-btn-toggle>
+                <span class="course-table-drag-hint text-caption text-medium-emphasis">
+                    Mit gedrückter linker Maustaste seitlich ziehen
+                </span>
                 <v-btn
                     class="ml-auto"
                     color="error"
@@ -75,7 +78,17 @@
 
         <v-card variant="outlined" class="course-table-card">
             <v-card-text class="pa-0">
-                <div ref="courseTableScroll" class="course-table-scroll">
+                <div
+                    ref="courseTableScroll"
+                    class="course-table-scroll"
+                    :class="{ 'course-table-scroll--dragging': courseTableDrag?.active }"
+                    @pointerdown.capture="startCourseTableDrag"
+                    @pointermove="moveCourseTableDrag"
+                    @pointerup="finishCourseTableDrag"
+                    @pointercancel="finishCourseTableDrag"
+                    @pointerleave="finishCourseTableDrag"
+                    @lostpointercapture.self="finishCourseTableDrag"
+                    @click.capture="suppressCourseTableDragClick">
                     <table class="course-table" data-testid="course-table">
                         <thead>
                             <tr class="course-table-title-row">
@@ -290,10 +303,12 @@
                                             </span>
                                             </template>
                                             <span v-if="!work.completed && work.portalStatus" class="course-table-work-summary-portal"
-                                                :class="work.portalStatus === 'freigegeben' ? 'text-success' : 'text-orange-darken-3'"
-                                                :aria-label="`Schülerbereich: ${work.portalStatus}`" :title="`Schülerbereich: ${work.portalStatus}`">
-                                                <v-icon :icon="work.portalStatus === 'freigegeben' ? 'mdi-check-circle-outline' : 'mdi-pause-circle-outline'" size="13" aria-hidden="true" />
-                                                <span>Schülerbereich<br>{{ work.portalStatus }}</span>
+                                                :class="work.portalUploadClosed ? 'text-error' : work.portalStatus === 'freigegeben' ? 'text-success' : 'text-orange-darken-3'"
+                                                :aria-label="work.portalStatusLabel" :title="work.portalStatusLabel">
+                                                <v-icon :icon="work.portalUploadClosed ? 'mdi-lock-outline'
+                                                    : work.portalStatus === 'Upload wieder geöffnet' ? 'mdi-lock-open-outline'
+                                                    : work.portalStatus === 'freigegeben' ? 'mdi-check-circle-outline' : 'mdi-pause-circle-outline'" size="13" aria-hidden="true" />
+                                                <span><template v-if="!work.portalUploadClosed">Schülerbereich<br></template>{{ work.portalStatus }}</span>
                                             </span>
                                             <span v-if="!work.completed && workIsInitial(work.work) && work.submissionCheckComplete" class="course-table-work-summary-lifecycle course-table-work-summary-complete"
                                                 :title="`Prüfstand: ${formatImportDate(work.work.submission_check_status.checked_at)}`">Abgabeprüfung abgeschlossen</span>
@@ -1269,7 +1284,7 @@
                                         maxlength="255"
                                         :disabled="workSaving" />
                                     <WorkWorkflowOverview v-if="savedWorkDialogWork && !dateWorkCreating && !dateHandshakeAwaitingLink"
-                                        class="mb-4" :work="savedWorkDialogWork" :course="selected_course"
+                                        ref="dateWorkWorkflow" class="mb-4" :work="savedWorkDialogWork" :course="selected_course"
                                         :date="workDialog.courseDate?.date || ''" :now="deadlineNow" :active="workDialog.open && workDialogTab === 'work'"
                                         :disabled="workSaving || workDeleting || workDialogTypeEditing || workDialogModeEditing"
                                         :link-error="work_folder_errors[workDropboxKey(config?.user?.id, savedWorkDialogWork)]"
@@ -1277,7 +1292,7 @@
                                         :assessment-count="`${savedWorkDialogCompletion.completed} von ${savedWorkDialogCompletion.completed + savedWorkDialogCompletion.open} beurteilt`"
                                         :last-collection="workDialogLastCollection" :last-evaluation="workDialogLastEvaluation" :last-check="workDialogLastCheck"
                                         @link="openLink" @import="openImport" @saved="applySavedCourseWork({ data: $event })"
-                                        @edit-grades="workDialogTab = workDialogForm.is_group_work ? 'groups' : 'students'"
+                                        @edit-grades="startDateWorkGrading"
                                         @exercise-status="workDialogExerciseStatus = $event" @progress-checked="rememberWorkDialogCheck"
                                         @deadline-saved="applyExerciseDeadline" @check-busy="workSaving = $event" @busy="workExerciseBusy = $event">
                                     <template #secondary-actions>
@@ -1597,7 +1612,7 @@
                                 <v-btn
                                     variant="text"
                                     :disabled="workSaving || workDeleting || workExerciseBusy || workDialogTypeEditing || workDialogModeEditing"
-                                    @click="cancelDateWorkForm(true)">
+                                    @click="cancelDateWorkEdit">
                                     Abbrechen
                                 </v-btn>
                                 <v-btn
@@ -2669,6 +2684,8 @@ export default {
 
     data() {
         return {
+            courseTableDrag: null,
+            courseTableDragClickPending: false,
             deadlineNow: Date.now(),
             deadlineClockInterval: null,
             assessmentQuestionDetails: {},
@@ -2793,6 +2810,7 @@ export default {
             },
             workDialogFormOpen: false,
             workDialogDirect: false,
+            workDialogGradingSnapshot: null,
             workDialogGroupDetails: {
                 groupIndex: null,
                 open: false,
@@ -2851,6 +2869,9 @@ export default {
             this.workDialogDateEditing = false
             this.workDialogGroupDateEditingIndex = null
             this.workDialogGroupDateMenuOpen = false
+        },
+        workDialogTab(tab) {
+            if (tab === 'work') this.workDialogGradingSnapshot = null
         },
         workFolderRequests: {
             immediate: true,
@@ -3277,7 +3298,7 @@ export default {
             Object.values(workManualCompletionFields).forEach(field => { delete status[field] })
 
             const assessment = this.workDialogAssessment
-            if (assessment && ['checking', 'missing', 'unknown'].includes(assessment.status)) return false
+            if (assessment && (assessment.initialCheckPending || ['checking', 'missing', 'unknown'].includes(assessment.status))) return false
             const ready = assessment?.status === 'found' && (assessment.assignmentStatus === 'ready' || assessment.preparation?.status === 'ready')
             return Boolean(ready
                 || (workHasProgress({ ...work, status }) && !workNeedsPreparation(work, this.workFolderState(work))))
@@ -3487,11 +3508,7 @@ export default {
         workFolderState(work) {
             return workDropboxStates.get(workDropboxKey(useAdminStore().config?.user?.id, work))
         },
-        workNextAction(work, date = '') {
-            const key = workDropboxKey(useAdminStore().config?.user?.id, work)
-            const checked = workExerciseCheck(key, work, date || work.date_for_all_groups || '')
-            const next = workWorkflowProgress(work, date, this.deadlineNow, checked?.data?.exercise?.email_dispatch,
-                this.selected_course?.students_info || []).next
+        workNextAction(work, next, checked, key) {
             if (next) return next.label === 'Offen' && !workAutomationEnabled(work) ? '' : next.label
             if (!workAutomationEnabled(work)) return ''
             const state = this.workFolderState(work)
@@ -3505,12 +3522,20 @@ export default {
         },
         workSummariesForDate(courseDate) {
             return this.courseWorksForDate(courseDate).map(assignment => {
-                const nextAction = this.workNextAction(assignment.work, courseDate.date)
+                const work = assignment.work
+                const key = workDropboxKey(useAdminStore().config?.user?.id, work)
+                const checked = workExerciseCheck(key, work, courseDate.date || work.date_for_all_groups || '')
+                const progress = workWorkflowProgress(work, courseDate.date, this.deadlineNow,
+                    checked?.data?.exercise?.email_dispatch, this.selected_course?.students_info || [])
+                const nextAction = this.workNextAction(work, progress.next, checked, key)
+                const portalStatus = this.workStudentDistributionStatus(work, progress)
+                const portalUploadClosed = portalStatus === 'Abgabe geschlossen'
                 const completed = nextAction === workCompletedLabel
                 const { completed: graded, open } = assignment.completion
                 const participantCount = graded + open
                 const allGraded = graded > 0 && open === 0
-                return { ...assignment, completed, nextAction, participantCount,
+                return { ...assignment, completed, nextAction, portalStatus, portalUploadClosed, participantCount,
+                    portalStatusLabel: portalUploadClosed ? portalStatus : `Schülerbereich: ${portalStatus}`,
                     countText: completed || allGraded ? participantCount : `${graded}/${participantCount}`,
                     countColor: completed ? '' : allGraded ? 'text-success' : 'text-error',
                     countLabel: completed ? `${participantCount} Schüler:innen` : `${graded} von ${participantCount} Leistungen erledigt; ${open} offen.`,
@@ -3527,7 +3552,9 @@ export default {
             const key = workDropboxKey(useAdminStore().config?.user?.id, work)
             return isInitialWork(work, workDropboxStates.get(key)) || (workAutomationEnabled(work) && workHasProgress(work))
         },
-        workStudentDistributionStatus(work) {
+        workStudentDistributionStatus(work, progress) {
+            if (progress.portalSubmissionClosed) return 'Abgabe geschlossen'
+            if (progress.reopenedCount) return 'Upload wieder geöffnet'
             const release = work?.status?.student_distribution
             if (release?.published_at) return release.withdrawn_at ? 'pausiert' : 'freigegeben'
             return release?.prepared_at ? 'vorbereitet' : ''
@@ -4220,7 +4247,6 @@ export default {
                 deadlineExpired: workAutomationEnabled(work) && workDeadlineExpired(work, this.deadlineNow),
                 evaluationsComplete: this.workEvaluationsComplete(work),
                 submissionCheckComplete: this.workSubmissionCheckComplete(work),
-                portalStatus: this.workStudentDistributionStatus(work),
                 id: work.id,
                 isGroupWork,
                 key: `${work.id}-${suffix || 'work'}`,
@@ -4532,6 +4558,7 @@ export default {
         },
         startCreatingDateWork() {
             this.resetDateHandshake?.()
+            this.workDialogGradingSnapshot = null
             this.workDialogForm = this.emptyDateWorkForm()
             this.workDialogExpectedFinalDeadline = null
             this.workDialogDateEditing = false
@@ -4544,6 +4571,7 @@ export default {
         },
         startEditingDateWork(work) {
             if (!work?.id) return
+            this.workDialogGradingSnapshot = null
             this.workDialogExpectedFinalDeadline = { date: this.normalizeDateKey(work.finish_until_date) || null, time: work.finish_until_time || null }
 
             const groups = this.cloneDateWorkGroups(work.groups)
@@ -4569,6 +4597,19 @@ export default {
             this.workDialogTypeDraft = ''
             this.workDialogTypeEditing = false
             this.workDialogFormOpen = true
+        },
+        startDateWorkGrading() {
+            const { groups, group_size, is_random_groups, is_group_work } = this.workDialogForm
+            this.workDialogGradingSnapshot = {
+                groups: this.cloneDateWorkGroups(groups),
+                group_size,
+                is_random_groups,
+            }
+            this.workDialogTab = is_group_work ? 'groups' : 'students'
+        },
+        returnToDateWorkAfterGrading() {
+            this.workDialogTab = 'work'
+            this.$nextTick(() => this.$refs.dateWorkWorkflow?.showAssessmentPhase())
         },
         cloneDateWorkGroups(groups) {
             const cloneStudentValues = (values) => {
@@ -4654,6 +4695,9 @@ export default {
                     group.date = date
                 })
             }
+            this.workDialogGradingSnapshot?.groups.forEach((group) => {
+                group.date = date
+            })
             this.workDialog = {
                 ...this.workDialog,
                 courseDate,
@@ -4759,10 +4803,23 @@ export default {
 
             return groupSizes
         },
+        cancelDateWorkEdit() {
+            if (!this.workDialogGradingSnapshot) {
+                this.cancelDateWorkForm(true)
+                return
+            }
+
+            Object.assign(this.workDialogForm, this.workDialogGradingSnapshot)
+            this.closeRandomGroupsDialog()
+            this.closeWorkDialogGroupDetails()
+            this.handleWorkDialogGroupDateMenu(false)
+            this.returnToDateWorkAfterGrading()
+        },
         cancelDateWorkForm(closeDirect = false) {
             if (this.workExerciseBusy) return
             this.resetDateHandshake?.()
             this.closeRandomGroupsDialog()
+            this.workDialogGradingSnapshot = null
             this.workDialogForm = this.emptyDateWorkForm()
             this.workDialogDateEditing = false
             this.workDialogGroupDetails = {
@@ -4800,6 +4857,7 @@ export default {
                 ))
             })) return
 
+            const returnToWork = Boolean(this.workDialogGradingSnapshot)
             this.workSaving = true
             this.dateWorkCreating = !this.workDialogForm.id
             try {
@@ -4850,6 +4908,7 @@ export default {
                 }
 
                 if (!response) return
+                if (returnToWork && String(response.data?.id) !== String(payload.id)) return
 
                 this.applySavedCourseWork(response)
                 if (this.dateHandshakeDraft && response.data?.id) {
@@ -4861,6 +4920,11 @@ export default {
                 if (this.dateHandshakeDraft && response.data?.id) {
                     this.startEditingDateWork(response.data)
                     await this.resumeDateHandshakeLink(response.data)
+                } else if (returnToWork) {
+                    const savedWork = this.savedWorkDialogWork
+                    if (!savedWork) this.applySavedCourseWork(response)
+                    this.startEditingDateWork(savedWork || response.data)
+                    this.returnToDateWorkAfterGrading()
                 } else this.cancelDateWorkForm(true)
             } finally {
                 this.dateWorkCreating = false
@@ -6755,6 +6819,69 @@ export default {
             return datedCourseDates.find((courseDate) => this.normalizeDateKey(courseDate.date) > todayKey)
                 || datedCourseDates[datedCourseDates.length - 1]
         },
+        startCourseTableDrag(event) {
+            if (event.pointerType !== 'mouse') return
+
+            this.courseTableDragClickPending = false
+            const { currentTarget, target } = event
+            if (event.button !== 0 || event.buttons !== 1 || currentTarget.scrollWidth <= currentTarget.clientWidth) return
+            if (!target.closest('td, th') || target.closest(
+                'button, a, input, select, textarea, label, img, [contenteditable]:not([contenteditable="false"]), '
+                + '[draggable="true"], [role="button"]:not(td, th), [role="link"], [role="switch"]',
+            )) return
+
+            this.courseTableDrag = {
+                pointerId: event.pointerId,
+                lastX: event.clientX,
+                startY: event.clientY,
+                scrollLeft: currentTarget.scrollLeft,
+                active: false,
+            }
+        },
+        moveCourseTableDrag(event) {
+            const drag = this.courseTableDrag
+            if (drag?.pointerId !== event.pointerId) return
+            if (event.buttons !== 1) {
+                this.finishCourseTableDrag(event)
+                return
+            }
+
+            const distanceX = event.clientX - drag.lastX
+            if (!drag.active) {
+                const horizontal = Math.abs(distanceX)
+                const vertical = Math.abs(event.clientY - drag.startY)
+                const threshold = 6
+                if (vertical >= threshold && vertical >= horizontal) {
+                    this.finishCourseTableDrag(event)
+                    return
+                }
+                if (horizontal < threshold) return
+
+                event.currentTarget.setPointerCapture(event.pointerId)
+                drag.active = true
+                this.courseTableDragClickPending = true
+            }
+
+            event.preventDefault()
+            const scrollContainer = event.currentTarget
+            const maximumScrollLeft = scrollContainer.scrollWidth - scrollContainer.clientWidth
+            drag.scrollLeft = Math.min(Math.max(0, maximumScrollLeft), Math.max(0, drag.scrollLeft - distanceX))
+            scrollContainer.scrollLeft = drag.scrollLeft
+            drag.lastX = event.clientX
+        },
+        finishCourseTableDrag(event) {
+            if (this.courseTableDrag?.pointerId === event.pointerId) {
+                this.courseTableDrag = null
+            }
+        },
+        suppressCourseTableDragClick(event) {
+            if (!this.courseTableDragClickPending || event.detail === 0) return
+            if (event.pointerType && event.pointerType !== 'mouse') return
+
+            this.courseTableDragClickPending = false
+            event.preventDefault()
+            event.stopPropagation()
+        },
         scrollToInitialCourseDate() {
             this.$nextTick(() => {
                 const scrollContainer = this.$refs.courseTableScroll
@@ -6964,6 +7091,18 @@ export default {
 .course-table-scroll {
     max-width: 100%;
     overflow: auto;
+}
+
+.course-table-scroll--dragging,
+.course-table-scroll--dragging :deep(*) {
+    cursor: grabbing !important;
+    user-select: none;
+}
+
+@media (not (any-pointer: fine)) {
+    .course-table-drag-hint {
+        display: none;
+    }
 }
 
 .course-table {

@@ -578,17 +578,36 @@ class TeachingWorkMarkdownImport
         $work->save();
     }
 
+    /** Call only after authorizing the student's work entry. */
+    public function studentPdfAvailable(TeachingCourseWork $work, int $studentId, string $sha256): bool
+    {
+        $attachment = $this->evaluationPdfAttachment($work, $sha256, $studentId);
+
+        return ($attachment['origin'] ?? null) === 'evaluation_import' && Storage::disk('local')->fileExists($attachment['file_path']);
+    }
+
+    /** @return array<string, mixed>|null */
+    private function evaluationPdfAttachment(TeachingCourseWork $work, string $sha256, ?int $studentId): ?array
+    {
+        if (preg_match('/\A[a-f0-9]{64}\z/', $sha256) !== 1) {
+            return null;
+        }
+        $attachment = collect($work->status['evaluation_pdfs'] ?? [])->first(fn ($pdf): bool => is_array($pdf)
+            && ($pdf['sha256'] ?? null) === $sha256 && ($studentId === null || (int) ($pdf['student_id'] ?? 0) === $studentId));
+        $path = $attachment['file_path'] ?? null;
+        $schoolId = $work->teachingCourse->school_id;
+
+        return is_string($path) && ($attachment['storage_disk'] ?? null) === 'local' && ! str_contains($path, '..') && ! str_contains($path, '\\')
+            && (str_starts_with($path, "teaching/work_evaluations/{$schoolId}/") || str_starts_with($path, "teaching/synchronisation/{$schoolId}/")
+                || str_starts_with($path, 'teaching/personal_restores/')) ? $attachment : null;
+    }
+
     /** Call only after authorizing the owning course; studentId additionally restricts the personal report. */
     public function streamPdf(TeachingCourseWork $work, string $sha256, ?int $studentId = null, bool $inline = false): StreamedResponse
     {
-        abort_unless(preg_match('/\A[a-f0-9]{64}\z/', $sha256), 404);
-        $attachment = collect($work->status['evaluation_pdfs'] ?? [])->first(fn (array $pdf): bool => $pdf['sha256'] === $sha256 && ($studentId === null || ($pdf['student_id'] !== null && (int) $pdf['student_id'] === $studentId)));
+        $attachment = $this->evaluationPdfAttachment($work, $sha256, $studentId);
         abort_unless($attachment, 404);
-        $path = $attachment['file_path'] ?? '';
-        $schoolId = $work->teachingCourse->school_id;
-        abort_unless(($attachment['storage_disk'] ?? null) === 'local' && ! str_contains($path, '..') && ! str_contains($path, '\\') &&
-            (str_starts_with($path, "teaching/work_evaluations/{$schoolId}/") || str_starts_with($path, "teaching/synchronisation/{$schoolId}/") || str_starts_with($path, 'teaching/personal_restores/')), 404);
-        $stream = Storage::disk('local')->readStream($path);
+        $stream = Storage::disk('local')->readStream($attachment['file_path']);
         abort_unless(is_resource($stream), 404);
         $name = PrivateImportSourceFile::downloadName($attachment['name'], 'beurteilung', 'pdf');
 

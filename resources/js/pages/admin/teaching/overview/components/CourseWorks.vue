@@ -2742,7 +2742,7 @@ export default {
         },
         workStudentDistributionAvailable(work) {
             const state = this.workflowAssessment
-            if (['unknown', 'checking', 'missing'].includes(state?.status)) return false
+            if (state?.initialCheckPending || ['unknown', 'checking', 'missing'].includes(state?.status)) return false
             if (state?.status === 'found') return state.assignmentStatus === 'ready' || state.preparation?.status === 'ready'
             const status = { ...work.status }
             Object.values(workManualCompletionFields).forEach(field => { delete status[field] })
