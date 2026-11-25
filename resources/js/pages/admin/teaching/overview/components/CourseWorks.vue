@@ -112,7 +112,7 @@
                                 </div>
                                 <div v-if="assessmentActivity(work)" class="text-caption text-info">{{ assessmentLabel(work) }}</div>
                                 <div v-if="workEmailPreparationLabel(work)" class="text-caption font-weight-bold"
-                                    :class="workEmailPreparationLabel(work) === 'Versandbereit' ? 'text-success' : 'text-orange-darken-2'">
+                                     :class="['Versandbereit', 'Abgeschlossen'].includes(workEmailPreparationLabel(work)) ? 'text-success' : 'text-orange-darken-2'">
                                     {{ workEmailPreparationLabel(work) === 'Abgeschlossen' ? 'ABGESCHLOSSEN' : workEmailPreparationLabel(work) }}
                                 </div>
                             </div>
@@ -159,12 +159,11 @@
                     <v-select v-if="workflowDates.length > 1" :model-value="workflowDate" @update:model-value="workflowSelectedDate = $event"
                         :items="workflowDates" label="Durchführungstermin für den Ablauf"
                         density="compact" variant="outlined" hide-details class="mb-2" :disabled="workChecking || workExerciseBusy" />
-                    <WorkWorkflowOverview :work="savedWorkForTitle" :course="selected_course" :date="workflowDate"
+                    <WorkWorkflowOverview :work="savedWorkForTitle" :course="selected_course" :date="workflowDate" :now="deadlineNow"
                         :assessment="workflowAssessment" :exercise-ready="workStudentDistributionAvailable(savedWorkForTitle)"
                         :disabled="workChecking || is_saving || is_deleting_work || isEditingExistingDetails"
                         :link-error="work_folder_errors[workDropboxKey(config?.user?.id, savedWorkForTitle)]" :check-progress="workHasProgress(savedWorkForTitle)"
                         :assessment-count="`${workAssessedCount(savedWorkForTitle)} von ${totalCourseStudentsCount} beurteilt`"
-                        :all-assessed="totalCourseStudentsCount > 0 && workAssessedCount(savedWorkForTitle) === totalCourseStudentsCount"
                         :last-check="workflowLastCheck"
                         @link="openLink" @import="openImport" @saved="workflowWorkSaved" @edit-grades="focusWorkSection('workGrading')"
                         @exercise-status="workExerciseStatus = $event" @progress-checked="rememberWorkflowCheck"
@@ -928,7 +927,7 @@ import WorkQueueProgress from './WorkQueueProgress.vue'
 import WorkWorkflowOverview from './WorkWorkflowOverview.vue'
 import WorkCreationProgress from './WorkCreationProgress.vue'
 import WorkSimulationBadge from './WorkSimulationBadge.vue'
-import { workHasProgress, workManualCompletionFields, workProgressNextAction } from '@/helpers/workProgress'
+import { workHasProgress, workManualCompletionFields, workWorkflowProgress } from '@/helpers/workProgress'
 import { workAutomationEnabled } from '@/helpers/workAutomation'
 import { loadWorkDropbox, loadWorkExercise, workDropboxKey, workDropboxStates, workExerciseCheck } from '@/helpers/workDropbox'
 import { isInitialWork, workConnectionLabel, workNeedsPreparation, workPreparationLabel } from '@/helpers/workOverview'
@@ -1030,9 +1029,10 @@ export default {
         },
         workflowDates() {
             const work = this.savedWorkForTitle
-            if (work?.date_for_all_groups) return [{ title: this.normalizeDateString(work.date_for_all_groups).split('-').reverse().join('.'), value: this.normalizeDateString(work.date_for_all_groups) }]
-            return [...new Set((work?.groups || []).map(group => this.normalizeDateString(group.date)).filter(Boolean))].sort()
-                .map(date => ({ title: date.split('-').reverse().join('.'), value: date }))
+            const commonDate = this.normalizeDateString(work?.date_for_all_groups)
+            const dates = [...new Set((work?.groups || []).map(group => this.normalizeDateString(group.date) || commonDate).filter(Boolean))]
+            if (!dates.length && commonDate) dates.push(commonDate)
+            return dates.sort().map(date => ({ title: date.split('-').reverse().join('.'), value: date }))
         },
         workflowDate() {
             return this.workflowDates.some(date => date.value === this.workflowSelectedDate)
@@ -2663,8 +2663,9 @@ export default {
         },
         workListDate(work) {
             const groups = Array.isArray(work?.groups) ? work.groups : []
+            const commonDate = this.normalizeDateString(work?.date_for_all_groups)
             const groupDates = groups
-                .map((group) => this.normalizeDateString(group?.date))
+                .map((group) => this.normalizeDateString(group?.date) || commonDate)
                 .filter((date) => !!date)
                 .filter((date) => {
                     const parsed = parseLocalDate(date)
@@ -2672,7 +2673,7 @@ export default {
                 })
                 .sort((a, b) => a.localeCompare(b))
             if (groupDates.length) return groupDates[0]
-            return this.normalizeDateString(work?.date_for_all_groups)
+            return commonDate
         },
         workListDateColor(work) {
             const date = this.workListDate(work)
@@ -2738,9 +2739,11 @@ export default {
             return workHasProgress({ ...work, status }) && !workNeedsPreparation(work, this.workFolderState(work))
         },
         workEmailPreparationLabel(work) {
-            if (workHasProgress(work)) return workProgressNextAction(work, this.deadlineNow)
+            const date = this.workListDate(work) || ''
+            const checked = workExerciseCheck(workDropboxKey(this.config?.user?.id, work), work, date)
+            const next = workWorkflowProgress(work, date, this.deadlineNow, checked?.data?.exercise?.email_dispatch).next
+            if (next) return next.label
             if (!workAutomationEnabled(work) || !workNeedsPreparation(work, this.workFolderState(work))) return ''
-            const checked = workExerciseCheck(workDropboxKey(this.config?.user?.id, work), work, work.date_for_all_groups || '')
             return checked?.status === 'found' ? workPreparationLabel(checked) : ''
         },
         workDeadlineColor,

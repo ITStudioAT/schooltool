@@ -3861,6 +3861,12 @@ class TeachingBackupService
         if (isset($status['student_distribution']['student_ids']) && $userIdMap !== []) {
             $status['student_distribution']['student_ids'] = array_map(fn (int $id): int => $userIdMap[$id] ?? throw new RuntimeException('Schülerzuordnung der Aufgabenfreigabe fehlt.'), $status['student_distribution']['student_ids']);
         }
+        if (isset($status['portal_submission_reopenings']) && $userIdMap !== []) {
+            $status['portal_submission_reopenings'] = collect($status['portal_submission_reopenings'])
+                ->filter(fn (array $record): bool => isset($userIdMap[$record['student_id'] ?? null]))
+                ->map(fn (array $record): array => [...$record, 'student_id' => (int) $userIdMap[$record['student_id']]])
+                ->values()->all();
+        }
         foreach ($status['evaluation_pdfs'] ?? [] as $index => $pdf) {
             $status['evaluation_pdfs'][$index]['file_path'] = $this->restoreFilePath($pdf['file_path'], $files, "teaching/work_evaluations/{$schoolId}/restored");
             $status['evaluation_pdfs'][$index]['storage_disk'] = 'local';

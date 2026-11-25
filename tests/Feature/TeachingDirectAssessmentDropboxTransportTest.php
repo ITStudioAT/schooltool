@@ -47,7 +47,7 @@ beforeEach(function (): void {
     Http::preventStrayRequests();
 });
 
-test('direct assessment uses real Dropbox transport for initial status retry and package', function (bool $withMc, string $mode, int $participantCount = 1): void {
+test('direct assessment uses real Dropbox transport for initial status retry and package', function (bool $withMc, string $mode, int $participantCount = 1, bool $multipleClasses = false): void {
     config(['cache.default' => 'array', 'cache.stores.database.connection' => config('database.default'),
         'queue.connections.database.connection' => config('database.default')]);
     Sleep::fake();
@@ -56,15 +56,16 @@ test('direct assessment uses real Dropbox transport for initial status retry and
     TeachingEntryDefinition::factory()->create(['school_id' => $this->teacher->school_id, 'schoolyear_id' => $this->teacher->schoolyear_id,
         'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $area->id, 'short_name' => 'LF',
         'category' => 'Benotung', 'name' => 'Leistungsfeststellung', 'has_properties' => true, 'properties_mode' => 'points', 'maximum_points' => 5]);
-    $this->course->update(['title' => 'INF - 3B - 2', 'classes' => ['3B'], 'teaching_entry_area_id' => $area->id]);
+    $classes = $multipleClasses ? ['1A', '1F'] : ['3B'];
+    $this->course->update(['title' => $multipleClasses ? 'INF 1' : 'INF - 3B - 2', 'classes' => $classes, 'teaching_entry_area_id' => $area->id]);
     $this->work->update(['title' => 'Word', 'type' => 'LF', 'date_for_all_groups' => '2026-11-18', 'finish_until_date' => '2026-11-19',
         'finish_until_time' => '20:00', 'is_group_work' => false, 'groups' => [], 'status' => []]);
     $student = User::factory()->create(['school_id' => $this->teacher->school_id, 'schoolyear_id' => $this->teacher->schoolyear_id,
-        'first_name' => 'Anna', 'last_name' => 'Beispiel', 'sex' => 'w', 'schoolclass' => '3B', 'is_active' => true]);
+        'first_name' => 'Anna', 'last_name' => 'Beispiel', 'sex' => 'w', 'schoolclass' => $classes[0], 'is_active' => true]);
     TeachingCourseStudent::query()->create(['teaching_course_id' => $this->course->id, 'user_id' => $student->id]);
     for ($number = 2; $number <= $participantCount; $number++) {
         $participant = User::factory()->create(['school_id' => $this->teacher->school_id, 'schoolyear_id' => $this->teacher->schoolyear_id,
-            'first_name' => 'Testperson'.$number, 'last_name' => 'Beispiel'.$number, 'sex' => 'w', 'schoolclass' => '3B', 'is_active' => true]);
+            'first_name' => 'Testperson'.$number, 'last_name' => 'Beispiel'.$number, 'sex' => 'w', 'schoolclass' => $classes[1] ?? $classes[0], 'is_active' => true]);
         TeachingCourseStudent::query()->create(['teaching_course_id' => $this->course->id, 'user_id' => $participant->id]);
     }
     $test = null;
@@ -308,7 +309,9 @@ test('direct assessment uses real Dropbox transport for initial status retry and
     }
     expect($run['state'], $run['message'] ?? 'expected a completed queue job')->toBe('completed');
     $result = $run['result'];
-    expect($result['status'])->toBe('created')->and($result['participants_count'])->toBe($participantCount);
+    $group = $multipleClasses ? 'Kurs-'.$this->course->id : '3B_Gruppe-2';
+    expect($result['status'])->toBe('created')->and($result['participants_count'])->toBe($participantCount)
+        ->and($result['folder']['name'])->toBe('2026-11-18 – '.$group.' – Word');
     expect($run['progress']['state'])->toBe('done')->and($run['progress']['active'])->toBeNull();
     for ($index = 0; $index < $participantCount; $index++) {
         expect($run['progress']['completed'])->toContain('assessment_candidate_'.$index);
@@ -360,6 +363,7 @@ test('direct assessment uses real Dropbox transport for initial status retry and
     }
     $status = json_decode($state->files[$result['folder']['id'].'/status.json']['contents'], true);
     expect($status['prepared'])->toBeTrue();
+    expect($status['folder_group'])->toBe($group);
     $history = $status['progress']['attempts'];
     $lastAttempt = end($history);
     expect($lastAttempt['state'])->toBe('completed')->and($lastAttempt['phase'])->toBe('complete')
@@ -376,7 +380,8 @@ test('direct assessment uses real Dropbox transport for initial status retry and
     expect(app(DropboxWorkImport::class)->readDocument($connection, 'id:module', 'MC-Test_1.json'))->toBeNull();
     Http::assertSent(fn (Request $request): bool => str_ends_with($request->url(), '/files/upload'));
     Http::assertSent(fn (Request $request): bool => str_ends_with($request->url(), '/files/download'));
-})->with([[false, 'new'], [false, 'empty'], [false, 'linked'], [false, 'linked', 6], [false, 'linked', 30], [false, 'interrupted', 30], [false, 'second-subfolder', 30], [false, 'partial'], [false, 'dated']]);
+})->with([[false, 'new'], [false, 'empty'], [false, 'linked'], [false, 'linked', 6], [false, 'linked', 30], [false, 'interrupted', 30], [false, 'second-subfolder', 30], [false, 'partial'], [false, 'dated'],
+    'linked course with two classes' => [false, 'linked', 2, true]]);
 
 test('exercise documents reject traversal and unrelated files while MC paths stay separate', function (): void {
     $connection = new DropboxConnection(['credentials' => ['refresh_token' => 'fake', 'scopes' => ['files.content.write']]]);

@@ -87,7 +87,12 @@ class DropboxModuleLinks
 
     private function exerciseSchedule(TeachingCourseWork $work): string
     {
-        return hash('sha256', serialize([$work->teachingCourse->title, $work->teachingCourse->classes, $work->date_for_all_groups?->format('Y-m-d'),
+        $classes = $work->teachingCourse->classes;
+        if (is_array($classes)) {
+            sort($classes, SORT_STRING);
+        }
+
+        return hash('sha256', serialize([$work->teachingCourse->title, $classes, $work->date_for_all_groups?->format('Y-m-d'),
             app(TeachingCourseWorkEntrySyncService::class)->groupsForWork($work), $work->title,
             $work->finish_until_date?->format('Y-m-d'), $work->finish_until_time,
             $work->teachingCourse->teachingCourseStudents()->with(['user:id,email,updated_at', 'import116:id,email,updated_at'])
@@ -96,7 +101,11 @@ class DropboxModuleLinks
 
     private function exerciseCacheKey(DropboxConnection $connection, TeachingCourseWork $work, TeachingWorkModuleLink $link): string
     {
-        return 'teaching:exercise-check:v2:'.hash('sha256', serialize([$connection->id, $connection->account_id,
+        $group = TeachingAssessmentTargetGuard::courseGroup($work->teachingCourse);
+        // Invalidate checks made before multi-class courses had an assessment folder group.
+        $version = $group['group_number'] === null && $group['folder_group'] !== null ? 'v3' : 'v2';
+
+        return "teaching:exercise-check:{$version}:".hash('sha256', serialize([$connection->id, $connection->account_id,
             $work->id, $work->teaching_course_id, $link->getAttributes()]));
     }
 
@@ -136,7 +145,7 @@ class DropboxModuleLinks
             return null;
         }
 
-        $group = $this->preparedExerciseGroup($work);
+        $group = TeachingAssessmentTargetGuard::courseGroup($work->teachingCourse)['folder_group'];
         if ($connection->account_id !== $link->account_id || $date === null || $group === null) {
             return null;
         }
@@ -154,18 +163,6 @@ class DropboxModuleLinks
 
         return ($exercise['folder']['name'] ?? null) === $expectedName && ($preparation['status'] ?? null) === 'ready'
             ? $preparation : null;
-    }
-
-    private function preparedExerciseGroup(TeachingCourseWork $work): ?string
-    {
-        $classes = array_values(array_unique($work->teachingCourse->classes ?? []));
-        if (count($classes) !== 1
-            || preg_match('/\A.+?\s+-\s+(.+?)\s+-\s+([1-9][0-9]*)\z/u', trim($work->teachingCourse->title), $parts) !== 1
-            || trim($parts[1]) !== $classes[0]) {
-            return null;
-        }
-
-        return $classes[0].'_Gruppe-'.$parts[2];
     }
 
     /** @return array<string, mixed> */
@@ -387,7 +384,7 @@ class DropboxModuleLinks
             return null;
         }
         abort_unless(count($roots) === 1, 409, 'Der Ordner Leistungsfeststellungen ist nicht eindeutig.');
-        $group = $this->preparedExerciseGroup($work);
+        $group = TeachingAssessmentTargetGuard::courseGroup($work->teachingCourse)['folder_group'];
         abort_if($group === null, 409, 'Die Kursgruppe für den Prüfungsordner ist nicht eindeutig.');
         $root = $this->dropbox->metadata($connection, $roots[0]['id']);
         abort_unless(($root['id'] ?? null) === $roots[0]['id'] && is_string($root['path_lower'] ?? null)
@@ -984,7 +981,7 @@ class DropboxModuleLinks
         }
 
         $dates = app(TeachingAssessmentTargetGuard::class)->dates($work);
-        $group = $this->preparedExerciseGroup($work);
+        $group = TeachingAssessmentTargetGuard::courseGroup($work->teachingCourse)['folder_group'];
         $expectedPath = count($dates) === 1 && $group !== null
             ? rtrim($link->folder_path, '/').'/Leistungsfeststellungen/'.$dates[0].' – '.$group.' – '.trim($work->title)
             : null;

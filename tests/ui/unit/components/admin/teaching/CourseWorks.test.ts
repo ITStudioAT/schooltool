@@ -13,6 +13,7 @@ import WorkEvaluationPdf from '@/pages/admin/teaching/overview/components/WorkEv
 import WorkDispatchLog from '@/pages/admin/teaching/overview/components/WorkDispatchLog.vue'
 import WorkTitleEditor from '@/pages/admin/teaching/overview/components/WorkTitleEditor.vue'
 import WorkExerciseExport from '@/pages/admin/teaching/overview/components/WorkExerciseExport.vue'
+import WorkSubmissionCollection from '@/pages/admin/teaching/overview/components/WorkSubmissionCollection.vue'
 import { clearWorkDropboxStates, loadWorkExercise, workDropboxStates } from '@/helpers/workDropbox'
 
 vi.mock('vue-filepond/dist/vue-filepond.js', () => ({ default: () => ({
@@ -41,6 +42,40 @@ describe('New work overview and assessment mode', () => {
             await flushPromises()
             expect(wrapper.get('.work-row').text()).toContain('Versandbereit')
             expect(wrapper.get('.work-row').text()).not.toContain('E-Mails vorbereiten')
+        } finally { wrapper.unmount() }
+    })
+
+    it('shows the same next submission step in the work row and the opened workflow after evidence changes', async () => {
+        const date = '2026-11-20'
+        const file = student_id => ({ id: `file-${student_id}`, student_id, name: 'Beispiel.pdf',
+            sha256: 'a'.repeat(64), submitted_at: '2026-11-20T10:00:00Z' })
+        const work = { id: 65, teaching_course_id: 2, type: 'A5', title: 'Fiktive Portalarbeit', date_for_all_groups: date,
+            groups: [{ student_ids: [12, 13] }], status: {
+                submission_method: { channel: 'portal' }, portal_submissions: [file(12)],
+                student_distribution: { published_at: `${date}T08:00:00Z`, ended_at: `${date}T12:00:00Z`, student_ids: [12, 13] },
+            },
+        }
+        vi.stubGlobal('axios', { get: vi.fn().mockResolvedValue({ data: { connected: false } }) })
+        const wrapper = mountOverview(work, { folder: null }, true)
+        try {
+            await flushPromises()
+            expect(wrapper.get('.work-row .text-orange-darken-2').text()).toBe('Abgaben einsammeln')
+            await wrapper.get('.work-row').trigger('click')
+            await flushPromises()
+            const workflow = wrapper.get('[aria-label="Ablauf der Arbeit"]')
+            expect(workflow.get('.work-phase--current .work-phase__title').text()).toBe('Abgeben')
+            const collection = workflow.getComponent(WorkSubmissionCollection)
+            expect(collection.props('date')).toBe(date)
+            expect(collection.props('work').status?.portal_submissions).toEqual([file(12)])
+
+            wrapper.vm.courseWorkStore.courseWorks = [{ ...work, status: { ...work.status, portal_submissions: [file(12), file(13)] } }]
+            await flushPromises()
+            expect(workflow.get('.work-phase--next-assessment .work-phase__title').text()).toBe('Bewerten')
+            expect(workflow.findComponent(WorkSubmissionCollection).exists()).toBe(false)
+            expect(workflow.text()).toContain('Abgabestatus ansehen')
+            wrapper.vm.abortEdit()
+            await flushPromises()
+            expect(wrapper.get('.work-row .text-orange-darken-2').text()).toBe('Bewerten')
         } finally { wrapper.unmount() }
     })
 

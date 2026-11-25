@@ -2,12 +2,28 @@
 
 namespace App\Services;
 
+use App\Models\TeachingCourse;
 use App\Models\TeachingCourseWork;
 use App\Models\TeachingWorkModuleLink;
 
 class TeachingAssessmentTargetGuard
 {
     public function __construct(private TeachingCourseWorkEntrySyncService $entries) {}
+
+    /** @return array{group_number: ?int, folder_group: ?string} */
+    public static function courseGroup(?TeachingCourse $course): array
+    {
+        $classes = array_values(array_unique($course?->classes ?? []));
+        if (count($classes) === 1
+            && preg_match('/\A.+?\s+-\s+(.+?)\s+-\s+([1-9][0-9]*)\z/u', trim($course->title), $parts) === 1
+            && trim($parts[1]) === $classes[0]) {
+            return ['group_number' => (int) $parts[2], 'folder_group' => $classes[0].'_Gruppe-'.$parts[2]];
+        }
+
+        $folderGroup = count($classes) > 1 && $course->exists && $course->id > 0 ? "Kurs-{$course->id}" : null;
+
+        return ['group_number' => null, 'folder_group' => $folderGroup];
+    }
 
     /** @return list<string> */
     public function dates(TeachingCourseWork $work): array
@@ -33,11 +49,8 @@ class TeachingAssessmentTargetGuard
                 || ! in_array($date, $this->dates($other), true)) {
                 continue;
             }
-            $course = $other->teachingCourse;
-            $classes = array_values(array_unique($course?->classes ?? []));
-            $matched = count($classes) === 1 && preg_match('/\A.+?\s+-\s+(.+?)\s+-\s+([1-9][0-9]*)\z/u', trim($course?->title ?? ''), $parts) === 1
-                && trim($parts[1]) === $classes[0];
-            abort_if(! $matched || $group === $classes[0].'_Gruppe-'.$parts[2], 409,
+            $otherGroup = self::courseGroup($other->teachingCourse)['folder_group'];
+            abort_if($otherGroup === null || mb_strtolower($group) === mb_strtolower($otherGroup), 409,
                 'Eine weitere Arbeit kann denselben Prüfungsordner verwenden. Bitte Titel, Kursgruppe und Durchführungstermin eindeutig zuordnen.');
         }
     }

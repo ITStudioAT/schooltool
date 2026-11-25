@@ -146,6 +146,137 @@ test('portal submissions retain files and enforce the saved method, release, ide
     $as($this->teacher)->get($download)->assertNotFound();
 });
 
+test('portal upload uses the same Vienna deadline for different work dates without ending the release', function (): void {
+    $this->work->update([
+        'date_for_all_groups' => null,
+        'finish_until_date' => '2026-11-24',
+        'finish_until_time' => '12:30',
+        'groups' => [
+            ['date' => '2026-11-20', 'student_ids' => [$this->student->id]],
+            ['date' => '2026-11-23', 'student_ids' => [$this->peer->id]],
+        ],
+        'status' => [...$this->work->status, 'submission_method' => ['channel' => 'portal', 'email' => null]],
+    ]);
+    $this->actingAs($this->teacher)->postJson($this->publishUrl, ($this->payload)())->assertOk();
+    $uploadUrl = route('student.course-work.submissions.store', ['courseId' => $this->course->id, 'course_work' => $this->work]);
+
+    foreach ([[$this->student, '2026-11-20'], [$this->peer, '2026-11-23']] as [$student, $workDate]) {
+        Auth::guard('sanctum')->forgetUser();
+        $this->actingAs($student, 'web');
+        $this->travelTo(CarbonImmutable::parse('2026-11-24T11:29:59Z'));
+        $this->getJson($this->tasksUrl)->assertOk()
+            ->assertJsonPath('tasks.0.date', $workDate)
+            ->assertJsonPath('tasks.0.deadline', ['date' => '2026-11-24', 'time' => '12:30'])
+            ->assertJsonPath('tasks.0.can_submit', true);
+        $this->postJson($uploadUrl, ['file' => UploadedFile::fake()->createWithContent('Rechtzeitig.txt', 'Antwort')])->assertOk();
+
+        $this->travelTo(CarbonImmutable::parse('2026-11-24T11:30:01Z'));
+        $this->getJson($this->tasksUrl)->assertOk()->assertJsonPath('tasks.0.can_submit', false);
+        $this->postJson($uploadUrl, ['file' => UploadedFile::fake()->createWithContent('Verspätet.txt', 'Antwort')])
+            ->assertConflict()->assertJsonPath('message', 'Die Abgabefrist ist abgelaufen.');
+    }
+
+    $saved = $this->work->fresh();
+    expect($saved->studentReleaseEnded())->toBeFalse();
+    expect(array_column($saved->status['portal_submissions'], 'name'))->toBe(['Rechtzeitig.txt', 'Rechtzeitig.txt']);
+});
+
+test('a teacher reopens only the selected portal submission scope until its own Vienna deadline', function (bool $endRelease): void {
+    $otherDateStudent = User::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->year->id])->assignRole('student');
+    $ambiguousStudent = User::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->year->id])->assignRole('student');
+    $this->course->teachingCourseStudents()->create(['user_id' => $otherDateStudent->id]);
+    $this->course->teachingCourseStudents()->create(['user_id' => $ambiguousStudent->id]);
+    $portal = ['channel' => 'portal', 'email' => null];
+    $as = function (User $user) {
+        Auth::guard('sanctum')->forgetUser();
+
+        return $this->actingAs($user, 'web');
+    };
+    $groups = $as($this->teacher)->putJson(route('course_works.update', $this->work), [
+        'is_group_work' => true,
+        'date_for_all_groups' => null,
+        'finish_until_date' => '2026-11-24',
+        'finish_until_time' => '12:30',
+        'groups' => [
+            ['date' => '2026-11-20', 'student_ids' => [$this->student->id, $this->peer->id, $ambiguousStudent->id]],
+            ['date' => '2026-11-23', 'student_ids' => [$otherDateStudent->id, $ambiguousStudent->id]],
+        ],
+    ])->assertOk()->json('data.groups');
+    expect(collect($groups)->filter(fn (array $group): bool => in_array($ambiguousStudent->id, $group['student_ids'], true))
+        ->pluck('date')->all())->toBe(['2026-11-20', '2026-11-23']);
+    $settings = route('teaching.work-submission-method.update', $this->work);
+    $this->putJson($settings, $portal + ['expected' => null])->assertOk();
+    $upload = fn (string $name): array => ['file' => UploadedFile::fake()->createWithContent($name, 'Antwort')];
+    $uploadUrl = route('student.course-work.submissions.store', ['courseId' => $this->course->id, 'course_work' => $this->work]);
+    $reopenUrl = route('teaching.work-submissions.reopen', $this->work);
+    $as($this->teacher)->postJson($this->publishUrl, ($this->payload)())->assertOk();
+    $original = $as($this->student)->postJson($uploadUrl, $upload('Original.txt'))->assertOk()->json('files.0');
+    $version = $this->getJson($this->tasksUrl.'?view=deadlines')->assertOk()->json('version');
+    $as($ambiguousStudent)->getJson($this->tasksUrl)->assertOk()->assertJsonCount(1, 'tasks')
+        ->assertJsonPath('tasks.0.date', '2026-11-20')->assertJsonPath('tasks.0.dates', ['2026-11-20', '2026-11-23']);
+    $sharedReceipt = $this->postJson($uploadUrl, $upload('Datei bei Doppelzuordnung.txt'))->assertOk()
+        ->assertJsonMissingPath('files.0.date')->json('files.0.id');
+    $choice = ['date' => '2026-11-20', 'scope' => 'selected', 'student_ids' => [$this->student->id],
+        'deadline_date' => '2026-11-24', 'deadline_time' => '13:00'];
+    $as($this->teacher)->postJson($reopenUrl, $choice)->assertConflict();
+    if ($endRelease) {
+        $this->postJson($this->publishUrl, ['action' => 'end', 'confirmed' => true,
+            'expected_version' => app(TeachingWorkStudentDistribution::class)->version($this->work->fresh())])->assertOk();
+        foreach (['2026-11-20', '2026-11-23'] as $date) {
+            $files = $this->getJson(route('teaching.course-works.ai-export', ['course_work' => $this->work,
+                'purpose' => 'submission_collection', 'collection_mode' => 'collect', 'date' => $date]))->assertOk()->json('data.files');
+            expect(array_column($files, 'id'))->toContain($sharedReceipt);
+        }
+    }
+    $this->travelTo(CarbonImmutable::parse('2026-11-24T11:45:00Z'));
+    $endedAt = $this->work->fresh()->status['student_distribution']['ended_at'] ?? null;
+    $this->putJson($settings, ['channel' => 'email', 'email' => 'beispiel@example.test', 'expected' => $portal])->assertConflict();
+    $this->getJson($reopenUrl)->assertUnprocessable()->assertJsonValidationErrors('date');
+    $options = $this->getJson($reopenUrl.'?date=2026-11-20')->assertOk()
+        ->assertJsonPath('data.ambiguous', true)->json('data.students');
+    expect(array_column($options, 'id'))->toEqualCanonicalizing([$this->student->id, $this->peer->id]);
+    $this->postJson($reopenUrl, [...$choice, 'student_ids' => [$this->student->id, $otherDateStudent->id]])
+        ->assertUnprocessable()->assertJsonValidationErrors('student_ids');
+    $this->postJson($reopenUrl, [...$choice, 'student_ids' => [$ambiguousStudent->id]])
+        ->assertUnprocessable()->assertJsonValidationErrors('student_ids');
+    $this->postJson($reopenUrl, [...$choice, 'deadline_time' => '12:30'])
+        ->assertUnprocessable()->assertJsonValidationErrors('deadline_time');
+    $this->postJson($reopenUrl, [...$choice, 'deadline_date' => '2027-03-28', 'deadline_time' => '02:30'])
+        ->assertUnprocessable()->assertJsonValidationErrors('deadline_time');
+    expect($this->work->fresh()->status)->not->toHaveKey('portal_submission_reopenings');
+
+    $foreign = User::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->year->id])->assignRole('teacher');
+    $as($foreign)->getJson($reopenUrl.'?date=2026-11-20')->assertForbidden();
+    $this->postJson($reopenUrl, $choice)->assertForbidden();
+    $as($this->student)->postJson($reopenUrl, $choice)->assertForbidden();
+    $as($this->teacher)->postJson($reopenUrl, $choice)->assertOk()->assertJsonPath('reopened', 1);
+    $this->putJson($settings, ['channel' => 'email', 'email' => 'beispiel@example.test', 'expected' => $portal])->assertConflict();
+
+    $as($this->peer)->postJson($uploadUrl, $upload('Noch geschlossen.txt'))->assertConflict();
+    $as($otherDateStudent)->postJson($uploadUrl, $upload('Anderer Termin.txt'))->assertConflict();
+    $as($this->student)->getJson($this->tasksUrl.'?view=deadlines&version='.$version)->assertOk()
+        ->assertJsonPath('tasks.0.submission_deadline_at', '2026-11-24T12:00:00+00:00');
+    $this->getJson($this->tasksUrl)->assertOk()->assertJsonPath('tasks.0.can_submit', true)
+        ->assertJsonPath('tasks.0.deadline.time', '12:30')->assertJsonPath('tasks.0.submission_files.0.id', $original['id']);
+    $this->postJson($uploadUrl, $upload('Nachgereicht.txt'))->assertOk()->assertJsonCount(2, 'files');
+
+    $as($this->teacher)->postJson($reopenUrl, ['date' => $choice['date'], 'scope' => 'all',
+        'deadline_date' => $choice['deadline_date'], 'deadline_time' => '14:15'])->assertOk()->assertJsonPath('reopened', 1);
+    $as($otherDateStudent)->getJson($this->tasksUrl)->assertOk()
+        ->assertJsonPath('tasks.0.can_submit', false)->assertJsonMissingPath('tasks.0.submission_deadline_at');
+    $as($ambiguousStudent)->postJson($uploadUrl, $upload('Mehrere Termine.txt'))->assertConflict();
+    $this->travelTo(CarbonImmutable::parse('2026-11-24T12:00:01Z'));
+    $as($this->student)->postJson($uploadUrl, $upload('Verspätet.txt'))->assertConflict();
+    $as($this->peer)->postJson($uploadUrl, $upload('Weitere Abgabe.txt'))->assertOk();
+    $this->travelTo(CarbonImmutable::parse('2026-11-24T13:15:01Z'));
+    $this->getJson($this->tasksUrl)->assertOk()->assertJsonPath('tasks.0.can_submit', false);
+    $this->postJson($uploadUrl, $upload('Verspätet.txt'))->assertConflict();
+    $saved = $this->work->fresh();
+    expect($saved->status['student_distribution']['ended_at'] ?? null)->toBe($endedAt);
+    expect(array_column($saved->status['portal_submissions'], 'name'))
+        ->toBe(['Original.txt', 'Datei bei Doppelzuordnung.txt', 'Nachgereicht.txt', 'Weitere Abgabe.txt']);
+})->with(['expired deadline' => false, 'ended release' => true]);
+
 test('a deliberate portal opening locks both submission settings paths while listing a released task does not', function (): void {
     $methodUrl = route('teaching.work-submission-method.update', $this->work);
     $provisionUrl = route('teaching.work-provision-method.update', $this->work);

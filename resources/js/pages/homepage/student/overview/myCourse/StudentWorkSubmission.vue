@@ -1,7 +1,10 @@
 <template>
     <section class="submission" aria-label="Meine Abgabe">
         <h4>Abgabe</h4>
-        <p v-if="task.status === 'ended'">Die Abgabe ist geschlossen.</p>
+        <p v-if="task.submission_deadline_at" class="text-body-2">
+            Persönliche Upload-Frist: {{ formatViennaDateTime(task.submission_deadline_at) }}
+        </p>
+        <p v-if="(task.status === 'ended' && !reopened) || (method?.channel === 'portal' && expired)">Die Abgabe ist geschlossen.</p>
         <p v-else-if="!method">Die Lehrkraft hat den Abgabeweg noch nicht festgelegt.</p>
         <p v-else-if="method.channel === 'email'">
             <template v-if="released && !expired && method.email">
@@ -31,13 +34,16 @@
 
 <script setup>
 import { computed, ref, watch } from 'vue'
+import { formatViennaDateTime } from '@/helpers/date'
 import { store, withdraw } from '@/routes/student/course-work/submissions'
 
 const props = defineProps({ task: { type: Object, required: true }, courseId: { type: [String, Number], required: true }, expired: Boolean })
 const emit = defineEmits(['saved', 'refresh'])
 const method = computed(() => props.task.submission_method)
 const released = computed(() => ['released', 'email_delivery'].includes(props.task.status || 'released'))
-const canUpload = computed(() => method.value?.channel === 'portal' && props.task.can_submit && released.value && !props.expired)
+const reopened = computed(() => Boolean(props.task.submission_deadline_at) && !props.expired)
+const canUpload = computed(() => method.value?.channel === 'portal' && props.task.can_submit
+    && (released.value || reopened.value) && !props.expired)
 const mailLink = computed(() => 'mailto:' + encodeURIComponent(method.value.email).replace('%40', '@') + '?subject=' + encodeURIComponent(props.task.title || 'Aufgabenabgabe'))
 const selected = ref(null)
 const picker = ref(null)

@@ -1,5 +1,5 @@
 <template>
-    <v-btn v-if="work?.id" min-height="44" size="small" variant="tonal" prepend-icon="mdi-inbox-arrow-down-outline"
+    <v-btn v-if="work?.id && (!portal || hasPortalFiles)" min-height="44" size="small" variant="tonal" prepend-icon="mdi-inbox-arrow-down-outline"
         :disabled="disabled || !available" @click.stop="openAction">{{ repeat && !portal ? 'Erneut einsammeln' : 'Abgaben einsammeln' }}</v-btn>
     <v-dialog v-if="opened" v-model="opened" max-width="720" scrollable :persistent="loading">
         <v-card>
@@ -37,11 +37,13 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { aiExport } from '@/actions/App/Http/Controllers/Admin/Teaching/CourseWorkController'
 import { workAutomationEnabled } from '@/helpers/workAutomation'
+import { workHasPortalFiles } from '@/helpers/workProgress'
 const props = defineProps({ work: { type: Object, required: true }, date: { type: String, default: '' }, repeat: Boolean, disabled: Boolean })
 const channel = computed(() => props.work.status?.submission_method?.channel)
 const portal = computed(() => channel.value === 'portal' || (!channel.value && !!props.work.status?.portal_submissions?.length))
+const hasPortalFiles = computed(() => workHasPortalFiles(props.work, props.date))
 const available = computed(() => Boolean(props.work.status?.student_distribution?.ended_at)
-    && (portal.value || channel.value === 'email' || workAutomationEnabled(props.work)))
+    && (portal.value ? hasPortalFiles.value : channel.value === 'email' || workAutomationEnabled(props.work)))
 const opened = ref(false)
 const loading = ref(false)
 const copying = ref(false)

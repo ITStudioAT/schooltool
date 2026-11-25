@@ -2,7 +2,8 @@ import { workSimulationCollection, workSimulationEvaluation, workSimulationNotif
 export { workSimulationCollection, workSimulationEvaluation } from '@/helpers/workSimulation'
 import { personalWorkAssessment, workCollectionEvidence, workSubmissionStatus } from '@/helpers/workSubmission'
 import { workEvaluationStatus, workCellPendingStatuses } from '@/helpers/workCellStatus'
-import { workDispatchNotifications, workTaskDispatchCompleted, workStudentDistribution } from '@/helpers/workDispatch'
+import { workDispatchNotifications, workProvisionRecords, workTaskDispatchCompleted, workStudentDistribution } from '@/helpers/workDispatch'
+import { workAutomationEnabled } from '@/helpers/workAutomation'
 
 export const workManualCompletionFields = {
     preparation: 'email_preparation_completed', send: 'task_dispatch_completed', collection: 'submission_collection_completed',
@@ -129,4 +130,118 @@ export function workProgressNextAction(work, now = Date.now()) {
         && !workDispatchNotifications(work, 'tasks').length
         && !stages.some(stage => stage.complete || stage.count > 0)) return 'E-Mails versenden'
     return stages.find(stage => !stage.complete)?.title || 'Abgeschlossen'
+}
+
+export function workForProgressDate(work, date) {
+    const groups = work?.groups || []
+    const groupDate = group => group.date || work.date_for_all_groups || ''
+    if (!date || !groups.some(groupDate)) return work
+    const scopedGroups = groups.filter(group => groupDate(group) === date)
+    if (scopedGroups.length === groups.length) return work
+
+    const otherIds = new Set(groups.filter(group => groupDate(group) !== date).flatMap(group => group.student_ids || []).map(String))
+    const status = { ...work.status }
+    for (const key of ['portal_submissions', 'portal_submission_reopenings', 'assessment_json_imports', 'evaluation_pdfs', 'dispatch_notifications', 'provision_events']) {
+        // Work-level receipts and upload windows cannot distinguish two assignments to the same person.
+        status[key] = (status[key] || []).filter(row => !otherIds.has(String(row.student_id)))
+    }
+    if (status.student_distribution) {
+        status.student_distribution = { ...status.student_distribution,
+            student_ids: (status.student_distribution.student_ids || []).filter(id => !otherIds.has(String(id))) }
+    }
+    return { ...work, groups: scopedGroups, status, collection_run: work.collection_run?.date === date ? work.collection_run : null }
+}
+
+export function workHasPortalFiles(work, date = '') {
+    const groups = work.groups || []
+    const ids = new Set(groups.filter(group => !date || (group.date || work.date_for_all_groups) === date)
+        .flatMap(group => group.student_ids || []).map(String))
+    return (work.status?.portal_submissions || []).some(file => file?.student_id && !file.withdrawn_at
+        && (!groups.length || ids.has(String(file.student_id))))
+}
+
+function hasSavedGrade(group, id) {
+    const valueFor = (values, key) => Array.isArray(values) ? values.find(row => String(row.student_id) === id)?.[key]
+        : values?.[id]?.[key] ?? values?.[id]
+    return [valueFor(group.points, 'points'), valueFor(group.grades, 'grade'), !group.use_individual_grades ? group.grade : null]
+        .some(value => value != null && !['', 'NA', 'VL', 'F'].includes(String(value).trim()))
+}
+
+export function workWorkflowProgress(work, date = '', now = Date.now(), dispatch = {}) {
+    const scoped = workForProgressDate(work, date)
+    const groups = scoped.groups || []
+    const ids = [...new Set(groups.flatMap(group => group.student_ids || []).map(String))]
+    const stages = workProgressStages(scoped, now)
+    const [collection, evaluation, publication, notification] = stages
+    const status = scoped.status || {}
+    const release = status.student_distribution || {}
+    const channel = status.submission_method?.channel
+    const portalFiles = workHasPortalFiles(work, date)
+    const portal = channel === 'portal' || (!channel && (work.status?.portal_submissions || []).length > 0)
+    const scopedDate = date || work.date_for_all_groups || null
+    const reopenedCount = (status.portal_submission_reopenings || []).filter(record => record.date === scopedDate
+        && ids.includes(String(record.student_id)) && (record.release_ended_at ?? null) === (release.ended_at ?? null)
+        && Date.parse(record.ends_at) >= now).length
+    const manual = !workAutomationEnabled(work)
+    const assessed = manual ? ids.filter(id => groups.some(group =>
+        (group.student_ids || []).some(studentId => String(studentId) === id) && hasSavedGrade(group, id))).length : evaluation.count
+    const assessmentComplete = evaluation.complete || (manual && ids.length > 0 && assessed === ids.length)
+    const verifiedCollection = Boolean(workLastCollectionRunAt(scoped) && scoped.collection_run?.checkpoint_state === 'complete')
+    const submissionComplete = !reopenedCount && (collection.complete || verifiedCollection || assessmentComplete)
+    const covered = new Set([
+        ...(release.published_at && (!release.withdrawn_at || release.ended_at) ? release.student_ids || [] : []),
+        ...workDispatchNotifications(scoped, 'tasks').map(row => row.student_id),
+        ...workProvisionRecords(scoped, null, true).map(row => row.student_id),
+    ].map(String))
+    for (const [slot, batch] of Object.entries(status.assignment_mail?.batches || {})) {
+        if ((slot !== 'all' && scopedDate && slot !== scopedDate) || batch.transport !== 'postmark' || batch.withdrawn_at) continue
+        for (const recipient of batch.recipients || []) {
+            if (['accepted', 'already_sent'].includes(recipient.state) && Number.isFinite(Date.parse(recipient.accepted_at))) {
+                covered.add(String(recipient.student_id))
+            }
+        }
+    }
+    const legacyDelivery = scoped === work && ['sent', 'partial'].includes(dispatch?.status) && dispatch.transport !== 'mailpit'
+        && Number(dispatch.confirmed_count) > 0
+    const provisionComplete = submissionComplete || assessmentComplete || workTaskDispatchCompleted(scoped)
+        || (legacyDelivery && dispatch.status === 'sent')
+        || (ids.length > 0 && ids.every(id => covered.has(id)))
+    const provisionStarted = provisionComplete || legacyDelivery || ids.some(id => covered.has(id))
+        || (scoped === work && Boolean(release.ended_at) && !release.withdrawn_at)
+    const collectionAvailable = Boolean(release.ended_at) && !collection.simulation
+        && (portal ? portalFiles : channel === 'email' || workAutomationEnabled(work))
+    let next = null
+    if (submissionComplete) {
+        next = { phase: 'assessment', label: 'Bewerten' }
+        if (assessmentComplete) {
+            const informedIds = new Set((status.grade_visibility?.student_notice?.student_ids || []).map(String))
+            if (!manual && !publication.complete) next = { phase: 'assessment', label: publication.title, action: 'publish' }
+            else if (status.grade_visibility?.visible === false) next = { phase: 'assessment', label: 'Ergebnisse freigeben', action: 'visibility' }
+            else if (notification.complete || (ids.length > 0 && ids.every(id => informedIds.has(id)))) next = { phase: 'assessment', label: 'Abgeschlossen' }
+            else next = { phase: 'assessment', label: notification.title, action: 'notice' }
+        }
+    } else if (!release.ended_at && (release.withdrawn_at || (release.prepared_at && !release.published_at))) {
+        next = { phase: 'provision', label: 'Bereitstellen', action: 'provision' }
+    } else if (provisionStarted || portalFiles || collection.count || collectionAvailable || reopenedCount) {
+        next = collectionAvailable ? { phase: 'submission', label: collection.title, action: 'collect' }
+            : { phase: 'submission', label: 'Abgeben', action: !channel ? 'submission' : null }
+    } else if (status.email_preparation_completed === true) {
+        next = { phase: 'provision', label: 'E-Mails versenden', action: 'provision' }
+    }
+    if (reopenedCount) {
+        stages[0] = { ...collection, complete: false, color: 'warning', state: 'partial', label: 'Abgabestatus: Upload wieder geöffnet' }
+    } else if (submissionComplete && !collection.complete) {
+        stages[0] = { ...collection, complete: true, color: 'success', state: 'complete', label: 'Abgabestatus: abgeschlossen' }
+    }
+    if (assessmentComplete && !evaluation.complete) {
+        stages[1] = { ...evaluation, complete: true, count: assessed, color: 'success', state: 'complete', label: 'Bewertung: abgeschlossen' }
+    }
+    if (submissionComplete) {
+        for (let index = 1; index < stages.length; index++) {
+            const previous = stages.slice(0, index).find(stage => !stage.complete)
+            stages[index] = { ...stages[index], blocked: Boolean(previous), blockedBy: previous?.title || '' }
+        }
+    }
+    return { stages, scoped, assessed, total: ids.length, provisionComplete, reopenedCount,
+        preparationProven: provisionStarted || Boolean(collection.count) || assessmentComplete, submissionComplete, assessmentComplete, next }
 }

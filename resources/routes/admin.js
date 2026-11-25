@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAdminStore } from '@/stores/admin/AdminStore'
+import { networkBuildPath, networkRoomPlanNumbers, networkRoomPlanPath } from '@/pages/admin/teachingTools/networkRoomPlans'
 
 const Index = () => import('@/pages/admin/index/Index.vue')
 const Auth_Login = () => import('@/pages/admin/auth/Login.vue')
@@ -51,6 +52,25 @@ export const routes = [
     { path: '/admin/teaching/:section?', component: Teaching, meta: { capability: 'teaching' } },
     { path: '/admin/teaching-tools', redirect: '/admin/teaching-tools/multiple-choice', meta: { capability: 'teaching' } },
     { path: '/admin/teaching-tools/multiple-choice', component: TeachingTools, meta: { capability: 'teaching' } },
+    { path: '/admin/teaching-tools/tests', component: TeachingTools, props: { section: 'tests' }, meta: { capability: 'teaching' } },
+    {
+        path: '/admin/teaching-tools/tests/networks',
+        component: TeachingTools,
+        props: { section: 'tests', testPage: 'networks' },
+        meta: { capability: 'teaching' },
+    },
+    {
+        path: networkBuildPath,
+        component: TeachingTools,
+        props: { section: 'tests', testPage: 'build-network' },
+        meta: { capability: 'teaching' },
+    },
+    ...networkRoomPlanNumbers.map(roomPlanNumber => ({
+        path: networkRoomPlanPath(roomPlanNumber),
+        component: TeachingTools,
+        props: { section: 'tests', testPage: 'room-plan', roomPlanNumber },
+        meta: { capability: 'teaching' },
+    })),
     { path: '/admin/teaching-tools/simulator', component: TeachingTools, props: { section: 'simulator' }, meta: { capability: 'teaching' } },
     { path: '/admin/teaching-tools/games', component: TeachingTools, props: { section: 'games' }, meta: { capability: 'teaching' } },
     { path: '/admin/teaching-tools/explanations', component: TeachingTools, props: { section: 'explanations' }, meta: { capability: 'teaching' } },

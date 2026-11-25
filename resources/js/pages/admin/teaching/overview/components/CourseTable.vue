@@ -1287,12 +1287,11 @@
                                         :disabled="workSaving" />
                                     <WorkWorkflowOverview v-if="savedWorkDialogWork && !dateWorkCreating && !dateHandshakeAwaitingLink"
                                         class="mb-4" :work="savedWorkDialogWork" :course="selected_course"
-                                        :date="workDialog.courseDate?.date || ''" :active="workDialog.open && workDialogTab === 'work'"
+                                        :date="workDialog.courseDate?.date || ''" :now="deadlineNow" :active="workDialog.open && workDialogTab === 'work'"
                                         :disabled="workSaving || workDeleting || workDialogTypeEditing || workDialogModeEditing"
                                         :link-error="work_folder_errors[workDropboxKey(config?.user?.id, savedWorkDialogWork)]"
                                         :assessment="workDialogAssessment" :exercise-ready="workDialogExerciseReady" :check-progress="workHasProgress(savedWorkDialogWork)"
                                         :assessment-count="`${savedWorkDialogCompletion.completed} von ${savedWorkDialogCompletion.completed + savedWorkDialogCompletion.open} beurteilt`"
-                                        :all-assessed="savedWorkDialogCompletion.completed > 0 && savedWorkDialogCompletion.open === 0"
                                         :last-collection="workDialogLastCollection" :last-evaluation="workDialogLastEvaluation" :last-check="workDialogLastCheck"
                                         @link="openLink" @import="openImport" @saved="applySavedCourseWork({ data: $event })"
                                         @edit-grades="workDialogTab = workDialogForm.is_group_work ? 'groups' : 'students'"
@@ -2635,7 +2634,7 @@ import WorkQueueProgress from './WorkQueueProgress.vue'
 import WorkWorkflowOverview from './WorkWorkflowOverview.vue'
 import WorkCreationProgress from './WorkCreationProgress.vue'
 import WorkSimulationBadge from './WorkSimulationBadge.vue'
-import { workHasProgress, workLastCollectionRunAt, workManualCompletionFields, workProgressNextAction } from '@/helpers/workProgress'
+import { workForProgressDate, workHasProgress, workLastCollectionRunAt, workManualCompletionFields, workWorkflowProgress } from '@/helpers/workProgress'
 import { personalWorkAssessment } from '@/helpers/workSubmission'
 import WorkContextCopy from './WorkContextCopy.vue'
 import WorkEvaluationPdf from './WorkEvaluationPdf.vue'
@@ -3254,11 +3253,11 @@ export default {
                 deletionPending: exercise?.deletion_pending, checkedAt: checked.checkedAt }
         },
         workDialogLastCollection() {
-            const time = workLastCollectionRunAt(this.savedWorkDialogWork)
+            const time = workLastCollectionRunAt(workForProgressDate(this.savedWorkDialogWork, this.workDialog.courseDate?.date))
             return time ? formatViennaDateTime(time) : ''
         },
         workDialogLastEvaluation() {
-            const work = this.savedWorkDialogWork
+            const work = workForProgressDate(this.savedWorkDialogWork, this.workDialog.courseDate?.date)
             const ids = [...new Set((work?.groups || []).flatMap(group => group.student_ids || []).map(String))]
             const times = ids.map(id => personalWorkAssessment(work, id)).filter(record => record?.evaluation_state === 'complete')
                 .map(record => record.evaluation_completed_at).filter(time => Number.isFinite(Date.parse(time)) && Date.parse(time) <= Date.now())
@@ -3506,12 +3505,13 @@ export default {
             return workDropboxStates.get(workDropboxKey(useAdminStore().config?.user?.id, work))
         },
         workNextAction(work, date = '') {
-            if (workHasProgress(work)) return workProgressNextAction(work, this.deadlineNow)
+            const key = workDropboxKey(useAdminStore().config?.user?.id, work)
+            const checked = workExerciseCheck(key, work, date || work.date_for_all_groups || '')
+            const next = workWorkflowProgress(work, date, this.deadlineNow, checked?.data?.exercise?.email_dispatch).next
+            if (next) return next.label
             if (!workAutomationEnabled(work)) return ''
             const state = this.workFolderState(work)
             if (!workNeedsPreparation(work, state)) return ''
-            const key = workDropboxKey(useAdminStore().config?.user?.id, work)
-            const checked = workExerciseCheck(key, work, date || work.date_for_all_groups || '')
             if (checked?.status === 'unknown') return state?.module_link?.folder?.id
                 ? (checked.checkedAt ? 'LF nicht bestätigt' : 'LF-Status prüfen') : 'Prüfung fehlgeschlagen'
             if (!state) return this.work_folder_errors[key] || checked?.status === 'unknown' ? 'Prüfung fehlgeschlagen' : 'Wird geprüft …'

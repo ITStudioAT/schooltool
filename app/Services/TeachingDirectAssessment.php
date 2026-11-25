@@ -612,6 +612,7 @@ class TeachingDirectAssessment
             $partial = $status !== null && $resumeStatus !== null && $this->matchesStatus($status['contents'], $resumeStatus) && $resumeTemplate !== null;
             if (($ownFolderId === null || $entry['id'] === $ownFolderId) && $entry['name'] === $this->folderName($context)
                 && ($status === null || ($linkedStatus !== null && $status['contents'] === $linkedStatus) || $partial)) {
+                abort_if($reusable !== null, 409, 'Mehrere Prüfungsordner passen zum selben Ziel. Bitte den Bestand prüfen.');
                 $folder = $this->dropbox->metadata($connection, $entry['id']);
                 abort_unless(($folder['id'] ?? null) === $entry['id'] && ($folder['name'] ?? null) === $entry['name']
                     && ($folder['path_lower'] ?? null) === $root['path_lower'].'/'.mb_strtolower($entry['name'])
@@ -932,6 +933,9 @@ class TeachingDirectAssessment
     private function digest(array $context): string
     {
         unset($context['exported_at']);
+        if (is_array($context['course']['classes'] ?? null)) {
+            sort($context['course']['classes'], SORT_STRING);
+        }
 
         return SchooltoolAssessmentJson::digest($context);
     }

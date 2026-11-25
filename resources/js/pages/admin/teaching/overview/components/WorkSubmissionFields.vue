@@ -2,6 +2,7 @@
     <fieldset class="submission-methods" :disabled="disabled || !!lockReason">
         <legend>Wie sollen die Schüler:innen abgeben?</legend>
         <label><input v-model="channel" type="radio" :name="group" value="portal" /> Datei unter „Meine Aufgaben“ hochladen</label>
+        <p v-if="portalClosureNotice" class="text-body-2 text-error font-weight-bold mb-2" role="status">{{ portalClosureNotice }}</p>
         <label><input v-model="channel" type="radio" :name="group" value="email" /> Datei per E-Mail schicken</label>
         <v-text-field v-if="channel === 'email'" v-model.trim="email" type="email" maxlength="254"
             label="E-Mail-Adresse für die Abgabe" :disabled="disabled || !!lockReason" class="mt-2" hide-details="auto" />
@@ -12,12 +13,13 @@
 <script setup>
 import { useId } from 'vue'
 
-defineProps({ disabled: Boolean, lockReason: String })
+defineProps({ disabled: Boolean, lockReason: String, portalClosureNotice: String })
 const lockMessages = {
     started: 'Abgabeweg nicht mehr änderbar. Die Bearbeitung hat bereits begonnen.',
     email_sent: 'Abgabeweg nach Aufgabenversand gesperrt. Ein Bearbeitungsbeginn außerhalb von Schooltool ist nicht überprüfbar.',
     email_pending: 'Der Aufgabenversand läuft oder muss noch abgeglichen werden. Der Abgabeweg ist derzeit gesperrt.',
     ended: 'Abgabeweg nicht mehr änderbar. Die Freigabe ist beendet.',
+    deadline: 'Der Abgabeweg ist nach Schließung der Portalabgabe gesperrt.',
 }
 const channel = defineModel('channel', { type: String })
 const email = defineModel('email', { type: String })

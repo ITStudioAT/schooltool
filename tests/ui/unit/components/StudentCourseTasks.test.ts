@@ -169,6 +169,70 @@ it('updates a visible task and its expiry after a deadline is moved earlier and 
     }
 })
 
+it('shows that portal submissions close when the saved Vienna deadline passes in an open task view', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] })
+    vi.setSystemTime(new Date('2026-11-24T11:29:59Z'))
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
+    const task = { id: 12, title: 'Dateien', status: 'released', dates: ['2026-11-20'],
+        deadline: { date: '2026-11-24', time: '12:30' }, submission_method: { channel: 'portal' }, can_submit: true,
+        submission_files: [{ id: 'receipt-id', name: 'Lösung.txt', submitted_at: '2026-11-24T11:00:00Z' }],
+    }
+    const get = vi.fn().mockResolvedValueOnce({ data: { tasks: [task] } }).mockResolvedValue({ data: { version: 'unchanged' } })
+    vi.stubGlobal('axios', { get })
+    const wrapper = mount(StudentCourseTasks, { props: { courseId: 4 } })
+    try {
+        await flushPromises()
+        const submission = wrapper.get('[aria-label="Meine Abgabe"]')
+        expect(submission.find('input[type=file]').exists()).toBe(true)
+        expect(submission.text()).toContain('Zurückziehen')
+
+        await vi.advanceTimersByTimeAsync(2000)
+
+        expect(submission.text()).toContain('Die Abgabe ist geschlossen.')
+        expect(submission.find('input[type=file]').exists()).toBe(false)
+        expect(submission.text()).not.toContain('Zurückziehen')
+        expect(submission.text()).toContain('Lösung.txt')
+        expect(wrapper.get('.task-status').text()).toBe('Freigegeben')
+    } finally {
+        wrapper.unmount()
+        visibility.mockRestore()
+        vi.useRealTimers()
+    }
+})
+
+it('updates an already ended task when a personal upload window becomes available and expires', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] })
+    vi.setSystemTime(new Date('2026-11-24T11:45:00Z'))
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
+    const task = { id: 12, title: 'Dateien', status: 'ended', deadline: { date: '2026-11-24', time: '12:30' },
+        submission_method: { channel: 'portal' }, can_submit: false }
+    const reopened = { ...task, submission_deadline_at: '2026-11-24T12:00:00+00:00', can_submit: true }
+    const get = vi.fn().mockResolvedValueOnce({ data: { tasks: [task] } })
+        .mockResolvedValueOnce({ data: { tasks: [reopened], version: 'reopened' } })
+        .mockResolvedValueOnce({ data: { tasks: [reopened] } })
+        .mockResolvedValue({ data: { version: 'reopened' } })
+    vi.stubGlobal('axios', { get })
+    const wrapper = mount(StudentCourseTasks, { props: { courseId: 4 } })
+    try {
+        await flushPromises()
+        const submission = wrapper.get('[aria-label="Meine Abgabe"]')
+        expect(submission.text()).toContain('Die Abgabe ist geschlossen.')
+        await vi.advanceTimersByTimeAsync(2000)
+        expect(submission.text()).toContain('Persönliche Upload-Frist: 24.11.2026 um 13:00 Uhr')
+        expect(submission.find('input[type=file]').exists()).toBe(true)
+        expect(wrapper.get('.task-status').text()).toBe('Freigabe beendet')
+
+        vi.setSystemTime(new Date('2026-11-24T12:00:01Z'))
+        await vi.advanceTimersByTimeAsync(2000)
+        expect(submission.text()).toContain('Die Abgabe ist geschlossen.')
+        expect(submission.find('input[type=file]').exists()).toBe(false)
+    } finally {
+        wrapper.unmount()
+        visibility.mockRestore()
+        vi.useRealTimers()
+    }
+})
+
 it('refreshes the deadline and linked test action on a private signal before the fallback timer', async () => {
     vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] })
     const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')

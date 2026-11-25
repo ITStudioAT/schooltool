@@ -194,6 +194,7 @@ it('opens the applicable phase and highlights one real action as the saved work 
         const announced = { ...work, status: { provision_method: { channel: 'portal' }, submission_method: { channel: 'portal' }, student_distribution: { prepared_at: `${date}T08:00:00Z` } } }
         await wrapper.setProps({ work: announced })
         expect(wrapper.text()).toContain('Schülerbereich vorbereitet')
+        expect(wrapper.findAll('.work-phase--complete').map(phase => phase.get('.work-phase__title').text())).toEqual(['Vorbereiten'])
         expect(primary()).toBe('Jetzt freigeben')
         await wrapper.get('[data-primary="true"] button').trigger('click')
         await flushPromises()
@@ -206,6 +207,190 @@ it('opens the applicable phase and highlights one real action as the saved work 
         await wrapper.setProps({ work: { ...reopened, status: { ...reopened.status, student_distribution: { deleted_at: `${date}T10:00:00Z` } } } })
         expect(wrapper.text()).toContain('Bereitstellung im Schülerbereich entfernt')
         expect(primary()).toBe('Bereitstellungsweg vorbereiten')
+    } finally { wrapper.unmount() }
+})
+
+it('shows the portal cutoff independently of the selected date and the end of the release', async () => {
+    vi.stubGlobal('axios', { get: vi.fn().mockResolvedValue({ data: connection }) })
+    const releasedWork = { ...work, finish_until_date: '2026-11-24', finish_until_time: '12:30', status: {
+        submission_method: { channel: 'portal' }, student_distribution: { published_at: `${date}T09:00:00Z` },
+    } }
+    const { wrapper, action } = render(releasedWork, false)
+    const submission = () => wrapper.findAll('.work-phase__toggle').find(button => button.text().includes('Abgeben'))!
+    try {
+        await wrapper.setProps({ now: Date.parse('2026-11-24T11:29:59Z') })
+        expect(submission().text()).not.toContain('Abgabe geschlossen')
+        await submission().trigger('click')
+        await action('Abgabeweg verwalten')!.trigger('click')
+
+        await wrapper.setProps({ now: Date.parse('2026-11-24T11:30:01Z') })
+        expect(submission().text()).toContain('Portalabgabe · Abgabe geschlossen')
+        const notice = wrapper.get('[role="dialog"] label:has(> input[value="portal"]) + [role="status"]')
+        expect(notice.text()).toBe('Abgabefrist abgelaufen. Datei-Upload gesperrt.')
+        expect(action('Abgaben einsammeln')).toBeUndefined()
+
+        await wrapper.setProps({ date: '2026-11-25' })
+        expect(submission().text()).toContain('Abgabe geschlossen')
+
+        await wrapper.setProps({ work: { ...releasedWork, finish_until_time: '13:30' } })
+        expect(submission().text()).not.toContain('Abgabe geschlossen')
+        expect(wrapper.get('[role="dialog"]').text()).not.toContain('Datei-Upload gesperrt')
+    } finally { wrapper.unmount() }
+})
+
+it.each(['selected', 'all'])('opens expired portal submissions from Abgeben for the requested scope: %s', async scope => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-11-24T11:30:01Z'))
+    const reopened = { student_id: 12, date, ends_at: '2026-11-24T13:45:00+00:00', release_ended_at: null }
+    const released = { ...work, finish_until_date: '2026-11-24', finish_until_time: '12:30', status: {
+        submission_method: { channel: 'portal' }, student_distribution: { published_at: `${date}T09:00:00Z` },
+    } }
+    const saved = { ...released, status: { ...released.status, portal_submission_reopenings: [reopened] } }
+    const students = [{ id: 12, name: 'Alex Beispiel', open_until: null },
+        { id: 13, name: 'Sascha Test', open_until: null }, { id: 14, name: 'Kim Probe', open_until: '2026-11-24T14:00:00Z' }]
+    const get = vi.fn((url: string) => Promise.resolve({ data: url.endsWith('/submission-reopening')
+        ? { data: { date, students, ambiguous: true } } : connection }))
+    const post = vi.fn().mockResolvedValue({ data: { data: saved } })
+    vi.stubGlobal('axios', { get, post })
+    const { wrapper, action } = render(released, false)
+    try {
+        await wrapper.setProps({ now: Date.parse('2026-11-24T11:30:01Z') })
+        const phase = wrapper.findAll('.work-phase__toggle').find(button => button.text().includes('Abgeben'))!
+        await phase.trigger('click')
+        await action('Portalabgabe wieder öffnen')!.trigger('click')
+        await flushPromises()
+        expect(get).toHaveBeenCalledWith('/api/admin/teaching/course_works/65/submission-reopening', { params: { date } })
+        const dialog = wrapper.get('[role="dialog"]')
+        expect(dialog.text()).toContain('Kim Probe · offen bis')
+        expect(dialog.text()).toContain('Personen mit mehreren Durchführungsterminen werden bei dieser Wiederöffnung ausgelassen.')
+        await dialog.get(`input[value="${scope}"]`).setValue(true)
+        await dialog.get('input[type="datetime-local"]').setValue('2026-11-24T14:45')
+        if (scope === 'selected') {
+            expect(action('Wieder öffnen')!.attributes()).toHaveProperty('disabled')
+            await dialog.get('input[value="12"]').setValue(true)
+        }
+        await dialog.get('form').trigger('submit')
+        await flushPromises()
+        expect(post).toHaveBeenCalledExactlyOnceWith('/api/admin/teaching/course_works/65/submission-reopening', {
+            date, scope, deadline_date: '2026-11-24', deadline_time: '14:45', ...(scope === 'selected' ? { student_ids: [12] } : {}),
+        })
+        expect(wrapper.emitted('saved')?.[0]).toEqual([saved])
+        await wrapper.setProps({ work: saved })
+        expect(wrapper.text()).toContain('Upload für 1 wieder geöffnet')
+    } finally { wrapper.unmount(); vi.useRealTimers() }
+})
+
+it('suggests the next Vienna half hour on each opening and keeps a manually edited deadline', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-11-24T22:30:00Z'))
+    const released = { ...work, finish_until_date: '2026-11-24', finish_until_time: '12:30', status: {
+        submission_method: { channel: 'portal' }, student_distribution: { ended_at: '2026-11-24T11:30:00Z' },
+    } }
+    const get = vi.fn((url: string) => Promise.resolve({ data: url.endsWith('/submission-reopening')
+        ? { data: { date, students: [{ id: 12, name: 'Alex Beispiel', open_until: null }] } } : connection }))
+    const post = vi.fn()
+    vi.stubGlobal('axios', { get, post })
+    const { wrapper, action } = render(released, false)
+    try {
+        const phase = wrapper.findAll('.work-phase__toggle').find(button => button.text().includes('Abgeben'))!
+        if (phase.attributes('aria-expanded') !== 'true') await phase.trigger('click')
+        await action('Portalabgabe wieder öffnen')!.trigger('click')
+        await flushPromises()
+        const dialog = wrapper.get('[role="dialog"]')
+        const input = () => wrapper.get<HTMLInputElement>('input[type="datetime-local"]')
+        expect(input().element.value).toBe('2026-11-25T00:00')
+        await dialog.get('input[value="all"]').setValue(true)
+        for (const invalid of ['2026-11-24T23:00', '2027-03-28T02:30']) {
+            await input().setValue(invalid)
+            expect(dialog.text()).toContain('Gib eine gültige zukünftige Upload-Frist')
+            await dialog.get('form').trigger('submit')
+        }
+        expect(post).not.toHaveBeenCalled()
+        await input().setValue('2026-11-25T01:10')
+        vi.setSystemTime(new Date('2026-11-24T22:37:00Z'))
+        await wrapper.setProps({ now: Date.now() })
+        expect(input().element.value).toBe('2026-11-25T01:10')
+        await dialog.findAll('button').find(button => button.text() === 'Schließen')!.trigger('click')
+        await action('Portalabgabe wieder öffnen')!.trigger('click')
+        await flushPromises()
+        expect(input().element.value).toBe('2026-11-25T00:30')
+    } finally { wrapper.unmount(); vi.useRealTimers() }
+})
+
+it('marks proven phases and moves to Bewerten only for the completed date', async () => {
+    const otherDate = '2026-11-23'
+    const released = { ...work, finish_until_date: '2026-11-24', finish_until_time: '12:30', groups: [
+        { date, student_ids: [12] }, { date: otherDate, student_ids: [13, 14] },
+    ], status: { automation_enabled: false, submission_method: { channel: 'portal' }, student_distribution: {
+        published_at: `${date}T08:00:00Z`, ended_at: '2026-11-24T11:45:00Z', student_ids: [12, 13, 14],
+    } } }
+    const file = (student_id: number) => ({ id: `file-${student_id}`, student_id, name: 'Beispiel.pdf',
+        sha256: 'a'.repeat(64), submitted_at: '2026-11-23T11:00:00Z' })
+    const withFiles = (ids: number[]) => ({ ...released, status: { ...released.status, portal_submissions: ids.map(file) } })
+    vi.stubGlobal('axios', { get: vi.fn().mockResolvedValue({ data: connection }) })
+    const { wrapper, action } = render(withFiles([12, 13]), false)
+    const completed = () => wrapper.findAll('.work-phase--complete').map(phase => phase.get('.work-phase__title').text())
+    const next = () => wrapper.get('.work-phase--current .work-phase__title').text()
+    try {
+        await wrapper.setProps({ now: Date.parse('2026-11-24T12:00:00Z') })
+        expect(completed()).toEqual(['Vorbereiten', 'Bereitstellen', 'Abgeben'])
+        expect(next()).toBe('Bewerten')
+        expect(wrapper.get('.work-phase--next-assessment').text()).toContain('Nächster Schritt')
+        expect(wrapper.findAll('.work-phase--complete').every(phase => phase.text().includes('Erledigt'))).toBe(true)
+        expect(action('Abgaben einsammeln')).toBeUndefined()
+        expect(action('Abgabestatus ansehen')).toBeDefined()
+
+        await wrapper.setProps({ date: otherDate })
+        expect(completed()).toEqual(['Vorbereiten', 'Bereitstellen'])
+        expect(next()).toBe('Abgeben')
+        expect(action('Abgaben einsammeln')).toBeDefined()
+
+        await wrapper.setProps({ work: withFiles([12]) })
+        expect(next()).toBe('Abgeben')
+        expect(action('Abgaben einsammeln')).toBeUndefined()
+        expect(completed()).toEqual(['Vorbereiten', 'Bereitstellen'])
+
+        await wrapper.setProps({ work: withFiles([12, 13, 14]) })
+        expect(completed()).toContain('Abgeben')
+        expect(next()).toBe('Bewerten')
+        expect(action('Abgaben einsammeln')).toBeUndefined()
+
+        const graded = withFiles([12])
+        await wrapper.setProps({ work: { ...graded, groups: [graded.groups[0], { ...graded.groups[1], grade: '2' }] } })
+        expect(completed()).toEqual(['Vorbereiten', 'Bereitstellen', 'Abgeben', 'Bewerten'])
+        expect(wrapper.find('.work-phase--next-assessment').exists()).toBe(false)
+    } finally { wrapper.unmount() }
+})
+
+it('copies the canonical grading order directly from Bewerten for the selected prepared date', async () => {
+    const otherDate = '2026-11-23'
+    const released = { ...work, groups: [{ date, student_ids: [12] }, { date: otherDate, student_ids: [13] }], status: {
+        submission_method: { channel: 'portal' }, student_distribution: { published_at: `${date}T08:00:00Z`, student_ids: [12, 13],
+            ended_at: '2026-11-24T11:00:00Z' },
+        portal_submissions: [{ id: 'file-13', student_id: 13, sha256: 'a'.repeat(64), submitted_at: `${otherDate}T10:00:00Z` }],
+    } }
+    const text = 'Geprüfter Bewertungsauftrag für Durchführung am 23.11.2026'
+    const get = vi.fn((url: string) => Promise.resolve({ data: url.endsWith('/ai-export') ? { data: {
+        work_id: 65, course_id: 2, roster_complete: true, text, context: { purpose: 'grade-exercise', mode: 'grade',
+            work: { scheduled_date: otherDate }, operation: { grade: true, preserve_existing: true, send: false, schooltool_import: false } },
+    } } : connection }))
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    vi.stubGlobal('axios', { get })
+    vi.stubGlobal('navigator', { userAgent: 'Test', clipboard: { writeText } })
+    const { wrapper, action } = render(released, false)
+    try {
+        const trigger = () => action('Bewertungskontext kopieren')!
+        expect(trigger().attributes()).toHaveProperty('disabled')
+        await wrapper.setProps({ date: otherDate })
+        expect(trigger().attributes('disabled')).toBeUndefined()
+        expect(trigger().attributes('min-height')).toBe('44')
+        await trigger().trigger('click')
+        await flushPromises()
+        expect(get).toHaveBeenCalledWith('/api/admin/teaching/course_works/65/ai-export', expect.objectContaining({
+            params: { purpose: 'evaluation', evaluation_mode: 'grade', date: otherDate },
+        }))
+        expect(writeText).toHaveBeenCalledExactlyOnceWith(text)
+        expect(wrapper.get('[role="dialog"] [role="status"]').text()).toContain('Bewertungsauftrag kopiert')
     } finally { wrapper.unmount() }
 })
 

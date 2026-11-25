@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin\Teaching;
 use App\Http\Controllers\Controller;
 use App\Models\TeachingCourseWork;
 use App\Services\TeachingCourseWorkEntrySyncService;
+use App\Services\TeachingWorkPortalReopening;
 use App\Services\TeachingWorkStudentDistribution;
 use App\Services\TeachingWorkSubmissions;
 use Illuminate\Http\Exceptions\HttpResponseException;
@@ -122,6 +123,7 @@ class WorkSubmissionController extends Controller
             $message = match ($reason) {
                 'email_sent' => 'Der Abgabeweg ist nach bestätigtem Aufgabenversand gesperrt. Ein Bearbeitungsbeginn außerhalb von Schooltool ist nicht überprüfbar.',
                 'email_pending' => 'Der Aufgabenversand läuft oder muss noch abgeglichen werden. Der Abgabeweg kann derzeit nicht geändert werden.',
+                'deadline' => 'Der Abgabeweg ist nach Schließung der Portalabgabe gesperrt.',
                 default => 'Abgabeweg nicht mehr änderbar. Die Bearbeitung hat bereits begonnen.',
             };
             throw new HttpResponseException(response()->json(['message' => $message, 'submission_lock_reason' => $reason,
@@ -135,6 +137,43 @@ class WorkSubmissionController extends Controller
         return isset($choice['channel'])
             ? ['channel' => $choice['channel'], 'email' => $choice['channel'] === 'email' ? $choice['email'] : null]
             : null;
+    }
+
+    public function reopeningOptions(Request $request, TeachingCourseWork $course_work, TeachingWorkPortalReopening $reopening): JsonResponse
+    {
+        $actor = $this->userHasRole(['admin', 'teaching_admin', 'teacher']);
+        abort_unless($actor && $course_work->teachingCourse, 403);
+        $this->authorizeTeachingCourseAccess($course_work->teachingCourse, $actor);
+        $data = $request->validate(['date' => ['nullable', 'date_format:Y-m-d']]);
+
+        return response()->json(['data' => $reopening->options($course_work, $data['date'] ?? null)])
+            ->header('Cache-Control', 'private, no-store');
+    }
+
+    public function reopen(Request $request, TeachingCourseWork $course_work, TeachingWorkPortalReopening $reopening,
+        TeachingCourseWorkEntrySyncService $entries): JsonResponse
+    {
+        $actor = $this->userHasRole(['admin', 'teaching_admin', 'teacher']);
+        abort_unless($actor && $course_work->teachingCourse, 403);
+        $this->authorizeTeachingCourseAccess($course_work->teachingCourse, $actor);
+        $choice = $request->validate([
+            'date' => ['nullable', 'date_format:Y-m-d'],
+            'scope' => ['required', 'in:all,selected'],
+            'student_ids' => ['required_if:scope,selected', 'prohibited_if:scope,all', 'array', 'list', 'min:1'],
+            'student_ids.*' => ['required', 'integer', 'min:1', 'distinct'],
+            'deadline_date' => ['required', 'date_format:Y-m-d'],
+            'deadline_time' => ['required', 'date_format:H:i'],
+        ]);
+
+        [$work, $count] = DB::transaction(function () use ($actor, $course_work, $choice, $reopening): array {
+            $work = TeachingCourseWork::query()->with('teachingCourse')->lockForUpdate()->findOrFail($course_work->id);
+            $this->authorizeTeachingCourseAccess($work->teachingCourse, $actor);
+
+            return [$work, $reopening->reopen($work, $choice)];
+        }, 3);
+
+        return response()->json(['data' => $entries->serializeWork($work), 'reopened' => $count])
+            ->header('Cache-Control', 'private, no-store');
     }
 
     public function download(TeachingCourseWork $course_work, string $fileId): StreamedResponse

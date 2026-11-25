@@ -116,7 +116,7 @@
                 <v-btn v-if="selectedStage?.completionField && !(opened === 'preparation' && portalPending)" variant="tonal" :prepend-icon="selectedStage?.manuallyCompleted ? 'mdi-undo' : 'mdi-check'" :loading="savingCompletion" :disabled="savingCompletion || selectedStage.blocked" @click="saveCompletion(selectedStage.completionField, !selectedStage.manuallyCompleted)">
                     {{ selectedStage?.manuallyCompleted ? 'Markierung aufheben' : 'Als erledigt markieren' }}
                 </v-btn>
-                <WorkSubmissionCollection v-if="opened === 'collection' && portalEnded && !selectedStage?.simulation" :work="work" :date="date" :repeat="(!selectedStage?.manuallyCompleted && selectedStage?.complete) || Boolean(lastCollectionAt)" :disabled="savingCompletion" />
+                <WorkSubmissionCollection v-if="opened === 'collection' && portalEnded && !selectedStage?.simulation && !workflowProgress?.submissionComplete" :work="work" :date="date" :repeat="(!selectedStage?.manuallyCompleted && selectedStage?.complete) || Boolean(lastCollectionAt)" :disabled="savingCompletion" />
                 <v-btn v-if="opened === 'collection' && selectedStage?.simulation" variant="tonal" prepend-icon="mdi-flask-outline" to="/admin/teaching-tools/simulator">Simulator öffnen</v-btn>
                 <WorkGradingAction v-if="opened === 'evaluation'" :work="work" :date="date" :repeat="selectedStage?.complete && !selectedStage?.manuallyCompleted"
                     :disabled="selectedStage?.blocked || savingCompletion || (!stages[0]?.complete && !lastCollectionAt && !hasPortalSubmissions)" />
@@ -153,7 +153,7 @@ import WorkResultNotification from './WorkResultNotification.vue'
 import WorkEmailPreparation from './WorkEmailPreparation.vue'
 import WorkStudentDistribution from './WorkStudentDistribution.vue'
 
-const props = defineProps({ work: { type: Object, required: true }, date: { type: String, default: '' }, state: { type: Object, default: null }, size: { type: [Number, String], default: 18 }, disabled: Boolean, exerciseReady: Boolean })
+const props = defineProps({ work: { type: Object, required: true }, date: { type: String, default: '' }, state: { type: Object, default: null }, size: { type: [Number, String], default: 18 }, disabled: Boolean, exerciseReady: Boolean, workflowProgress: Object })
 const admin = useAdminStore()
 const courseStore = useCourseStore()
 const slots = useSlots()
@@ -241,7 +241,7 @@ const evaluationAverages = computed(() => {
 })
 const { studentAttempts, studentTests, studentStatusError, studentStatus, studentTestTimedOut, loadStudentStatuses, clearStudentStatuses } = useWorkMcAttemptStatus(linkedTests)
 
-const stages = computed(() => workProgressStages(props.work).map(stage => {
+const stages = computed(() => (props.workflowProgress?.stages || workProgressStages(props.work)).map(stage => {
     if (stage.key === 'collection' && !portalEnded.value && !stage.simulation) {
         stage = { ...stage, title: 'Abgabestatus' }
     }
@@ -258,8 +258,9 @@ const stages = computed(() => workProgressStages(props.work).map(stage => {
 const stageLabel = stage => stage.blocked ? `${stage.label} · zuerst „${stage.blockedBy}“ abschließen`
     : stage.completedAt ? `${stage.label} · ${assessmentTimeText(stage.completedAt)}` : stage.label
 const openStage = stage => { if (!props.disabled && !stage.blocked) opened.value = stage.key }
-const lastCollectionAt = computed(() => workLastCollectionAt(props.work))
-const lastCollectionRunAt = computed(() => workLastCollectionRunAt(props.work))
+const progressWork = computed(() => props.workflowProgress?.scoped || props.work)
+const lastCollectionAt = computed(() => workLastCollectionAt(progressWork.value))
+const lastCollectionRunAt = computed(() => workLastCollectionRunAt(progressWork.value))
 const hasPortalSubmissions = computed(() => {
     if (!slots.workflow) return false
     const date = props.date || props.work.date_for_all_groups
@@ -286,8 +287,9 @@ const preparation = computed(() => {
 const preparationActionLabel = computed(() => modernPrepared.value ? 'Aufgaben bereitstellen' : preparation.value.label)
 const sendBlocked = computed(() => !preparation.value.complete)
 const selectedStage = computed(() => opened.value === 'preparation' ? preparation.value : stages.value.find(stage => stage.key === opened.value))
-const nextAction = computed(() => modernPrepared.value && !portalEnded.value && !portalRelease.value ? 'E-Mails vorbereiten'
-    : workProgressNextAction(props.work) || (preparation.value.complete ? 'E-Mails versenden' : opened.value === 'preparation' ? 'E-Mails vorbereiten' : 'Abgaben einsammeln'))
+const nextAction = computed(() => props.workflowProgress?.next?.label
+    || (modernPrepared.value && !portalEnded.value && !portalRelease.value ? 'E-Mails vorbereiten'
+        : workProgressNextAction(progressWork.value) || (preparation.value.complete ? 'E-Mails versenden' : opened.value === 'preparation' ? 'E-Mails vorbereiten' : 'Abgaben einsammeln')))
 const nextActionText = computed(() => nextAction.value === 'Abgeschlossen' ? 'Status: ABGESCHLOSSEN.'
     : nextAction.value === 'Abgaben einsammeln' && !portalEnded.value ? 'Abgaben können erst nach „Freigabe beenden“ eingesammelt werden.'
         : `Nächster Schritt: ${nextAction.value}.`)

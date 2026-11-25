@@ -20,7 +20,15 @@ beforeEach(() => {
 const navigationButton = defineComponent({
     props: ['to'],
     setup(props, { slots, attrs }) {
-        return () => h(RouterLink, { ...attrs, to: props.to }, slots.default)
+        return () => props.to
+            ? h(RouterLink, { ...attrs, to: props.to }, slots.default)
+            : h('button', { ...attrs, type: attrs.type ?? 'button' }, slots.default?.())
+    },
+})
+const navigationCard = defineComponent({
+    props: ['to'],
+    setup(props, { slots }) {
+        return () => props.to ? h(RouterLink, { to: props.to }, slots.default) : h('div', slots.default?.())
     },
 })
 
@@ -34,7 +42,8 @@ async function renderTools(path, deliveryMode = 'mailpit') {
         attachTo: document.body,
         global: { plugins: [router, createTestingPinia({ createSpy: vi.fn, initialState: {
             AdminAdminStore: { config: { teaching_email_delivery: { mode: deliveryMode } } },
-        } })], stubs: { AdminPageHeader: true, 'v-btn': navigationButton,
+        } })], stubs: { AdminPageHeader: true, 'v-btn': navigationButton, 'v-card': navigationCard,
+            'v-overlay': true,
             'v-sheet': { template: '<div><slot /></div>' }, 'v-container': { template: '<div><slot /></div>' },
             'v-dialog': { props: ['modelValue'], template: '<div v-if="modelValue" role="dialog"><slot /></div>' } } },
     })
@@ -43,7 +52,7 @@ async function renderTools(path, deliveryMode = 'mailpit') {
     return { wrapper, router }
 }
 
-describe('Teaching tools games navigation', () => {
+describe('Teaching tools navigation', () => {
     it('keeps the local-only simulator out of Office navigation and explains direct links without contacting Mailpit', async () => {
         const { wrapper } = await renderTools('/admin/teaching-tools/simulator', 'office_outlook')
         expect(wrapper.find('a[href="/admin/teaching-tools/simulator"]').exists()).toBe(false)
@@ -57,6 +66,118 @@ describe('Teaching tools games navigation', () => {
         expect(wrapper.find('[data-test="mc-workspace"]').exists()).toBe(true)
         expect(wrapper.find('a[href="/admin/teaching-tools/multiple-choice"]').attributes('aria-pressed')).toBe('true')
         expect(wrapper.find('a[href="/admin/teaching-tools/games"]').text()).toBe('Spiele')
+    })
+
+    it('lists Tests immediately after Multiple Choice and shows the Netzwerke card', async () => {
+        const { wrapper, router } = await renderTools('/admin/teaching-tools', 'office_outlook')
+        const testsPath = '/admin/teaching-tools/tests'
+        const navigation = wrapper.get('[aria-label="Unterricht Tools"]')
+
+        expect(navigation.findAll('a').map(link => link.text())).toEqual([
+            'Multiple Choice', 'Tests', 'Spiele', 'Erklärungen',
+        ])
+        await navigation.get(`a[href="${testsPath}"]`).trigger('click')
+        await flushPromises()
+
+        expect(router.currentRoute.value.path).toBe(testsPath)
+        expect(navigation.get(`a[href="${testsPath}"]`).attributes('aria-pressed')).toBe('true')
+        expect(wrapper.get('h1').text()).toBe('Tests')
+        expect(wrapper.findAll('li').map(entry => entry.get('h2').text())).toEqual(['Netzwerke'])
+        expect(wrapper.get('li').text()).toContain('In Vorbereitung')
+        expect(wrapper.find('[data-test="mc-workspace"]').exists()).toBe(false)
+
+        const direct = await renderTools(testsPath, 'office_outlook')
+        expect(direct.wrapper.get('h1').text()).toBe('Tests')
+        expect(direct.wrapper.get('li h2').text()).toBe('Netzwerke')
+        expect(axios.get).not.toHaveBeenCalled()
+    })
+
+    it('only lets the build card navigate from the network areas to the five room plans', async () => {
+        const testsPath = '/admin/teaching-tools/tests'
+        const networksPath = `${testsPath}/networks`
+        const buildPath = `${networksPath}/build-network`
+        const { wrapper, router } = await renderTools(testsPath)
+
+        await wrapper.get(`li a[href="${networksPath}"]`).trigger('click')
+        await flushPromises()
+
+        expect(router.currentRoute.value.path).toBe(networksPath)
+        expect(wrapper.get('h1').text()).toBe('Netzwerke')
+        const sections = wrapper.findAll('li')
+        expect(sections.map(section => section.get('h2').text())).toEqual([
+            'Netzwerk bauen', 'Andere Fragen', 'Andere Fragen', 'Andere Fragen', 'Andere Fragen',
+        ])
+        for (const placeholder of sections.slice(1)) {
+            expect(placeholder.find('a, button, [tabindex]').exists()).toBe(false)
+        }
+        await sections[0].get(`a[href="${buildPath}"]`).trigger('click')
+        await flushPromises()
+
+        expect(router.currentRoute.value.path).toBe(buildPath)
+        expect(wrapper.get('h1').text()).toBe('Netzwerk bauen')
+        const plans = wrapper.findAll('li a')
+        expect(plans.map(plan => plan.get('h2').text())).toEqual([
+            'Raumplan 1', 'Raumplan 2', 'Raumplan 3', 'Raumplan 4', 'Raumplan 5',
+        ])
+        expect(wrapper.get(`a[href="${testsPath}"]`).attributes('aria-pressed')).toBe('true')
+
+        const firstPlanPath = `${buildPath}/room-plan/1`
+        await wrapper.get(`li a[href="${firstPlanPath}"]`).trigger('click')
+        await flushPromises()
+        expect(router.currentRoute.value.path).toBe(firstPlanPath)
+        expect(wrapper.get('h1').text()).toBe('Raumplan 1')
+        expect(wrapper.get('h2').text()).toBe('Erdgeschoss')
+        expect(wrapper.get('[aria-labelledby="ground-floor-task-title"]').findAll('li').map(task => task.text())).toEqual([
+            'Platziere insgesamt fünf Arbeitsplätze in Büro 1 und Büro 2. In einem Büro sollen drei Arbeitsplätze stehen, im anderen zwei. Du entscheidest, welches Büro drei Arbeitsplätze bekommt.',
+            'Im Foyer vier Stehtische für Besucher:innen platzieren, die mit ihren Laptops kommen.',
+        ])
+        expect(wrapper.find('textarea').exists()).toBe(false)
+        expect(wrapper.get('[aria-label="Grundriss"]').findAll('.network-floor__room').map(room => room.text())).toEqual([
+            'Büro 1', 'Büro 2', 'Serverraum', 'Foyer',
+        ])
+        const palette = wrapper.get('[aria-label="Geräteauswahl"]')
+        expect(palette.findAll('button[aria-pressed]').map(button => button.text())).toEqual([
+            '5 × Arbeitsplatz', '4 × Stehtisch', 'Router', 'Switch', 'Access Point', 'Server', 'Serverschrank',
+            'Kabelkanal', 'Einfache Netzwerkdose', 'Doppelte Netzwerkdose', 'Patchkabel',
+        ])
+        expect(palette.findAll('button[aria-haspopup="dialog"]').map(button => button.attributes('aria-label'))).toEqual([
+            'Foto anzeigen: Router', 'Foto anzeigen: Switch', 'Foto anzeigen: Access Point', 'Foto anzeigen: Serverschrank',
+            'Foto anzeigen: Kabelkanal', 'Foto anzeigen: Einfache Netzwerkdose', 'Foto anzeigen: Doppelte Netzwerkdose',
+            'Foto anzeigen: Patchkabel',
+        ])
+        const zoom = wrapper.get('[aria-label="Grundriss-Zoom"]')
+        expect(zoom.get('output').text()).toBe('100 %')
+        await zoom.get('[aria-label="Grundriss vergrößern"]').trigger('click')
+        expect(zoom.get('output').text()).toBe('105 %')
+        await zoom.get('[aria-label="Grundriss vergrößern"]').trigger('click')
+        expect(zoom.get('output').text()).toBe('110 %')
+        await zoom.get('[aria-label="Grundriss verkleinern"]').trigger('click')
+        expect(zoom.get('output').text()).toBe('105 %')
+        await zoom.findAll('button').find(button => button.text() === 'Zurücksetzen')?.trigger('click')
+        expect(zoom.get('output').text()).toBe('100 %')
+
+        await wrapper.get(`section a[href="${buildPath}"]`).trigger('click')
+        await flushPromises()
+        expect(wrapper.get('h1').text()).toBe('Netzwerk bauen')
+        await wrapper.get(`section a[href="${networksPath}"]`).trigger('click')
+        await flushPromises()
+        expect(wrapper.get('h1').text()).toBe('Netzwerke')
+        await wrapper.get(`section a[href="${testsPath}"]`).trigger('click')
+        await flushPromises()
+        expect(wrapper.get('h1').text()).toBe('Tests')
+        expect(axios.get).not.toHaveBeenCalled()
+    })
+
+    it.each([
+        ['/admin/teaching-tools/tests/networks', 'Netzwerke', 5],
+        ['/admin/teaching-tools/tests/networks/build-network', 'Netzwerk bauen', 5],
+        ['/admin/teaching-tools/tests/networks/build-network/room-plan/5', 'Raumplan 5', 0],
+    ])('renders %s directly', async (path, title, cardCount) => {
+        const { wrapper } = await renderTools(path)
+        expect(wrapper.get('h1').text()).toBe(title)
+        expect(wrapper.findAll('li')).toHaveLength(cardCount)
+        expect(wrapper.find('[aria-label="Grundriss"]').exists()).toBe(false)
+        expect(axios.get).not.toHaveBeenCalled()
     })
 
     it('offers Zahlensysteme and opens the playable adventure workspace', async () => {

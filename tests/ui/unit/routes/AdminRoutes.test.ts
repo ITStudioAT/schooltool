@@ -3,6 +3,13 @@ import router, { resolveAdminRouteAccess, routes } from '../../../../resources/r
 
 describe('admin routes', () => {
     it.each([
+        ['/admin/teaching-tools/tests', { section: 'tests' }],
+        ['/admin/teaching-tools/tests/networks', { section: 'tests', testPage: 'networks' }],
+        ['/admin/teaching-tools/tests/networks/build-network', { section: 'tests', testPage: 'build-network' }],
+        ...[1, 2, 3, 4, 5].map(roomPlanNumber => [
+            `/admin/teaching-tools/tests/networks/build-network/room-plan/${roomPlanNumber}`,
+            { section: 'tests', testPage: 'room-plan', roomPlanNumber },
+        ]),
         ['/admin/teaching-tools/simulator', { section: 'simulator' }],
         ['/admin/teaching-tools/games', { section: 'games' }],
         ['/admin/teaching-tools/explanations', { section: 'explanations' }],

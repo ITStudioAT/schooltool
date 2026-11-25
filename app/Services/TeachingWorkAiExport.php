@@ -75,12 +75,7 @@ class TeachingWorkAiExport
         if ($missingEmails !== []) {
             $warnings[] = 'Fehlende E-Mail-Adressen bei aktiven Kursmitgliedern (Anzahl: '.count($missingEmails).'). Fehlende Werte unverändert lassen; keine Adressen aus Namen ableiten.';
         }
-        $courseClasses = array_values(array_unique($course->classes ?? []));
-        $courseGroupNumber = null;
-        if (count($courseClasses) === 1 && preg_match('/\A.+?\s+-\s+(.+?)\s+-\s+([1-9][0-9]*)\z/u', trim($course->title), $courseTitleParts) === 1
-            && trim($courseTitleParts[1]) === $courseClasses[0]) {
-            $courseGroupNumber = (int) $courseTitleParts[2];
-        }
+        $courseGroup = TeachingAssessmentTargetGuard::courseGroup($course);
         if ($dates === []) {
             $warnings[] = 'Kein Durchführungstermin gespeichert. Den technischen Anlagezeitpunkt nicht als Arbeitstermin verwenden.';
         }
@@ -95,9 +90,9 @@ class TeachingWorkAiExport
             'school' => ['id' => $course->school_id, 'name' => $course->school->long_name, 'short_name' => $course->school->short_name],
             'schoolyear' => ['id' => $course->schoolyear_id, 'name' => $course->schoolyear->name],
             'course' => ['id' => $course->id, 'title' => $course->title, 'description' => $course->description, 'classes' => $course->classes ?? [],
-                'group_number' => $courseGroupNumber,
-                'group_source' => $courseGroupNumber !== null ? 'course_title' : null,
-                'folder_group' => $courseGroupNumber !== null ? $courseClasses[0].'_Gruppe-'.$courseGroupNumber : null],
+                'group_number' => $courseGroup['group_number'],
+                'group_source' => $courseGroup['group_number'] !== null ? 'course_title' : null,
+                'folder_group' => $courseGroup['folder_group']],
             'work' => ['id' => $work->id, 'title' => $work->title, 'description' => $work->description,
                 'type' => $work->type, 'type_definition' => $type,
                 'is_group_work' => $work->is_group_work, 'group_size' => $work->group_size, 'is_random_groups' => $work->is_random_groups, 'groups' => $groups,

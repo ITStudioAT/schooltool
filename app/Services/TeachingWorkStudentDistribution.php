@@ -25,9 +25,10 @@ use function Illuminate\Support\defer;
 
 class TeachingWorkStudentDistribution
 {
-    public function signalDeadlineChangeAfterCommit(TeachingCourseWork $work): void
+    /** @param list<int>|null $selected */
+    public function signalDeadlineChangeAfterCommit(TeachingCourseWork $work, ?array $selected = null): void
     {
-        $studentIds = array_unique([...($work->status['student_distribution']['student_ids'] ?? []),
+        $studentIds = $selected ?? array_unique([...($work->status['student_distribution']['student_ids'] ?? []),
             ...($work->status['student_distribution']['ended_email_student_ids'] ?? [])]);
         $connection = config('broadcasting.connections.'.config('broadcasting.default'), []);
         if (! $studentIds || ! in_array($connection['driver'] ?? null, ['pusher', 'reverb'], true)
@@ -755,12 +756,14 @@ class TeachingWorkStudentDistribution
         }
 
         $method = TeachingWorkSubmissions::method($work);
+        $personal = app(TeachingWorkPortalReopening::class)->deadlineFor($work, $student, $status);
 
         return ['id' => $work->id, 'status' => $status] + $this->studentTaskDeadlines($work)
+            + ($personal ? ['submission_deadline_at' => $personal->toIso8601String()] : [])
             + ($method === null ? [] : ['submission_method' => $method]);
     }
 
-    public function studentTaskStatus(TeachingCourseWork $work, User $student): ?string
+    public function studentTaskStatus(TeachingCourseWork $work, User $student, bool $knownRecipient = false): ?string
     {
         $release = $work->status['student_distribution'] ?? [];
         $status = match (true) {
@@ -771,7 +774,7 @@ class TeachingWorkStudentDistribution
             default => null,
         };
 
-        $assigned = $status !== null && $this->assignedTo($work, $student);
+        $assigned = $status !== null && $this->assignedTo($work, $student, $knownRecipient);
         if ($status === 'ended') {
             return $assigned || in_array((int) $student->id, $release['ended_email_student_ids'] ?? [], true)
                 ? $status : null;
@@ -781,7 +784,7 @@ class TeachingWorkStudentDistribution
         }
 
         if (TeachingWorkSubmissions::acceptedMail($work, $student)
-            && ($assigned || in_array((int) $student->id, $this->recipients($work), true))) {
+            && ($assigned || $knownRecipient || in_array((int) $student->id, $this->recipients($work), true))) {
             return 'email_delivery';
         }
 
@@ -797,9 +800,13 @@ class TeachingWorkStudentDistribution
             return [];
         }
 
+        $personal = app(TeachingWorkPortalReopening::class)->deadlineFor($work, $student, $status);
+
         return ['submission_method' => $method, 'submission_files' => $files,
             'can_submit' => (int) auth()->id() === (int) $student->id && ($method['channel'] ?? null) === 'portal'
-                && in_array($status, ['released', 'email_delivery'], true) && ! TeachingWorkSubmissions::expired($work)];
+                && ($personal ? ! $personal->isPast()
+                    : in_array($status, ['released', 'email_delivery'], true) && ! TeachingWorkSubmissions::expired($work))]
+            + ($personal ? ['submission_deadline_at' => $personal->toIso8601String()] : []);
     }
 
     /**
@@ -881,10 +888,10 @@ class TeachingWorkStudentDistribution
             && is_numeric($maximum) && is_finite((float) $maximum) && $maximum > 0 ? (float) $maximum : null;
     }
 
-    private function assignedTo(TeachingCourseWork $work, User $student): bool
+    private function assignedTo(TeachingCourseWork $work, User $student, bool $knownRecipient = false): bool
     {
         return in_array((int) $student->id, $work->status['student_distribution']['student_ids'] ?? [], true)
-            && in_array((int) $student->id, $this->recipients($work), true);
+            && ($knownRecipient || in_array((int) $student->id, $this->recipients($work), true));
     }
 
     public function mcAccessAllowed(McAttempt $attempt): bool
@@ -1040,6 +1047,14 @@ class TeachingWorkStudentDistribution
     private function studentGroups(TeachingCourseWork $work, User $student): \Illuminate\Support\Collection
     {
         return collect($work->groups ?? [])->filter(fn (array $group): bool => in_array((int) $student->id, $this->recipients($work, false, [$group]), true));
+    }
+
+    /** @return list<string|null> */
+    public function submissionDatesForStudent(TeachingCourseWork $work, User $student): array
+    {
+        return $this->studentGroups($work, $student)
+            ->map(fn (array $group): ?string => $group['date'] ?? $work->date_for_all_groups?->format('Y-m-d'))
+            ->unique()->values()->all();
     }
 
     private function studentMcAttemptState(McTest $test, McAttempt $attempt): string

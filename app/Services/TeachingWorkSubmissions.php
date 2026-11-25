@@ -6,6 +6,7 @@ use App\Models\McAttempt;
 use App\Models\McTest;
 use App\Models\TeachingCourseWork;
 use App\Models\User;
+use Carbon\CarbonImmutable;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Schema;
@@ -82,6 +83,10 @@ class TeachingWorkSubmissions
     {
         if ($work->studentReleaseEnded()) {
             return 'ended';
+        }
+        if ((self::method($work)['channel'] ?? null) === 'portal'
+            && (self::expired($work) || ! empty($work->status['portal_submission_reopenings']))) {
+            return 'deadline';
         }
         if (! empty($work->status['submission_started_at']) || ! empty($work->status['portal_started_student_ids']) || ! empty($work->status['portal_submissions'])
             || self::hasStartedTest($work, $lock, $groups, $startedByTest)) {
@@ -206,12 +211,14 @@ class TeachingWorkSubmissions
 
     public static function expired(TeachingCourseWork $work): bool
     {
-        $deadline = $work->finalDeadlineInstant();
-        if ($deadline && ! $work->finish_until_time) {
-            $deadline = $deadline->endOfDay();
-        }
+        return self::deadline($work)?->isPast() ?? false;
+    }
 
-        return $deadline !== null && $deadline->isPast();
+    public static function deadline(TeachingCourseWork $work): ?CarbonImmutable
+    {
+        $deadline = $work->finalDeadlineInstant();
+
+        return $work->finish_until_time ? $deadline : $deadline?->endOfDay();
     }
 
     /** @return list<array<string,mixed>> */
@@ -236,10 +243,9 @@ class TeachingWorkSubmissions
         return Str::startsWith($path, $folders) ? $path : null;
     }
 
-    /** Save with the caller's work row lock. */
+    /** Save after checking the student's submission window under the caller's work row lock. */
     public function upload(TeachingCourseWork $work, User $student, UploadedFile $upload, ?string &$createdPath): void
     {
-        $work->assertStudentReleaseOpen();
         if (! $upload->getSize()) {
             throw ValidationException::withMessages(['file' => 'Die ausgewählte Datei ist leer.']);
         }
@@ -276,10 +282,9 @@ class TeachingWorkSubmissions
         $work->update(['status' => [...$work->status, 'portal_submissions' => $files]]);
     }
 
-    /** Save with the caller's work row lock. */
+    /** Save after checking the student's submission window under the caller's work row lock. */
     public function withdraw(TeachingCourseWork $work, User $student, string $id): void
     {
-        $work->assertStudentReleaseOpen();
         $files = $work->status['portal_submissions'] ?? [];
         $index = collect($files)->search(fn (array $file): bool => $file['id'] === $id && (int) $file['student_id'] === (int) $student->id);
         abort_if($index === false, 404);

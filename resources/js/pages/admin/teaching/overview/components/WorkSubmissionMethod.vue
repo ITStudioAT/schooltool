@@ -7,7 +7,8 @@
         <v-card v-if="dialog">
             <v-card-title class="text-wrap">Abgabeweg {{ method || releaseEnded ? 'verwalten' : 'festlegen' }} · {{ work.title }}</v-card-title>
             <v-card-text>
-                <WorkSubmissionFields v-model:channel="channel" v-model:email="email" :disabled="saving || disabled" :lock-reason="lockReason" />
+                <WorkSubmissionFields v-model:channel="channel" v-model:email="email"
+                    :disabled="saving || disabled" :lock-reason="lockReason" :portal-closure-notice="portalClosureNotice" />
                 <p v-if="!releaseEnded" class="text-body-2 mt-4">Abgaben können erst nach „Freigabe beenden“ eingesammelt werden.</p>
                 <div v-if="releaseEnded && submissions.length" class="mt-5">
                     <h3 class="text-subtitle-1 font-weight-bold">Abgaben im Schülerbereich</h3>
@@ -42,7 +43,7 @@ import { download, update } from '@/actions/App/Http/Controllers/Admin/Teaching/
 
 import WorkSubmissionFields from './WorkSubmissionFields.vue'
 
-const props = defineProps({ work: { type: Object, required: true }, disabled: Boolean })
+const props = defineProps({ work: { type: Object, required: true }, disabled: Boolean, portalClosureNotice: String })
 const emit = defineEmits(['saved'])
 const releaseEnded = computed(() => Boolean(props.work.status?.student_distribution?.ended_at))
 const method = computed(() => props.work.status?.submission_method || null)
@@ -57,6 +58,7 @@ const serverLock = ref(null)
 const lockReason = computed(() => {
     const reason = serverLock.value || props.work.submission_lock_reason
     if (releaseEnded.value) return 'ended'
+    if (method.value?.channel === 'portal' && props.portalClosureNotice) return 'deadline'
     return expected.value || reason === 'email_pending' ? reason : null
 })
 const dateFormatter = new Intl.DateTimeFormat('de-AT', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Vienna' })

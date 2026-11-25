@@ -8,6 +8,7 @@ use App\Models\TeachingCourse;
 use App\Models\TeachingCourseWork;
 use App\Models\User;
 use App\Services\ParentStudentAccessService;
+use App\Services\TeachingWorkPortalReopening;
 use App\Services\TeachingWorkStudentDistribution;
 use App\Services\TeachingWorkSubmissions;
 use Illuminate\Database\Eloquent\Builder;
@@ -54,6 +55,7 @@ class CourseWorkTaskController extends Controller
             ->selectRaw(<<<'SQL'
                 JSON_OBJECT(
                     'submission_method', JSON_EXTRACT(status, '$.submission_method'),
+                    'portal_submission_reopenings', JSON_EXTRACT(status, '$.portal_submission_reopenings'),
                     'student_distribution', JSON_OBJECT(
                         'student_ids', JSON_EXTRACT(status, '$.student_distribution.student_ids'),
                         'ended_email_student_ids', JSON_EXTRACT(status, '$.student_distribution.ended_email_student_ids'),
@@ -112,7 +114,8 @@ class CourseWorkTaskController extends Controller
     }
 
     public function submit(Request $request, int $courseId, TeachingCourseWork $course_work, ParentStudentAccessService $access,
-        TeachingWorkStudentDistribution $distribution, TeachingWorkSubmissions $submissions, ?string $fileId = null): JsonResponse
+        TeachingWorkStudentDistribution $distribution, TeachingWorkSubmissions $submissions,
+        TeachingWorkPortalReopening $reopening, ?string $fileId = null): JsonResponse
     {
         $student = $access->authenticatedStudent();
         abort_unless($student, 403);
@@ -121,15 +124,18 @@ class CourseWorkTaskController extends Controller
         $upload = $fileId === null ? $request->validate(['file' => ['required', 'file', 'max:'.TeachingWorkSubmissions::MAX_FILE_KIB]])['file'] : null;
         $createdPath = null;
         try {
-            $receipts = DB::transaction(function () use ($course, $course_work, $student, $distribution, $submissions, $fileId, $upload, &$createdPath): array {
+            $receipts = DB::transaction(function () use ($course, $course_work, $student, $distribution, $submissions, $reopening, $fileId, $upload, &$createdPath): array {
                 $work = $course->teachingCourseWorks()->lockForUpdate()->findOrFail($course_work->id);
                 $work->setRelation('teachingCourse', $course);
                 $status = $distribution->studentTaskStatus($work, $student);
                 abort_unless($status !== null, 404);
-                $work->assertStudentReleaseOpen();
-                abort_unless(in_array($status, ['released', 'email_delivery'], true), 409, 'Die Aufgabe ist derzeit nicht freigegeben.');
+                $personal = $reopening->deadlineFor($work, $student, $status);
+                if ($personal === null) {
+                    $work->assertStudentReleaseOpen();
+                    abort_unless(in_array($status, ['released', 'email_delivery'], true), 409, 'Die Aufgabe ist derzeit nicht freigegeben.');
+                }
                 abort_unless((TeachingWorkSubmissions::method($work)['channel'] ?? null) === 'portal', 409, 'Für diese Aufgabe ist keine Abgabe im Schülerbereich vorgesehen.');
-                abort_if(TeachingWorkSubmissions::expired($work), 409, 'Die Abgabefrist ist abgelaufen.');
+                abort_if($personal?->isPast() ?? TeachingWorkSubmissions::expired($work), 409, 'Die Abgabefrist ist abgelaufen.');
                 if ($fileId === null) {
                     $submissions->upload($work, $student, $upload, $createdPath);
                 } else {

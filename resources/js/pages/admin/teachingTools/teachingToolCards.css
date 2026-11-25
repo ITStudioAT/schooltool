@@ -1,0 +1,18 @@
+.teaching-tool-workspace {
+    padding-inline: 2px;
+}
+
+.teaching-tool-card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
+    gap: 18px;
+    list-style: none;
+    padding: 0;
+}
+
+.teaching-tool-card-grid > li {
+    /* Keep fractional grid tracks from giving adjacent cards different widths. */
+    inline-size: round(down, 100%, 1px);
+    min-width: 0;
+    height: 100%;
+}

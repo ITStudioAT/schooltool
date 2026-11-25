@@ -45,39 +45,54 @@ beforeEach(function (): void {
     Http::preventStrayRequests();
 });
 
-test('the real direct endpoint creates a verified package with a separate MC selection', function (bool $withMc, string $mode): void {
+test('the real direct endpoint creates a verified package with a separate MC selection', function (bool $withMc, string $mode, bool $multipleClasses = false): void {
     config(['cache.default' => 'array']);
     $area = TeachingEntryArea::factory()->create(['school_id' => $this->teacher->school_id,
         'schoolyear_id' => $this->teacher->schoolyear_id, 'user_id' => $this->teacher->id]);
     TeachingEntryDefinition::factory()->create(['school_id' => $this->teacher->school_id, 'schoolyear_id' => $this->teacher->schoolyear_id,
         'user_id' => $this->teacher->id, 'teaching_entry_area_id' => $area->id, 'short_name' => 'LF',
         'category' => 'Benotung', 'name' => 'Leistungsfeststellung', 'has_properties' => true, 'properties_mode' => 'points', 'maximum_points' => 5]);
-    $this->course->update(['title' => 'INF - 3B - 2', 'classes' => ['3B'], 'teaching_entry_area_id' => $area->id]);
-    $this->work->update(['title' => 'Word', 'type' => 'LF', 'date_for_all_groups' => '2026-11-18', 'finish_until_date' => '2026-11-19',
+    $classes = $multipleClasses ? ['1A', '1F'] : ['3B'];
+    $date = $multipleClasses ? '2026-11-27' : '2026-11-18';
+    $title = $multipleClasses ? 'Test: Word' : 'Word';
+    $group = $multipleClasses ? 'Kurs-'.$this->course->id : '3B_Gruppe-2';
+    $this->course->update(['title' => $multipleClasses ? 'INF 1' : 'INF - 3B - 2', 'classes' => $classes, 'teaching_entry_area_id' => $area->id]);
+    $this->work->update(['title' => $title, 'type' => 'LF', 'date_for_all_groups' => $date, 'finish_until_date' => $multipleClasses ? $date : '2026-11-19',
         'finish_until_time' => '20:00', 'is_group_work' => false, 'groups' => [], 'status' => []]);
     $student = User::factory()->create(['school_id' => $this->teacher->school_id, 'schoolyear_id' => $this->teacher->schoolyear_id,
-        'first_name' => 'Anna', 'last_name' => 'Beispiel', 'sex' => 'w', 'schoolclass' => '3B', 'is_active' => true]);
+        'first_name' => 'Anna', 'last_name' => 'Beispiel', 'sex' => 'w', 'schoolclass' => $classes[0], 'is_active' => true]);
     TeachingCourseStudent::query()->create(['teaching_course_id' => $this->course->id, 'user_id' => $student->id]);
+    if ($multipleClasses) {
+        $secondStudent = User::factory()->create(['school_id' => $this->teacher->school_id, 'schoolyear_id' => $this->teacher->schoolyear_id,
+            'first_name' => 'Ben', 'last_name' => 'Beispiel', 'schoolclass' => $classes[1], 'is_active' => true]);
+        TeachingCourseStudent::query()->create(['teaching_course_id' => $this->course->id, 'user_id' => $secondStudent->id]);
+    }
     $test = null;
     if ($withMc) {
         $catalog = McCatalog::query()->create(['school_id' => $this->teacher->school_id, 'owner_id' => $this->teacher->id, 'title' => 'Testkatalog', 'questions' => []]);
         $test = McTest::query()->create(['school_id' => $this->teacher->school_id, 'schoolyear_id' => $this->teacher->schoolyear_id,
             'owner_id' => $this->teacher->id, 'catalog_id' => $catalog->id, 'title' => 'MC', 'status' => 'draft',
             'question_count' => 10, 'total_points' => 10, 'duration_seconds' => 1200]);
-        $this->work->update(['status' => ['multiple_choice_tests' => ['2026-11-18' => ['work_id' => $this->work->id, 'test_id' => $test->id]]]]);
+        $this->work->update(['status' => ['multiple_choice_tests' => [$date => ['work_id' => $this->work->id, 'test_id' => $test->id]]]]);
     }
     $connection = DropboxConnection::factory()->create(['user_id' => $this->teacher->id]);
     $link = new TeachingWorkModuleLink(['dropbox_connection_id' => $connection->id, 'account_id' => $connection->account_id,
         'module_id' => 'module', 'schema_version' => 1, 'handshake_file_id' => 'id:handshake', 'handshake_revision' => 'one',
         'folder_id' => 'id:module', 'folder_name' => 'Modul', 'folder_path' => '/modul']);
+    if ($multipleClasses) {
+        $otherCourse = TeachingCourse::factory()->create(['school_id' => $this->course->school_id,
+            'schoolyear_id' => $this->course->schoolyear_id, 'user_id' => $this->teacher->id, 'title' => 'INF 1', 'classes' => $classes]);
+        $otherWork = TeachingCourseWork::factory()->create(['teaching_course_id' => $otherCourse->id, 'title' => $title, 'date_for_all_groups' => $date]);
+        TeachingWorkModuleLink::query()->create($link->getAttributes() + ['teaching_course_work_id' => $otherWork->id]);
+    }
+    $folderName = $date.' – '.$group.' – '.$title;
     $state = (object) ['files' => [], 'folders' => ['id:module' => ['.tag' => 'folder', 'id' => 'id:module',
         'name' => 'Modul', 'path_lower' => '/modul', 'path_display' => '/Modul']]];
     if ($mode === 'empty') {
         $state->folders['id:root'] = ['.tag' => 'folder', 'id' => 'id:root', 'name' => 'Leistungsfeststellungen',
             'path_lower' => '/modul/leistungsfeststellungen', 'path_display' => '/Modul/Leistungsfeststellungen'];
-        $name = '2026-11-18 – 3B_Gruppe-2 – Word';
-        $state->folders['id:existing'] = ['.tag' => 'folder', 'id' => 'id:existing', 'name' => $name,
-            'path_lower' => '/modul/leistungsfeststellungen/'.mb_strtolower($name), 'path_display' => '/Modul/Leistungsfeststellungen/'.$name];
+        $state->folders['id:existing'] = ['.tag' => 'folder', 'id' => 'id:existing', 'name' => $folderName,
+            'path_lower' => '/modul/leistungsfeststellungen/'.mb_strtolower($folderName), 'path_display' => '/Modul/Leistungsfeststellungen/'.$folderName];
     }
     $dropbox = Mockery::mock(DropboxWorkImport::class);
     app()->instance(DropboxWorkImport::class, $dropbox);
@@ -145,22 +160,26 @@ test('the real direct endpoint creates a verified package with a separate MC sel
     }
     $before = $this->work->fresh()->getAttributes();
     $beforeFiles = $state->files;
-    $previewStream = $this->postJson($this->url.'/prepare-exercise', ['execution' => 'direct', 'preview_mode' => 'summary', 'date' => '2026-11-18',
+    $participantCount = $multipleClasses ? 2 : 1;
+    $previewStream = $this->postJson($this->url.'/prepare-exercise', ['execution' => 'direct', 'preview_mode' => 'summary', 'date' => $date,
         'template_points_snapshot' => 35, 'expected_test_id' => $test?->id, 'stream_progress' => true])->assertOk();
     $previewEvents = collect(array_values(array_map(fn (string $line): array => json_decode($line, true, flags: JSON_THROW_ON_ERROR),
         array_filter(explode("\n", $previewStream->streamedContent())))));
     $previewProgress = $previewEvents->where('type', 'progress')->pluck('data')->last();
     expect($previewProgress['state'])->toBe('done')
         ->and($previewProgress['completed'])->toContain('assessment_candidates', 'assessment_assignment', 'assessment_criteria', 'assessment_target')
-        ->and($previewEvents->last()['data']['generation']['participants'])->toHaveCount(1)
+        ->and($previewEvents->last()['data']['generation']['participants'])->toHaveCount($participantCount)
         ->and($state->files)->toBe($beforeFiles);
-    $response = $this->postJson($this->url.'/prepare-exercise', ['execution' => 'direct', 'preview_mode' => 'summary', 'date' => '2026-11-18',
+    $response = $this->postJson($this->url.'/prepare-exercise', ['execution' => 'direct', 'preview_mode' => 'summary', 'date' => $date,
         'template_points_snapshot' => 35, 'expected_test_id' => $test?->id])->assertOk()
         ->assertJsonPath('generation.combined_points', $withMc ? 45 : 35)
         ->assertJsonPath('generation.participants.0.sex', 'w')->assertJsonPath('generation.checks.assignment', 'ok')
         ->assertJsonPath('generation.reusable_folder', $mode === 'new' ? null : $mode)
         ->assertJsonMissingPath('generation.documents')->assertJsonMissingPath('generation.criteria_markdown');
     $id = $response->json('generation.id');
+    if ($multipleClasses) {
+        $this->course->update(['classes' => array_reverse($classes)]);
+    }
     expect($state->files)->toBe($beforeFiles);
     $params = ['kind' => 'direct', 'generation_id' => $id, 'approved' => true];
     $this->postJson($this->url.'/store-exercise', $params)->assertAccepted()->assertJsonPath('run.state', 'queued');
@@ -171,7 +190,8 @@ test('the real direct endpoint creates a verified package with a separate MC sel
     expect($run['progress']['labels']['assessment_candidate_0'] ?? null)->not->toBeNull()
         ->and($run['progress']['completed'])->toContain('assessment_candidate_0');
     $result = $run['result'];
-    expect($result['status'])->toBe('created')->and($result['participants_count'])->toBe(1);
+    expect($result['status'])->toBe('created')->and($result['participants_count'])->toBe($participantCount)
+        ->and($result['folder']['name'])->toBe($folderName);
     $this->postJson($this->url.'/store-exercise', $params)->assertAccepted()
         ->assertJsonPath('run.id', $id)->assertJsonPath('run.state', 'completed');
     if ($mode === 'empty') {
@@ -182,6 +202,8 @@ test('the real direct endpoint creates a verified package with a separate MC sel
     }
     $status = json_decode($state->files[$result['folder']['id'].'/status.json']['contents'], true);
     expect($status['prepared'])->toBeTrue();
+    expect($status['folder_group'])->toBe($group)
+        ->and($status['schooltool'])->toBe(['work_id' => $this->work->id, 'course_id' => $this->course->id]);
     expect($status['total_points'])->toBe(35);
     expect($status['components']['multiple_choice'])->toBe(['included' => false, 'points' => null]);
     expect($this->work->fresh()->getAttributes())->toBe($before);
@@ -189,7 +211,8 @@ test('the real direct endpoint creates a verified package with a separate MC sel
         expect($test->fresh()->status)->toBe('draft');
     }
     Http::assertNothingSent();
-})->with([[false, 'new'], [true, 'new'], [false, 'empty'], [true, 'empty'], [false, 'linked'], [true, 'linked']]);
+})->with([[false, 'new'], [true, 'new'], [false, 'empty'], [true, 'empty'], [false, 'linked'], [true, 'linked'],
+    'two classes in an unnumbered course' => [false, 'linked', true]]);
 
 test('authorized teacher previews and explicitly confirms the direct path', function (): void {
     $this->work->update(['date_for_all_groups' => '2026-11-18']);

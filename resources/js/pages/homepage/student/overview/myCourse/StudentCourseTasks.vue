@@ -54,7 +54,7 @@
                             <dd>{{ pointsLabel(task.grading_points) }}</dd>
                         </div>
                         <div v-if="task.deadline?.date">
-                            <dt>Endgültige Abgabefrist</dt>
+                            <dt>{{ task.submission_deadline_at ? 'Reguläre Abgabefrist' : 'Endgültige Abgabefrist' }}</dt>
                             <dd>{{ dateLabel(task.deadline.date) }}<template v-if="task.deadline.time"> · {{ task.deadline.time }} Uhr</template></dd>
                             <dd v-if="deadlineExpired(task.deadline)" class="task-deadline-expired">Abgelaufen</dd>
                         </div>
@@ -90,7 +90,7 @@
                             </v-btn>
                         </div>
                     </div>
-                    <StudentWorkSubmission :task="task" :course-id="courseId" :expired="!!task.deadline && deadlineExpired(task.deadline)"
+                    <StudentWorkSubmission :task="task" :course-id="courseId" :expired="submissionExpired(task)"
                         @saved="task.submission_files = $event" @refresh="refreshTasks" />
                 </article>
             </div>
@@ -221,6 +221,11 @@ function deadlineExpired(deadline) {
     return workDeadlineExpired({ finish_until_date: deadline.date, finish_until_time: deadline.time }, deadlineNow.value)
 }
 
+function submissionExpired(task) {
+    return task.submission_deadline_at ? deadlineNow.value > Date.parse(task.submission_deadline_at)
+        : Boolean(task.deadline && deadlineExpired(task.deadline))
+}
+
 function testActionLabel(test) {
     if (test.attempt_state === 'in_progress') return 'MC-Test fortsetzen'
     if (['paused', 'finished', 'unavailable'].includes(test.attempt_state)) return 'MC-Test öffnen'
@@ -349,6 +354,7 @@ async function refreshDeadlines() {
                 return saved?.status !== (task.status || 'released')
                     || saved?.submission_method?.channel !== task.submission_method?.channel
                     || saved?.submission_method?.email !== task.submission_method?.email
+                    || (saved?.submission_deadline_at || null) !== (task.submission_deadline_at || null)
                     || ((task.tests?.length || task.submission_method?.channel === 'portal') && (saved.deadline?.date !== task.deadline?.date || saved.deadline?.time !== task.deadline?.time))
             })
             if (needsFullReload) {

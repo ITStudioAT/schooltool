@@ -641,7 +641,8 @@ test('AI export preserves the course group for folder naming independently of wo
 
     expect($context['course']['title'])->toBe($title);
     expect($context['course']['group_number'])->toBe($number);
-    expect($context['course']['folder_group'])->toBe($folderGroup);
+    expect($context['course']['folder_group'])->toBe(count($classes) > 1 ? 'Kurs-'.$this->course->id : $folderGroup);
+    expect($context['course']['classes'])->toBe($classes);
     expect($context['course']['group_source'])->toBe($number !== null ? 'course_title' : null);
     expect($context['work']['is_group_work'])->toBeFalse();
     expect($this->course->fresh()->getAttributes())->toBe($before);
@@ -650,7 +651,8 @@ test('AI export preserves the course group for folder naming independently of wo
     'second course group' => ['DGB - 3B - 2', ['3B'], 2, '3B_Gruppe-2'],
     'unnumbered course' => ['INF 2 Abend', ['Abend'], null, null],
     'class mismatch' => ['INF - 5L2 - 1', ['5L1'], null, null],
-    'multiple classes need explicit context' => ['INF - 5L2 - 1', ['5L2', '5L1'], null, null],
+    'multiple classes use the course ID even with a numbered title' => ['INF - 5L2 - 1', ['5L2', '5L1'], null, null],
+    'multiple classes use the course ID with an unnumbered title' => ['INF 1', ['1A', '1F'], null, null],
     'number in another title format' => ['INF 5L2 1', ['5L2'], null, null],
 ]);
 

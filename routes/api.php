@@ -827,6 +827,8 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::get('/admin/teaching/course_works/{course_work}/student-distribution-preview', [CourseWorkController::class, 'studentDistributionPreview'])->name('teaching.work-student-distribution-preview');
         Route::put('/admin/teaching/course_works/{course_work}/provision-method', [WorkSubmissionController::class, 'updateProvisionMethod'])->name('teaching.work-provision-method.update');
         Route::put('/admin/teaching/course_works/{course_work}/submission-method', [WorkSubmissionController::class, 'update'])->name('teaching.work-submission-method.update');
+        Route::get('/admin/teaching/course_works/{course_work}/submission-reopening', [WorkSubmissionController::class, 'reopeningOptions'])->name('teaching.work-submissions.reopening-options');
+        Route::post('/admin/teaching/course_works/{course_work}/submission-reopening', [WorkSubmissionController::class, 'reopen'])->middleware('throttle:20,1')->name('teaching.work-submissions.reopen');
         Route::get('/admin/teaching/course_works/{course_work}/submissions/{fileId}', [WorkSubmissionController::class, 'download'])->whereUuid('fileId')->name('teaching.work-submissions.download');
         Route::post('/admin/teaching/course_works/{course_work}/student-distribution', [CourseWorkController::class, 'studentDistribution'])->name('teaching.work-student-distribution');
         Route::post('/admin/teaching/course_works/{course_work}/student-distribution/test-action', [CourseWorkController::class, 'studentDistributionTestAction'])->name('teaching.work-student-distribution.test-action');

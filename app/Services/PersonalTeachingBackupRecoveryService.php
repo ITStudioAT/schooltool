@@ -176,7 +176,7 @@ class PersonalTeachingBackupRecoveryService
                     if (isset($status['student_distribution']['student_ids'])) {
                         $status['student_distribution']['student_ids'] = array_map(fn (int $id): int => (int) ($users[$id] ?? $id), $status['student_distribution']['student_ids']);
                     }
-                    foreach (['evaluation_pdfs', 'portal_submissions', 'dispatch_notifications', 'dispatch_attempts', 'provision_events', 'provision_imports'] as $key) {
+                    foreach (['evaluation_pdfs', 'portal_submissions', 'portal_submission_reopenings', 'dispatch_notifications', 'dispatch_attempts', 'provision_events', 'provision_imports'] as $key) {
                         foreach ($status[$key] ?? [] as $index => $record) {
                             if (isset($users[$record['student_id'] ?? null])) {
                                 $status[$key][$index]['student_id'] = (int) $users[$record['student_id']];

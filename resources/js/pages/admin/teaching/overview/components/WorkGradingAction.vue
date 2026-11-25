@@ -1,6 +1,7 @@
 <template>
-    <v-btn v-if="work?.id && workAutomationEnabled(work)" size="small" variant="tonal" prepend-icon="mdi-file-check-outline"
-        :disabled="disabled || loading" @click.stop="openAction">{{ repeat ? 'Erneut bewerten' : 'Bewerten' }}</v-btn>
+    <v-btn v-if="work?.id && workAutomationEnabled(work)" min-height="44" size="small" variant="tonal"
+        :prepend-icon="copyOnOpen ? 'mdi-content-copy' : 'mdi-file-check-outline'"
+        :disabled="disabled || loading" @click.stop="openAction">{{ copyOnOpen ? 'Bewertungskontext kopieren' : repeat ? 'Erneut bewerten' : 'Bewerten' }}</v-btn>
     <v-dialog v-if="opened" v-model="opened" max-width="720" scrollable :persistent="loading">
         <v-card>
             <v-card-title class="text-wrap">{{ repeat ? 'Arbeit erneut bewerten' : 'Arbeit bewerten' }} · {{ work.title }}</v-card-title>
@@ -16,20 +17,20 @@
             </v-card-text>
             <v-card-actions>
                 <v-spacer />
-                <v-btn :disabled="!result || loading || copying || disabled" :color="copied ? 'success' : 'primary'"
+                <v-btn min-height="44" :disabled="!result || loading || copying || disabled" :color="copied ? 'success' : 'primary'"
                     :prepend-icon="copied ? 'mdi-check' : 'mdi-content-copy'" @click="copyOrder">{{ copied ? 'Kopiert' : 'Auftrag kopieren' }}</v-btn>
-                <v-btn :disabled="loading" @click="opened = false">Schließen</v-btn>
+                <v-btn min-height="44" :disabled="loading" @click="opened = false">Schließen</v-btn>
             </v-card-actions>
         </v-card>
     </v-dialog>
 </template>
 
 <script setup>
-import { onBeforeUnmount, ref, watch } from 'vue'
+import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { aiExport } from '@/actions/App/Http/Controllers/Admin/Teaching/CourseWorkController'
 import { workAutomationEnabled } from '@/helpers/workAutomation'
 
-const props = defineProps({ work: { type: Object, required: true }, date: { type: String, default: '' }, repeat: Boolean, disabled: Boolean })
+const props = defineProps({ work: { type: Object, required: true }, date: { type: String, default: '' }, repeat: Boolean, disabled: Boolean, copyOnOpen: Boolean })
 const opened = ref(false)
 const loading = ref(false)
 const copying = ref(false)
@@ -64,6 +65,7 @@ async function openAction() {
         const simulation = data?.context?.simulation_source
         if (String(data?.work_id) !== String(props.work.id) || String(data?.course_id) !== String(props.work.teaching_course_id)
             || data.roster_complete !== true || data.context?.purpose !== 'grade-exercise' || data.context?.mode !== mode
+            || (props.date && data.context?.work?.scheduled_date !== props.date)
             || data.context?.operation?.grade !== true || data.context?.operation?.preserve_existing !== true
             || data.context?.operation?.send !== false || data.context?.operation?.schooltool_import !== false
             || typeof data.text !== 'string' || !data.text.trim()
@@ -79,6 +81,10 @@ async function openAction() {
             || Object.values(failure.response?.data?.errors || {}).flat().join(' ') || failure.message || 'Bewertungsauftrag konnte nicht geladen werden.'
     } finally {
         if (operation === sequence) loading.value = false
+    }
+    if (props.copyOnOpen && operation === sequence && opened.value && result.value) {
+        await nextTick()
+        if (operation === sequence && opened.value) await copyOrder()
     }
 }
 

@@ -474,12 +474,12 @@ test('confirmed module linking initializes the exam folder, but resolving alone 
     Http::assertNotSent(fn (Request $request): bool => preg_match('#/files/(upload|delete|move|create)#', $request->url()) === 1);
 });
 
-test('new work linking creates only its exact target without a module lock or a Dropbox readback', function (int $version, int $siblings, string $scenario = 'normal'): void {
-    $this->course->update(['title' => 'INF - 3B - 2', 'classes' => ['3B']]);
+test('new work linking creates only its exact target without a module lock or a Dropbox readback', function (int $version, int $siblings, string $scenario = 'normal', bool $multipleClasses = false): void {
+    $this->course->update($multipleClasses ? ['title' => 'INF 1', 'classes' => ['1A', '1F']] : ['title' => 'INF - 3B - 2', 'classes' => ['3B']]);
     $this->work->update(['type' => 'TE', 'title' => 'Word', 'date_for_all_groups' => '2026-10-06',
         'status' => ['creation_receipt' => ['id' => (string) Str::uuid(), 'user_id' => $this->user->id, 'hash' => str_repeat('a', 64)]]]);
     $student = User::factory()->create(['school_id' => $this->course->school_id, 'schoolyear_id' => $this->course->schoolyear_id,
-        'first_name' => 'Anna', 'last_name' => 'Beispiel', 'schoolclass' => '3B', 'is_active' => true]);
+        'first_name' => 'Anna', 'last_name' => 'Beispiel', 'schoolclass' => $multipleClasses ? '1A' : '3B', 'is_active' => true]);
     $this->course->teachingCourseStudents()->create(['user_id' => $student->id]);
     $credentials = $this->connection->credentials;
     $credentials['scopes'][] = 'files.content.write';
@@ -494,7 +494,8 @@ test('new work linking creates only its exact target without a module lock or a 
     array_unshift($this->online, ['.tag' => 'folder', 'id' => 'id:module', 'name' => basename($path),
         'path_lower' => mb_strtolower($path), 'path_display' => $path]);
     $root = $path.'/Leistungsfeststellungen';
-    $target = $root.'/2026-10-06 – 3B_Gruppe-2 – Word';
+    $group = $multipleClasses ? 'Kurs-'.$this->course->id : '3B_Gruppe-2';
+    $target = $root.'/2026-10-06 – '.$group.' – Word';
     if ($siblings > 0 || $scenario === 'conflict') {
         $this->online[] = ['.tag' => 'folder', 'id' => 'id:examroot', 'name' => basename($root),
             'path_lower' => mb_strtolower($root), 'path_display' => $root];
@@ -578,8 +579,9 @@ test('new work linking creates only its exact target without a module lock or a 
         && json_decode($request->header('Dropbox-API-Arg')[0], true)['path'] === 'rev:revision1');
     expect($handshakeDownloads)->toHaveCount(1);
     $status = collect($this->online)->firstWhere('path_lower', mb_strtolower($target.'/status.json'));
-    expect(json_decode($this->exerciseDocuments['rev:'.$status['rev']], true)['schooltool'])
-        ->toBe(['work_id' => $this->work->id, 'course_id' => $this->course->id]);
+    $record = json_decode($this->exerciseDocuments['rev:'.$status['rev']], true);
+    expect($record['schooltool'])->toBe(['work_id' => $this->work->id, 'course_id' => $this->course->id])
+        ->and($record['folder_group'])->toBe($group);
 })->with([
     'native response with a new parent' => [1, 0],
     'native response with existing siblings' => [2, 8],
@@ -588,6 +590,7 @@ test('new work linking creates only its exact target without a module lock or a 
     'retry after creating only the target' => [2, 8, 'before-write'],
     'retry after losing a successful upload response' => [2, 8, 'after-write'],
     'retry preserves conflicting existing data' => [2, 8, 'conflict'],
+    'a course with two classes and an unnumbered title' => [2, 0, 'normal', true],
 ]);
 
 test('a failed initial exam folder reports the saved link and a partial outcome', function (): void {
@@ -621,12 +624,15 @@ test('a canonical folder cannot be claimed when another work has the same target
     Http::assertNotSent(fn (Request $request): bool => preg_match('#/files/(upload|delete|move|create)#', $request->url()) === 1);
 })->with([true, false]);
 
-function addModernExerciseFixture(object $context, bool $withMc = false, string $date = '2026-10-06', bool $withAssignment = true): string
+function addModernExerciseFixture(object $context, bool $withMc = false, string $date = '2026-10-06', bool $withAssignment = true, ?string $folderGroup = null): string
 {
-    $context->course->update(['title' => 'INF - 3B - 2', 'classes' => ['3B']]);
-    $context->work->update(['title' => 'Word', 'groups' => [['date' => '2026-10-06', 'student_ids' => [123]]]]);
+    if ($folderGroup === null) {
+        $context->course->update(['title' => 'INF - 3B - 2', 'classes' => ['3B']]);
+        $context->work->update(['title' => 'Word', 'groups' => [['date' => '2026-10-06', 'student_ids' => [123]]]]);
+        $folderGroup = '3B_Gruppe-2';
+    }
     $module = dirname($context->online[0]['path_display']);
-    $path = $module.'/Leistungsfeststellungen/'.$date.' – 3B_Gruppe-2 – Word';
+    $path = $module.'/Leistungsfeststellungen/'.$date.' – '.$folderGroup.' – '.$context->work->title;
     foreach ([$module.'/Leistungsfeststellungen', $path, $path.'/Kandidaten', $path.'/Kandidaten/Person',
         $path.'/Kandidaten/Person/Angaben', $path.'/Kandidaten/Person/Abgaben', $path.'/Kandidaten/Person/Auswertung'] as $folder) {
         $context->online[] = ['.tag' => 'folder', 'id' => 'id:folder'.hash('sha256', $folder), 'name' => basename($folder),
@@ -650,7 +656,7 @@ function addModernExerciseFixture(object $context, bool $withMc = false, string 
     unset($entry);
     $record = ['schema_version' => 1, 'kind' => 'leistungsfeststellung.status',
         'schooltool' => ['work_id' => $context->work->id, 'course_id' => $context->course->id],
-        'folder_group' => '3B_Gruppe-2', 'scheduled_date' => $date, 'prepared' => true,
+        'folder_group' => $folderGroup, 'scheduled_date' => $date, 'prepared' => true,
         'components' => ['aufgabenblatt' => ['included' => $withAssignment, 'points' => $withAssignment ? 35 : null],
             'multiple_choice' => ['included' => $withMc, 'points' => $withMc ? 2 : null]],
         'total_points' => ($withAssignment ? 35 : 0) + ($withMc ? 2 : 0)];
@@ -658,6 +664,41 @@ function addModernExerciseFixture(object $context, bool $withMc = false, string 
 
     return $path;
 }
+
+test('assessment lookup distinguishes identically titled courses and keeps the verified folder when classes are reordered', function (): void {
+    linkExerciseFixture($this);
+    $date = '2026-11-27';
+    $this->course->update(['title' => 'INF 1', 'classes' => ['1A', '1F']]);
+    $this->work->update(['title' => 'Test: Word', 'date_for_all_groups' => $date, 'finish_until_date' => $date]);
+    $folderGroup = 'Kurs-'.$this->course->id;
+    $path = addModernExerciseFixture($this, date: $date, folderGroup: $folderGroup);
+
+    $otherCourse = $this->course->replicate();
+    $otherCourse->save();
+    $otherWork = TeachingCourseWork::factory()->create(['teaching_course_id' => $otherCourse->id, 'title' => $this->work->title, 'date_for_all_groups' => $date]);
+    $otherGroup = 'Kurs-'.$otherCourse->id;
+    $otherPath = dirname($path).'/'.$date.' – '.$otherGroup.' – '.$otherWork->title;
+    $this->online[] = ['.tag' => 'folder', 'id' => 'id:othercourse', 'name' => basename($otherPath),
+        'path_lower' => mb_strtolower($otherPath), 'path_display' => $otherPath];
+    $statusFile = collect($this->online)->firstWhere('path_lower', mb_strtolower($path.'/status.json'));
+    $status = json_decode($this->exerciseDocuments['rev:'.$statusFile['rev']], true, flags: JSON_THROW_ON_ERROR);
+    $otherStatus = array_replace($status, ['schooltool' => ['work_id' => $otherWork->id, 'course_id' => $otherCourse->id], 'folder_group' => $otherGroup]);
+    addEmailPreparationFile($this, $otherPath.'/status.json', json_encode($otherStatus, JSON_THROW_ON_ERROR));
+
+    $url = $this->url.'?include_exercise=1&date='.$date;
+    $this->getJson($url.'&refresh=1')->assertOk()->assertJsonPath('exercise.folder.path', $path)
+        ->assertJsonPath('exercise.preparation.status', 'ready');
+    $this->course->update(['classes' => ['1F', '1A']]);
+    $this->getJson($url)->assertOk()->assertJsonPath('exercise.folder.path', $path);
+    $this->getJson($url.'&refresh=1')->assertOk()->assertJsonPath('exercise.folder.path', $path);
+
+    $duplicate = $path.' Kopie';
+    $this->online[] = ['.tag' => 'folder', 'id' => 'id:duplicate', 'name' => basename($duplicate),
+        'path_lower' => mb_strtolower($duplicate), 'path_display' => $duplicate];
+    addEmailPreparationFile($this, $duplicate.'/status.json', json_encode($status, JSON_THROW_ON_ERROR));
+    $this->getJson($url.'&refresh=1')->assertOk()->assertJsonPath('exercise.status', 'unknown')->assertJsonPath('exercise.folder', null);
+    Http::assertNotSent(fn (Request $request): bool => preg_match('#/files/(upload|delete|move|create)#', $request->url()) === 1);
+});
 
 test('the verified assessment status accepts an explicitly MC-only package and preserves its total', function (): void {
     linkExerciseFixture($this);

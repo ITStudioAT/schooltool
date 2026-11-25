@@ -1,5 +1,5 @@
 <template>
-    <div class="mc-workspace" :class="{ 'mc-catalog-detail': section === 'catalogs' && catalogEditing, 'mc-test-create': section === 'tests' && preparingTest }">
+    <div class="mc-workspace teaching-tool-workspace" :class="{ 'mc-catalog-detail': section === 'catalogs' && catalogEditing, 'mc-test-create': section === 'tests' && preparingTest }">
         <section class="mc-heading">
             <div>
                 <h1>Multiple Choice</h1>
@@ -51,21 +51,20 @@
                         <h3>Noch keine Fragenkataloge</h3>
                         <p>Beginne mit „Neuer Katalog“.</p>
                     </v-sheet>
-                    <ul v-else class="mc-catalog-list" aria-label="Vorhandene Fragenkataloge">
+                    <ul v-else class="teaching-tool-card-grid" aria-label="Vorhandene Fragenkataloge">
                         <li v-for="item in catalogs" :key="item.id">
-                            <v-card border rounded="lg" class="mc-catalog-card">
-                                <v-card-text>
+                            <TeachingToolCard :title="item.title">
+                                <template #status>
                                     <v-chip size="small" :color="readyQuestions(item.questions ?? []).length ? 'success' : undefined" variant="tonal">
                                         {{ readyQuestions(item.questions ?? []).length ? 'Für Tests bereit' : 'Entwurf' }}
                                     </v-chip>
-                                    <h3 class="mt-4">{{ item.title }}</h3>
-                                    <p class="text-body-2 text-medium-emphasis mt-2">{{ item.questions?.length ?? 0 }} {{ item.questions?.length === 1 ? 'Frage' : 'Fragen' }} · {{ readyQuestions(item.questions ?? []).length }} aktiv und geprüft</p>
-                                </v-card-text>
-                                <v-card-actions class="pa-4 pt-0">
+                                </template>
+                                <p class="text-body-2 text-medium-emphasis mt-2">{{ item.questions?.length ?? 0 }} {{ item.questions?.length === 1 ? 'Frage' : 'Fragen' }} · {{ readyQuestions(item.questions ?? []).length }} aktiv und geprüft</p>
+                                <template #actions>
                                     <v-btn color="primary" variant="text" append-icon="mdi-arrow-right"
                                         :aria-label="`Katalog öffnen: ${item.title}`" @click="openCatalog(item.id)">Katalog öffnen</v-btn>
-                                </v-card-actions>
-                            </v-card>
+                                </template>
+                            </TeachingToolCard>
                         </li>
                     </ul>
                 </template>
@@ -219,7 +218,7 @@
                 <v-sheet v-if="!catalogTests.length" border rounded="lg" class="pa-6 text-medium-emphasis">
                     <p>Zu diesem Fragenkatalog gibt es noch keine Tests.</p>
                 </v-sheet>
-                <ul v-else class="mc-catalog-list mc-test-list" aria-label="Tests dieses Katalogs">
+                <ul v-else class="teaching-tool-card-grid mc-test-list" aria-label="Tests dieses Katalogs">
                     <li v-for="item in catalogTests" :key="item.id">
                         <v-card border rounded="lg" class="mc-catalog-card">
                             <v-card-text>
@@ -1133,6 +1132,8 @@ import {
 } from '@/actions/App/Http/Controllers/Admin/MultipleChoiceController'
 import QuestionEditor from './QuestionEditor.vue'
 import MultipleChoiceTestFolder from './MultipleChoiceTestFolder.vue'
+import TeachingToolCard from './TeachingToolCard.vue'
+import './teachingToolCards.css'
 import McQuestionReview from '@/components/McQuestionReview.vue'
 import {
     messageText,
@@ -2990,7 +2991,7 @@ function scoreLabel(attempt) {
 .mc-activity-unknown { color: #63566b; background: #f2edf6; }
 
 .mc-workspace {
-    padding: 0 2px 24px;
+    padding-bottom: 24px;
     color: #243447;
 }
 
@@ -3041,16 +3042,8 @@ h3 {
 .mc-catalog-heading { margin: 8px 0 20px; }
 .mc-catalog-empty { text-align: center; padding: 46px 20px; color: #68768a; }
 .mc-catalog-empty h3 { color: #243447; margin: 14px 0 6px; }
-.mc-catalog-list {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
-    gap: 18px;
-    list-style: none;
-    padding: 0;
-}
-.mc-catalog-list li, .mc-catalog-card { min-width: 0; height: 100%; }
 .mc-test-list { grid-auto-rows: 1fr; }
-.mc-catalog-card { display: flex; flex-direction: column; }
+.mc-catalog-card { display: flex; flex-direction: column; min-width: 0; height: 100%; }
 .mc-catalog-card :deep(.v-card-text) { flex: 1; }
 .mc-catalog-card h3 { font-size: 1.08rem; overflow-wrap: anywhere; }
 

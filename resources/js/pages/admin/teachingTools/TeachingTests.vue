@@ -1,0 +1,68 @@
+<template>
+    <section aria-labelledby="teaching-tests-title" class="teaching-tests teaching-tool-workspace py-4">
+        <v-btn v-if="currentPage.back" :to="currentPage.back.to" prepend-icon="mdi-arrow-left"
+            variant="text" color="primary" class="mb-2">
+            {{ currentPage.back.label }}
+        </v-btn>
+        <h1 id="teaching-tests-title" class="text-h5 font-weight-bold mb-4">{{ currentPage.title }}</h1>
+
+        <ul v-if="page === 'overview'" class="teaching-tool-card-grid">
+            <li>
+                <TeachingToolCard title="Netzwerke" heading-tag="h2" :to="networksPath">
+                    <template #status>
+                        <v-chip size="small" variant="tonal">In Vorbereitung</v-chip>
+                    </template>
+                </TeachingToolCard>
+            </li>
+        </ul>
+        <ul v-else-if="page === 'networks'" class="teaching-tool-card-grid teaching-tests__sections">
+            <li>
+                <TeachingToolCard title="Netzwerk bauen" heading-tag="h2" :to="networkBuildPath" />
+            </li>
+            <li v-for="index in 4" :key="index">
+                <TeachingToolCard title="Andere Fragen" heading-tag="h2" />
+            </li>
+        </ul>
+        <ul v-else-if="page === 'build-network'" class="teaching-tool-card-grid">
+            <li v-for="planNumber in networkRoomPlanNumbers" :key="planNumber">
+                <TeachingToolCard :title="`Raumplan ${planNumber}`" heading-tag="h2" :to="networkRoomPlanPath(planNumber)" />
+            </li>
+        </ul>
+        <NetworkGroundFloorPlan v-else-if="page === 'room-plan' && roomPlanNumber === 1" />
+    </section>
+</template>
+
+<script setup>
+import { computed } from 'vue'
+import NetworkGroundFloorPlan from './NetworkGroundFloorPlan.vue'
+import TeachingToolCard from './TeachingToolCard.vue'
+import { networkBuildPath, networkRoomPlanNumbers, networkRoomPlanPath } from './networkRoomPlans'
+import './teachingToolCards.css'
+
+const props = defineProps({
+    page: { type: String, default: 'overview' },
+    roomPlanNumber: { type: Number, default: null },
+})
+
+const testsPath = '/admin/teaching-tools/tests'
+const networksPath = `${testsPath}/networks`
+const pages = {
+    overview: { title: 'Tests' },
+    networks: { title: 'Netzwerke', back: { to: testsPath, label: 'Zur Testübersicht' } },
+    'build-network': { title: 'Netzwerk bauen', back: { to: networksPath, label: 'Zurück zu Netzwerke' } },
+}
+const currentPage = computed(() => props.page === 'room-plan'
+    ? { title: `Raumplan ${props.roomPlanNumber}`, back: { to: networkBuildPath, label: 'Zu den Raumplänen' } }
+    : pages[props.page])
+</script>
+
+<style scoped>
+.teaching-tests > h1 {
+    margin-inline: 6px;
+}
+
+.teaching-tests__sections {
+    grid-template-columns: minmax(0, 1fr);
+    max-width: 960px;
+}
+</style>

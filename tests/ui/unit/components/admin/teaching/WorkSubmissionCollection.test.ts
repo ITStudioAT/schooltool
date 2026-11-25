@@ -40,7 +40,9 @@ it('shows the existing portal originals with a download and without a copy actio
     vi.stubGlobal('axios', { get })
     const wrapper = mountCollection()
     try {
-        await wrapper.setProps({ work: { ...work, status: { ...work.status, submission_method: { channel: 'portal' } } } })
+        await wrapper.setProps({ work: { ...work, groups: [{ date: '2026-10-16', student_ids: [12] }], status: {
+            ...work.status, submission_method: { channel: 'portal' }, portal_submissions: [{ student_id: 12, id: 'one' }],
+        } } })
         await wrapper.get('button').trigger('click')
         await flushPromises()
         expect(wrapper.get('[role="dialog"]').text()).toContain('Abgabe.pdf')
@@ -48,6 +50,18 @@ it('shows the existing portal originals with a download and without a copy actio
         expect(wrapper.text()).not.toContain('Auftrag kopieren')
     } finally { wrapper.unmount() }
 })
+
+it.each([{ files: [] }, { files: [{ student_id: 13 }] }, { files: [{ student_id: 12, withdrawn_at: '2026-10-16T11:00:00Z' }] }])(
+    'does not offer portal collection without a current file for the selected date: %j', async ({ files }) => {
+        const wrapper = mountCollection()
+        try {
+            await wrapper.setProps({ work: { ...work, groups: [
+                { date: '2026-10-16', student_ids: [12] }, { date: '2026-10-17', student_ids: [13] },
+            ], status: { ...work.status, submission_method: { channel: 'portal' }, portal_submissions: files } } })
+            expect(wrapper.find('button').exists()).toBe(false)
+        } finally { wrapper.unmount() }
+    },
+)
 
 it.each([false, true])('generates the correct collection order and shows a check only after copying: %s', async repeat => {
     const mode = repeat ? 'repeat' : 'collect'

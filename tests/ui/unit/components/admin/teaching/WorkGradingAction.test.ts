@@ -6,7 +6,8 @@ import WorkGradingAction from '@/pages/admin/teaching/overview/components/WorkGr
 
 const work = { id: 86, teaching_course_id: 16, title: 'E-Mails', simulation_collection: { run_id: 'simulation-run' } }
 const response = mode => ({ data: { data: { work_id: 86, course_id: 16, roster_complete: true, text: 'Geprüfter Bewertungsauftrag',
-    context: { purpose: 'grade-exercise', mode, operation: { grade: true, preserve_existing: true, send: false, schooltool_import: false, simulation: true },
+    context: { purpose: 'grade-exercise', mode, work: { scheduled_date: '2026-10-16' },
+        operation: { grade: true, preserve_existing: true, send: false, schooltool_import: false, simulation: true },
         simulation_source: { simulation: true, run_id: 'simulation-run', work_id: 86, course_id: 16 } } } } })
 function render(props = {}) {
     return mount(WorkGradingAction, { props: { work, date: '2026-10-16', ...props }, global: {
@@ -36,20 +37,39 @@ it.each([false, true])('prepares the matching grading order without claiming com
     } finally { wrapper.unmount() }
 })
 
-it.each(['work', 'simulation', 'scope'])('rejects mismatched grading data: %s', fault => {
+it.each(['work', 'date', 'simulation', 'scope'])('rejects mismatched grading data: %s', fault => {
     const data = response('grade')
     if (fault === 'work') data.data.data.work_id = 87
+    if (fault === 'date') data.data.data.context.work.scheduled_date = '2026-10-17'
     if (fault === 'simulation') data.data.data.context.simulation_source.run_id = 'other-run'
     if (fault === 'scope') data.data.data.context.operation.schooltool_import = true
     vi.stubGlobal('axios', { get: vi.fn().mockResolvedValue(data) })
-    const wrapper = render()
+    const writeText = vi.fn()
+    vi.stubGlobal('navigator', { userAgent: 'Test', clipboard: { writeText } })
+    const wrapper = render({ copyOnOpen: true })
     return (async () => {
         try {
             await wrapper.get('button').trigger('click'); await flushPromises()
             expect(wrapper.get('[role="alert"]').text()).toContain('nicht eindeutig')
             expect(wrapper.find('textarea').exists()).toBe(false)
+            expect(writeText).not.toHaveBeenCalled()
         } finally { wrapper.unmount() }
     })()
+})
+
+it('offers the selected order for manual copying when the direct clipboard action fails', async () => {
+    const writeText = vi.fn().mockRejectedValue(new Error('blocked'))
+    vi.stubGlobal('axios', { get: vi.fn().mockResolvedValue(response('grade')) })
+    vi.stubGlobal('navigator', { userAgent: 'Test', clipboard: { writeText } })
+    const wrapper = render({ copyOnOpen: true })
+    try {
+        await wrapper.get('button').trigger('click')
+        await flushPromises()
+        expect(writeText).toHaveBeenCalledExactlyOnceWith('Geprüfter Bewertungsauftrag')
+        expect(wrapper.get('[role="status"]').text()).toContain('Strg+C')
+        expect(wrapper.get('details').attributes()).toHaveProperty('open')
+        expect(wrapper.get<HTMLTextAreaElement>('textarea').element.value).toBe('Geprüfter Bewertungsauftrag')
+    } finally { wrapper.unmount() }
 })
 
 it('supports manual copying and rejects delayed responses after switching work', async () => {

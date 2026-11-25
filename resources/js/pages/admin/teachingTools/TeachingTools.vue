@@ -15,6 +15,16 @@
                     </span>
                 </v-btn>
                 <v-btn
+                    value="tests"
+                    to="/admin/teaching-tools/tests"
+                    prepend-icon="mdi-clipboard-text-outline"
+                    :aria-pressed="section === 'tests'"
+                    class="teaching-nav__button">
+                    <span class="teaching-nav__button-copy">
+                        <span class="teaching-nav__button-title">Tests</span>
+                    </span>
+                </v-btn>
+                <v-btn
                     value="games"
                     to="/admin/teaching-tools/games"
                     prepend-icon="mdi-controller-classic-outline"
@@ -38,7 +48,8 @@
                     :aria-pressed="section === 'simulator'" class="teaching-nav__button">Aufgaben-Simulator</v-btn>
             </v-btn-toggle>
         </v-sheet>
-        <TeachingGames v-if="section === 'games'" :game="game" />
+        <TeachingTests v-if="section === 'tests'" :page="testPage" :room-plan-number="roomPlanNumber" />
+        <TeachingGames v-else-if="section === 'games'" :game="game" />
         <TeachingExplanations v-else-if="section === 'explanations'" :category="category" :explanation="explanation" />
         <template v-else-if="section === 'simulator'">
             <TeachingSimulation v-if="simulatorAvailable" />
@@ -56,12 +67,15 @@ import MultipleChoiceWorkspace from './MultipleChoiceWorkspace.vue'
 import TeachingGames from './TeachingGames.vue'
 import TeachingExplanations from './TeachingExplanations.vue'
 import TeachingSimulation from './TeachingSimulation.vue'
+import TeachingTests from './TeachingTests.vue'
 
 const admin = useAdminStore()
 const simulatorAvailable = computed(() => admin.config?.teaching_email_delivery?.mode === 'mailpit')
 
 defineProps({
     section: { type: String, default: 'multiple-choice' },
+    testPage: { type: String, default: 'overview' },
+    roomPlanNumber: { type: Number, default: null },
     game: { type: String, default: null },
     category: { type: String, default: null },
     explanation: { type: String, default: null },
