@@ -298,7 +298,7 @@ const releaseEnded = computed(() => Boolean(props.work.status?.student_distribut
 const provisionChannel = computed(() => props.work.status?.provision_method?.channel)
 const submissionChannel = computed(() => props.work.status?.submission_method?.channel)
 const workflowProgress = computed(() => workWorkflowProgress(props.work, props.date, props.now,
-    props.assessment?.emailDispatch || checked.value?.data?.exercise?.email_dispatch || {}))
+    props.assessment?.emailDispatch || checked.value?.data?.exercise?.email_dispatch || {}, props.course?.students_info || []))
 const assessmentProgress = computed(() => {
     const progress = workflowProgress.value
     return progress.scoped === props.work ? props.assessmentCount : `${progress.assessed} von ${progress.total} beurteilt`
@@ -337,6 +337,7 @@ function nextAction([, evaluation], releaseState) {
     const { release, releasePrepared, releasePaused } = releaseState
     const prepared = props.exerciseReady || props.work.local_task_copy
 
+    if (workflowProgress.value.completed) return [null, null]
     if (activity.value) return ['preparation', null]
     const next = workflowProgress.value.next
     if (next?.phase === 'assessment' && next.label === 'Bewerten') {

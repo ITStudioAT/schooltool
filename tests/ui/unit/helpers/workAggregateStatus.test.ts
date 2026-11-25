@@ -338,25 +338,32 @@ describe('Work card status placement', () => {
         } finally { wrapper.unmount() }
     })
 
-    it.each([0, 1, 3])('shows %s completed people in the first header row independently of the manual completion icon', async completed => {
+    it.each([0, 1, 3])('shows only the participant count while closed and restores the summary for %s grades when reopened', async graded => {
         const work = fixture()
         work.automation_enabled = false
         work.groups[0].grade = null
         work.groups[0].use_individual_grades = true
-        work.groups[0].grades = students.slice(0, completed).map(student => ({ student_id: student.user_id, grade: '0' }))
+        work.groups[0].grades = students.slice(0, graded).map(student => ({ student_id: student.user_id, grade: '0' }))
         work.status.completion_override = true
-        const { wrapper } = mountCards(CourseTable, work)
+        const { wrapper, pinia } = mountCards(CourseTable, work)
         try {
             await flushPromises()
             const card = wrapper.get('.course-table-work-summary')
             const count = card.get('.course-table-work-summary-count')
-            expect(count.get('span').text()).toBe(completed === 3 ? '3' : `${completed}/3`)
-            expect(count.classes()).toContain(completed === 3 ? 'text-success' : 'text-error')
-            expect(count.attributes('aria-label')).toBe(`${completed} von 3 Leistungen erledigt; ${3 - completed} offen.`)
+            expect(count.get('span').text()).toBe('3')
+            expect(count.attributes('aria-label')).toBe('3 Schüler:innen')
+            expect(count.classes()).not.toContain('text-error')
             expect(card.find('.course-table-work-summary-progress').exists()).toBe(false)
             const completionIcon = card.get('.course-table-work-summary-meta v-icon')
             expect(completionIcon.attributes('icon')).toBe('mdi-account-check-outline')
             expect(completionIcon.attributes('color')).toBe('success')
+
+            useCourseWorkStore(pinia).courseWorks = [{ ...work, status: { ...work.status, completion_override: false } }] as never
+            await flushPromises()
+
+            expect(count.get('span').text()).toBe(graded === 3 ? '3' : `${graded}/3`)
+            expect(count.classes()).toContain(graded === 3 ? 'text-success' : 'text-error')
+            expect(count.attributes('aria-label')).toBe(`${graded} von 3 Leistungen erledigt; ${3 - graded} offen.`)
         } finally { wrapper.unmount() }
     })
 

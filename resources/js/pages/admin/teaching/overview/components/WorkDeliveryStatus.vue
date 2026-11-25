@@ -33,7 +33,7 @@
                     <p v-if="dispatch.sent_at" class="mt-2">Versandt: {{ assessmentTimeText(dispatch.sent_at) }}</p>
                     <p v-if="sent && dispatch.transport === 'mailpit'" class="text-orange-darken-3 mt-2">Testversand über Mailpit. Die Nachrichten liegen ausschließlich im lokalen Mailpit.</p>
                     <p v-if="dispatch.last_protocol?.run" class="text-caption mt-2">Versandlauf: {{ dispatch.last_protocol.run }}</p>
-                    <p class="mt-3">{{ sent || workHasProgress(work) ? nextActionText : 'E-Mails versenden oder diesen Schritt als erledigt markieren, wenn kein Versand erforderlich ist.' }}</p>
+                    <p class="mt-3">{{ sent || workHasProgress(work) || work.status?.completion_override === true ? nextActionText : 'E-Mails versenden oder diesen Schritt als erledigt markieren, wenn kein Versand erforderlich ist.' }}</p>
                 </template>
                 <template v-else>
                     <p v-if="opened !== 'preparation' && opened !== 'collection'" class="mt-3">{{ selectedStage?.count }} von {{ selectedStage?.total }} Personen mit gespeichertem Nachweis.</p>
@@ -145,7 +145,7 @@ import { workDropboxKey, workDropboxStates, workExerciseCheck } from '@/helpers/
 import { assessmentTimeText } from '@/helpers/workAssessmentTimes'
 import { workDispatchNotifications, workTaskDispatchCompleted, workStudentDistribution } from '@/helpers/workDispatch'
 import { personalWorkAssessment, workCollectionStudentStatus } from '@/helpers/workSubmission'
-import { workHasProgress, workProgressStages, workProgressNextAction, workLastCollectionAt, workLastCollectionRunAt, workSimulationEvaluation, workManualCompletionFields } from '@/helpers/workProgress'
+import { workCompletedLabel, workHasProgress, workProgressStages, workProgressNextAction, workLastCollectionAt, workLastCollectionRunAt, workSimulationEvaluation, workManualCompletionFields } from '@/helpers/workProgress'
 import WorkEvaluationPdf from './WorkEvaluationPdf.vue'
 import WorkSubmissionCollection from './WorkSubmissionCollection.vue'
 import WorkGradingAction from './WorkGradingAction.vue'
@@ -290,7 +290,8 @@ const selectedStage = computed(() => opened.value === 'preparation' ? preparatio
 const nextAction = computed(() => props.workflowProgress?.next?.label
     || (modernPrepared.value && !portalEnded.value && !portalRelease.value ? 'E-Mails vorbereiten'
         : workProgressNextAction(progressWork.value) || (preparation.value.complete ? 'E-Mails versenden' : opened.value === 'preparation' ? 'E-Mails vorbereiten' : 'Abgaben einsammeln')))
-const nextActionText = computed(() => nextAction.value === 'Abgeschlossen' ? 'Status: ABGESCHLOSSEN.'
+const nextActionText = computed(() => [workCompletedLabel, 'Abgeschlossen'].includes(nextAction.value) ? `Status: ${workCompletedLabel}.`
+    : nextAction.value === 'Offen' ? 'Status: Manuell als offen markiert.'
     : nextAction.value === 'Abgaben einsammeln' && !portalEnded.value ? 'Abgaben können erst nach „Freigabe beenden“ eingesammelt werden.'
         : `Nächster Schritt: ${nextAction.value}.`)
 const opened = ref(null)

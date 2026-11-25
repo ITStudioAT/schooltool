@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { workProgressNextAction, workProgressStages, workLastCollectionAt, workLastCollectionRunAt, workSimulationCollection, workSimulationEvaluation, workManualCompletionFields } from '@/helpers/workProgress'
+import { workProgressNextAction, workProgressStages, workLastCollectionAt, workLastCollectionRunAt, workSimulationCollection, workSimulationEvaluation, workManualCompletionFields, workWorkflowProgress } from '@/helpers/workProgress'
 import { isInitialWork, workNeedsPreparation } from '@/helpers/workOverview'
 
 function historicalWork() {
@@ -257,6 +257,27 @@ it('excludes teacher messages and wrong purposes and flags notifications before 
     work.status.assessment_json_imports[1].record.evaluation_completed_at = '2026-10-09T10:00:00Z'
     work.status.dispatch_notifications.push({ ...work.status.dispatch_notifications[1], student_id: 999 })
     expect(workProgressStages(work).find(stage => stage.key === 'notification')).toMatchObject({ count: 1, complete: false, review: true, color: 'warning' })
+})
+
+it('shows manual completion without counting an earlier notification as proof for the latest assessment', () => {
+    const work = historicalWork()
+    work.status.assessment_json_imports[1].record.evaluation_completed_at = '2026-10-09T10:00:00Z'
+    const progress = workWorkflowProgress(work)
+    expect(progress.completed).toBe(false)
+    expect(progress.next).toMatchObject({ label: 'Schüler:innen informieren', action: 'notice' })
+    expect(progress.stages.at(-1)).toMatchObject({ count: 2, complete: false, review: true })
+
+    const marked = workWorkflowProgress({ ...work, status: { ...work.status, completion_override: true } })
+    expect(marked.completed).toBe(true)
+    expect(marked.next).toEqual({ phase: null, label: 'ABGESCHLOSSEN' })
+    expect(marked.stages).toEqual(progress.stages)
+
+    work.status.completion_override = false
+    expect(workWorkflowProgress(work).next).toEqual(progress.next)
+    work.status.dispatch_notifications[1].sent_at = '2026-10-10T10:00:00Z'
+    expect(workWorkflowProgress(work)).toMatchObject({ completed: false, next: { phase: null, label: 'Offen' } })
+    delete work.status.completion_override
+    expect(workWorkflowProgress(work)).toMatchObject({ completed: true, next: { phase: null, label: 'ABGESCHLOSSEN' } })
 })
 
 it('does not infer collection or grading from an overall PDF or a sent notification', () => {

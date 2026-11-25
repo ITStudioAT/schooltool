@@ -228,7 +228,7 @@ describe('Dropbox Quick-Import', () => {
             expect(wrapper.find('.work-quick-import').exists()).toBe(false)
             expect(wrapper.find('[role="status"]').exists()).toBe(false)
             expect(wrapper.findAll('button').map(button => button.text())).toEqual(
-                ({ ...connected, ...state }.folder?.id) ? [] : ['Verknüpfen'],
+                ({ ...connected, ...state }.folder?.id) ? [] : ['Lernmodul auswählen'],
             )
             if (!({ ...connected, ...state }.folder?.id)) await wrapper.get('button').trigger('click')
             expect(wrapper.emitted('link')).toEqual(({ ...connected, ...state }.folder?.id) ? undefined : [[work]])
@@ -245,7 +245,7 @@ describe('Dropbox Quick-Import', () => {
         try {
             expect(wrapper.find('.work-quick-import').exists()).toBe(false)
             await flushPromises()
-            expect(wrapper.findAll('button').map(button => button.text())).toEqual(['Verknüpfen'])
+            expect(wrapper.findAll('button').map(button => button.text())).toEqual(['Lernmodul auswählen'])
             resolveStatus({ data: connected })
             await flushPromises()
             expect(wrapper.find('.work-quick-import').exists()).toBe(true)

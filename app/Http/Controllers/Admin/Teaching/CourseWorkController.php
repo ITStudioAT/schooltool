@@ -1307,6 +1307,21 @@ class CourseWorkController extends Controller
 
         $this->authorizeTeachingCourseAccess($course, $auth_user);
 
+        if (count($request->all()) === 1 && $request->exists('completion_override')) {
+            $completionOverride = $request->validate(['completion_override' => 'required|boolean'])['completion_override'];
+            $course_work = DB::transaction(function () use ($course_work, $completionOverride): TeachingCourseWork {
+                $locked = TeachingCourseWork::query()->lockForUpdate()->findOrFail($course_work->id);
+                app(TeachingAssessmentRuns::class)->assertNoActiveCreation($locked);
+                abort_if(isset($locked->status['deletion_receipt']), 409,
+                    'Die Löschung ist noch nicht abgeschlossen. Bitte die Zuordnung prüfen und erneut löschen.');
+                $locked->update($this->mergeWorkCompletionOverride($locked, [], (bool) $completionOverride));
+
+                return $locked;
+            });
+
+            return response()->json(['data' => $entrySyncService->serializeWork($course_work->load('teachingCourseWorkGroupStudents'))]);
+        }
+
         $allowedTypes = $entryService->allowedGradingTypesForCourse(
             $this->teachingCourseActor($auth_user, $course),
             $course
@@ -1333,7 +1348,8 @@ class CourseWorkController extends Controller
             $validated['status']['dispatch_notifications'] = $course_work->status['dispatch_notifications'] ?? [];
             $validated['status']['dispatch_attempts'] = $course_work->status['dispatch_attempts'] ?? [];
             $validated['status']['folder_import_sources'] = $course_work->status['folder_import_sources'] ?? [];
-            foreach (['creation_receipt', 'student_distribution', 'student_task_files', 'assessment_json_imports', 'assessment_json_packages', 'submission_checks', 'provision_events', 'provision_imports', 'communicated_deadline_at', 'communicated_deadline_date', 'final_deadline_saved', 'final_deadline_sync_pending', 'completion_override', 'multiple_choice_tests', 'deletion_receipt', ...self::ManualCompletionFields, ...TeachingCourseWork::ManagedWorkflowFields] as $field) {
+            unset($validated['status']['completion_override']);
+            foreach (['creation_receipt', 'student_distribution', 'student_task_files', 'assessment_json_imports', 'assessment_json_packages', 'submission_checks', 'provision_events', 'provision_imports', 'communicated_deadline_at', 'communicated_deadline_date', 'final_deadline_saved', 'final_deadline_sync_pending', 'multiple_choice_tests', 'deletion_receipt', ...self::ManualCompletionFields, ...TeachingCourseWork::ManagedWorkflowFields] as $field) {
                 if (isset($course_work->status[$field])) {
                     $validated['status'][$field] = $course_work->status[$field];
                 } else {
@@ -1346,10 +1362,7 @@ class CourseWorkController extends Controller
                 unset($validated['status']['folder_imported_at']);
             }
         }
-        if (array_key_exists('completion_override', $validated)) {
-            $validated['status'] ??= $course_work->status ?? [];
-            $validated['status']['completion_override'] = (bool) $validated['completion_override'];
-        }
+        $completionOverride = array_key_exists('completion_override', $validated) ? (bool) $validated['completion_override'] : null;
         unset($validated['completion_override']);
         foreach (self::ManualCompletionFields as $field) {
             if (array_key_exists($field, $validated)) {
@@ -1384,7 +1397,7 @@ class CourseWorkController extends Controller
 
         if (array_key_exists('title', $validated)) {
             try {
-                $course_work = DB::transaction(function () use ($course_work, $validated, $auth_user, $entrySyncService, $titleOnly, $expectedDeadline): TeachingCourseWork {
+                $course_work = DB::transaction(function () use ($course_work, $validated, $auth_user, $entrySyncService, $titleOnly, $expectedDeadline, $completionOverride): TeachingCourseWork {
                     $locked = TeachingCourseWork::query()->with('teachingCourse')->lockForUpdate()->findOrFail($course_work->id);
                     app(TeachingAssessmentRuns::class)->assertNoActiveCreation($locked);
                     abort_if(isset($locked->status['deletion_receipt']), 409,
@@ -1409,7 +1422,8 @@ class CourseWorkController extends Controller
                             abort(409, 'Der Titel konnte nicht vollständig gespeichert werden. Ein Prüfungsordner wurde möglicherweise bereits umbenannt. Bitte denselben Titel erneut speichern und den Stand prüfen.');
                         }
                     }
-                    app(TeachingWorkDeadlineSync::class)->saveWorkWithDeadline($locked, $validated, expected: $expectedDeadline);
+                    $attributes = $this->mergeWorkCompletionOverride($locked, $validated, $completionOverride);
+                    app(TeachingWorkDeadlineSync::class)->saveWorkWithDeadline($locked, $attributes, expected: $expectedDeadline);
                     if (! $titleOnly) {
                         $entrySyncService->syncWork($locked->fresh());
                     }
@@ -1426,12 +1440,13 @@ class CourseWorkController extends Controller
             }
             app(DropboxModuleLinks::class)->forgetExerciseCache($course_work, $auth_user);
         } else {
-            $course_work = DB::transaction(function () use ($course_work, $validated, $entrySyncService, $expectedDeadline): TeachingCourseWork {
+            $course_work = DB::transaction(function () use ($course_work, $validated, $entrySyncService, $expectedDeadline, $completionOverride): TeachingCourseWork {
                 $locked = TeachingCourseWork::query()->lockForUpdate()->findOrFail($course_work->id);
                 app(TeachingAssessmentRuns::class)->assertNoActiveCreation($locked);
                 abort_if(isset($locked->status['deletion_receipt']), 409,
                     'Die Löschung ist noch nicht abgeschlossen. Bitte die Zuordnung prüfen und erneut löschen.');
-                app(TeachingWorkDeadlineSync::class)->saveWorkWithDeadline($locked, $validated, expected: $expectedDeadline);
+                $attributes = $this->mergeWorkCompletionOverride($locked, $validated, $completionOverride);
+                app(TeachingWorkDeadlineSync::class)->saveWorkWithDeadline($locked, $attributes, expected: $expectedDeadline);
                 $entrySyncService->syncWork($locked->fresh());
 
                 return $locked;
@@ -1449,6 +1464,18 @@ class CourseWorkController extends Controller
         }
 
         return response()->json(['data' => $entrySyncService->serializeWork($course_work->fresh('teachingCourseWorkGroupStudents'))] + $response);
+    }
+
+    private function mergeWorkCompletionOverride(TeachingCourseWork $work, array $attributes, ?bool $override): array
+    {
+        if ($override !== null) {
+            $attributes['status'] ??= $work->status ?? [];
+            $attributes['status']['completion_override'] = $override;
+        } elseif (isset($attributes['status'], $work->status['completion_override'])) {
+            $attributes['status']['completion_override'] = $work->status['completion_override'];
+        }
+
+        return $attributes;
     }
 
     public function destroy(Request $request, TeachingCourseWork $course_work, TeachingCourseWorkEntrySyncService $entrySyncService)

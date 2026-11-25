@@ -1419,23 +1419,45 @@ beforeEach(function () {
 
 test('work completion override persists both directions only for the selected work and preserves evidence', function () {
     $work = prepareWorkDispatchImport($this);
-    $history = ['automation_enabled' => false, 'manual' => 'Keep',
+    $history = ['manual' => 'Keep',
         'dispatch_notifications' => [['student_id' => $this->student->id, 'purpose' => 'results', 'sent_at' => '2026-10-02T10:00:00Z']],
-        'assessment_json_imports' => [], 'folder_imported_at' => '2026-10-02T10:00:00Z'];
-    $work->update(['status' => $history]);
+        'assessment_json_imports' => [], 'folder_imported_at' => '2026-10-02T10:00:00Z',
+        'portal_submissions' => [['student_id' => $this->student->id, 'name' => 'Beispiel.pdf']],
+        'final_deadline_sync_pending' => true];
+    $work->update(['status' => $history, 'finish_until_date' => '2026-10-05', 'finish_until_time' => '18:00']);
     $otherWork = TeachingCourseWork::factory()->create(['teaching_course_id' => $this->course->id, 'status' => ['manual' => 'Other']]);
     $url = "/api/admin/teaching/course_works/{$work->id}";
     $groups = $this->getJson($url)->assertOk()->json('data.groups');
+    $entries = fn () => TeachingCourseStudentEntry::where('teaching_course_work_id', $work->id)->orderBy('id')->get()->toArray();
+    $savedEntries = $entries();
+    $groupRows = $work->teachingCourseWorkGroupStudents()->orderBy('id')->pluck('id')->all();
+    expect($savedEntries)->not->toBeEmpty();
+    expect($groupRows)->not->toBeEmpty();
+    Http::fake();
+    Mail::fake();
+    Notification::fake();
+    Queue::fake();
 
     foreach ([true, false] as $complete) {
         $this->putJson($url, ['completion_override' => $complete])->assertOk()
             ->assertJsonPath('data.status.completion_override', $complete)
-            ->assertJsonPath('data.automation_enabled', false)
+            ->assertJsonPath('data.automation_enabled', true)
+            ->assertJsonPath('data.finish_until_date', '2026-10-05')
+            ->assertJsonPath('data.finish_until_time', '18:00')
             ->assertJsonPath('data.groups', $groups);
-        $this->getJson($url)->assertOk()->assertJsonPath('data.status.completion_override', $complete);
+        $overview = $this->getJson("/api/admin/teaching/course_works?course_id={$this->course->id}")->assertOk();
+        expect(collect($overview->json('data'))->firstWhere('id', $work->id)['status']['completion_override'])->toBe($complete);
+        $table = $this->getJson("/api/admin/teaching/course_student_entries?course_id={$this->course->id}&include_table_data=1")->assertOk();
+        expect(collect($table->json('course_works'))->firstWhere('id', $work->id)['status']['completion_override'])->toBe($complete);
         expect($work->fresh()->status)->toEqual($history + ['completion_override' => $complete]);
+        expect($entries())->toEqual($savedEntries);
+        expect($work->teachingCourseWorkGroupStudents()->orderBy('id')->pluck('id')->all())->toBe($groupRows);
     }
 
+    Http::assertNothingSent();
+    Mail::assertNothingOutgoing();
+    Notification::assertNothingSent();
+    Queue::assertNothingPushed();
     $this->putJson($url, ['status' => ['completion_override' => true]])->assertOk()
         ->assertJsonPath('data.status.completion_override', false);
     expect($otherWork->fresh()->status)->toBe(['manual' => 'Other']);
@@ -3589,6 +3611,7 @@ describe('show update destroy', function () {
         ]];
         $work = TeachingCourseWork::query()->create([
             'teaching_course_id' => $this->course->id, 'type' => 'MA', 'groups' => $groups,
+            'finish_until_date' => '2026-10-13',
             'status' => ['manual' => 'Keep'],
         ]);
 
@@ -3596,9 +3619,10 @@ describe('show update destroy', function () {
             'title' => 'Updated details', 'finish_until_time' => '20:00', 'groups' => $groups,
         ])->assertOk()
             ->assertJsonPath('data.title', 'Updated details')
+            ->assertJsonPath('data.finish_until_date', '2026-10-13')
             ->assertJsonPath('data.finish_until_time', '20:00')
             ->assertJsonPath('data.groups.0.comments.0.comment', $feedback);
-        expect($work->fresh()->status)->toBe(['manual' => 'Keep']);
+        expect($work->fresh()->status)->toBe(['manual' => 'Keep', 'final_deadline_saved' => true]);
         $this->assertDatabaseHas('teaching_course_student_entries', [
             'teaching_course_work_id' => $work->id, 'user_id' => $this->student->id,
             'description' => $feedback, 'grade' => '2',

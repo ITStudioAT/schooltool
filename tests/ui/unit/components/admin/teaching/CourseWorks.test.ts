@@ -79,6 +79,27 @@ describe('New work overview and assessment mode', () => {
         } finally { wrapper.unmount() }
     })
 
+    it.each([true, false])('shows one completion and offers reopening in the works editor for automation mode %s', async automation => {
+        const work = { id: 65, teaching_course_id: 2, type: 'A5', title: 'Fiktive Arbeit', automation_enabled: automation,
+            groups: [{ student_ids: [12], use_individual_grades: true, points: [{ student_id: 12, points: 0 }] }],
+            status: automation ? { completion_override: true, evaluation_completed: true, publication_completed: true } : {} }
+        vi.stubGlobal('axios', { get: vi.fn().mockResolvedValue({ data: { connected: false } }) })
+        const wrapper = mountOverview(work)
+        try {
+            await flushPromises()
+            const row = wrapper.get('.work-row')
+            expect(row.text().match(/ABGESCHLOSSEN/g)).toHaveLength(1)
+            expect(row.text()).not.toContain('Schüler:innen informieren')
+            expect(row.text()).not.toContain('Offen:')
+            await wrapper.get('.work-row').trigger('click')
+            await flushPromises()
+            const button = wrapper.get('[data-testid="work-completion-toggle-65"]')
+            expect(button.text()).toBe('Als offen markieren')
+            expect(button.element.parentElement?.textContent).toContain('ABGESCHLOSSEN')
+            expect(wrapper.find('.work-phase--current').exists()).toBe(false)
+        } finally { wrapper.unmount() }
+    })
+
     function mountOverview(work, folderState = { folder: null }, simpleButtons = false) {
         if (folderState) workDropboxStates.set('7:2:65', folderState)
         const buttonStub = { props: ['disabled'], template: '<button :disabled="disabled"><slot /></button>' }
@@ -1588,7 +1609,7 @@ describe('CourseWorks title rendering', () => {
             ],
         }
 
-        expect(source).toContain('v-if="workHasUnassignedStudents(work)"')
+        expect(source).toContain('v-if="!completed && workHasUnassignedStudents(work)"')
         expect(source).toContain('class="work-unassigned-chip"')
         expect(source).toContain('Nicht alle Schüler:innen sind einer Gruppe zugeordnet')
         expect(methods.workHasUnassignedStudents.call(ctx, {

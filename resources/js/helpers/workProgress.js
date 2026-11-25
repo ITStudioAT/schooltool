@@ -1,9 +1,11 @@
 import { workSimulationCollection, workSimulationEvaluation, workSimulationNotifications } from '@/helpers/workSimulation'
 export { workSimulationCollection, workSimulationEvaluation } from '@/helpers/workSimulation'
 import { personalWorkAssessment, workCollectionEvidence, workSubmissionStatus } from '@/helpers/workSubmission'
-import { workEvaluationStatus, workCellPendingStatuses } from '@/helpers/workCellStatus'
+import { workEvaluationStatus, workCellPendingStatuses, workMarkedComplete } from '@/helpers/workCellStatus'
 import { workDispatchNotifications, workProvisionRecords, workTaskDispatchCompleted, workStudentDistribution } from '@/helpers/workDispatch'
 import { workAutomationEnabled } from '@/helpers/workAutomation'
+
+export const workCompletedLabel = 'ABGESCHLOSSEN'
 
 export const workManualCompletionFields = {
     preparation: 'email_preparation_completed', send: 'task_dispatch_completed', collection: 'submission_collection_completed',
@@ -167,7 +169,7 @@ function hasSavedGrade(group, id) {
         .some(value => value != null && !['', 'NA', 'VL', 'F'].includes(String(value).trim()))
 }
 
-export function workWorkflowProgress(work, date = '', now = Date.now(), dispatch = {}) {
+export function workWorkflowProgress(work, date = '', now = Date.now(), dispatch = {}, students = []) {
     const scoped = workForProgressDate(work, date)
     const groups = scoped.groups || []
     const ids = [...new Set(groups.flatMap(group => group.student_ids || []).map(String))]
@@ -217,7 +219,7 @@ export function workWorkflowProgress(work, date = '', now = Date.now(), dispatch
             const informedIds = new Set((status.grade_visibility?.student_notice?.student_ids || []).map(String))
             if (!manual && !publication.complete) next = { phase: 'assessment', label: publication.title, action: 'publish' }
             else if (status.grade_visibility?.visible === false) next = { phase: 'assessment', label: 'Ergebnisse freigeben', action: 'visibility' }
-            else if (notification.complete || (ids.length > 0 && ids.every(id => informedIds.has(id)))) next = { phase: 'assessment', label: 'Abgeschlossen' }
+            else if (notification.complete || (ids.length > 0 && ids.every(id => informedIds.has(id)))) next = { phase: null, label: workCompletedLabel }
             else next = { phase: 'assessment', label: notification.title, action: 'notice' }
         }
     } else if (!release.ended_at && (release.withdrawn_at || (release.prepared_at && !release.published_at))) {
@@ -242,6 +244,14 @@ export function workWorkflowProgress(work, date = '', now = Date.now(), dispatch
             stages[index] = { ...stages[index], blocked: Boolean(previous), blockedBy: previous?.title || '' }
         }
     }
+    const override = status.completion_override
+    const completed = typeof override === 'boolean' ? override : !reopenedCount && (next?.label === workCompletedLabel
+        || (manual && workMarkedComplete(work, students, now)))
+    if (completed) {
+        next = { phase: null, label: workCompletedLabel }
+    } else if (next?.label === workCompletedLabel) {
+        next = { phase: null, label: 'Offen' }
+    }
     return { stages, scoped, assessed, total: ids.length, provisionComplete, reopenedCount,
-        preparationProven: provisionStarted || Boolean(collection.count) || assessmentComplete, submissionComplete, assessmentComplete, next }
+        preparationProven: provisionStarted || Boolean(collection.count) || assessmentComplete, submissionComplete, assessmentComplete, completed, next }
 }

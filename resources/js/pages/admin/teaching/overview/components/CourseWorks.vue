@@ -46,7 +46,7 @@
             <v-divider />
             <v-card-text class="pa-0">
                 <v-list density="compact" class="work-list-grid">
-                    <v-list-item v-for="work in filteredCourseWorks" :key="work.id" class="work-list-item cursor-pointer" @click="editWork(work)">
+                    <v-list-item v-for="{ work, workflowLabel, completed, positive } in workListRows" :key="work.id" class="work-list-item cursor-pointer" @click="editWork(work)">
                         <div class="work-row w-100" :class="workEntryBackgroundClass(work)">
                             <template v-if="workIsInitial(work)">
                                 <div class="d-flex flex-wrap align-center ga-2">
@@ -56,7 +56,7 @@
                                         role="img" :aria-hidden="false" />
                                     <span class="work-initial-type text-primary">{{ workTypeModeLabel(work) }}</span>
                                     <WorkSimulationBadge :work="work" />
-                                    <span class="d-inline-flex align-center ga-1 ml-auto work-initial-type" :class="workHasAllGrades(work) ? 'text-success' : 'text-error'" :aria-label="`${totalCourseStudentsCount} Schüler:innen`">
+                                    <span class="d-inline-flex align-center ga-1 ml-auto work-initial-type" :class="!completed && (workHasAllGrades(work) ? 'text-success' : 'text-error')" :aria-label="`${totalCourseStudentsCount} Schüler:innen`">
                                         <v-icon icon="mdi-account-multiple" size="18" aria-hidden="true" />{{ totalCourseStudentsCount }}
                                     </span>
                                 </div>
@@ -66,10 +66,9 @@
                                     <v-icon icon="mdi-calendar-clock-outline" size="12" title="Abgabefrist" aria-label="Abgabefrist" role="img" :aria-hidden="false" />
                                     {{ formatDateShort(work.finish_until_date) }}<template v-if="work.finish_until_time"> · {{ work.finish_until_time }}</template>
                                 </div>
-                                <div v-if="assessmentActivity(work)" class="text-caption text-info">{{ assessmentLabel(work) }}</div>
-                                <div v-if="workEmailPreparationLabel(work)" class="text-caption font-weight-bold"
-                                    :class="['Versandbereit', 'Abgeschlossen'].includes(workEmailPreparationLabel(work)) ? 'text-success' : 'text-orange-darken-2'">
-                                    {{ workEmailPreparationLabel(work) === 'Abgeschlossen' ? 'ABGESCHLOSSEN' : workEmailPreparationLabel(work) }}
+                                <div v-if="!completed && assessmentActivity(work)" class="text-caption text-info">{{ assessmentLabel(work) }}</div>
+                                <div v-if="workflowLabel" class="text-caption font-weight-bold" :class="positive ? 'text-success' : 'text-orange-darken-2'">
+                                    {{ workflowLabel }}
                                 </div>
                                 <div class="d-flex justify-end mt-auto">
                                     <v-btn size="x-small" variant="text" :disabled="Boolean(assessmentActivity(work))" @click.stop="openDeleteWorkDialog(work)">Löschen</v-btn>
@@ -84,7 +83,7 @@
                                     <WorkSimulationBadge :work="work" />
                                     <div class="work-meta-actions">
                                         <v-chip
-                                            v-if="workHasUnassignedStudents(work)"
+                                            v-if="!completed && workHasUnassignedStudents(work)"
                                             size="x-small"
                                             variant="flat"
                                             color="warning"
@@ -98,26 +97,25 @@
                                         <v-chip v-else size="x-small" variant="outlined" class="work-date-chip">ohne Datum</v-chip>
                                     </div>
                                 </div>
-                                <div class="text-body-2 work-title-second-line" :class="workHasAllGrades(work) ? 'text-success' : ''">
+                                <div class="text-body-2 work-title-second-line" :class="!completed && workHasAllGrades(work) ? 'text-success' : ''">
                                     {{ work.title || '—' }}
                                 </div>
                                 <div class="text-caption" data-work-deadline="second">
                                     <span class="d-inline-flex align-center ga-1" role="img" aria-label="Endgültige Abgabefrist" title="Endgültige Abgabefrist"><v-icon icon="mdi-calendar-clock-outline" size="12" aria-hidden="true" /></span> <template v-if="work.finish_until_date">{{ formatDate(work.finish_until_date) }}<template v-if="work.finish_until_time"> · {{ work.finish_until_time }}</template></template><template v-else>—</template>
                                 </div>
-                                <div v-if="formatImportDate(work.status?.folder_imported_at)" class="text-caption text-medium-emphasis">
+                                <div v-if="!completed && formatImportDate(work.status?.folder_imported_at)" class="text-caption text-medium-emphasis">
                                     Zuletzt importiert: {{ formatImportDate(work.status.folder_imported_at) }}
                                 </div>
                                 <div v-if="work.description" class="text-caption work-description-line">
                                     {{ work.description }}
                                 </div>
-                                <div v-if="assessmentActivity(work)" class="text-caption text-info">{{ assessmentLabel(work) }}</div>
-                                <div v-if="workEmailPreparationLabel(work)" class="text-caption font-weight-bold"
-                                     :class="['Versandbereit', 'Abgeschlossen'].includes(workEmailPreparationLabel(work)) ? 'text-success' : 'text-orange-darken-2'">
-                                    {{ workEmailPreparationLabel(work) === 'Abgeschlossen' ? 'ABGESCHLOSSEN' : workEmailPreparationLabel(work) }}
+                                <div v-if="!completed && assessmentActivity(work)" class="text-caption text-info">{{ assessmentLabel(work) }}</div>
+                                <div v-if="workflowLabel" class="text-caption font-weight-bold" :class="positive ? 'text-success' : 'text-orange-darken-2'">
+                                    {{ workflowLabel }}
                                 </div>
                             </div>
                             <div class="work-bottom-row">
-                                <div v-if="workGradeDistribution(work).length" class="work-grade-distribution d-flex flex-wrap ga-1">
+                                <div v-if="!completed && workGradeDistribution(work).length" class="work-grade-distribution d-flex flex-wrap ga-1">
                                     <v-chip
                                         v-for="item in workGradeDistribution(work)"
                                         :key="`${work.id}-grade-${item.grade}`"
@@ -156,6 +154,8 @@
         <v-card tile flat color="transparent" class="w-100" v-if="action === 'new_course_work' || action === 'edit_course_work'">
             <v-form ref="form" v-model="is_valid" :readonly="assessmentLocked" @submit.prevent class="mb-4">
                 <div v-if="savedWorkForTitle && !creatingWork && !handshakeAwaitingLink" ref="workWorkflow" tabindex="-1" class="mt-3 px-4">
+                    <WorkCompletionToggle :work="savedWorkForTitle" :date="workflowDate" :now="deadlineNow" class="mb-3"
+                        :disabled="assessmentLocked || workChecking || workExerciseBusy || is_saving || is_deleting_work" />
                     <v-select v-if="workflowDates.length > 1" :model-value="workflowDate" @update:model-value="workflowSelectedDate = $event"
                         :items="workflowDates" label="Durchführungstermin für den Ablauf"
                         density="compact" variant="outlined" hide-details class="mb-2" :disabled="workChecking || workExerciseBusy" />
@@ -832,7 +832,7 @@
                             <v-btn color="warning" flat tile @click="abortEdit" :disabled="is_saving || is_deleting_work || workChecking || workExerciseBusy">Abbruch</v-btn>
                             <div class="d-flex flex-wrap justify-end ga-2">
                                 <v-btn v-if="work_form.id" data-testid="work-dialog-delete" color="error" variant="text"
-                                    prepend-icon="mdi-delete" :disabled="assessmentLocked || is_saving || is_deleting_work || workChecking || workExerciseBusy"
+                                    prepend-icon="mdi-delete" :disabled="assessmentLocked || is_saving || is_deleting_work || workChecking || workExerciseBusy || Boolean(completionSavingId)"
                                     @click="openDeleteWorkDialog(work_form)">Arbeit löschen</v-btn>
                                 <v-btn color="primary" flat tile @click="saveWork(true)" :disabled="!canSaveWork" :loading="is_saving">{{ !work_form.id && handshakeDraft ? 'Arbeit und Prüfungsordner anlegen' : 'Speichern' }}</v-btn>
                                 <v-btn v-if="work_form.id || !handshakeDraft" color="success" flat tile @click="saveWork(false)" :disabled="!canSaveWork" prepend-icon="mdi-content-save">Ende</v-btn>
@@ -925,15 +925,16 @@ import WorkContextCopy from './WorkContextCopy.vue'
 import { assessmentActivityLabel, forgetAssessmentRun, workAssessmentActivity } from '@/helpers/workAssessmentRun'
 import WorkQueueProgress from './WorkQueueProgress.vue'
 import WorkWorkflowOverview from './WorkWorkflowOverview.vue'
+import WorkCompletionToggle from './WorkCompletionToggle.vue'
 import WorkCreationProgress from './WorkCreationProgress.vue'
 import WorkSimulationBadge from './WorkSimulationBadge.vue'
-import { workHasProgress, workManualCompletionFields, workWorkflowProgress } from '@/helpers/workProgress'
+import { workCompletedLabel, workHasProgress, workManualCompletionFields, workWorkflowProgress } from '@/helpers/workProgress'
 import { workAutomationEnabled } from '@/helpers/workAutomation'
 import { loadWorkDropbox, loadWorkExercise, workDropboxKey, workDropboxStates, workExerciseCheck } from '@/helpers/workDropbox'
 import { isInitialWork, workConnectionLabel, workNeedsPreparation, workPreparationLabel } from '@/helpers/workOverview'
 
 export default {
-    components: { ItsGridBox, WorkAiExport, WorkEvaluationImport, WorkImportActions, WorkExerciseExport, WorkCheckProgress, WorkDropboxLink, WorkTitleEditor, WorkHandshakeDraft, WorkEvaluationPdf, WorkDispatchLog, WorkDispatchStatus, WorkCellStatus, WorkFinalDeadline, WorkContextCopy, WorkWorkflowOverview, WorkQueueProgress, WorkCreationProgress, WorkSimulationBadge },
+    components: { ItsGridBox, WorkAiExport, WorkEvaluationImport, WorkImportActions, WorkExerciseExport, WorkCheckProgress, WorkDropboxLink, WorkTitleEditor, WorkHandshakeDraft, WorkEvaluationPdf, WorkDispatchLog, WorkDispatchStatus, WorkCellStatus, WorkFinalDeadline, WorkContextCopy, WorkWorkflowOverview, WorkCompletionToggle, WorkQueueProgress, WorkCreationProgress, WorkSimulationBadge },
 
     async beforeMount() {
         this.adminStore = useAdminStore()
@@ -1011,6 +1012,13 @@ export default {
     },
 
     computed: {
+        workListRows() {
+            return this.filteredCourseWorks.map(work => {
+                const workflowLabel = this.workWorkflowLabel(work)
+                const completed = workflowLabel === workCompletedLabel
+                return { work, workflowLabel, completed, positive: completed || workflowLabel === 'Versandbereit' }
+            })
+        },
         backgroundAssessmentWorks() {
             const foregroundWorkId = (['edit_course_work', 'new_course_work'].includes(this.action) && !this.handshakeAwaitingLink && !this.creatingWork) ? this.savedWorkForTitle?.id : null
             return (this.courseWorks ?? []).filter(work => work.id !== foregroundWorkId && this.assessmentActivity(work))
@@ -1074,7 +1082,7 @@ export default {
         },
         ...mapWritableState(useAdminStore, ['action', 'action_2', 'config']),
         ...mapWritableState(useCourseStore, ['selected_course', 'selected_course_student', 'show_students', 'show_infos', 'show_dates', 'show_works']),
-        ...mapWritableState(useCourseWorkStore, ['courseWorks', 'selected_courseWork']),
+        ...mapWritableState(useCourseWorkStore, ['courseWorks', 'selected_courseWork', 'completionSavingId']),
         ...mapWritableState(useTeachingStore, ['settings']),
         selectedCourseClasses() {
             if (!this.selected_course?.classes?.length) return ''
@@ -1161,7 +1169,9 @@ export default {
             return requiresWorkMaximumPlus(this.selected_course, this.work_form.type) ? workMaximumPlusError(this.work_form.maximum_plus) : ''
         },
         canSaveWork() {
-            return !this.assessmentLocked && !this.is_saving && !this.is_deleting_work && !this.workChecking && !this.workExerciseBusy && !this.handshakeAwaitingLink && !this.isEditingExistingDetails && this.hasSelectedWorkType && !this.workMaximumError
+            return !this.assessmentLocked && !this.completionSavingId && !this.is_saving && !this.is_deleting_work
+                && !this.workChecking && !this.workExerciseBusy && !this.handshakeAwaitingLink && !this.isEditingExistingDetails
+                && this.hasSelectedWorkType && !this.workMaximumError
         },
         canChangeGroupWorkMode() {
             return this.action === 'new_course_work' && !this.work_form.id
@@ -2738,10 +2748,11 @@ export default {
             Object.values(workManualCompletionFields).forEach(field => { delete status[field] })
             return workHasProgress({ ...work, status }) && !workNeedsPreparation(work, this.workFolderState(work))
         },
-        workEmailPreparationLabel(work) {
+        workWorkflowLabel(work) {
             const date = this.workListDate(work) || ''
             const checked = workExerciseCheck(workDropboxKey(this.config?.user?.id, work), work, date)
-            const next = workWorkflowProgress(work, date, this.deadlineNow, checked?.data?.exercise?.email_dispatch).next
+            const next = workWorkflowProgress(work, date, this.deadlineNow, checked?.data?.exercise?.email_dispatch,
+                this.selected_course?.students_info || []).next
             if (next) return next.label
             if (!workAutomationEnabled(work) || !workNeedsPreparation(work, this.workFolderState(work))) return ''
             return checked?.status === 'found' ? workPreparationLabel(checked) : ''

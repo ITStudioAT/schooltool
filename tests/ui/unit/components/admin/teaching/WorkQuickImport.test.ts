@@ -134,7 +134,7 @@ describe('Quick-Import reuses only a proven per-work directory and always previe
             try {
                 await flushPromises()
                 expect(actions.find('.work-quick-import').exists()).toBe(false)
-                expect(actions.get('button').text()).toBe('Verknüpfen')
+                expect(actions.get('button').text()).toBe('Lernmodul auswählen')
             } finally { actions.unmount() }
         } finally { wrapper.unmount() }
     })
@@ -216,7 +216,8 @@ describe('Quick-Import reuses only a proven per-work directory and always previe
             expect(post).not.toHaveBeenCalled()
             expect(actions.find('.work-quick-import').exists()).toBe(false)
             expect(actions.find('[role="status"]').exists()).toBe(false)
-            const normal = actions.findAll('button').find(button => button.text().includes('Verknüpfen'))!
+            const normal = actions.get('button')
+            expect(normal.text()).toBe('Lernmodul auswählen')
             expect(normal.attributes('disabled')).toBeUndefined()
         } finally { wrapper.unmount(); actions.unmount() }
     })

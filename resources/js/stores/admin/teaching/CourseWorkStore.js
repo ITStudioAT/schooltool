@@ -2,6 +2,8 @@ import { defineStore } from 'pinia'
 import { useCourseStudentEntryStore } from '@/stores/admin/teaching/CourseStudentEntryStore'
 import { useNotificationStore } from '@/stores/spa/NotificationStore'
 import { useAdminStore } from '@/stores/admin/AdminStore'
+import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
+import { update as updateCourseWork } from '@/actions/App/Http/Controllers/Admin/Teaching/CourseWorkController'
 import { createWorkCheckStream } from '@/pages/admin/teaching/overview/components/workCheckProgress'
 
 export const useCourseWorkStore = defineStore('AdminCourseWorkStore', {
@@ -10,10 +12,38 @@ export const useCourseWorkStore = defineStore('AdminCourseWorkStore', {
             courseWorks: [],
             loadedCourseId: null,
             selected_courseWork: null,
+            completionSavingId: null,
         }
     },
 
     actions: {
+        async setCompletion(work, completed) {
+            const courses = useCourseStore()
+            const courseId = String(work.teaching_course_id)
+            const workId = String(work.id)
+            if (this.completionSavingId || courseId !== String(courses.selected_course?.id)) return
+
+            this.completionSavingId = work.id
+            try {
+                const response = await axios.put(updateCourseWork.url(work.id), { completion_override: completed })
+                if (courseId !== String(courses.selected_course?.id)) return
+
+                const saved = response.data?.data
+                if (String(saved?.id) !== workId || String(saved?.teaching_course_id) !== courseId
+                    || saved.status?.completion_override !== completed) {
+                    throw new Error('Die gespeicherte Abschlussmarkierung fehlt in der Antwort.')
+                }
+
+                const current = this.courseWorks.find(item => String(item.id) === workId && String(item.teaching_course_id) === courseId)
+                if (current) current.status = { ...current.status, completion_override: completed }
+                if (String(this.selected_courseWork?.id) === workId && String(this.selected_courseWork.teaching_course_id) === courseId) {
+                    this.selected_courseWork.status = { ...this.selected_courseWork.status, completion_override: completed }
+                }
+            } finally {
+                this.completionSavingId = null
+            }
+        },
+
         async index(courseId) {
             const notification = useNotificationStore()
             const adminStore = useAdminStore()

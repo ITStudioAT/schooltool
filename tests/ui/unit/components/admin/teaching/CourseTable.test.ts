@@ -173,7 +173,7 @@ describe('CourseTable manual work completion', () => {
     })
 
     function mountCompletionTable(attachToBody = false, renderActionButtons = false) {
-        const pinia = createTestingPinia({ createSpy: vi.fn })
+        const pinia = createTestingPinia({ createSpy: vi.fn, stubActions: action => action !== 'setCompletion' })
         const date = { id: 1, date: '2026-10-12' }
         const courses = useCourseStore(pinia)
         courses.selected_course = { id: 18, students_info: [], course_dates: [date],
@@ -805,7 +805,7 @@ describe('CourseTable manual work completion', () => {
         } finally { wrapper.unmount(); clearWorkDropboxStates() }
     })
 
-    it.each([true, false])('shows the saved manual completion override even when grades suggest otherwise: %s', async completed => {
+    it.each([true, false])('honors the saved completion override and shows workflow details only on the open card: %s', async completed => {
         const { wrapper, works, courses, first } = mountCompletionTable()
         try {
             courses.selected_course.students_info = [{ id: 901, user_id: 12 }] as never
@@ -814,10 +814,12 @@ describe('CourseTable manual work completion', () => {
                 groups: [{ student_ids: [12], use_individual_grades: true, points: [{ student_id: 12, points: completed ? '' : 3 }] }] }] as never
             await flushPromises()
             const card = wrapper.get('.course-table-work-summary')
-            const status = card.get(`[aria-label="Manuelle Beurteilung: ${completed ? 'abgeschlossen' : 'offen'}"]`)
+            const status = card.get(completed ? '[aria-label="Status: ABGESCHLOSSEN"]' : '[aria-label="Manuelle Beurteilung: offen"]')
             expect(status.text()).toBe(completed ? 'ABGESCHLOSSEN' : 'OFFEN')
-            expect(status.attributes('title')).toBe(completed ? 'Manuell als abgeschlossen markiert.' : 'Manuell als offen markiert.')
-            expect(card.get('[aria-label="Schülerbereich: vorbereitet"]').text()).toContain('vorbereitet')
+            expect(card.get('.course-table-work-summary-meta v-icon').attributes('title'))
+                .toBe(completed ? 'Manuell als abgeschlossen markiert.' : 'Manuell als offen markiert.')
+            expect(card.find('[aria-label="Schülerbereich: vorbereitet"]').exists()).toBe(!completed)
+            expect(card.find('[aria-label="Nächste Aktion: Schüler:innen informieren"]').exists()).toBe(!completed)
         } finally { wrapper.unmount() }
     })
 
@@ -838,7 +840,10 @@ describe('CourseTable manual work completion', () => {
             expect(completionIcon().attributes('icon')).toBe('mdi-account-check-outline')
             expect(completionIcon().attributes('color')).toBe('success')
             expect(completionIcon().attributes('title')).toContain('alle manuellen Beurteilungen eingetragen')
-            expect(wrapper.get('[aria-label="Manuelle Beurteilung: abgeschlossen"]').text()).toBe('ABGESCHLOSSEN')
+            const card = wrapper.get('.course-table-work-summary')
+            expect(card.text().match(/ABGESCHLOSSEN/g)).toHaveLength(1)
+            expect(card.text()).not.toContain('Schüler:innen informieren')
+            expect(card.find('[aria-label="Manuelle Beurteilung: offen"]').exists()).toBe(false)
             ;(works.courseWorks[0] as any).groups[0].points[1].points = ''
             await flushPromises()
             expect(completionIcon().attributes('color')).not.toBe('success')
@@ -850,51 +855,85 @@ describe('CourseTable manual work completion', () => {
             expect(completionToggle().props('icon')).toBe('mdi-account-check-outline')
             vm.startEditingDateWork(works.courseWorks[0])
             await flushPromises()
-            expect(completionToggle().props('icon')).toBe('mdi-account-check-outline')
+            expect(completionToggle().text()).toContain('Als erledigt markieren')
             ;(works.courseWorks[0] as any).automation_enabled = true
             await flushPromises()
             expect(completionIcon().attributes('icon')).toBe('mdi-brain')
-            expect(completionToggle().props('icon')).toBe('mdi-brain')
+            expect(completionToggle().text()).toContain('Als erledigt markieren')
             expect(wrapper.find('.course-table-work-summary [aria-label^="Manuelle Beurteilung:"]').exists()).toBe(false)
         } finally { wrapper.unmount() }
     })
 
-    it('toggles only the chosen work from its dialog brain, preserves returned evidence and updates the overview', async () => {
+    it('toggles only the chosen work from the list and the editor and updates the overview', async () => {
         const { wrapper, works, date, first, second } = mountCompletionTable()
-        const put = vi.spyOn(axios, 'put').mockResolvedValueOnce({ data: { data: { ...second,
-            status: { ...second.status, completion_override: true } } } })
+        let resolveSave: (value: unknown) => void = () => {}
+        const put = vi.fn().mockImplementationOnce(() => new Promise(resolve => { resolveSave = resolve }))
             .mockResolvedValueOnce({ data: { data: { ...second, status: { ...second.status, completion_override: false } } } })
+        vi.stubGlobal('axios', { get: vi.fn().mockResolvedValue({ data: { connected: false } }), put })
         try {
             await flushPromises()
             const vm = wrapper.vm as any
             vm.openWorkDialog(date)
             await flushPromises()
             await wrapper.get('[data-testid="work-completion-toggle-66"]').trigger('click')
+            const receivedLog = [{ sha256: 'b'.repeat(64) }]
+            ;(works.courseWorks as any[]).find(work => work.id === 66).status.dispatch_logs = receivedLog
+            resolveSave({ data: { data: { ...second, status: { custom: 'zweite', completion_override: true } } } })
             await flushPromises()
             expect(put).toHaveBeenNthCalledWith(1, '/api/admin/teaching/course_works/66', { completion_override: true })
             expect(vm.workDialogFormOpen).toBe(false)
             expect((works.courseWorks as any[]).find(work => work.id === 65)).toEqual(first)
             const saved = (works.courseWorks as any[]).find(work => work.id === 66)
-            expect(saved.status).toEqual({ custom: 'zweite', completion_override: true })
+            expect(saved.status).toEqual({ custom: 'zweite', dispatch_logs: receivedLog, completion_override: true })
             expect(wrapper.get('[data-testid="work-completion-toggle-66"]').attributes('aria-pressed')).toBe('true')
             expect(wrapper.findAll('.course-table-work-summary').find(card => card.text().includes('Zweite Arbeit'))!.get('.course-table-work-summary-meta').get('v-icon').attributes('title')).toBe('Manuell als abgeschlossen markiert.')
             vm.startEditingDateWork(saved)
             await flushPromises()
-            const brain = wrapper.get('[data-testid="work-completion-toggle-66"]')
-            expect(brain.attributes('aria-label')).toContain('Zweite Arbeit: manuell als offen markieren')
-            await brain.trigger('click')
+            const button = wrapper.get('[data-testid="work-completion-toggle-66"]')
+            expect(button.text()).toBe('Als offen markieren')
+            await button.trigger('click')
             await flushPromises()
             expect(put).toHaveBeenNthCalledWith(2, '/api/admin/teaching/course_works/66', { completion_override: false })
             expect((works.courseWorks as any[]).find(work => work.id === 66).status.completion_override).toBe(false)
-            expect(wrapper.get('[data-testid="work-completion-toggle-66"]').attributes('aria-pressed')).toBe('false')
+            expect(button.text()).toBe('Als erledigt markieren')
             expect(wrapper.findAll('.course-table-work-summary').find(card => card.text().includes('Zweite Arbeit'))!.get('.course-table-work-summary-meta').get('v-icon').attributes('title')).toBe('Manuell als offen markiert.')
-        } finally { put.mockRestore(); wrapper.unmount() }
+        } finally { wrapper.unmount(); vi.unstubAllGlobals() }
+    })
+
+    it('shows loaded manual completion for an older automatic work and restores the pending step when reopened', async () => {
+        const { wrapper, works, date, first } = mountCompletionTable()
+        const status = { completion_override: true, evaluation_completed: true, publication_completed: true,
+            dispatch_notifications: [{ student_id: 12, purpose: 'results', sent_at: '2026-10-02T10:00:00Z' }] }
+        const work = { ...first, title: 'E-Mails', automation_enabled: true, status,
+            groups: [{ student_ids: [12], points: [{ student_id: 12, points: 4.5 }] }] }
+        works.courseWorks = [work] as never
+        const put = vi.fn().mockResolvedValue({ data: { data: { ...work, status: { ...status, completion_override: false } } } })
+        vi.stubGlobal('axios', { get: vi.fn().mockResolvedValue({ data: { connected: false } }), put })
+        try {
+            await flushPromises()
+            const card = wrapper.get('.course-table-work-summary')
+            expect(card.text().match(/ABGESCHLOSSEN/g)).toHaveLength(1)
+            expect(card.text()).not.toContain('Schüler:innen informieren')
+            ;(wrapper.vm as any).openExistingWorkDialog(date, work)
+            await flushPromises()
+            const button = wrapper.get('[data-testid="work-completion-toggle-65"]')
+            expect(button.text()).toBe('Als offen markieren')
+            expect(button.element.parentElement?.textContent).toContain('ABGESCHLOSSEN')
+            await button.trigger('click')
+            await flushPromises()
+            expect(put).toHaveBeenCalledExactlyOnceWith('/api/admin/teaching/course_works/65', { completion_override: false })
+            expect(card.get('[aria-label="Nächste Aktion: Schüler:innen informieren"]').text()).toContain('Schüler:innen informieren')
+            expect(card.text()).not.toContain('ABGESCHLOSSEN')
+            expect(button.element.parentElement?.textContent).not.toContain('ABGESCHLOSSEN')
+            expect(works.courseWorks[0].status.dispatch_notifications).toEqual(status.dispatch_notifications)
+        } finally { wrapper.unmount(); vi.unstubAllGlobals() }
     })
 
     it('disables completion while saving, ignores duplicate clicks and keeps the prior state on a failed save', async () => {
         const { wrapper, works, date, first } = mountCompletionTable()
         let rejectSave: (error: unknown) => void = () => {}
-        const put = vi.spyOn(axios, 'put').mockImplementationOnce(() => new Promise((_, reject) => { rejectSave = reject }))
+        const put = vi.fn().mockImplementationOnce(() => new Promise((_, reject) => { rejectSave = reject }))
+        vi.stubGlobal('axios', { get: vi.fn().mockResolvedValue({ data: { connected: false } }), put })
         try {
             await flushPromises()
             const vm = wrapper.vm as any
@@ -902,7 +941,7 @@ describe('CourseTable manual work completion', () => {
             await flushPromises()
             await wrapper.get('[data-testid="work-completion-toggle-65"]').trigger('click')
             expect(wrapper.get('[data-testid="work-completion-toggle-65"]').attributes('disabled')).toBeDefined()
-            await vm.toggleWorkCompletion(first)
+            await wrapper.get('[data-testid="work-completion-toggle-66"]').trigger('click')
             expect(put).toHaveBeenCalledTimes(1)
             rejectSave({ response: { data: { message: 'Markierung konnte nicht gespeichert werden.' } } })
             await flushPromises()
@@ -910,25 +949,27 @@ describe('CourseTable manual work completion', () => {
             expect((works.courseWorks as any[]).find(work => work.id === 65).status).toEqual(first.status)
             expect(wrapper.get('[data-testid="work-completion-toggle-65"]').attributes('aria-pressed')).toBe('false')
             expect(wrapper.get('[data-testid="work-completion-toggle-65"]').attributes('disabled')).toBeUndefined()
-        } finally { put.mockRestore(); wrapper.unmount() }
+        } finally { wrapper.unmount(); vi.unstubAllGlobals() }
     })
 
     it('does not apply an old completion response after switching courses', async () => {
         const { wrapper, works, courses, date, first } = mountCompletionTable()
         let resolveSave: (value: unknown) => void = () => {}
-        const put = vi.spyOn(axios, 'put').mockImplementationOnce(() => new Promise(resolve => { resolveSave = resolve }))
+        const put = vi.fn().mockImplementationOnce(() => new Promise(resolve => { resolveSave = resolve }))
+        vi.stubGlobal('axios', { get: vi.fn().mockResolvedValue({ data: { connected: false } }), put })
         try {
             await flushPromises()
             const vm = wrapper.vm as any
             vm.openWorkDialog(date)
-            const pending = vm.toggleWorkCompletion(first)
+            await flushPromises()
+            await wrapper.get('[data-testid="work-completion-toggle-65"]').trigger('click')
             courses.selected_course = { id: 19, course_dates: [], students_info: [] } as never
             works.courseWorks = []
             resolveSave({ data: { data: { ...first, status: { ...first.status, completion_override: true } } } })
-            await pending
+            await flushPromises()
             expect(works.courseWorks).toEqual([])
-            expect(vm.workCompletionSavingId).toBeNull()
-        } finally { put.mockRestore(); wrapper.unmount() }
+            expect(works.completionSavingId).toBeNull()
+        } finally { wrapper.unmount(); vi.unstubAllGlobals() }
     })
 })
 
@@ -2830,7 +2871,7 @@ describe('CourseTable', () => {
         )
         const workListStart = source.indexOf('class="course-table-work-list"')
         const addIconPosition = source.indexOf('class="course-table-work-empty-icon"', workListStart)
-        const existingWorksPosition = source.indexOf('v-for="work in courseWorksForDate(courseDate)"', workListStart)
+        const existingWorksPosition = source.indexOf('v-for="work in workSummariesForDate(courseDate)"', workListStart)
 
         expect(workListStart).toBeGreaterThan(-1)
         expect(addIconPosition).toBeGreaterThan(workListStart)
@@ -6311,12 +6352,11 @@ describe('CourseTable', () => {
         expect(source).toContain('@click="saveContentDialog()"')
         expect(source).not.toContain('Die Inhaltsverwaltung wird hier später ergänzt.')
         expect(source).toContain('mdi-plus-circle-outline')
-        expect(source).toContain('v-for="work in courseWorksForDate(courseDate)"')
+        expect(source).toContain('v-for="work in workSummariesForDate(courseDate)"')
         expect(source).toContain('class="course-table-work-summary"')
         expect(source).toContain('<span class="course-table-work-summary-title">')
         expect(source).toContain('{{ work.work.title || work.label }}')
         expect(source).toMatch(/\.course-table-work-summary-title \{[\s\S]*font-weight: 400;/u)
-        expect(source).toContain(':title="workCompletionLabel(work.work)"')
         expect(source).toContain('@click="openWorkDialog(courseDate)"')
         expect(source).toContain('@keydown.enter.prevent="openWorkDialog(courseDate)"')
         expect(source).toContain('<v-dialog v-model="workDialog.open" persistent max-width="720">')
