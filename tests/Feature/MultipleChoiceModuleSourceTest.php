@@ -118,6 +118,9 @@ test('assessment points are read only from an unambiguous explicit template tota
     expect(app(McModuleTemplateSource::class)->assessmentPoints($this->teacher, workModuleSourceLink($this)))->toBe($expected);
 })->with([
     ['# Aufgaben'."\n".'**Gesamtpunkte:** 30 Punkte', 30.0],
+    ['# Aufgaben'."\n".'**Gesamtpunkte** 5', 5.0],
+    ['# Aufgaben'."\n".'**Gesamtpunkte** 5 (je Aufgabe 1 Punkt)', 5.0],
+    ['# Aufgaben'."\n".'Gesamtpunkte 5'."\n".'Gesamtpunktzahl: 6 Punkte', null],
     ['# Aufgaben'."\n".'Gesamt: 30 Punkte', 30.0],
     ['# Aufgaben'."\n".'Gesamt: 30', null],
     ['# Aufgaben'."\n".'Gesamtpunkte: 30 Punkte'."\n".'Gesamtpunktzahl: 35 Punkte', null],
@@ -194,13 +197,10 @@ test('module catalog checks the answer key and rejects changed options without s
     expect($service->workCatalog($this->teacher, workModuleSourceLink($this)))->toBeNull();
 });
 
-test('versioned points match task headings and rubric subtotals', function (bool $conflict): void {
-    $task = "---\nfacts: \"35 Punkte\"\n---\n**1. Aufgabe** <small>(8 Punkte)</small>\n**2. Aufgabe** <small>(11 Punkte)</small>\n**3. Aufgabe** <small>(8 Punkte)</small>\n**4. Aufgabe** <small>(8 Punkte)</small>\n";
-    $rubric = "---\nfacts: \"35 Punkte\"\n---\n| | **Teilsumme Aufgabe 1** | **8** |\n| | **Teilsumme Aufgabe 2** | **11** |\n| | **Teilsumme Aufgabe 3** | **8** |\n| | **Teilsumme Aufgabe 4** | **8** |\n| | **Gesamt** | **35** |\n";
-    $json = json_encode(['schema_version' => 1, 'gesamtpunkte' => 35, 'aufgaben' => [
-        ['nummer' => 1, 'punkte' => $conflict ? 9 : 8], ['nummer' => 2, 'punkte' => 11],
-        ['nummer' => 3, 'punkte' => 8], ['nummer' => 4, 'punkte' => 8],
-    ]], JSON_THROW_ON_ERROR);
+test('versioned points match task headings and rubric totals', function (string $task, string $rubric, int $total, array $scores, ?float $expected): void {
+    $json = json_encode(['schema_version' => 1, 'gesamtpunkte' => $total,
+        'aufgaben' => array_map(fn (int $index, int $score): array => ['nummer' => $index + 1, 'punkte' => $score], array_keys($scores), $scores),
+    ], JSON_THROW_ON_ERROR);
     $this->documents = ['rev:task' => $task, 'rev:rubric' => $rubric, 'rev:points' => $json];
     $path = $this->root.'/emails/prüfungsvorlage';
     $this->entries[] = ['.tag' => 'folder', 'id' => 'id:assessment', 'name' => 'Prüfungsvorlage', 'path_lower' => $path];
@@ -209,8 +209,20 @@ test('versioned points match task headings and rubric subtotals', function (bool
     }
     $this->entries[] = ['.tag' => 'file', 'id' => 'id:pdf', 'name' => 'LF_Wordtest.pdf', 'path_lower' => $path.'/lf_wordtest.pdf', 'rev' => 'pdf', 'size' => 123];
     fakeMcModuleSource($this);
-    expect(app(McModuleTemplateSource::class)->assessmentPoints($this->teacher, workModuleSourceLink($this)))->toBe($conflict ? null : 35.0);
-})->with([false, true]);
+    expect(app(McModuleTemplateSource::class)->assessmentPoints($this->teacher, workModuleSourceLink($this)))->toBe($expected);
+})->with(function (): array {
+    $task = "---\nfacts: \"35 Punkte\"\n---\n**1. Aufgabe** <small>(8 Punkte)</small>\n**2. Aufgabe** <small>(11 Punkte)</small>\n**3. Aufgabe** <small>(8 Punkte)</small>\n**4. Aufgabe** <small>(8 Punkte)</small>\n";
+    $rubric = "---\nfacts: \"35 Punkte\"\n---\n| | **Teilsumme Aufgabe 1** | **8** |\n| | **Teilsumme Aufgabe 2** | **11** |\n| | **Teilsumme Aufgabe 3** | **8** |\n| | **Teilsumme Aufgabe 4** | **8** |\n| | **Gesamt** | **35** |\n";
+    $onePointTasks = "**Gesamtpunkte** 2\n**1. Aufgabe** <small>(1 Punkt)</small>\n**2. Aufgabe** <small>(1 Punkt)</small>\n";
+    $onePointRubric = "**Gesamtpunkte** 2 (je Aufgabe 1 Punkt)\n| **Gesamt** | **1 Punkt** | **1 Punkt** |\n";
+
+    return [
+        'matching facts and subtotals' => [$task, $rubric, 35, [8, 11, 8, 8], 35.0],
+        'metadata scores do not add up' => [$task, $rubric, 35, [9, 11, 8, 8], null],
+        'one point per task and separate rubric columns' => [$onePointTasks, $onePointRubric, 2, [1, 1], 2.0],
+        'metadata scores disagree with the headings' => [$onePointTasks, $onePointRubric, 2, [0, 2], null],
+    ];
+});
 
 test('the actual forty-question module source preserves thirty single and ten multiple questions without generating or saving', function (): void {
     fakeMcModuleSource($this);

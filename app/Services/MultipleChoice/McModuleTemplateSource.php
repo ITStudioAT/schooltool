@@ -163,7 +163,12 @@ class McModuleTemplateSource
             if (preg_match('/multiple[ -]choice|\\bmc[ -](?:test|teil|fragen)\\b/iu', $contents)) {
                 return null;
             }
-            preg_match_all('/^\\s*(?:(?:gesamtpunkte|gesamtpunktzahl|punkte\\s+gesamt|maximal(?:e| erreichbare)?\\s+punkte)\\s*:\\s*(\\d+(?:[,.]\\d{1,2})?)\\s*(?:punkte|p\\.)?|gesamt\\s*:\\s*(\\d+(?:[,.]\\d{1,2})?)\\s*(?:punkte|p\\.))\\s*$/imu', $contents, $matches, PREG_SET_ORDER);
+            preg_match_all('/^\h*(?:
+                (?:gesamtpunkte|gesamtpunktzahl|punkte\h+gesamt|maximal(?:e|\h+erreichbare)?\h+punkte)
+                (?:\h*:\h*|\h+)(\d+(?:[,.]\d{1,2})?)\h*(?:punkte?|p\.)?
+                (?:\h+\(je\h+Aufgabe\h+\d+(?:[,.]\d{1,2})?\h+punkte?\))?
+                | gesamt\h*:\h*(\d+(?:[,.]\d{1,2})?)\h*(?:punkte?|p\.)
+            )\h*\r?$/imux', $contents, $matches, PREG_SET_ORDER);
             foreach ($matches as $match) {
                 $value = $match[1] !== '' ? $match[1] : $match[2];
                 $points[] = (float) str_replace(',', '.', $value);
@@ -177,7 +182,7 @@ class McModuleTemplateSource
                 $points[] = (float) str_replace(',', '.', $value);
             }
             preg_match_all('/^\s*\|\s*\|\s*Teilsumme Aufgabe\s+(\d+)\s*\|\s*(\d+(?:[,.]\d{1,2})?)\s*\|/imu', $contents, $subtotals, PREG_SET_ORDER);
-            preg_match_all('/^\s*(\d+)\.\s+[^\r\n]+?<small>\s*\((\d+(?:[,.]\d{1,2})?)\s+Punkte\)<\/small>/imu', $contents, $headings, PREG_SET_ORDER);
+            preg_match_all('/^\s*(\d+)\.\s+[^\r\n]+?<small>\s*\((\d+(?:[,.]\d{1,2})?)\s+Punkte?\)<\/small>/imu', $contents, $headings, PREG_SET_ORDER);
             foreach (array_merge($subtotals, $headings) as $task) {
                 $taskPoints[(int) $task[1]][] = (float) str_replace(',', '.', $task[2]);
             }
