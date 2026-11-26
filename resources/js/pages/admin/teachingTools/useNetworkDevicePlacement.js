@@ -1,4 +1,5 @@
 import { computed, ref } from 'vue'
+import { isNumberedDevice, nextDeviceNumber } from './networkRackConnectivity'
 
 const dragThreshold = 6
 
@@ -218,6 +219,7 @@ export function useNetworkDevicePlacement(resolvePlacement, initialPlacements) {
                 return
             }
             const placement = { id: nextPlacementId++, device, rotation: 0, ...position }
+            if (isNumberedDevice(device)) placement.deviceNumber = nextDeviceNumber(device, placements.value)
             placements.value.push(placement)
             selectPlacement(device, placement.id)
         } else {

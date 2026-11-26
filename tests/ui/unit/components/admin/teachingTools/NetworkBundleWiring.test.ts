@@ -72,7 +72,8 @@ it('routes a bundle down into the rack top and keeps that anchor while the rack 
     const placements = ref([{ id: 3, device: { id: 'server-rack' }, rackModules: ['patch-panel'] }])
     const move = ref<{ placementId: number; moved: boolean; position: { x: number; y: number }; x: number; y: number } | null>(null)
     const geometry = useNetworkPatchCables({
-        layer, placements, markerElements: new Map([[3, marker]]), move, clearSelection: vi.fn(), initialConnections: [],
+        layer, wallsById: ref(new Map()), placements, markerElements: new Map([[3, marker]]), move,
+        clearSelection: vi.fn(), initialConnections: [],
     })
     const wiring = useNetworkBundleWiring({ layer, placements, endPoint: geometry.endPoint })
     geometry.refreshPositions()

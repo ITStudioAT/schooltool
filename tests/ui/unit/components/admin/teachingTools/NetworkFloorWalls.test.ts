@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-    channelCorners, measureNetworkWalls, outletMountPoint, snapToChannel, snapToNetworkWall,
+    channelCorners, firstWallIntersection, measureNetworkWalls, outletMountPoint, snapToChannel, snapToNetworkWall,
 } from '@/pages/admin/teachingTools/networkFloorWalls'
 
 const bounds = { width: 800, height: 450 }
@@ -83,4 +83,17 @@ describe('Room plan channel placement', () => {
         expect(snapToChannel(channels, walls, bounds, { x: .5, y: .16 })).toBeNull()
         expect(snapToChannel(channels, walls, bounds, { x: .01, y: .01 })).toBeNull()
     })
+})
+
+it('stops the patch cable at the first wall face and leaves the doorway open', () => {
+    const walls = measureFloor()
+    const hit = (x1: number, y1: number, x2: number, y2: number) => firstWallIntersection(walls,
+        { x: x1 / bounds.width, y: y1 / bounds.height }, { x: x2 / bounds.width, y: y2 / bounds.height })
+
+    expect(hit(300, 115, 500, 115)).toBeCloseTo(99 / 200)
+    expect(hit(500, 115, 300, 115)).toBeCloseTo(99 / 200)
+    expect(hit(200, 100, 200, 350)).toBeCloseTo(48 / 250)
+    expect(hit(300, 74, 500, 74)).toBeNull()
+    expect(hit(300, 74, 380, 115)).toBeNull()
+    expect(hit(398, 57, 402, 62)).toBeCloseTo(1 / 4)
 })

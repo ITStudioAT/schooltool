@@ -1,10 +1,12 @@
 import { computed, ref, shallowRef, watch } from 'vue'
+import { firstWallIntersection } from './networkFloorWalls'
+import { firstFreeRackPort, patchDeviceLabel } from './networkRackConnectivity'
 
 export function canConnectPatchDevices(first, second) {
     return Boolean(first?.ports && second?.ports) && Boolean(first.channelMounted) !== Boolean(second.channelMounted)
 }
 
-export function useNetworkPatchCables({ layer, placements, markerElements, move, clearSelection, initialConnections }) {
+export function useNetworkPatchCables({ layer, wallsById, placements, markerElements, move, clearSelection, initialConnections }) {
     const active = ref(false)
     const firstEnd = shallowRef(null)
     const hover = shallowRef(null)
@@ -16,21 +18,48 @@ export function useNetworkPatchCables({ layer, placements, markerElements, move,
     let paletteGesture = null
     let handledButton = null
 
+    watch(wallsById, refreshPositions, { flush: 'post' })
     watch(() => placements.value.map(({ id, x, y, rotation, wallId, channelId, channelPosition }) =>
-        [id, x, y, rotation, wallId, channelId, channelPosition]), refreshPositions, { flush: 'post' })
+        [id, [x, y, rotation, wallId, channelId, channelPosition]]), (current, previous) => {
+        refreshPositions()
+        const previousPositions = new Map(previous)
+        const movedPlacements = new Set(current.filter(([id, position]) =>
+            previousPositions.get(id)?.some((value, index) => value !== position[index])).map(([id]) => id))
+        const affectedPlacements = new Set(placements.value.filter(({ id, channelId }) =>
+            movedPlacements.has(id) || movedPlacements.has(channelId)).map(({ id }) => id))
+        const clearConnections = connections.value.filter(({ start, end }) =>
+            (!affectedPlacements.has(start.placementId) && !affectedPlacements.has(end.placementId)) || !isBlocked(start, end))
+        if (clearConnections.length === connections.value.length) return
+
+        connections.value = clearConnections
+        selectedConnectionId.value = null
+        status.value = 'Patchkabel, die durch eine Wand führen würden, wurden getrennt.'
+    }, { flush: 'post' })
 
     const visibleConnections = computed(() => connections.value.flatMap(connection => {
         const start = endPoint(connection.start, true)
         const end = endPoint(connection.end, true)
+        if (!start || !end) return []
+        const movingId = move.value?.placementId
+        if (move.value?.moved && (movingId === connection.start.placementId || movingId === connection.end.placementId)
+            && firstWallIntersection(wallsById.value.values(), start, end) !== null) return []
+
         const label = `Patchkabel zwischen ${endLabel(connection.start)} und ${endLabel(connection.end)}`
-        return start && end ? [{ id: connection.id, label, start, end }] : []
+        return [{ id: connection.id, label, start, end }]
     }))
 
     const previewLine = computed(() => {
         const start = firstEnd.value && endPoint(firstEnd.value)
         const target = hover.value
         const end = target?.port ? endPoint(target.port) : target?.point
-        return start && end ? { start, end, invalid: !target.port } : null
+        if (!start || !end) return null
+
+        const wallHit = firstWallIntersection(wallsById.value.values(), start, end)
+        return wallHit === null ? { start, end, invalid: !target.port } : {
+            start,
+            end: { x: start.x + (end.x - start.x) * wallHit, y: start.y + (end.y - start.y) * wallHit },
+            invalid: true,
+        }
     })
 
     function refreshPositions() {
@@ -80,11 +109,25 @@ export function useNetworkPatchCables({ layer, placements, markerElements, move,
     }
 
     function endLabel({ placementId, index }) {
-        const device = placements.value.find(item => item.id === placementId)?.device
-        return device?.ports === 1 ? device.label : `${device?.label}, Anschluss ${index + 1}`
+        const placement = placements.value.find(item => item.id === placementId)
+        if (!placement) return ''
+
+        const label = patchDeviceLabel(placement)
+        return placement.device.ports === 1 ? label : `${label}, Anschluss ${index + 1}`
     }
 
-    function availablePort(placement, point) {
+    function isBlocked(startPort, endPort) {
+        const start = startPort && endPoint(startPort)
+        const end = endPort && endPoint(endPort)
+        return start && end && firstWallIntersection(wallsById.value.values(), start, end) !== null
+    }
+
+    function availablePort(placement) {
+        const port = candidatePort(placement)
+        return isBlocked(firstEnd.value, port) ? null : port
+    }
+
+    function candidatePort(placement, point) {
         if (!placement?.device.ports) return null
         if (firstEnd.value) {
             const start = placements.value.find(item => item.id === firstEnd.value.placementId)?.device
@@ -113,7 +156,7 @@ export function useNetworkPatchCables({ layer, placements, markerElements, move,
         const point = normalizedPoint(surface.getBoundingClientRect(), event.clientX, event.clientY)
         const id = Number(target.closest('[data-placement-id]')?.dataset.placementId)
         const placement = placements.value.find(item => item.id === id)
-        return { point, port: availablePort(placement, point) }
+        return { point, port: candidatePort(placement, point) }
     }
 
     function activate() {
@@ -158,14 +201,19 @@ export function useNetworkPatchCables({ layer, placements, markerElements, move,
             guide()
             return
         }
-        connections.value.push({ id: nextId++, start: firstEnd.value, end: port })
+        if (isBlocked(firstEnd.value, port)) {
+            status.value = 'Ein Patchkabel darf nicht durch eine Wand führen. Wähle einen erreichbaren Anschluss.'
+            return
+        }
+        const rackPort = firstFreeRackPort(new Set(connections.value.map(connection => connection.rackPort)))
+        connections.value.push({ id: nextId++, start: firstEnd.value, end: port, rackPort })
         cancel()
         status.value = 'Patchkabel verbunden.'
     }
 
     function chooseMarker(placement, event) {
         const point = event.detail === 0 && event.type === 'click' ? null : pointerTarget(event)?.point
-        const port = availablePort(placement, point)
+        const port = candidatePort(placement, point)
         if (port) choose(port)
         else guide()
     }

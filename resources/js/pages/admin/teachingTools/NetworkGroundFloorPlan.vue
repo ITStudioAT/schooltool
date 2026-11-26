@@ -41,7 +41,7 @@
                         In einem Büro sollen drei Arbeitsplätze stehen, im anderen zwei.
                         Du entscheidest, welches Büro drei Arbeitsplätze bekommt.
                     </li>
-                    <li>Im <strong>Foyer</strong> vier Stehtische für Besucher:innen platzieren, die mit ihren Laptops kommen.</li>
+                    <li>Platziere im <strong>Foyer</strong> vier Stehtische für Besucher:innen, die mit ihren Laptops kommen.</li>
                 </ol>
             </section>
             <div ref="viewport" class="network-floor__viewport" tabindex="0" role="region" aria-label="Scrollbarer Grundriss"
@@ -72,6 +72,8 @@
                             @click="clickPlanOrCable" @pointerdown.self="startSurfaceTap" @pointerup.self="finishSurfaceTap"
                             @keydown.enter.self.prevent="wiringActive ? rejectWiringTarget() : placeAtCenter()">
                             <svg class="network-floor__patch-lines" viewBox="0 0 100 100" preserveAspectRatio="none">
+                                <polyline v-for="bridge in channelLayout.bridges" :key="bridge.key"
+                                    class="network-floor__channel-bridge" :points="channelBridgePoints(bridge)" aria-hidden="true" />
                                 <g v-for="bundle in cableBundles" :key="bundle.id" role="img" :data-bundle-id="bundle.id"
                                     aria-label="Kabelstrang zum Serverschrank">
                                     <polyline class="network-floor__bundle-line" :points="bundleWiringPoints(bundle)" />
@@ -128,14 +130,19 @@
                                 :data-wall-side="wallsById.get(placement.wallId)?.side"
                                 :data-shared-wall="wallsById.get(placement.wallId)?.band ? '' : undefined"
                                 :style="markerStyle(placement)"
-                                :aria-label="markerLabel(placement)" :title="placement.wallId ? markerLabel(placement) : placement.device.label"
+                                :aria-label="markerLabel(placement)"
+                                :title="placement.wallId || rackPortsByDevice.has(placement.id) || onlineClients.has(placement.id)
+                                    || onlineAccessPoints.has(placement.id)
+                                    ? markerLabel(placement) : patchDeviceLabel(placement)"
                                 :aria-pressed="selection?.placementId === placement.id"
                                 :aria-controls="actionPosition?.id === placement.id ? 'network-floor-marker-actions' : undefined"
                                 @pointerdown="startMarkerDrag($event, placement)" @pointerup="finishMarkerTap($event, placement)"
                                 @pointercancel="patchTap.cancelActionTap"
                                 @click.stop="selectMarker($event, placement)" @keydown.esc.stop="escapeMarker">
                                 <template v-if="placement.wallId">
-                                    <span class="network-floor__channel-segment" aria-hidden="true" />
+                                    <span class="network-floor__channel-segment"
+                                        :class="{ 'is-active': network.activeChannels.has(placement.id),
+                                            'is-flow-reversed': network.activeChannels.get(placement.id) < .5 }" aria-hidden="true" />
                                     <span class="network-floor__channel-label" aria-hidden="true">Kabelkanal</span>
                                     <span class="network-floor__channel-anchor" aria-hidden="true" />
                                 </template>
@@ -143,12 +150,24 @@
                                     <span class="network-floor__workstation-graphic">
                                         <NetworkDeviceIcon :device="placement.device" />
                                     </span>
-                                    <span class="network-floor__workstation-label">Arbeitsplatz</span>
+                                    <span class="network-floor__workstation-label">{{ patchDeviceLabel(placement) }}</span>
                                 </span>
                                 <span v-else class="network-floor__device-drawing" aria-hidden="true">
-                                    <NetworkDeviceIcon :device="placement.device" :rack-modules="placement.rackModules" />
+                                    <NetworkDeviceIcon :device="placement.device" :rack-modules="placement.rackModules"
+                                        :class="{ 'network-floor__access-point-online': onlineAccessPoints.has(placement.id) }" />
                                     <span v-if="!placement.device.channelMounted" class="network-floor__object-label">
-                                        {{ placement.device.label }}
+                                        {{ patchDeviceLabel(placement) }}
+                                    </span>
+                                </span>
+                                <span v-if="onlineClients.has(placement.id) || onlineAccessPoints.has(placement.id)"
+                                    class="network-floor__client-connections" aria-hidden="true">
+                                    <span class="network-floor__connection-badge">
+                                        <v-icon :icon="onlineClients.get(placement.id) === 'lan' ? 'mdi-lan-connect' : 'mdi-wifi'"
+                                            size="14" />
+                                    </span>
+                                    <span v-if="onlineClients.has(placement.id) && network.internetDevices.has(placement.id)"
+                                        class="network-floor__connection-badge">
+                                        <v-icon icon="mdi-web" size="14" />
                                     </span>
                                 </span>
                             </button>
@@ -167,9 +186,26 @@
                                 :style="markerStyle(drag.position)" :data-channel-id="drag.position.channelId">
                                 <NetworkDeviceIcon :device="drag.device" />
                             </span>
-                            <span v-if="patchActive && patchHover && !patchHover.port" aria-hidden="true"
+                            <span v-if="patchActive && patchHover && (!patchHover.port || patchPreview?.invalid)" aria-hidden="true"
                                 class="network-floor__drag-invalid network-floor__patch-invalid"
                                 :style="{ left: `${patchHover.point.x * 100}%`, top: `${patchHover.point.y * 100}%` }">×</span>
+                        </div>
+                    </div>
+                    <div class="network-floor__connection-status" role="status">
+                        <div class="network-floor__connection" :class="{ 'is-online': network.lan }">
+                            <v-icon :icon="network.lan ? 'mdi-lan-connect' : 'mdi-lan-disconnect'"
+                                class="network-floor__connection-icon" aria-hidden="true" />
+                            <span>LAN<span class="d-sr-only"> {{ network.lan ? 'aktiv' : 'inaktiv' }}</span></span>
+                        </div>
+                        <div class="network-floor__connection" :class="{ 'is-online': onlineAccessPoints.size }">
+                            <v-icon :icon="onlineAccessPoints.size ? 'mdi-wifi' : 'mdi-wifi-off'"
+                                class="network-floor__connection-icon" aria-hidden="true" />
+                            <span>WLAN<span class="d-sr-only"> {{ onlineAccessPoints.size ? 'aktiv' : 'inaktiv' }}</span></span>
+                        </div>
+                        <div class="network-floor__connection" :class="{ 'is-online': network.internet }">
+                            <v-icon :icon="network.internet ? 'mdi-cloud' : 'mdi-cloud-outline'"
+                                class="network-floor__connection-icon" aria-hidden="true" />
+                            <span>Internet<span class="d-sr-only"> {{ network.internet ? 'aktiv' : 'inaktiv' }}</span></span>
                         </div>
                     </div>
                 </div>
@@ -225,13 +261,17 @@
             </div>
         </v-tooltip>
         <NetworkServerRackDialog v-if="rackBeingConfigured" :modules="rackBeingConfigured.rackModules"
-            :has-linked-bundles="linkedRackOutlets.length > 0" @save="saveRackConfiguration" @close="closeRackConfiguration" />
+            :patch-connections="rackBeingConfigured.rackPatchConnections"
+            :incoming-connections="incomingRackConnections" @preview-change="rackPreview = $event"
+            @save="saveRackConfiguration" @close="closeRackConfiguration" />
         <section class="network-floor__draft mt-6" aria-labelledby="ground-floor-devices-title">
             <h2 id="ground-floor-devices-title" class="text-h6 font-weight-bold mb-1">Geräte</h2>
             <p class="text-body-2 mb-3">
                 Ziehe ein Gerät auf den Plan oder wähle es aus und tippe auf die gewünschte Stelle.
                 Setze den Kabelkanal auf der gewünschten Raumseite dicht an die Wand.
                 Netzwerkdosen werden an bereits platzierten Kabelkanälen befestigt.
+                Verlege einen durchgehenden Kabelweg von den Netzwerkdosen bis in den Serverraum.
+                Passende Kanalenden an Türen und fluchtende Kanalenden beiderseits einer Trennwand werden automatisch verbunden.
                 Setze im Serverraum einen Kabelstrang-Ausgang an den Kabelkanal. Wähle „Kabelstrang“ und ziehe die Leitung
                 vom Ausgang zum Serverschrank mit Patchpanel.
             </p>
@@ -279,9 +319,10 @@ import { computed, nextTick, onMounted, onUnmounted, ref, shallowReactive, shall
 import NetworkDeviceIcon from './NetworkDeviceIcon.vue'
 import NetworkDevicePhotoPreview from './NetworkDevicePhotoPreview.vue'
 import NetworkServerRackDialog from './NetworkServerRackDialog.vue'
-import { channelCenterShift, channelCorners, channelStroke, furnitureFits, measureNetworkWalls, outletMountPoint,
+import { channelCenterShift, channelCorners, channelStroke, channelTopology, furnitureFits, measureNetworkWalls, outletMountPoint,
     outletMountRange, pointAlongWall, snapToChannel, snapToNetworkWall } from './networkFloorWalls'
 import { readNetworkRoomPlanDraft, saveNetworkRoomPlanDraft } from './networkRoomPlanDraft'
+import { floorPatchAssignments, networkStatus, patchDeviceLabel, rackCableAssignments } from './networkRackConnectivity'
 import { rackHasPatchPanel, rackModuleLabels } from './networkRackModules'
 import { useNetworkBundleWiring } from './useNetworkBundleWiring'
 import { useNetworkDevicePlacement } from './useNetworkDevicePlacement'
@@ -302,6 +343,7 @@ const placementFeedback = ref('')
 const actionFeedback = ref('')
 const draftSaveFailed = ref(false)
 const rackConfigurationId = ref(null)
+const rackPreview = shallowRef(null)
 const wallsById = shallowRef(new Map())
 const furnitureScale = ref(1)
 let geometryObserver
@@ -338,11 +380,13 @@ const zoom = ref(Number.isInteger(draft.zoom) && draft.zoom >= minZoom && draft.
 const { layer, placements, selection, selectedPlacement, selectedWorkstation, canPlaceBySelection, drag, remaining,
     startDrag, moveDrag, finishDrag, cancelDrag, selectDevice, clickPlan, startPlanTap, finishPlanTap, placeAtCenter,
     rotateWorkstation, removeSelectedPlacement } = useNetworkDevicePlacement(resolvePlacement, draft.placements)
-const patch = useNetworkPatchCables({ layer, placements, markerElements, move: drag, initialConnections: draft.connections,
+const patch = useNetworkPatchCables({ layer, wallsById, placements, markerElements, move: drag, initialConnections: draft.connections,
     clearSelection: () => { selection.value = null } })
 const bundle = useNetworkBundleWiring({ layer, placements, endPoint: patch.endPoint })
+const placementsWithRackPreview = computed(() => rackPreview.value ? placements.value.map(placement =>
+    placement.id === rackConfigurationId.value ? { ...placement, ...rackPreview.value } : placement) : placements.value)
 if (props.draftKey) {
-    watch([placements, patch.connections, zoom], ([items, connections, planZoom]) => {
+    watch([placementsWithRackPreview, patch.connections, zoom], ([items, connections, planZoom]) => {
         draftSaveFailed.value = !saveNetworkRoomPlanDraft(props.draftKey, items, connections, planZoom)
     }, { deep: true })
 }
@@ -351,9 +395,22 @@ const { active: patchActive, status: patchStatus, firstEnd: patchFirstEnd, hover
 const { active: bundleActive, status: bundleFeedback, outlet: bundleOutlet, connections: cableBundles, preview: bundlePreview,
     cablePoints: bundleWiringPoints } = bundle
 const placedRacks = computed(() => placements.value.filter(placement => placement.device.id === 'server-rack'))
+const channelsById = computed(() => new Map(placements.value.filter(placement => placement.wallId)
+    .map(placement => [placement.id, placement])))
+const channelLayout = computed(() => channelTopology([...channelsById.value.values()], wallsById.value))
+const floorAssignments = computed(() => floorPatchAssignments(placements.value, patch.connections.value))
+const assignmentsByRack = computed(() => rackCableAssignments(placements.value, floorAssignments.value, channelLayout.value.neighborsByChannel))
+const rackPortsByDevice = computed(() => new Map([...assignmentsByRack.value.values()].flat()
+    .map(({ port, placement }) => [placement.id, port])))
+const network = computed(() => networkStatus(placementsWithRackPreview.value, assignmentsByRack.value))
+const onlineClients = computed(() => network.value.clients)
+const onlineAccessPoints = computed(() => network.value.accessPoints)
 const movingRack = computed(() => placedRacks.value.find(rack => rack.id === drag.value?.placementId))
 const rackBeingConfigured = computed(() => placedRacks.value.find(rack => rack.id === rackConfigurationId.value))
 const linkedRackOutlets = computed(() => placements.value.filter(placement => placement.rackId === rackConfigurationId.value))
+const incomingRackConnections = computed(() => linkedRackOutlets.value.length
+    ? (assignmentsByRack.value.get(rackConfigurationId.value) ?? []).map(({ port, placement }) =>
+        ({ port, deviceLabel: patchDeviceLabel(placement) })) : null)
 const wiringActive = computed(() => patchActive.value || bundleActive.value)
 const selectedPatch = computed(() => patchConnections.value.find(cable => cable.id === selectedPatchId.value))
 const actionPlacement = computed(() => selectedPlacement.value?.device.removable || selectedPlacement.value?.device.id === 'server-rack'
@@ -363,8 +420,6 @@ const selectedMarker = computed(() => {
     return marker?.querySelector('.network-floor__channel-anchor') ?? marker
 })
 const markerActionTarget = computed(() => drag.value?.moved ? undefined : selectedMarker.value)
-const channelsById = computed(() => new Map(placements.value.filter(placement => placement.wallId)
-    .map(placement => [placement.id, placement])))
 const visibleChannelCorners = computed(() => {
     const channels = [...channelsById.value.values()]
     const walls = channels.map(channel => wallsById.value.get(channel.wallId)).filter(Boolean)
@@ -448,10 +503,9 @@ function syncPlanGeometry() {
         return
     }
 
-    furnitureScale.value = surface.offsetWidth / 890
+    furnitureScale.value = surface.offsetWidth / 669
     wallsById.value = new Map(measureNetworkWalls(surface).map(wall => [wall.id, wall]))
     syncMarkerActions()
-    patch.refreshPositions()
 }
 
 function resolvePlacement(device, point, rotation, report = false, placementId = null) {
@@ -615,13 +669,16 @@ function openRackConfiguration() {
 
 function closeRackConfiguration() {
     const marker = markerElements.get(rackConfigurationId.value)
+    rackPreview.value = null
     rackConfigurationId.value = null
     nextTick(() => marker?.focus({ preventScroll: true }))
 }
 
-function saveRackConfiguration(modules) {
+function saveRackConfiguration(modules, patchConnections) {
     const rack = rackBeingConfigured.value
     rack.rackModules = modules
+    if (patchConnections.length) rack.rackPatchConnections = patchConnections
+    else delete rack.rackPatchConnections
     bundleFeedback.value = ''
     if (!rackHasPatchPanel(rack) && linkedRackOutlets.value.length) {
         for (const outlet of linkedRackOutlets.value) delete outlet.rackId
@@ -778,17 +835,35 @@ function deviceShape({ device, rotation }) {
         'is-channel-mounted': device.channelMounted, 'is-turned': rotation % 180 !== 0 }
 }
 
-function markerLabel({ device, rotation, wallId }) {
+function channelBridgePoints({ start, end }) {
+    const { width, height } = layer.value.getBoundingClientRect()
+    return [start, end].map(({ x, y, shift }) => {
+        const centerX = x + shift.x * channelStroke / (2 * width)
+        const centerY = y + shift.y * channelStroke / (2 * height)
+        return `${centerX * 100},${centerY * 100}`
+    }).join(' ')
+}
+
+function markerLabel(placement) {
+    const { id, device, rotation, wallId } = placement
     const roomId = wallsById.value.get(wallId)?.roomId
     const room = roomLabels[roomId]
-    if (room) {
+    if (wallId) {
         const preposition = roomId === 'foyer' || roomId === 'server' ? 'im' : 'in'
-        return `${device.label} ${preposition} ${room}`
+        const label = room ? `${device.label} ${preposition} ${room}` : `${device.label} im Grundriss`
+        return network.value.activeChannels.has(id) ? `${label}, Verbindung aktiv` : label
     }
 
-    return device.id === 'workstation'
-        ? `${device.label} im Grundriss, Drehung ${rotation}°`
-        : `${device.label} im Grundriss`
+    const name = patchDeviceLabel(placement)
+    const label = device.id === 'workstation' ? `${name} im Grundriss, Drehung ${rotation}°` : `${name} im Grundriss`
+    const port = rackPortsByDevice.value.get(id)
+    const wiredLabel = port === undefined ? label : `${label}, Patchpanel, Buchse ${port + 1}`
+    const hasInternet = network.value.internetDevices.has(id)
+    if (onlineClients.value.get(id) === 'wlan') {
+        return `${wiredLabel}, ${hasInternet ? 'per WLAN mit Internet verbunden' : 'per WLAN verbunden'}`
+    }
+    return onlineClients.value.has(id) || onlineAccessPoints.value.has(id)
+        ? `${wiredLabel}, ${hasInternet ? 'mit Internet verbunden' : 'per LAN verbunden'}` : wiredLabel
 }
 
 function adjustZoom(amount) {
@@ -927,9 +1002,13 @@ function attachedOutletsFit(channelId, wall, bounds) {
 }
 
 .network-floor__extent {
+    --outer-wall: 7px;
+    --inner-wall: 2px;
     --inline-clearance: clamp(0px, calc((var(--plan-width) - 100%) * 16), 16px);
     --block-clearance: clamp(0px, calc((var(--plan-width) * 9 / 16 - var(--viewport-height)) * 16), 16px);
     box-sizing: content-box;
+    display: grid;
+    grid-template-columns: calc(75% + (2 * var(--outer-wall) + var(--inner-wall)) * var(--floor-zoom) / 4) minmax(0, 1fr);
     inline-size: var(--plan-width);
     /* Include the bottom edge even when only the horizontal scrollbar is visible. */
     padding-inline: var(--inline-clearance);
@@ -938,16 +1017,14 @@ function attachedOutletsFit(channelId, wall, bounds) {
 
 .network-floor__plan {
     --wall: #40536b;
-    --outer-wall: 7px;
-    --inner-wall: 2px;
     --foyer-fill: #eef3f9;
     --door-size: clamp(19px, 6vw, 30px);
     box-sizing: border-box;
     position: relative;
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
     grid-template-rows: repeat(3, minmax(0, 1fr));
-    aspect-ratio: 16 / 9;
+    aspect-ratio: 4 / 3;
     gap: var(--inner-wall);
     border: var(--outer-wall) solid var(--wall);
     border-block-end: 0;
@@ -955,6 +1032,33 @@ function attachedOutletsFit(channelId, wall, bounds) {
     background: var(--wall);
     zoom: var(--floor-zoom);
 }
+
+.network-floor__connection-status {
+    --connection-icon-size: min(6rem, calc(var(--plan-width) * .107));
+    place-self: end center;
+    display: grid;
+    justify-items: center;
+    gap: 12px;
+    margin-block-end: calc(var(--plan-width) * .07);
+    color: #626971;
+    font-size: clamp(.7rem, 1.8cqi, .875rem);
+    font-weight: 500;
+    text-align: center;
+}
+
+.network-floor__connection {
+    display: grid;
+    justify-items: center;
+    gap: 4px;
+}
+
+.network-floor__connection-icon {
+    font-size: var(--connection-icon-size);
+    opacity: .5;
+}
+
+.network-floor__connection.is-online { color: #146b3a; font-weight: 650; }
+.network-floor__connection.is-online .network-floor__connection-icon { opacity: 1; }
 
 .network-floor__room {
     position: relative;
@@ -1064,6 +1168,13 @@ function attachedOutletsFit(channelId, wall, bounds) {
 .network-floor__patch-outline,
 .network-floor__patch-hit {
     vector-effect: non-scaling-stroke;
+}
+
+.network-floor__channel-bridge {
+    vector-effect: non-scaling-stroke;
+    fill: none;
+    stroke: var(--channel-border);
+    stroke-width: 5px;
 }
 
 .network-floor__bundle-line {
@@ -1316,7 +1427,7 @@ function attachedOutletsFit(channelId, wall, bounds) {
 }
 
 .network-floor__marker.is-workstation.is-selected .network-floor__workstation-graphic,
-.network-floor__marker.is-standing-table.is-selected > * {
+.network-floor__marker.is-standing-table.is-selected > .network-floor__device-drawing {
     outline: 2px solid #315b8d;
     outline-offset: -2px;
     border-radius: 3px;
@@ -1324,6 +1435,41 @@ function attachedOutletsFit(channelId, wall, bounds) {
 
 .network-floor__marker.is-standing-table > * {
     transform: scale(var(--furniture-scale));
+}
+
+.network-floor__marker > .network-floor__client-connections {
+    position: absolute;
+    inset-block-start: 0;
+    inset-inline-end: 0;
+    display: flex;
+    gap: 3px;
+    transform: scale(calc(1 / var(--marker-zoom)));
+    transform-origin: top right;
+}
+
+.network-floor__connection-badge {
+    --connection-blink-background: #bde8cc;
+    display: grid;
+    place-items: center;
+    inline-size: 18px;
+    block-size: 18px;
+    border-radius: 50%;
+    background: #e7f5ea;
+    color: #146b3a;
+}
+
+.network-floor__access-point-online {
+    color: #146b3a;
+}
+
+.network-floor__access-point-online,
+.network-floor__connection.is-online .network-floor__connection-icon,
+.network-floor__connection-badge {
+    animation: network-floor-connection-blink 2.4s ease-in-out infinite;
+}
+
+@keyframes network-floor-connection-blink {
+    50% { background-color: var(--connection-blink-background, transparent); color: #3f7753; }
 }
 
 .network-floor__marker > .network-floor__workstation {
@@ -1380,8 +1526,8 @@ function attachedOutletsFit(channelId, wall, bounds) {
 
 .network-floor__object-label,
 .network-floor__workstation-label {
-    font-size: 11px;
-    font-weight: 650;
+    font-size: 10px;
+    font-weight: normal;
     text-align: center;
     text-shadow: 0 0 2px #fff;
     white-space: nowrap;
@@ -1389,12 +1535,9 @@ function attachedOutletsFit(channelId, wall, bounds) {
 
 .network-floor__workstation-label,
 .is-standing-table .network-floor__object-label {
-    font-size: 14px;
+    font-size: 12px;
     line-height: 16px;
 }
-
-.network-floor__workstation-label { inline-size: 80px; }
-.is-standing-table .network-floor__object-label { inline-size: 58px; }
 
 .network-floor__drag-preview.is-workstation,
 .network-floor__drag-preview.is-standing-table,
@@ -1490,13 +1633,13 @@ function attachedOutletsFit(channelId, wall, bounds) {
     content: '';
     border: 2px solid var(--channel-border);
     border-radius: 2px;
-    background: var(--channel-fill);
+    background-color: var(--channel-fill);
     box-shadow: inset 0 0 0 1px var(--channel-highlight);
 }
 
 .network-floor__marker.is-cable-duct:is(.is-selected, :focus-visible) .network-floor__channel-segment::before {
     border-color: #333a41;
-    background: #b4bcc3;
+    background-color: #b4bcc3;
 }
 
 .horizontal > .network-floor__channel-segment::before {
@@ -1515,6 +1658,40 @@ function attachedOutletsFit(channelId, wall, bounds) {
 [data-wall-side="south"] > .network-floor__channel-segment::before { inset-block: auto 0; transform: none; }
 [data-wall-side="west"] > .network-floor__channel-segment::before { inset-inline-start: 0; transform: none; }
 [data-wall-side="east"] > .network-floor__channel-segment::before { inset-inline: auto 0; transform: none; }
+
+.network-floor__channel-segment.is-active::before {
+    --channel-traffic-step: calc(14px / var(--floor-zoom));
+    --channel-traffic-dash: calc(5px / var(--floor-zoom));
+    --channel-traffic-width: calc(2px / var(--floor-zoom));
+    background-image: linear-gradient(var(--channel-traffic-angle), #146b3a var(--channel-traffic-dash),
+        transparent var(--channel-traffic-dash));
+    background-position: var(--channel-traffic-start);
+    animation: network-floor-channel-traffic 1250ms linear infinite;
+}
+
+.network-floor__channel-segment.is-flow-reversed::before {
+    animation-direction: reverse;
+}
+
+.horizontal > .network-floor__channel-segment.is-active::before {
+    --channel-traffic-angle: to right;
+    --channel-traffic-start: 0 center;
+    --channel-traffic-end: var(--channel-traffic-step) center;
+    background-size: var(--channel-traffic-step) var(--channel-traffic-width);
+    background-repeat: repeat-x;
+}
+
+.vertical > .network-floor__channel-segment.is-active::before {
+    --channel-traffic-angle: to bottom;
+    --channel-traffic-start: center 0;
+    --channel-traffic-end: center var(--channel-traffic-step);
+    background-size: var(--channel-traffic-width) var(--channel-traffic-step);
+    background-repeat: repeat-y;
+}
+
+@keyframes network-floor-channel-traffic {
+    to { background-position: var(--channel-traffic-end); }
+}
 
 .network-floor__channel-anchor {
     inline-size: 1px;
