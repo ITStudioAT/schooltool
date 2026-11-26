@@ -4,7 +4,7 @@ export const rackModuleLabels = {
     [patchPanelModule]: 'Patchpanel',
     switch: 'Switch',
     router: 'Router',
-    server: 'Server',
+    server: 'Datenserver',
 }
 
 export const rackModulePorts = { [patchPanelModule]: 8, switch: 8, router: 3, server: 2 }

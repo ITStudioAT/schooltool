@@ -66,9 +66,9 @@ export function rackCableAssignments(placements, assignments, neighborsByChannel
 }
 
 export function networkStatus(placements, assignmentsByRack) {
-    const racks = placements.filter(placement => placement.device.id === 'server-rack')
-        .map(rack => ({ id: rack.id, ...rackNetworkStatus(rack) }))
-    const wiredAssignments = racks.flatMap(({ id, localPorts, internetPorts }) =>
+    const racks = new Map(placements.filter(placement => placement.device.id === 'server-rack')
+        .map(rack => [rack.id, rackNetworkStatus(rack)]))
+    const wiredAssignments = [...racks].flatMap(([id, { localPorts, internetPorts }]) =>
         (assignmentsByRack.get(id) ?? []).filter(({ port }) => localPorts.has(port))
             .map(assignment => ({ ...assignment, hasInternet: internetPorts.has(assignment.port) })))
     const activeChannels = new Map()
@@ -94,7 +94,8 @@ export function networkStatus(placements, assignmentsByRack) {
         }
     }
 
-    return { internet: racks.some(rack => rack.hasUplink), lan, clients, accessPoints, internetDevices, activeChannels }
+    return { internet: [...racks.values()].some(rack => rack.hasUplink), lan, clients, accessPoints, internetDevices, activeChannels,
+        racks }
 }
 
 function rackNetworkStatus({ rackModules = [], rackPatchConnections = [] }) {
@@ -113,5 +114,9 @@ function rackNetworkStatus({ rackModules = [], rackPatchConnections = [] }) {
     const switchLinks = peers.filter(([source, target]) => source.slot === panelSlot && rackModules[target.slot] === 'switch')
     const localPorts = new Set(switchLinks.map(([source]) => source.port))
     const internetPorts = new Set(switchLinks.filter(([, target]) => uplinkSwitches.has(target.slot)).map(([source]) => source.port))
-    return { hasUplink: uplinkSwitches.size > 0, localPorts, internetPorts }
+    const serverSwitches = new Set(peers.filter(([source, target]) =>
+        rackModules[source.slot] === 'server' && rackModules[target.slot] === 'switch').map(([, target]) => target.slot))
+    const serverPortGroups = [...serverSwitches].map(slot =>
+        new Set(switchLinks.filter(([, target]) => target.slot === slot).map(([source]) => source.port)))
+    return { hasUplink: uplinkSwitches.size > 0, localPorts, internetPorts, serverPortGroups }
 }

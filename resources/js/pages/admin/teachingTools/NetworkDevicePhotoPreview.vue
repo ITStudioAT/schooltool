@@ -1,22 +1,17 @@
 <template>
     <div v-if="photo" ref="paletteItem" class="network-device-photo__item"
-        @pointerenter="openHover" @pointerleave="scheduleClose">
-        <span @pointerdown.capture="close(false)"><slot /></span>
-        <v-btn ref="photoButton" type="button" icon="mdi-image-outline" variant="tonal" color="primary" size="44"
-            :aria-label="`Foto anzeigen: ${device.label}`" :aria-expanded="visible" aria-haspopup="dialog"
-            :aria-controls="visible ? dialogId : undefined" @pointerdown="startActionTap"
-            @pointerup="finishActionTap($event, openDialog)" @pointercancel="cancelActionTap"
-            @click.stop="clickAction($event, openDialog)" @keyup.esc.stop />
-        <v-overlay v-model="visible" :activator="paletteItem" :open-on-click="false" :scrim="false" :offset="6"
+        @pointerenter="openHover" @pointerleave="scheduleClose" @keydown.esc="close">
+        <span @pointerdown.capture="close"><slot /></span>
+        <v-overlay v-model="visible" :disabled="disabled" :activator="paletteItem" :open-on-click="false" :scrim="false" :offset="6"
             location-strategy="connected" location="top center" scroll-strategy="reposition" :transition="false">
-            <div :id="dialogId" class="network-device-photo__dialog" role="dialog" :aria-label="`Foto: ${device.label}`"
-                @pointerenter="cancelClose" @pointerleave="scheduleClose" @keydown.esc.stop.prevent="close(true)">
+            <div class="network-device-photo__dialog" role="dialog" :aria-label="`Foto: ${device.label}`"
+                @pointerenter="cancelClose" @pointerleave="scheduleClose" @keydown.esc.stop.prevent="close">
                 <div class="network-device-photo__heading">
                     <strong>{{ device.label }}</strong>
-                    <v-btn ref="closeButton" type="button" icon="mdi-close" variant="text" size="44"
+                    <v-btn type="button" icon="mdi-close" variant="text" size="44"
                         aria-label="Foto schließen" @pointerdown="startActionTap"
-                        @pointerup="finishActionTap($event, () => close(true))" @pointercancel="cancelActionTap"
-                        @click.stop="clickAction($event, () => close(true))" />
+                        @pointerup="finishActionTap($event, close)" @pointercancel="cancelActionTap"
+                        @click.stop="clickAction($event, close)" />
                 </div>
                 <img :src="photo.image" :alt="photo.alt" />
                 <p class="text-caption mt-2">
@@ -38,7 +33,7 @@
 </template>
 
 <script setup>
-import { nextTick, onUnmounted, ref, watch } from 'vue'
+import { onUnmounted, ref, watch } from 'vue'
 import accessPoint from '../../../../images/teaching-tools/network-devices/access-point.webp'
 import cableDuct from '../../../../images/teaching-tools/network-devices/cable-duct.webp'
 import doubleOutlet from '../../../../images/teaching-tools/network-devices/double-outlet.webp'
@@ -49,7 +44,7 @@ import serverRack from '../../../../images/teaching-tools/network-devices/server
 import singleOutlet from '../../../../images/teaching-tools/network-devices/single-outlet.webp'
 import { useNetworkTapAction } from './useNetworkTapAction'
 
-const props = defineProps({ device: { type: Object, required: true } })
+const props = defineProps({ device: { type: Object, required: true }, disabled: Boolean })
 const photos = {
     'network-outlet': {
         image: singleOutlet,
@@ -130,50 +125,27 @@ const photos = {
     },
 }
 const photo = photos[props.device.id]
-const dialogId = `network-device-photo-${props.device.id}`
 const paletteItem = ref(null)
-const photoButton = ref(null)
-const closeButton = ref(null)
 const visible = ref(false)
 const { startActionTap, finishActionTap, cancelActionTap, clickAction } = useNetworkTapAction()
-let pinned = false
 let closeTimer
 
-watch(visible, (open) => {
-    if (!open) pinned = false
-})
-watch(closeButton, () => {
-    if (pinned) focusCloseButton()
-}, { flush: 'post' })
 onUnmounted(cancelClose)
+watch(() => props.disabled, disabled => {
+    if (disabled) close()
+})
 
 function openHover(event) {
-    if (event.pointerType === 'mouse' && event.buttons === 0) {
+    if (!props.disabled && event.pointerType === 'mouse' && event.buttons === 0) {
         cancelClose()
         visible.value = true
     }
 }
 
-async function openDialog() {
-    if (pinned) {
-        close(true)
-        return
-    }
-    cancelClose()
-    pinned = true
-    visible.value = true
-    await nextTick()
-    focusCloseButton()
-}
-
-function focusCloseButton() {
-    closeButton.value?.$el.focus({ preventScroll: true })
-}
-
 function scheduleClose(event) {
-    if (event.pointerType === 'mouse' && !pinned) {
+    if (event.pointerType === 'mouse') {
         cancelClose()
-        closeTimer = setTimeout(() => close(false), 180)
+        closeTimer = setTimeout(close, 180)
     }
 }
 
@@ -181,11 +153,9 @@ function cancelClose() {
     clearTimeout(closeTimer)
 }
 
-function close(restoreFocus) {
+function close() {
     cancelClose()
     visible.value = false
-    pinned = false
-    if (restoreFocus) photoButton.value?.$el.focus({ preventScroll: true })
 }
 </script>
 

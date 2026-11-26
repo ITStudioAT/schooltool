@@ -1,4 +1,4 @@
-import { computed, ref } from 'vue'
+import { computed, ref, shallowRef, watch } from 'vue'
 import { isNumberedDevice, nextDeviceNumber } from './networkRackConnectivity'
 
 const dragThreshold = 6
@@ -8,6 +8,7 @@ export function useNetworkDevicePlacement(resolvePlacement, initialPlacements) {
     const placements = ref(initialPlacements)
     const selection = ref(null)
     const drag = ref(null)
+    const placementPointer = shallowRef(null)
     let nextPlacementId = 1 + Math.max(0, ...initialPlacements.map(placement => placement.id))
     let handledButton = null
     let planTap = null
@@ -17,6 +18,31 @@ export function useNetworkDevicePlacement(resolvePlacement, initialPlacements) {
         ? selectedPlacement.value
         : undefined)
     const canPlaceBySelection = computed(() => selection.value?.placementId === null)
+    const placementPreview = computed(() => {
+        const active = drag.value
+        if (active?.moved) {
+            return active.position && { ...active.position, device: active.device, rotation: active.rotation }
+        }
+        if (!canPlaceBySelection.value || !placementPointer.value) return null
+
+        const { device } = selection.value
+        const point = pointInPlan(placementPointer.value, device)
+        const position = point && resolvePlacement(device, point, 0)
+        return position && { ...position, device, rotation: 0 }
+    })
+    watch(selection, clearPlacementPreview)
+
+    function previewPlacement(event) {
+        if (canPlaceBySelection.value && !drag.value && event.pointerType !== 'touch' && event.target === layer.value) {
+            placementPointer.value = { clientX: event.clientX, clientY: event.clientY }
+        } else {
+            clearPlacementPreview()
+        }
+    }
+
+    function clearPlacementPreview() {
+        placementPointer.value = null
+    }
 
     function remaining(device) {
         return device.limit === undefined
@@ -231,7 +257,7 @@ export function useNetworkDevicePlacement(resolvePlacement, initialPlacements) {
         }
     }
 
-    return { layer, placements, selection, selectedPlacement, selectedWorkstation, canPlaceBySelection, drag, remaining, startDrag,
-        moveDrag, finishDrag, cancelDrag, selectDevice, clickPlan, startPlanTap, finishPlanTap, placeAtCenter,
-        rotateWorkstation, removeSelectedPlacement }
+    return { layer, placements, selection, selectedPlacement, selectedWorkstation, canPlaceBySelection, drag, placementPreview,
+        previewPlacement, clearPlacementPreview, remaining, startDrag, moveDrag, finishDrag, cancelDrag, selectDevice, clickPlan,
+        startPlanTap, finishPlanTap, placeAtCenter, rotateWorkstation, removeSelectedPlacement }
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-    channelCorners, firstWallIntersection, measureNetworkWalls, outletMountPoint, snapToChannel, snapToNetworkWall,
+    channelCorners, firstWallIntersection, measureNetworkFloor, outletMountPoint, snapToChannel, snapToNetworkWall,
 } from '@/pages/admin/teachingTools/networkFloorWalls'
 
 const bounds = { width: 800, height: 450 }
@@ -27,7 +27,7 @@ function measureFloor() {
         door.className = 'network-floor__door'
         door.getBoundingClientRect = () => new DOMRect(...doorBounds)
     }
-    return measureNetworkWalls(surface)
+    return measureNetworkFloor(surface).walls
 }
 
 describe('Room plan channel placement', () => {

@@ -47,9 +47,12 @@ async function renderTools(path, deliveryMode = 'mailpit', userId?: number) {
         global: { plugins: [router, createTestingPinia({ createSpy: vi.fn, initialState: {
             AdminAdminStore: { config: { teaching_email_delivery: { mode: deliveryMode }, user: { id: userId, school_id: 21 } } },
         } })], stubs: { AdminPageHeader: true, 'v-btn': navigationButton, 'v-card': navigationCard,
-            'v-overlay': true,
+            'v-overlay': { props: ['modelValue'], template: '<div v-if="modelValue"><slot /></div>' },
             'v-sheet': { template: '<div><slot /></div>' }, 'v-container': { template: '<div><slot /></div>' },
-            'v-dialog': { props: ['modelValue'], template: '<div v-if="modelValue" role="dialog"><slot /></div>' } } },
+            'v-dialog': { props: ['modelValue'], emits: ['update:modelValue'], template: `
+                <slot name="activator" :props="{ onClick: () => $emit('update:modelValue', true) }" />
+                <div v-if="modelValue" v-bind="$attrs" role="dialog"><slot /></div>
+            ` } } },
     })
     wrappers.push(wrapper)
     await flushPromises()
@@ -96,6 +99,228 @@ describe('Teaching tools navigation', () => {
         expect(otherUser.get('[aria-label="Zoomstufe"]').text()).toBe('100 %')
     })
 
+    it('previews devices before placing them and snaps cable ducts and outlets into position', async () => {
+        const path = '/admin/teaching-tools/tests/networks/build-network/room-plan/1'
+        const { wrapper } = await renderTools(path)
+        await measureRoomPlan(wrapper)
+        const layer = wrapper.get('[aria-label="Geräte im Grundriss"]')
+        const palette = wrapper.get('[aria-label="Geräteauswahl"]')
+        const deviceButton = label => palette.findAll('button').find(button => button.text() === label)!
+        const preview = '.network-floor__placement-preview'
+        const move = (clientX, clientY) => layer.trigger('pointermove', { pointerType: 'mouse', clientX, clientY })
+        const hitTest = vi.spyOn(document, 'elementFromPoint').mockReturnValue(layer.element)
+        try {
+            await deviceButton('Kabelkanal').trigger('click')
+            await move(140, 94)
+            expect(layer.find(preview).exists()).toBe(false)
+            await move(140, 13)
+            expect(layer.get(preview).attributes('data-wall')).toBe('north-office-1')
+            expect(layer.find('[data-placement-id]').exists()).toBe(false)
+            await layer.trigger('click', { clientX: 140, clientY: 13 })
+            expect(layer.find(preview).exists()).toBe(false)
+            const channel = layer.get('[data-placement-id][data-wall="north-office-1"]')
+
+            await deviceButton('Einfache Netzwerkdose').trigger('click')
+            await move(140, 13)
+            expect(layer.get(preview).attributes('data-channel-id')).toBe(channel.attributes('data-placement-id'))
+            await layer.trigger('pointerleave')
+            expect(layer.find(preview).exists()).toBe(false)
+
+            await deviceButton('Switch').trigger('click')
+            await move(600, 180)
+            expect(layer.get(preview).text()).toBe('Switch')
+            expect(layer.findAll('[data-placement-id]')).toHaveLength(1)
+            await layer.trigger('click', { clientX: 600, clientY: 180 })
+            expect(layer.find(preview).exists()).toBe(false)
+            expect(layer.findAll('[data-placement-id]')).toHaveLength(2)
+
+            const routerButton = deviceButton('Router')
+            routerButton.element.setPointerCapture = vi.fn()
+            const pointer = { pointerId: 1, isPrimary: true, pointerType: 'mouse', button: 0 }
+            await routerButton.trigger('pointerdown', { ...pointer, clientX: 50, clientY: 510 })
+            await routerButton.trigger('pointermove', { ...pointer, clientX: 600, clientY: 240 })
+            expect(layer.get(preview).text()).toBe('Router')
+            await routerButton.trigger('pointerup', { ...pointer, clientX: 600, clientY: 240 })
+            expect(layer.find(preview).exists()).toBe(false)
+            expect(layer.findAll('[data-placement-id]')).toHaveLength(3)
+        } finally {
+            hitTest.mockRestore()
+        }
+    })
+
+    it('closes photo previews and hides device hover hints while a device is selected', async () => {
+        const path = '/admin/teaching-tools/tests/networks/build-network/room-plan/1'
+        window.localStorage.setItem('schooltool:network-room-plan:v1:1:21:1', JSON.stringify({
+            placements: [{ id: 1, deviceId: 'router', x: .25, y: .8 }],
+            connections: [],
+        }))
+        const { wrapper } = await renderTools(path, 'mailpit', 1)
+        const palette = wrapper.get('[aria-label="Geräteauswahl"]')
+        const deviceButton = label => palette.findAll('button').find(button => button.text() === label)!
+        const routerItem = new DOMWrapper(deviceButton('Router').element.closest('.network-device-photo__item')!)
+        const routerPhoto = '[aria-label="Foto: Router"]'
+        const router = wrapper.get('[data-placement-id="1"]')
+        const hover = () => routerItem.trigger('pointerenter', { pointerType: 'mouse', buttons: 0 })
+        await hover()
+        expect(routerItem.find(routerPhoto).exists()).toBe(true)
+        expect(router.attributes('title')).toBe('Router')
+
+        await deviceButton('Switch').trigger('click')
+        expect(routerItem.find(routerPhoto).exists()).toBe(false)
+        expect(router.attributes('title')).toBeUndefined()
+        await hover()
+        expect(routerItem.find(routerPhoto).exists()).toBe(false)
+
+        await deviceButton('Switch').trigger('click')
+        await hover()
+        expect(routerItem.find(routerPhoto).exists()).toBe(true)
+        expect(router.attributes('title')).toBe('Router')
+    })
+
+    it('clears the saved room plan only after confirming the reset', async () => {
+        const path = '/admin/teaching-tools/tests/networks/build-network/room-plan/1'
+        const draftKey = 'schooltool:network-room-plan:v1:1:21:1'
+        const savedDraft = JSON.stringify({
+            floorLayoutVersion: 2,
+            zoom: 120,
+            placements: [
+                { id: 1, deviceId: 'workstation', x: .2, y: .2 },
+                { id: 2, deviceId: 'cable-duct', wallId: 'south-server', x: .2, y: 1 },
+                { id: 3, deviceId: 'network-outlet', channelId: 2, channelPosition: .5 },
+                { id: 4, deviceId: 'server-rack', x: .25, y: .8, rackModules: ['patch-panel', 'switch'] },
+            ],
+            connections: [{ id: 1, start: { placementId: 1, index: 0 }, end: { placementId: 3, index: 0 } }],
+        })
+        window.localStorage.setItem(draftKey, savedDraft)
+        const { wrapper } = await renderTools(path, 'mailpit', 1)
+        const resetButton = wrapper.get('header').findAll('button').find(button => button.text() === 'Raumplan zurücksetzen')!
+        const dialogSelector = '[role="dialog"][aria-labelledby="ground-floor-reset-title"]'
+        const planDevices = '[aria-label="Geräte im Grundriss"] [data-placement-id]'
+
+        await resetButton.trigger('click')
+        expect(window.localStorage.getItem(draftKey)).toBe(savedDraft)
+        await wrapper.get(dialogSelector).findAll('button').find(button => button.text() === 'Abbrechen')!.trigger('click')
+        expect(wrapper.find(dialogSelector).exists()).toBe(false)
+        expect(wrapper.findAll(planDevices)).toHaveLength(4)
+        expect(wrapper.get('[aria-label="Zoomstufe"]').text()).toBe('120 %')
+
+        await resetButton.trigger('click')
+        await wrapper.get(dialogSelector).findAll('button').find(button => button.text() === 'Raumplan zurücksetzen')!.trigger('click')
+        expect(wrapper.find(dialogSelector).exists()).toBe(false)
+        expect(wrapper.findAll(planDevices)).toHaveLength(0)
+        expect(wrapper.get('[aria-label="Zoomstufe"]').text()).toBe('100 %')
+        expect(JSON.parse(window.localStorage.getItem(draftKey)!)).toMatchObject({ placements: [], connections: [], zoom: 100 })
+
+        const { wrapper: restored } = await renderTools(path, 'mailpit', 1)
+        expect(restored.findAll(planDevices)).toHaveLength(0)
+        expect(restored.get('[aria-label="Zoomstufe"]').text()).toBe('100 %')
+    })
+
+    it('marks completed work cards and removes the checks when the plan no longer meets a step', async () => {
+        const path = '/admin/teaching-tools/tests/networks/build-network/room-plan/1'
+        const patchPort = (slot, port) => ({ slot, port })
+        const clientIds = [1, 2, 3, 4, 5, 14]
+        const outlets = [[30, 0], [30, 1], [31, 0], [32, 0], [32, 1], [33, 0]]
+        window.localStorage.setItem('schooltool:network-room-plan:v1:1:21:1', JSON.stringify({
+            floorLayoutVersion: 2,
+            placements: [
+                ...[[.1, .18], [.24, .18], [.38, .18], [.1, .52], [.26, .52]].map(([x, y], index) =>
+                    ({ id: index + 1, deviceId: 'workstation', x, y })),
+                ...[[.65, .2], [.82, .2], [.65, .5], [.82, .5]].map(([x, y], index) =>
+                    ({ id: index + 10, deviceId: 'standing-table', x, y })),
+                { id: 14, deviceId: 'access-point', x: .7, y: .82 },
+                ...['west-office-1', 'west-office-2', 'west-server', 'south-server', 'partition-server-bottom',
+                    'partition-server-bottom-foyer'].map((wallId, index) =>
+                    ({ id: index + 20, deviceId: 'cable-duct', wallId, x: .5, y: .5 })),
+                { id: 30, deviceId: 'double-network-outlet', channelId: 20, channelPosition: .25 },
+                { id: 31, deviceId: 'network-outlet', channelId: 20, channelPosition: .75 },
+                { id: 32, deviceId: 'double-network-outlet', channelId: 21, channelPosition: .5 },
+                { id: 33, deviceId: 'network-outlet', channelId: 25, channelPosition: .5 },
+                { id: 40, deviceId: 'server-rack', x: .25, y: .8, rackModules: ['patch-panel', 'switch', 'router', 'server'],
+                    rackPatchConnections: [
+                        ...clientIds.map((_, port) => ({ start: patchPort(0, port), end: patchPort(1, port) })),
+                        { start: patchPort(1, 6), end: patchPort(2, 0) },
+                    ] },
+                { id: 41, deviceId: 'bundle-outlet', channelId: 23, channelPosition: .5, rackId: 40 },
+            ],
+            connections: clientIds.map((placementId, port) => ({
+                id: port + 1, rackPort: port, start: { placementId, index: 0 },
+                end: { placementId: outlets[port][0], index: outlets[port][1] },
+            })),
+        }))
+        const { wrapper } = await renderTools(path, 'mailpit', 1)
+        await measureRoomPlan(wrapper)
+        const card = wrapper.get('#ground-floor-task-card')
+        const steps = wrapper.get('[aria-label="Arbeitsschritte"]').findAll('button')
+        const completionText = 'Arbeitsschritt erfüllt'
+        expect(steps[1].attributes('color')).toBe('success')
+        expect(steps[1].attributes('aria-pressed')).toBe('false')
+        expect(steps[1].attributes('aria-label')).toContain('erfüllt')
+        expect(steps[7].attributes('color')).toBe('primary')
+        for (const step of [1, 2, 3, 4, 5, 6, 7, 9]) {
+            await steps[step - 1].trigger('click')
+            expect(card.text(), `Schritt ${step}`).toContain(completionText)
+        }
+        await steps[7].trigger('click')
+        expect(card.text()).not.toContain(completionText)
+
+        const actions = new DOMWrapper(document.body)
+        await wrapper.get('[data-placement-id="40"]').trigger('click')
+        await actions.get('#network-floor-marker-actions button').trigger('click')
+        const dialog = wrapper.get('[role="dialog"]')
+        await dialog.findAll('button').find(button => button.text() === 'Patchkabel ein-/ausstecken')!.trigger('click')
+        await dialog.get('[aria-label="Platz 2, Switch, Buchse 8"]').trigger('click')
+        await dialog.get('[aria-label="Platz 4, Datenserver, Buchse 1"]').trigger('click')
+        expect(card.text()).not.toContain(completionText)
+        await dialog.findAll('button').find(button => button.text() === 'Speichern')!.trigger('click')
+        expect(card.text()).toContain(completionText)
+        expect(steps[7].attributes('color')).toBe('success')
+
+        await wrapper.get('[data-placement-id="33"]').trigger('click')
+        await actions.get('#network-floor-marker-actions [aria-label="Einfache Netzwerkdose entfernen"]').trigger('click')
+        expect(steps[2].attributes('color')).toBe('success')
+        expect(steps[3].attributes('color')).toBe('primary')
+
+        await wrapper.get('[data-placement-id="1"]').trigger('click')
+        await actions.get('#network-floor-marker-actions [aria-label="Arbeitsplatz entfernen"]').trigger('click')
+        expect(card.text()).not.toContain(completionText)
+        expect(steps[7].attributes('color')).toBe('primary')
+        await steps[0].trigger('click')
+        expect(card.text()).not.toContain(completionText)
+        await steps[8].trigger('click')
+        expect(card.text()).not.toContain(completionText)
+    })
+
+    it('offers rack patching only while two components with ports are installed', async () => {
+        const path = '/admin/teaching-tools/tests/networks/build-network/room-plan/1'
+        window.localStorage.setItem('schooltool:network-room-plan:v1:1:21:1', JSON.stringify({
+            placements: [{ id: 1, deviceId: 'server-rack', x: .25, y: .8 }],
+            connections: [],
+        }))
+        const { wrapper } = await renderTools(path, 'mailpit', 1)
+        await wrapper.get('[data-placement-id="1"]').trigger('click')
+        await new DOMWrapper(document.body).get('#network-floor-marker-actions button').trigger('click')
+        const dialog = wrapper.get('[role="dialog"]')
+        const button = label => dialog.findAll('button').find(candidate => candidate.text() === label)
+        const patchButton = () => button('Patchkabel ein-/ausstecken')
+
+        expect(patchButton()).toBeUndefined()
+        await button('Switch')!.trigger('click')
+        await dialog.get('[aria-label="Platz 3, frei"]').trigger('click')
+        expect(patchButton()).toBeUndefined()
+        await button('Router')!.trigger('click')
+        await dialog.get('[aria-label="Platz 5, frei"]').trigger('click')
+        await patchButton()!.trigger('click')
+        expect(dialog.get('[aria-label="Buchsen auf Platz 3"]').exists()).toBe(true)
+
+        await dialog.get('[aria-label="Router aus Platz 5 entfernen"]').trigger('click')
+        expect(patchButton()).toBeUndefined()
+        expect(dialog.find('[aria-label="Buchsen auf Platz 3"]').exists()).toBe(false)
+        await button('Datenserver')!.trigger('click')
+        await dialog.get('[aria-label="Platz 5, frei"]').trigger('click')
+        expect(patchButton()!.attributes('aria-pressed')).toBe('false')
+    })
+
     it('updates the internet cloud immediately when the switch-to-router cable is added or removed', async () => {
         const path = '/admin/teaching-tools/tests/networks/build-network/room-plan/1'
         window.localStorage.setItem('schooltool:network-room-plan:v1:1:21:1', JSON.stringify({
@@ -106,7 +331,7 @@ describe('Teaching tools navigation', () => {
             connections: [],
         }))
         const { wrapper } = await renderTools(path, 'mailpit', 1)
-        const internet = wrapper.get('[aria-label="Scrollbarer Grundriss"] [role="status"]')
+        const internet = wrapper.get('[role="status"][aria-label="Netzwerkstatus"]')
         async function openRack() {
             await wrapper.get('[data-placement-id="1"]').trigger('click')
             await new DOMWrapper(document.body).get('#network-floor-marker-actions button').trigger('click')
@@ -124,7 +349,7 @@ describe('Teaching tools navigation', () => {
         await dialog.get('[aria-label="Platz 2, Router, Buchse 1"]').trigger('click')
         expect(internet.text()).toMatch(/Internet\s*aktiv/)
         const { wrapper: restored } = await renderTools(path, 'mailpit', 1)
-        expect(restored.get('[aria-label="Scrollbarer Grundriss"] [role="status"]').text()).toMatch(/Internet\s*aktiv/)
+        expect(restored.get('[role="status"][aria-label="Netzwerkstatus"]').text()).toMatch(/Internet\s*aktiv/)
         await clickButton(dialog, 'Speichern')
 
         const uplink = '[aria-label="Patchkabel zwischen Platz 1, Switch, Buchse 1 und Platz 2, Router, Buchse 1 entfernen"]'
@@ -134,7 +359,7 @@ describe('Teaching tools navigation', () => {
         await clickButton(edited, 'Abbrechen')
         expect(internet.text()).toMatch(/Internet\s*aktiv/)
         const { wrapper: restoredAfterCancel } = await renderTools(path, 'mailpit', 1)
-        expect(restoredAfterCancel.get('[aria-label="Scrollbarer Grundriss"] [role="status"]').text()).toMatch(/Internet\s*aktiv/)
+        expect(restoredAfterCancel.get('[role="status"][aria-label="Netzwerkstatus"]').text()).toMatch(/Internet\s*aktiv/)
 
         const reopened = await openRack()
         await reopened.get(uplink).trigger('click')
@@ -237,7 +462,7 @@ describe('Teaching tools navigation', () => {
         expect(mark(4).attributes('aria-label')).toContain('per LAN verbunden')
         expect(mark(5).attributes('aria-label')).toContain('mit Internet verbunden')
         expect(mark(7).attributes('aria-label')).toContain('mit Internet verbunden')
-        expect(mark(11).attributes('title')).toContain('per WLAN mit Internet verbunden')
+        expect(mark(11).attributes('aria-label')).toContain('per WLAN mit Internet verbunden')
         expect(connectionStatus()).toMatch(/^LAN\s*aktivWLAN\s*aktivInternet\s*aktiv$/)
 
         const connectedDialog = await openRack()
@@ -255,7 +480,7 @@ describe('Teaching tools navigation', () => {
         expect(activeChannels()).toEqual(connectedChannels)
         expect(badgeCounts()).toEqual([1, 1, 1, 1, 1])
         expect(mark(5).attributes('aria-label')).toContain('per LAN verbunden')
-        expect(mark(11).attributes('title')).toContain('per WLAN verbunden')
+        expect(mark(11).attributes('aria-label')).toContain('per WLAN verbunden')
         await clickButton(connectedDialog, 'Abbrechen')
         await mark(4).trigger('click')
         await actions.get('[aria-label="Arbeitsplatz entfernen"]').trigger('click')
@@ -428,7 +653,7 @@ describe('Teaching tools navigation', () => {
         await dialog.get('[aria-label="Platz 2, Switch, Buchse 2, verbunden mit Platz 1, Patchpanel, Buchse 1"]').trigger('click')
         expect(dialog.get('[role="status"]').text()).toContain('bereits')
         await dialog.get('button[aria-label="Platz 1, Patchpanel"]').trigger('click')
-        await dialog.get('button[aria-label="Platz 3, Server"]').trigger('click')
+        await dialog.get('button[aria-label="Platz 3, Datenserver"]').trigger('click')
         await clickButton(dialog, 'Speichern')
 
         const { wrapper: restored } = await renderTools(path, 'mailpit', 1)
@@ -521,33 +746,42 @@ describe('Teaching tools navigation', () => {
         await wrapper.get(`li a[href="${firstPlanPath}"]`).trigger('click')
         await flushPromises()
         expect(router.currentRoute.value.path).toBe(firstPlanPath)
-        expect(wrapper.get('h1').text()).toBe('Raumplan 1')
-        expect(wrapper.get('h2').text()).toBe('Erdgeschoss')
-        expect(wrapper.get('[aria-labelledby="ground-floor-task-title"]').findAll('li').map(task => task.text())).toEqual([
-            'Platziere insgesamt fünf Arbeitsplätze in Büro 1 und Büro 2. In einem Büro sollen drei Arbeitsplätze stehen, im anderen zwei. Du entscheidest, welches Büro drei Arbeitsplätze bekommt.',
-            'Platziere im Foyer vier Stehtische für Besucher:innen, die mit ihren Laptops kommen.',
-        ])
+        const planHeader = wrapper.get('header')
+        expect(planHeader.get('h1').text()).toBe('Raumplan 1: Erdgeschoss')
+        const instructions = wrapper.get<HTMLDetailsElement>('details[aria-labelledby="ground-floor-task-title"]')
+        const stepButtons = instructions.get('[aria-label="Arbeitsschritte"]').findAll('button')
+        const taskCard = instructions.get('#ground-floor-task-card')
+        expect(stepButtons.map(button => button.text())).toEqual(['1', '2', '3', '4', '5', '6', '7', '8', '9'])
+        expect(stepButtons[0].attributes('aria-pressed')).toBe('true')
+        expect(taskCard.text()).toContain('fünf Arbeitsplätze')
+        expect(taskCard.text()).toContain('Foyer vier Stehtische')
+        await stepButtons[7].trigger('click')
+        expect(stepButtons[7].attributes('aria-pressed')).toBe('true')
+        expect(stepButtons[0].attributes('aria-pressed')).toBe('false')
+        expect(taskCard.text()).toContain('den Verbindungsweg von einem Arbeitsplatz bis zum Datenserver')
+        expect(taskCard.text()).not.toContain('Foyer vier Stehtische')
+        expect(instructions.element.open).toBe(true)
+        await instructions.get('summary').trigger('click')
+        expect(instructions.element.open).toBe(false)
+        await instructions.get('summary').trigger('click')
+        expect(instructions.element.open).toBe(true)
         expect(wrapper.find('textarea').exists()).toBe(false)
         expect(wrapper.get('[aria-label="Grundriss"]').findAll('.network-floor__room').map(room => room.text())).toEqual([
             'Büro 1', 'Büro 2', 'Serverraum', 'Foyer',
         ])
-        expect(wrapper.get('[aria-label="Scrollbarer Grundriss"]').text()).toContain('Internet')
+        expect(planHeader.get('[role="status"][aria-label="Netzwerkstatus"]').text()).toMatch(/LAN.*WLAN.*Internet/)
         const palette = wrapper.get('[aria-label="Geräteauswahl"]')
         expect(palette.findAll('section').map(group => ({
             title: group.get('h3').text(),
             devices: group.findAll('button[aria-pressed]').map(button => button.text()),
         }))).toEqual([
             { title: 'Arbeitsplätze und Möbel', devices: ['5 × Arbeitsplatz', '4 × Stehtisch'] },
-            { title: 'Netzwerk und Server', devices: ['Router', 'Switch', 'Access Point', 'Server', 'Serverschrank'] },
+            { title: 'Netzwerk und Server', devices: ['Router', 'Switch', 'Access Point', 'Datenserver', 'Serverschrank'] },
             { title: 'Verkabelung', devices: ['Kabelkanal', 'Einfache Netzwerkdose', 'Doppelte Netzwerkdose',
                 'Kabelstrang-Ausgang', 'Kabelstrang', 'Patchkabel'] },
         ])
-        expect(palette.findAll('button[aria-haspopup="dialog"]').map(button => button.attributes('aria-label'))).toEqual([
-            'Foto anzeigen: Router', 'Foto anzeigen: Switch', 'Foto anzeigen: Access Point', 'Foto anzeigen: Serverschrank',
-            'Foto anzeigen: Kabelkanal', 'Foto anzeigen: Einfache Netzwerkdose', 'Foto anzeigen: Doppelte Netzwerkdose',
-            'Foto anzeigen: Patchkabel',
-        ])
-        const zoom = wrapper.get('[aria-label="Grundriss-Zoom"]')
+        expect(palette.find('button[aria-label^="Foto anzeigen:"]').exists()).toBe(false)
+        const zoom = planHeader.get('[aria-label="Grundriss-Zoom"]')
         expect(zoom.get('output').text()).toBe('100 %')
         await zoom.get('[aria-label="Grundriss vergrößern"]').trigger('click')
         expect(zoom.get('output').text()).toBe('105 %')
@@ -555,8 +789,7 @@ describe('Teaching tools navigation', () => {
         expect(zoom.get('output').text()).toBe('110 %')
         await zoom.get('[aria-label="Grundriss verkleinern"]').trigger('click')
         expect(zoom.get('output').text()).toBe('105 %')
-        await zoom.findAll('button').find(button => button.text() === 'Zurücksetzen')?.trigger('click')
-        expect(zoom.get('output').text()).toBe('100 %')
+        expect(zoom.findAll('button').map(button => button.text())).toEqual(['−', '+'])
 
         await wrapper.get(`section a[href="${buildPath}"]`).trigger('click')
         await flushPromises()

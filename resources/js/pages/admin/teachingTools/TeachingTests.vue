@@ -1,10 +1,13 @@
 <template>
-    <section aria-labelledby="teaching-tests-title" class="teaching-tests teaching-tool-workspace py-4">
+    <section :aria-labelledby="isGroundFloorPlan ? 'ground-floor-title' : 'teaching-tests-title'"
+        class="teaching-tests teaching-tool-workspace py-4">
         <v-btn v-if="currentPage.back" :to="currentPage.back.to" prepend-icon="mdi-arrow-left"
             variant="text" color="primary" class="mb-2">
             {{ currentPage.back.label }}
         </v-btn>
-        <h1 id="teaching-tests-title" class="text-h5 font-weight-bold mb-4">{{ currentPage.title }}</h1>
+        <h1 v-if="!isGroundFloorPlan" id="teaching-tests-title" class="text-h5 font-weight-bold mb-4">
+            {{ currentPage.title }}
+        </h1>
 
         <ul v-if="page === 'overview'" class="teaching-tool-card-grid">
             <li>
@@ -28,8 +31,7 @@
                 <TeachingToolCard :title="`Raumplan ${planNumber}`" heading-tag="h2" :to="networkRoomPlanPath(planNumber)" />
             </li>
         </ul>
-        <NetworkGroundFloorPlan v-else-if="page === 'room-plan' && roomPlanNumber === 1"
-            :key="roomPlanDraftKey" :draft-key="roomPlanDraftKey" />
+        <NetworkGroundFloorPlan v-else-if="isGroundFloorPlan" :key="roomPlanDraftKey" :draft-key="roomPlanDraftKey" />
     </section>
 </template>
 
@@ -47,6 +49,7 @@ const props = defineProps({
 })
 
 const admin = useAdminStore()
+const isGroundFloorPlan = computed(() => props.page === 'room-plan' && props.roomPlanNumber === 1)
 const roomPlanDraftKey = computed(() => {
     const user = admin.config?.user
     const school = admin.selected_school ?? admin.config?.selected_school

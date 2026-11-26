@@ -3,12 +3,12 @@ const outletEndClearance = 20
 const roomsWithFoyerDoors = ['office-1', 'office-2', 'server']
 export const channelStroke = 14
 
-export function measureNetworkWalls(surface) {
+export function measureNetworkFloor(surface) {
     const plan = surface.parentElement
     const rooms = Array.from(plan.querySelectorAll('.network-floor__room'))
     const bounds = surface.getBoundingClientRect()
     if (rooms.length !== 4 || !bounds.width || !bounds.height) {
-        return []
+        return { rooms: new Map(), walls: [] }
     }
 
     const relativeBounds = element => {
@@ -16,7 +16,8 @@ export function measureNetworkWalls(surface) {
         return { left: (left - bounds.left) / bounds.width, right: (right - bounds.left) / bounds.width,
             top: (top - bounds.top) / bounds.height, bottom: (bottom - bounds.top) / bounds.height }
     }
-    const [officeOne, officeTwo, serverRoom, foyer] = rooms.map(relativeBounds)
+    const roomBounds = rooms.map(relativeBounds)
+    const [officeOne, officeTwo, serverRoom, foyer] = roomBounds
     const [firstDoor, secondDoor, serverDoor, entry] = rooms.map(room => relativeBounds(room.querySelector('.network-floor__door')))
     const partitionBand = [officeOne.right, foyer.left]
     const officeBand = [officeOne.bottom, officeTwo.top]
@@ -25,7 +26,7 @@ export function measureNetworkWalls(surface) {
     const offices = [officeOne, officeTwo, serverRoom]
     const doors = [firstDoor, secondDoor, serverDoor]
 
-    return [
+    const walls = [
         createWall('north-office-1', 'horizontal', officeOne.top, officeOne.left, officeOne.right, 'north', 'office-1'),
         createWall('north-foyer', 'horizontal', foyer.top, foyer.left, foyer.right, 'north', 'foyer'),
         createWall('south-server', 'horizontal', serverRoom.bottom, serverRoom.left, serverRoom.right, 'south', 'server'),
@@ -53,6 +54,8 @@ export function measureNetworkWalls(surface) {
         createWall('server-divider-server', 'horizontal', serverRoom.top, serverRoom.left, serverRoom.right,
             'north', 'server', serverBand),
     ].filter(wall => wall.end > wall.start)
+    const roomsById = new Map([...roomsWithFoyerDoors, 'foyer'].map((id, index) => [id, roomBounds[index]]))
+    return { rooms: roomsById, walls }
 }
 
 function middle([start, end]) {

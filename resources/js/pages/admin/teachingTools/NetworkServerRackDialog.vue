@@ -9,8 +9,8 @@
                 <p class="text-body-2 mb-4">
                     Ziehe eine Komponente auf einen Platz im Serverschrank oder wähle sie aus und klicke auf den Zielplatz.
                 </p>
-                <v-btn type="button" height="44" variant="outlined" prepend-icon="mdi-ethernet-cable" class="text-none mb-3"
-                    :aria-pressed="patchMode" @click="togglePatchMode">Patchkabel ein-/ausstecken</v-btn>
+                <v-btn v-if="canPatch" type="button" height="44" variant="outlined" prepend-icon="mdi-ethernet-cable"
+                    class="text-none mb-3" :aria-pressed="patchMode" @click="togglePatchMode">Patchkabel ein-/ausstecken</v-btn>
                 <p v-if="patchMode && feedback" class="text-body-2 mb-3" role="status">{{ feedback }}</p>
                 <div ref="editor" class="network-rack-config__editor" @pointermove="moveDrag" @pointerup="finishDrag"
                     @pointercancel="cancelDrag" @lostpointercapture="cancelDrag">
@@ -138,6 +138,7 @@ const patchColors = ['#ffbd67', '#6ee5c9', '#8dc7ff', '#f8a7c1', '#e3d47f']
 const slots = ref(normalizeRackModules(props.modules))
 const localPatchConnections = ref(normalizeRackPatchConnections(props.patchConnections, slots.value))
 const patchMode = ref(false)
+const canPatch = computed(() => slots.value.filter(module => rackModulePorts[module] > 0).length >= 2)
 const selectedPort = shallowRef(null)
 const patchByPort = computed(() => new Map(localPatchConnections.value.flatMap(connection =>
     [[rackPortKey(connection.start), connection], [rackPortKey(connection.end), connection]])))
@@ -401,6 +402,7 @@ function removeModule(index) {
     localPatchConnections.value = localPatchConnections.value.filter(({ start, end }) => start.slot !== index && end.slot !== index)
     slots.value[index] = null
     slots.value = normalizeRackModules(slots.value)
+    if (patchMode.value && !canPatch.value) togglePatchMode()
     if (selection.value?.index === index) selection.value = null
     feedback.value = `${rackModuleLabels[module]} aus Platz ${index + 1} entfernt.`
     nextTick(() => editor.value?.querySelector(`[data-rack-slot="${Math.min(index, slotCount.value - 1)}"] button`)?.focus())
