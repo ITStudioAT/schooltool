@@ -5,7 +5,7 @@
         <span class="network-workstation-icon__tower" />
     </span>
     <span v-else-if="device.id === 'server-rack'" class="network-rack-icon" aria-hidden="true">
-        <span /><span /><span />
+        <span v-for="(module, index) in rackModules" :key="index" :data-module="module" />
     </span>
     <span v-else-if="device.id === 'standing-table'" class="network-standing-table-icon" aria-hidden="true">
         <span class="network-standing-table-icon__pedestal" />
@@ -23,7 +23,10 @@
 </template>
 
 <script setup>
-defineProps({ device: { type: Object, required: true } })
+defineProps({
+    device: { type: Object, required: true },
+    rackModules: { type: Array, default: () => [] },
+})
 </script>
 
 <style scoped>
@@ -80,22 +83,30 @@ defineProps({ device: { type: Object, required: true } })
 }
 
 .network-rack-icon {
-    display: inline-grid;
-    grid-template-rows: repeat(3, 1fr);
-    gap: 2px;
+    display: inline-flex;
+    flex-direction: column;
+    gap: 1px;
     inline-size: var(--rack-width, 20px);
     block-size: var(--rack-height, 26px);
-    padding: 2px;
+    padding: 3px 4px;
     border: 2px solid currentColor;
     border-radius: 2px;
-    background: #edf3f8;
+    background: linear-gradient(to right, #a6b3be 2px, #edf3f8 2px calc(100% - 2px), #a6b3be calc(100% - 2px));
+    overflow: hidden;
 }
 
 .network-rack-icon > span {
     position: relative;
+    flex: 1 1 0;
+    max-block-size: 12%;
+    min-block-size: 0;
     border: 1px solid currentColor;
     background: #d8e6f4;
 }
+
+.network-rack-icon > [data-module="patch-panel"] { background: #edf0f3; }
+.network-rack-icon > [data-module="router"] { background: #cdd5de; }
+.network-rack-icon > [data-module="server"] { background: #b6c4d2; }
 
 .network-rack-icon > span::after {
     position: absolute;
@@ -104,6 +115,10 @@ defineProps({ device: { type: Object, required: true } })
     block-size: 2px;
     background: currentColor;
     content: '';
+}
+
+.network-rack-icon > span:not([data-module]) {
+    visibility: hidden;
 }
 
 .network-standing-table-icon {

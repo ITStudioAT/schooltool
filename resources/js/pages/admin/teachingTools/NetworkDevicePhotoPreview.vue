@@ -21,9 +21,15 @@
                 <img :src="photo.image" :alt="photo.alt" />
                 <p class="text-caption mt-2">
                     {{ photo.author }} · <a :href="photo.source" :title="photo.title"
-                        :aria-label="`Originalfoto: ${photo.title}`" target="_blank" rel="noopener noreferrer">Originalfoto</a>
-                    · <a :href="photo.licenseUrl" target="_blank" rel="noopener noreferrer">{{ photo.license }}</a>
-                    · {{ photo.edits ?? 'skaliert' }}
+                        :aria-label="`${photo.captureDate ? 'Bildquelle' : 'Originalfoto'}: ${photo.title}`"
+                        target="_blank" rel="noopener noreferrer">
+                        {{ photo.captureDate ? photo.title : 'Originalfoto' }}
+                    </a>
+                    <template v-if="photo.captureDate"> · Bildschirmaufnahme vom {{ photo.captureDate }}</template>
+                    <template v-else>
+                        · <a :href="photo.licenseUrl" target="_blank" rel="noopener noreferrer">{{ photo.license }}</a>
+                        · {{ photo.edits ?? 'skaliert' }}
+                    </template>
                 </p>
             </div>
         </v-overlay>
@@ -38,7 +44,7 @@ import cableDuct from '../../../../images/teaching-tools/network-devices/cable-d
 import doubleOutlet from '../../../../images/teaching-tools/network-devices/double-outlet.webp'
 import ethernetSwitch from '../../../../images/teaching-tools/network-devices/ethernet-switch.webp'
 import patchCable from '../../../../images/teaching-tools/network-devices/patch-cable.webp'
-import router from '../../../../images/teaching-tools/network-devices/router.webp'
+import router from '../../../../images/teaching-tools/network-devices/router-cisco-c8375.webp'
 import serverRack from '../../../../images/teaching-tools/network-devices/server-rack.webp'
 import singleOutlet from '../../../../images/teaching-tools/network-devices/single-outlet.webp'
 import { useNetworkTapAction } from './useNetworkTapAction'
@@ -106,12 +112,11 @@ const photos = {
     },
     router: {
         image: router,
-        alt: 'WLAN-Router mit vier Antennen und klar erkennbaren WAN- und LAN-Buchsen',
-        author: 'Paowee',
-        title: 'TP-Link Archer A6 Router (v4) - Back Side',
-        source: 'https://commons.wikimedia.org/wiki/File:TP-Link_Archer_A6_Router_(v4)_-_Back_Side.jpg',
-        license: 'CC BY-SA 4.0',
-        licenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0/',
+        alt: 'Cisco C8375-E-G2, silberner Rackrouter mit Netzwerkanschlüssen an der Vorderseite',
+        author: 'Courtesy of Cisco Systems, Inc. Unauthorized use not permitted',
+        title: 'Cisco C8375-E-G2',
+        source: 'https://www.cisco.com/content/dam/cisco-cdc/site/images/photography/products/networking/sdwan-routers/8000-secure-routers/8300-series-c8375-g2-1600x900.jpg',
+        captureDate: '26.11.2026',
     },
     'access-point': {
         image: accessPoint,

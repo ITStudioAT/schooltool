@@ -10,49 +10,73 @@ export function measureNetworkWalls(surface) {
         return []
     }
 
-    const [officeOne, officeTwo, serverRoom, foyer] = rooms.map(room => room.getBoundingClientRect())
-    const doorBounds = rooms.map(room => room.querySelector('.network-floor__door').getBoundingClientRect())
-    const partition = ((officeOne.right + foyer.left) / 2 - bounds.left) / bounds.width
-    const horizontalBand = (upper, lower) => [upper.bottom, lower.top].map(y => (y - bounds.top) / bounds.height)
-    const partitionBand = [officeOne.right, foyer.left].map(x => (x - bounds.left) / bounds.width)
-    const officeBand = horizontalBand(officeOne, officeTwo)
-    const serverBand = horizontalBand(officeTwo, serverRoom)
-    const middle = ([start, end]) => (start + end) / 2
-    const roomEnds = [0, middle(officeBand), middle(serverBand), 1]
+    const relativeBounds = element => {
+        const { left, right, top, bottom } = element.getBoundingClientRect()
+        return { left: (left - bounds.left) / bounds.width, right: (right - bounds.left) / bounds.width,
+            top: (top - bounds.top) / bounds.height, bottom: (bottom - bounds.top) / bounds.height }
+    }
+    const [officeOne, officeTwo, serverRoom, foyer] = rooms.map(relativeBounds)
+    const [firstDoor, secondDoor, serverDoor, entry] = rooms.map(room => relativeBounds(room.querySelector('.network-floor__door')))
+    const partitionBand = [officeOne.right, foyer.left]
+    const officeBand = [officeOne.bottom, officeTwo.top]
+    const serverBand = [officeTwo.bottom, serverRoom.top]
+    const foyerEnds = [foyer.top, middle(officeBand), middle(serverBand), foyer.bottom]
+    const offices = [officeOne, officeTwo, serverRoom]
+    const doors = [firstDoor, secondDoor, serverDoor]
     const roomIds = ['office-1', 'office-2', 'server']
-    const openings = doorBounds.slice(0, 3).map(door => [(door.top - bounds.top) / bounds.height,
-        (door.bottom - bounds.top) / bounds.height])
-    const entry = doorBounds[3]
-    const [entryStart, entryEnd] = [entry.left, entry.right].map(x => (x - bounds.left) / bounds.width)
 
     return [
-        createWall('north-office-1', 'horizontal', 0, 0, partition, 'north'),
-        createWall('north-foyer', 'horizontal', 0, partition, 1, 'north'),
-        createWall('south-server', 'horizontal', 1, 0, partition, 'south'),
-        createWall('south-foyer-left', 'horizontal', 1, partition, entryStart, 'south'),
-        createWall('south-foyer-right', 'horizontal', 1, entryEnd, 1, 'south'),
-        ...roomIds.map((room, index) => createWall(`west-${room}`, 'vertical', 0, roomEnds[index],
-            roomEnds[index + 1], 'west')),
-        createWall('east-foyer', 'vertical', 1, 0, 1, 'east'),
+        createWall('north-office-1', 'horizontal', officeOne.top, officeOne.left, officeOne.right, 'north', 'office-1'),
+        createWall('north-foyer', 'horizontal', foyer.top, foyer.left, foyer.right, 'north', 'foyer'),
+        createWall('south-server', 'horizontal', serverRoom.bottom, serverRoom.left, serverRoom.right, 'south', 'server'),
+        createWall('south-foyer-left', 'horizontal', foyer.bottom, foyer.left, entry.left, 'south', 'foyer'),
+        createWall('south-foyer-right', 'horizontal', foyer.bottom, entry.right, foyer.right, 'south', 'foyer'),
+        ...roomIds.map((room, index) => createWall(`west-${room}`, 'vertical', offices[index].left, offices[index].top,
+            offices[index].bottom, 'west', room)),
+        createWall('east-foyer', 'vertical', foyer.right, foyer.top, foyer.bottom, 'east', 'foyer'),
         ...roomIds.flatMap((room, index) => [
-            createWall(`partition-${room}-top`, 'vertical', partition, roomEnds[index], openings[index][0],
-                'partition', partitionBand),
-            createWall(`partition-${room}-bottom`, 'vertical', partition, openings[index][1], roomEnds[index + 1],
-                'partition', partitionBand),
+            createWall(`partition-${room}-top`, 'vertical', offices[index].right, offices[index].top,
+                doors[index].top, 'east', room, partitionBand),
+            createWall(`partition-${room}-bottom`, 'vertical', offices[index].right, doors[index].bottom,
+                offices[index].bottom, 'east', room, partitionBand),
+            createWall(`partition-${room}-top-foyer`, 'vertical', foyer.left, foyerEnds[index],
+                doors[index].top, 'west', 'foyer', partitionBand),
+            createWall(`partition-${room}-bottom-foyer`, 'vertical', foyer.left, doors[index].bottom,
+                foyerEnds[index + 1], 'west', 'foyer', partitionBand),
         ]),
-        createWall('offices-divider', 'horizontal', middle(officeBand), 0, partition, 'divider', officeBand),
-        createWall('server-divider', 'horizontal', middle(serverBand), 0, partition, 'divider', serverBand),
+        createWall('offices-divider-office-1', 'horizontal', officeOne.bottom, officeOne.left, officeOne.right,
+            'south', 'office-1', officeBand),
+        createWall('offices-divider-office-2', 'horizontal', officeTwo.top, officeTwo.left, officeTwo.right,
+            'north', 'office-2', officeBand),
+        createWall('server-divider-office-2', 'horizontal', officeTwo.bottom, officeTwo.left, officeTwo.right,
+            'south', 'office-2', serverBand),
+        createWall('server-divider-server', 'horizontal', serverRoom.top, serverRoom.left, serverRoom.right,
+            'north', 'server', serverBand),
     ].filter(wall => wall.end > wall.start)
 }
 
-function createWall(id, axis, line, start, end, side, band = null) {
-    return { id, axis, line, start, end, side, band }
+function middle([start, end]) {
+    return (start + end) / 2
+}
+
+function createWall(id, axis, line, start, end, side, roomId, band = null) {
+    return { id, axis, line, start, end, side, roomId, band }
+}
+
+function isOnWallSide(wall, point) {
+    if (!wall.band) return true
+
+    const across = wall.axis === 'horizontal' ? point.y : point.x
+    const center = middle(wall.band)
+    return wall.line < center ? across < center : across > center
 }
 
 export function snapToNetworkWall(walls, bounds, point) {
     let closest = null
     let distance = snapDistance
     for (const wall of walls) {
+        if (!isOnWallSide(wall, point)) continue
+
         const along = pointAlongWall(wall, point)
         const candidate = wall.axis === 'horizontal' ? { x: along, y: wall.line } : { x: wall.line, y: along }
         const offset = Math.hypot((candidate.x - point.x) * bounds.width, (candidate.y - point.y) * bounds.height)
@@ -83,7 +107,7 @@ export function channelCorners(walls, previewWallId = null) {
 
         for (const [index, along] of [wall.start, wall.end].entries()) {
             const [x, y] = horizontal ? [along, wall.line] : [wall.line, along]
-            const key = `${x}:${y}`
+            const key = `${wall.roomId}:${x}:${y}`
             if (!ends.has(key)) ends.set(key, { key, x, y, shift: { x: 0, y: 0 }, arms: [], preview: false })
             const end = ends.get(key)
             if (horizontal) end.shift.y = shift.y
@@ -115,7 +139,7 @@ export function snapToChannel(channels, wallsById, bounds, point) {
     let distance = snapDistance
     for (const channel of channels) {
         const wall = wallsById.get(channel.wallId)
-        if (!wall) continue
+        if (!wall || !isOnWallSide(wall, point)) continue
 
         const range = outletMountRange(wall, bounds)
         const horizontal = wall.axis === 'horizontal'

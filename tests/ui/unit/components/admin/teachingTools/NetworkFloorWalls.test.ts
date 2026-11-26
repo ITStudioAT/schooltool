@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { channelCorners, outletMountPoint, snapToChannel } from '@/pages/admin/teachingTools/networkFloorWalls'
+import {
+    channelCorners, measureNetworkWalls, outletMountPoint, snapToChannel, snapToNetworkWall,
+} from '@/pages/admin/teachingTools/networkFloorWalls'
 
 const bounds = { width: 800, height: 450 }
 const north = { id: 'north-office', axis: 'horizontal', line: 0, start: 0, end: .5, side: 'north' }
@@ -8,7 +10,53 @@ const northFoyer = { ...north, id: 'north-foyer', start: .5, end: 1 }
 const upperPartition = { id: 'above-door', axis: 'vertical', line: .5, start: 0, end: .12, side: 'partition' }
 const lowerPartition = { ...upperPartition, id: 'below-door', start: .2, end: .33 }
 
+function measureFloor() {
+    const plan = document.createElement('div')
+    const surface = plan.appendChild(document.createElement('div'))
+    surface.getBoundingClientRect = () => new DOMRect(0, 0, bounds.width, bounds.height)
+    for (const [roomBounds, doorBounds] of [
+        [[0, 0, 399, 148], [369, 59, 30, 30]],
+        [[0, 150, 399, 149], [369, 209, 30, 30]],
+        [[0, 301, 399, 149], [369, 361, 30, 30]],
+        [[401, 0, 399, 450], [585, 420, 30, 30]],
+    ]) {
+        const room = plan.appendChild(document.createElement('div'))
+        room.className = 'network-floor__room'
+        room.getBoundingClientRect = () => new DOMRect(...roomBounds)
+        const door = room.appendChild(document.createElement('span'))
+        door.className = 'network-floor__door'
+        door.getBoundingClientRect = () => new DOMRect(...doorBounds)
+    }
+    return measureNetworkWalls(surface)
+}
+
 describe('Room plan channel placement', () => {
+    it('snaps to either face of vertical and horizontal shared walls and leaves door gaps clear', () => {
+        const walls = measureFloor()
+        const snap = (x: number, y: number) => snapToNetworkWall(walls, bounds, { x: x / bounds.width, y: y / bounds.height })
+        expect(snap(389, 116)).toMatchObject({ wallId: 'partition-office-1-bottom', x: 399 / 800 })
+        expect(snap(411, 116)).toMatchObject({ wallId: 'partition-office-1-bottom-foyer', x: 401 / 800 })
+        expect(snap(220, 138)).toMatchObject({ wallId: 'offices-divider-office-1', y: 148 / 450 })
+        expect(snap(220, 160)).toMatchObject({ wallId: 'offices-divider-office-2', y: 150 / 450 })
+        expect(snap(220, 289)).toMatchObject({ wallId: 'server-divider-office-2', y: 299 / 450 })
+        expect(snap(220, 311)).toMatchObject({ wallId: 'server-divider-server', y: 301 / 450 })
+        expect(snap(400, 116)).toBeNull()
+        expect(snap(397, 74)).toMatchObject({ x: 399 / 800, y: 89 / 450 })
+    })
+
+    it('mounts an outlet on the approached wall face without reaching through the wall', () => {
+        const walls = new Map(measureFloor().map(wall => [wall.id, wall]))
+        const channels = [
+            { id: 1, wallId: 'partition-office-1-bottom' },
+            { id: 2, wallId: 'partition-office-1-bottom-foyer' },
+        ]
+        const office = { x: 394 / 800, y: 116 / 450 }
+        const foyer = { x: 406 / 800, y: 116 / 450 }
+        expect(snapToChannel(channels, walls, bounds, office)).toMatchObject({ channelId: 1 })
+        expect(snapToChannel(channels, walls, bounds, foyer)).toMatchObject({ channelId: 2 })
+        expect(snapToChannel(channels.slice(0, 1), walls, bounds, foyer)).toBeNull()
+    })
+
     it('connects only coincident perpendicular endpoints in the preview and the placed plan', () => {
         expect(channelCorners([north, west], west.id)).toEqual([
             expect.objectContaining({ x: 0, y: 0, arms: ['right', 'down'], preview: true }),

@@ -28,12 +28,14 @@
                 <TeachingToolCard :title="`Raumplan ${planNumber}`" heading-tag="h2" :to="networkRoomPlanPath(planNumber)" />
             </li>
         </ul>
-        <NetworkGroundFloorPlan v-else-if="page === 'room-plan' && roomPlanNumber === 1" />
+        <NetworkGroundFloorPlan v-else-if="page === 'room-plan' && roomPlanNumber === 1"
+            :key="roomPlanDraftKey" :draft-key="roomPlanDraftKey" />
     </section>
 </template>
 
 <script setup>
 import { computed } from 'vue'
+import { useAdminStore } from '@/stores/admin/AdminStore'
 import NetworkGroundFloorPlan from './NetworkGroundFloorPlan.vue'
 import TeachingToolCard from './TeachingToolCard.vue'
 import { networkBuildPath, networkRoomPlanNumbers, networkRoomPlanPath } from './networkRoomPlans'
@@ -42,6 +44,13 @@ import './teachingToolCards.css'
 const props = defineProps({
     page: { type: String, default: 'overview' },
     roomPlanNumber: { type: Number, default: null },
+})
+
+const admin = useAdminStore()
+const roomPlanDraftKey = computed(() => {
+    const user = admin.config?.user
+    const school = admin.selected_school ?? admin.config?.selected_school
+    return user?.id ? `schooltool:network-room-plan:v1:${user.id}:${school?.id ?? user.school_id ?? 'none'}:${props.roomPlanNumber}` : null
 })
 
 const testsPath = '/admin/teaching-tools/tests'

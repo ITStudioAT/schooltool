@@ -1,7 +1,7 @@
 <template>
     <section class="network-floor" aria-labelledby="ground-floor-title" @pointermove="movePointer"
         @pointerup="finishPointer" @pointercancel="cancelPointer" @lostpointercapture="cancelPointer"
-        @keydown.esc="patch.cancel"
+        @keydown.esc="cancelWiring"
         @click.self="clearPlacementSelection">
         <h2 id="ground-floor-title" class="text-h6 font-weight-bold mb-3">Erdgeschoss</h2>
         <div ref="zoomControls" class="network-floor__controls mb-3" role="group" aria-label="Grundriss-Zoom">
@@ -23,6 +23,12 @@
                     @pointerdown="startActionTap" @pointerup="finishActionTap($event, patch.cancel)" @pointercancel="cancelActionTap"
                     @click="clickAction($event, patch.cancel)">Abbrechen</v-btn>
             </div>
+            <div v-if="bundleFeedback" class="network-floor__patch-instructions">
+                <span role="status">{{ bundleFeedback }}</span>
+                <v-btn v-if="bundleActive" type="button" variant="text" height="44" class="text-none"
+                    @pointerdown="startActionTap" @pointerup="finishActionTap($event, bundle.cancel)" @pointercancel="cancelActionTap"
+                    @click="clickAction($event, bundle.cancel)">Abbrechen</v-btn>
+            </div>
         </div>
         <div class="network-floor__workspace" :style="{ '--floor-zoom': zoom / 100 }">
             <section class="network-floor__task" aria-labelledby="ground-floor-task-title">
@@ -43,38 +49,46 @@
                 <div class="network-floor__extent" @click.self="clearPlacementSelection">
                     <div class="network-floor__plan" role="group" aria-label="Grundriss" @click.self="clearPlacementSelection">
                         <div class="network-floor__room">
-                            Büro 1
+                            {{ roomLabels['office-1'] }}
                             <span class="network-floor__door" aria-hidden="true" />
                         </div>
                         <div class="network-floor__room">
-                            Büro 2
+                            {{ roomLabels['office-2'] }}
                             <span class="network-floor__door" aria-hidden="true" />
                         </div>
                         <div class="network-floor__room">
-                            Serverraum
+                            {{ roomLabels.server }}
                             <span class="network-floor__door" aria-hidden="true" />
                         </div>
                         <div class="network-floor__room network-floor__foyer">
-                            Foyer
+                            {{ roomLabels.foyer }}
                             <span class="network-floor__door network-floor__entrance" aria-hidden="true" />
                         </div>
                         <div ref="layer" class="network-floor__placements"
-                            :class="{ 'is-selecting': canPlaceBySelection, 'is-wiring': patchActive }"
+                            :class="{ 'is-selecting': canPlaceBySelection, 'is-wiring': wiringActive,
+                                'is-placing-wall-device': canPlaceBySelection && (selection.device.wallMounted || selection.device.channelMounted) }"
                             :style="{ '--furniture-scale': furnitureScale, '--channel-stroke-screen': `${channelStroke}px` }"
                             role="group" aria-label="Geräte im Grundriss" tabindex="0"
                             @click="clickPlanOrCable" @pointerdown.self="startSurfaceTap" @pointerup.self="finishSurfaceTap"
-                            @keydown.enter.self.prevent="patchActive ? patch.rejectTarget() : placeAtCenter()">
+                            @keydown.enter.self.prevent="wiringActive ? rejectWiringTarget() : placeAtCenter()">
                             <svg class="network-floor__patch-lines" viewBox="0 0 100 100" preserveAspectRatio="none">
+                                <g v-for="bundle in cableBundles" :key="bundle.id" role="img" :data-bundle-id="bundle.id"
+                                    aria-label="Kabelstrang zum Serverschrank">
+                                    <polyline class="network-floor__bundle-line" :points="bundleWiringPoints(bundle)" />
+                                </g>
+                                <polyline v-if="bundlePreview" class="network-floor__bundle-line network-floor__bundle-preview"
+                                    :class="{ 'is-invalid': bundlePreview.invalid }" aria-hidden="true"
+                                    :points="bundleWiringPoints(bundlePreview)" />
                                 <g v-for="cable in patchConnections" :key="cable.id"
                                     :class="{ 'is-selected': selectedPatchId === cable.id }"
-                                    :tabindex="patchActive ? -1 : 0" :role="patchActive ? undefined : 'button'"
+                                    :tabindex="wiringActive ? -1 : 0" :role="wiringActive ? undefined : 'button'"
                                     :aria-label="cable.label" :aria-pressed="selectedPatchId === cable.id" :data-patch-id="cable.id"
                                     @pointerdown="startPatchLineTap" @pointercancel="patchTap.cancelActionTap"
                                     @pointerup="finishPatchLineTap($event, cable.id)"
                                     @click.stop="clickPatchLine($event, cable.id)"
                                     @keydown.enter.prevent="patch.selectConnection(cable.id)"
                                     @keydown.space.prevent="patch.selectConnection(cable.id)">
-                                    <line v-if="!patchActive" class="network-floor__patch-hit" aria-hidden="true"
+                                    <line v-if="!wiringActive" class="network-floor__patch-hit" aria-hidden="true"
                                         :x1="cable.start.x * 100" :y1="cable.start.y * 100" :x2="cable.end.x * 100" :y2="cable.end.y * 100" />
                                     <line class="network-floor__patch-outline" aria-hidden="true"
                                         :x1="cable.start.x * 100" :y1="cable.start.y * 100" :x2="cable.end.x * 100" :y2="cable.end.y * 100" />
@@ -101,14 +115,20 @@
                                 :ref="element => setMarkerElement(placement.id, element)"
                                 class="network-floor__marker" :class="[deviceShape(placement),
                                     { 'is-selected': selection?.placementId === placement.id,
+                                        'is-moving-rack': drag?.moved && drag.placementId === placement.id
+                                            && placement.device.id === 'server-rack',
                                         'is-patch-start': patchFirstEnd?.placementId === placement.id,
-                                        'is-patch-target': patchActive && patch.availablePort(placement) },
+                                        'is-bundle-source': bundleActive && bundle.availableOutlet(placement),
+                                        'is-bundle-start': bundleOutlet?.id === placement.id,
+                                        'is-patch-target': (patchActive && patch.availablePort(placement))
+                                            || (bundleActive && rackHasPatchPanel(placement)) },
                                     wallsById.get(placement.wallId)?.axis]"
                                 :data-placement-id="placement.id" :data-wall="placement.wallId"
                                 :data-channel-id="placement.channelId"
                                 :data-wall-side="wallsById.get(placement.wallId)?.side"
+                                :data-shared-wall="wallsById.get(placement.wallId)?.band ? '' : undefined"
                                 :style="markerStyle(placement)"
-                                :aria-label="markerLabel(placement)" :title="placement.device.label"
+                                :aria-label="markerLabel(placement)" :title="placement.wallId ? markerLabel(placement) : placement.device.label"
                                 :aria-pressed="selection?.placementId === placement.id"
                                 :aria-controls="actionPosition?.id === placement.id ? 'network-floor-marker-actions' : undefined"
                                 @pointerdown="startMarkerDrag($event, placement)" @pointerup="finishMarkerTap($event, placement)"
@@ -126,7 +146,7 @@
                                     <span class="network-floor__workstation-label">Arbeitsplatz</span>
                                 </span>
                                 <span v-else class="network-floor__device-drawing" aria-hidden="true">
-                                    <NetworkDeviceIcon :device="placement.device" />
+                                    <NetworkDeviceIcon :device="placement.device" :rack-modules="placement.rackModules" />
                                     <span v-if="!placement.device.channelMounted" class="network-floor__object-label">
                                         {{ placement.device.label }}
                                     </span>
@@ -156,12 +176,13 @@
             </div>
         </div>
         <Teleport to="body">
-            <div v-if="markerActionTarget && actionPosition?.id === selectedRemovable?.id" :key="selectedRemovable.id"
+            <div v-if="markerActionTarget && actionPosition?.id === actionPlacement?.id" :key="actionPlacement.id"
                 id="network-floor-marker-actions" ref="markerActions" class="network-floor__marker-actions"
-                :class="{ 'is-workstation': selectedWorkstation, 'is-below': actionPosition.below,
+                :class="{ 'is-workstation': selectedWorkstation, 'has-text-action': actionPlacement.device.bundleEnd
+                        || actionPlacement.device.id === 'server-rack', 'is-below': actionPosition.below,
                     'is-beside': actionPosition.beside, 'is-near-right': actionPosition.onRight }"
                 :style="{ '--marker-x': `${actionPosition.x}px`, '--marker-y': `${actionPosition.y}px` }" role="group"
-                :aria-label="`Ausgewählter ${selectedRemovable.device.label}`" @pointerdown.stop @pointerup.stop @click.stop
+                :aria-label="`Aktionen für ${actionPlacement.device.label}`" @pointerdown.stop @pointerup.stop @click.stop
                 @pointercancel="cancelActionTap" @keydown.esc.stop="closeMarkerActions">
                 <button v-if="selectedWorkstation" type="button" class="network-floor__rotate"
                     aria-label="Arbeitsplatz 90° drehen" @pointerdown="startPlanActionTap"
@@ -170,9 +191,19 @@
                     <v-icon icon="mdi-rotate-right" size="18" aria-hidden="true" />
                     90° drehen
                 </button>
-                <v-btn type="button" icon="mdi-close" variant="text" color="error" size="44"
-                    :aria-label="`${selectedRemovable.device.label} entfernen`"
-                    :title="`${selectedRemovable.device.label} entfernen`"
+                <v-btn v-if="actionPlacement.device.id === 'server-rack'" type="button" height="44" variant="text"
+                    class="text-none flex-grow-1" @pointerdown="startPlanActionTap"
+                    @pointerup="finishPlanActionTap($event, openRackConfiguration)"
+                    @click="clickAction($event, openRackConfiguration)">Serverschrank konfigurieren</v-btn>
+                <v-btn v-if="actionPlacement.device.bundleEnd" type="button" height="44" variant="text"
+                    class="text-none flex-grow-1" @pointerdown="startPlanActionTap"
+                    @pointerup="finishPlanActionTap($event, toggleBundle)"
+                    @click="clickAction($event, toggleBundle)">
+                    {{ actionPlacement.rackId ? 'Verbindung lösen' : 'Mit Serverschrank verbinden' }}
+                </v-btn>
+                <v-btn v-if="actionPlacement.device.removable" type="button" icon="mdi-close" variant="text" color="error" size="44"
+                    :aria-label="`${actionPlacement.device.label} entfernen`"
+                    :title="`${actionPlacement.device.label} entfernen`"
                     @pointerdown="startPlanActionTap" @pointerup="finishPlanActionTap($event, removeMarker)"
                     @click="clickAction($event, removeMarker)" />
                 <output v-if="selectedWorkstation" class="d-sr-only" aria-label="Ausrichtung">
@@ -181,31 +212,62 @@
                 <p v-if="actionFeedback" class="network-floor__action-feedback" role="status">{{ actionFeedback }}</p>
             </div>
         </Teleport>
+        <v-tooltip v-for="rack in placedRacks" :key="rack.id" :activator="markerElements.get(rack.id)"
+            :disabled="Boolean(drag || wiringActive || rackBeingConfigured)" :eager="false" location="end" :open-delay="160">
+            <div class="network-floor__rack-summary">
+                <strong>Serverschrank</strong>
+                <ol v-if="rack.rackModules?.length" aria-label="Bestückung von oben nach unten">
+                    <template v-for="(module, index) in rack.rackModules" :key="index">
+                        <li v-if="module" :value="index + 1">{{ rackModuleLabels[module] }}</li>
+                    </template>
+                </ol>
+                <div v-else>Leer</div>
+            </div>
+        </v-tooltip>
+        <NetworkServerRackDialog v-if="rackBeingConfigured" :modules="rackBeingConfigured.rackModules"
+            :has-linked-bundles="linkedRackOutlets.length > 0" @save="saveRackConfiguration" @close="closeRackConfiguration" />
         <section class="network-floor__draft mt-6" aria-labelledby="ground-floor-devices-title">
             <h2 id="ground-floor-devices-title" class="text-h6 font-weight-bold mb-1">Geräte</h2>
             <p class="text-body-2 mb-3">
                 Ziehe ein Gerät auf den Plan oder wähle es aus und tippe auf die gewünschte Stelle.
+                Setze den Kabelkanal auf der gewünschten Raumseite dicht an die Wand.
                 Netzwerkdosen werden an bereits platzierten Kabelkanälen befestigt.
+                Setze im Serverraum einen Kabelstrang-Ausgang an den Kabelkanal. Wähle „Kabelstrang“ und ziehe die Leitung
+                vom Ausgang zum Serverschrank mit Patchpanel.
             </p>
             <p v-if="placementFeedback" role="status" class="text-body-2 mb-3">{{ placementFeedback }}</p>
-            <div class="network-floor__controls" role="group" aria-label="Geräteauswahl">
-                <NetworkDevicePhotoPreview v-for="device in devices" :key="device.id" :device="device">
-                    <v-btn type="button" height="44" color="primary" class="network-floor__device text-none"
-                        :variant="paletteSelected(device) ? 'tonal' : 'outlined'"
-                        :aria-pressed="paletteSelected(device)"
-                        :title="device.channelMounted ? 'An einem platzierten Kabelkanal befestigen' : undefined"
-                        :disabled="remaining(device) === 0" @pointerdown="startPaletteDrag($event, device)"
-                        @click.stop="clickPalette($event, device)">
-                        {{ device.limit === undefined ? device.label : `${remaining(device)} × ${device.label}` }}
-                        <NetworkDeviceIcon class="ms-2" :device="device" />
-                    </v-btn>
-                </NetworkDevicePhotoPreview>
+            <p v-if="draftSaveFailed" role="status" class="text-body-2 mb-3">
+                Der Raumplan konnte in diesem Browser nicht gespeichert werden.
+            </p>
+            <div class="network-floor__device-groups" role="group" aria-label="Geräteauswahl">
+                <section v-for="group in deviceGroups" :key="group.id" :aria-labelledby="`ground-floor-${group.id}`">
+                    <h3 :id="`ground-floor-${group.id}`" class="text-subtitle-2 font-weight-bold mb-1">{{ group.label }}</h3>
+                    <div class="network-floor__controls">
+                        <NetworkDevicePhotoPreview v-for="device in group.devices" :key="device.id" :device="device">
+                            <v-btn type="button" height="44" color="primary" class="network-floor__device text-none"
+                                :variant="paletteSelected(device) ? 'tonal' : 'outlined'"
+                                :aria-pressed="paletteSelected(device)"
+                                :title="device.bundleEnd ? 'An einem Kabelkanal im Serverraum befestigen'
+                                    : device.channelMounted ? 'An einem platzierten Kabelkanal befestigen' : undefined"
+                                :disabled="remaining(device) === 0" @pointerdown="startPaletteDrag($event, device)"
+                                @click.stop="clickPalette($event, device)">
+                                {{ device.limit === undefined ? device.label : `${remaining(device)} × ${device.label}` }}
+                                <NetworkDeviceIcon class="ms-2" :device="device" />
+                            </v-btn>
+                        </NetworkDevicePhotoPreview>
+                    </div>
+                </section>
             </div>
         </section>
         <Teleport to="body">
             <div v-if="drag?.moved && !drag.position?.channelId" class="network-floor__drag-preview" :class="deviceShape(drag)" aria-hidden="true"
-                :style="{ left: `${drag.x}px`, top: `${drag.y}px`, '--device-rotation': `${drag.rotation}deg` }">
-                <NetworkDeviceIcon :device="drag.device" />
+                :style="{ left: `${drag.x}px`, top: `${drag.y}px`, '--device-rotation': `${drag.rotation}deg`,
+                    '--rack-preview-scale': furnitureScale }">
+                <span v-if="drag.device.id === 'server-rack'" class="network-floor__device-drawing">
+                    <NetworkDeviceIcon :device="drag.device" :rack-modules="movingRack?.rackModules" />
+                    <span class="network-floor__object-label">{{ drag.device.label }}</span>
+                </span>
+                <NetworkDeviceIcon v-else :device="drag.device" />
                 <span v-if="!drag.position" class="network-floor__drag-invalid">×</span>
             </div>
         </Teleport>
@@ -216,8 +278,12 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, shallowReactive, shallowRef, watch } from 'vue'
 import NetworkDeviceIcon from './NetworkDeviceIcon.vue'
 import NetworkDevicePhotoPreview from './NetworkDevicePhotoPreview.vue'
+import NetworkServerRackDialog from './NetworkServerRackDialog.vue'
 import { channelCenterShift, channelCorners, channelStroke, furnitureFits, measureNetworkWalls, outletMountPoint,
     outletMountRange, pointAlongWall, snapToChannel, snapToNetworkWall } from './networkFloorWalls'
+import { readNetworkRoomPlanDraft, saveNetworkRoomPlanDraft } from './networkRoomPlanDraft'
+import { rackHasPatchPanel, rackModuleLabels } from './networkRackModules'
+import { useNetworkBundleWiring } from './useNetworkBundleWiring'
 import { useNetworkDevicePlacement } from './useNetworkDevicePlacement'
 import { useNetworkPatchCables } from './useNetworkPatchCables'
 import { useNetworkTapAction } from './useNetworkTapAction'
@@ -226,7 +292,7 @@ const startZoom = 100
 const minZoom = 50
 const maxZoom = 200
 const zoomStep = 5
-const zoom = ref(startZoom)
+const props = defineProps({ draftKey: { type: String, default: null } })
 const viewport = ref(null)
 const zoomControls = ref(null)
 const markerActions = ref(null)
@@ -234,6 +300,8 @@ const markerElements = shallowReactive(new Map())
 const actionPosition = shallowRef(null)
 const placementFeedback = ref('')
 const actionFeedback = ref('')
+const draftSaveFailed = ref(false)
+const rackConfigurationId = ref(null)
 const wallsById = shallowRef(new Map())
 const furnitureScale = ref(1)
 let geometryObserver
@@ -242,28 +310,56 @@ const { startActionTap, finishActionTap, cancelActionTap, clickAction } = useNet
 const outsideTap = useNetworkTapAction()
 const patchTap = useNetworkTapAction()
 let handledPlanTap = false
-const devices = [
-    { id: 'workstation', label: 'Arbeitsplatz', limit: 5, removable: true, ports: 1 },
-    { id: 'standing-table', label: 'Stehtisch', limit: 4, removable: true, ports: 1 },
-    { id: 'router', label: 'Router', icon: 'mdi-router-network', removable: true, ports: 'multiple' },
-    { id: 'switch', label: 'Switch', removable: true, ports: 'multiple' },
-    { id: 'access-point', label: 'Access Point', icon: 'mdi-access-point', removable: true, ports: 1 },
-    { id: 'server', label: 'Server', icon: 'mdi-server', removable: true, ports: 1 },
-    { id: 'server-rack', label: 'Serverschrank' },
-    { id: 'cable-duct', label: 'Kabelkanal', wallMounted: true, removable: true },
-    { id: 'network-outlet', label: 'Einfache Netzwerkdose', channelMounted: true, removable: true, ports: 1 },
-    { id: 'double-network-outlet', label: 'Doppelte Netzwerkdose', channelMounted: true, removable: true, ports: 2 },
-    { id: 'patch-cable', label: 'Patchkabel', icon: 'mdi-ethernet-cable' },
+const roomLabels = { 'office-1': 'Büro 1', 'office-2': 'Büro 2', server: 'Serverraum', foyer: 'Foyer' }
+const deviceGroups = [
+    { id: 'furniture', label: 'Arbeitsplätze und Möbel', devices: [
+        { id: 'workstation', label: 'Arbeitsplatz', limit: 5, removable: true, ports: 1 },
+        { id: 'standing-table', label: 'Stehtisch', limit: 4, removable: true, ports: 1 },
+    ] },
+    { id: 'network-equipment', label: 'Netzwerk und Server', devices: [
+        { id: 'router', label: 'Router', icon: 'mdi-router-network', removable: true },
+        { id: 'switch', label: 'Switch', removable: true },
+        { id: 'access-point', label: 'Access Point', icon: 'mdi-access-point', removable: true, ports: 1 },
+        { id: 'server', label: 'Server', icon: 'mdi-server', removable: true },
+        { id: 'server-rack', label: 'Serverschrank' },
+    ] },
+    { id: 'cabling', label: 'Verkabelung', devices: [
+        { id: 'cable-duct', label: 'Kabelkanal', wallMounted: true, removable: true },
+        { id: 'network-outlet', label: 'Einfache Netzwerkdose', channelMounted: true, removable: true, ports: 1 },
+        { id: 'double-network-outlet', label: 'Doppelte Netzwerkdose', channelMounted: true, removable: true, ports: 2 },
+        { id: 'bundle-outlet', label: 'Kabelstrang-Ausgang', icon: 'mdi-source-branch', channelMounted: true,
+            bundleEnd: true, removable: true },
+        { id: 'cable-bundle', label: 'Kabelstrang', icon: 'mdi-vector-line', wiringTool: 'bundle' },
+        { id: 'patch-cable', label: 'Patchkabel', icon: 'mdi-ethernet-cable', wiringTool: 'patch' },
+    ] },
 ]
-const { layer, placements, selection, selectedRemovable, selectedWorkstation, canPlaceBySelection, drag, remaining,
+const draft = readNetworkRoomPlanDraft(props.draftKey, deviceGroups.flatMap(group => group.devices))
+const zoom = ref(Number.isInteger(draft.zoom) && draft.zoom >= minZoom && draft.zoom <= maxZoom ? draft.zoom : startZoom)
+const { layer, placements, selection, selectedPlacement, selectedWorkstation, canPlaceBySelection, drag, remaining,
     startDrag, moveDrag, finishDrag, cancelDrag, selectDevice, clickPlan, startPlanTap, finishPlanTap, placeAtCenter,
-    rotateWorkstation, removeSelectedPlacement } = useNetworkDevicePlacement(resolvePlacement)
-const patch = useNetworkPatchCables({ layer, placements, markerElements, move: drag, clearSelection: () => { selection.value = null } })
+    rotateWorkstation, removeSelectedPlacement } = useNetworkDevicePlacement(resolvePlacement, draft.placements)
+const patch = useNetworkPatchCables({ layer, placements, markerElements, move: drag, initialConnections: draft.connections,
+    clearSelection: () => { selection.value = null } })
+const bundle = useNetworkBundleWiring({ layer, placements, endPoint: patch.endPoint })
+if (props.draftKey) {
+    watch([placements, patch.connections, zoom], ([items, connections, planZoom]) => {
+        draftSaveFailed.value = !saveNetworkRoomPlanDraft(props.draftKey, items, connections, planZoom)
+    }, { deep: true })
+}
 const { active: patchActive, status: patchStatus, firstEnd: patchFirstEnd, hover: patchHover,
     visibleConnections: patchConnections, previewLine: patchPreview, selectedConnectionId: selectedPatchId } = patch
+const { active: bundleActive, status: bundleFeedback, outlet: bundleOutlet, connections: cableBundles, preview: bundlePreview,
+    cablePoints: bundleWiringPoints } = bundle
+const placedRacks = computed(() => placements.value.filter(placement => placement.device.id === 'server-rack'))
+const movingRack = computed(() => placedRacks.value.find(rack => rack.id === drag.value?.placementId))
+const rackBeingConfigured = computed(() => placedRacks.value.find(rack => rack.id === rackConfigurationId.value))
+const linkedRackOutlets = computed(() => placements.value.filter(placement => placement.rackId === rackConfigurationId.value))
+const wiringActive = computed(() => patchActive.value || bundleActive.value)
 const selectedPatch = computed(() => patchConnections.value.find(cable => cable.id === selectedPatchId.value))
+const actionPlacement = computed(() => selectedPlacement.value?.device.removable || selectedPlacement.value?.device.id === 'server-rack'
+    ? selectedPlacement.value : null)
 const selectedMarker = computed(() => {
-    const marker = markerElements.get(selectedRemovable.value?.id)
+    const marker = markerElements.get(actionPlacement.value?.id)
     return marker?.querySelector('.network-floor__channel-anchor') ?? marker
 })
 const markerActionTarget = computed(() => drag.value?.moved ? undefined : selectedMarker.value)
@@ -281,8 +377,8 @@ const visibleChannelCorners = computed(() => {
         .filter((corner, index, corners) => corners.findIndex(candidate => candidate.key === corner.key) === index)
 })
 watch(() => selection.value?.placementId, () => { actionFeedback.value = '' })
-watch(() => [markerActionTarget.value, selectedRemovable.value?.x, selectedRemovable.value?.y,
-    selectedRemovable.value?.channelId, selectedRemovable.value?.channelPosition, selectedWorkstation.value?.rotation,
+watch(() => [markerActionTarget.value, actionPlacement.value?.x, actionPlacement.value?.y,
+    actionPlacement.value?.channelId, actionPlacement.value?.channelPosition, selectedWorkstation.value?.rotation,
     zoom.value], syncMarkerActions, { flush: 'post' })
 watch(zoom, syncPlanGeometry, { flush: 'post' })
 onMounted(() => {
@@ -331,8 +427,8 @@ function syncMarkerActions() {
         return
     }
 
-    const id = selectedRemovable.value.id
-    const wall = wallsById.value.get(selectedRemovable.value.wallId)
+    const id = actionPlacement.value.id
+    const wall = wallsById.value.get(actionPlacement.value.wallId)
     const beside = wall?.axis === 'vertical'
     const onRight = beside ? wall.side === 'east' || x > pageWidth - 76 : x > pageWidth / 2
     const below = !beside && marker.top < 64
@@ -362,8 +458,16 @@ function resolvePlacement(device, point, rotation, report = false, placementId =
     if (report) placementFeedback.value = ''
     if (device.channelMounted) {
         const bounds = layer.value.getBoundingClientRect()
-        const snapped = snapToChannel(channelsById.value.values(), wallsById.value, bounds, point)
-        if (!snapped && report) placementFeedback.value = 'Netzwerkdosen lassen sich nur an bereits platzierten Kabelkanälen befestigen.'
+        const channels = [...channelsById.value.values()]
+        const mountingChannels = device.bundleEnd
+            ? channels.filter(channel => wallsById.value.get(channel.wallId)?.roomId === 'server')
+            : channels
+        const snapped = snapToChannel(mountingChannels, wallsById.value, bounds, point)
+        if (!snapped && report) {
+            placementFeedback.value = device.bundleEnd
+                ? 'Setze den Kabelstrang-Ausgang an einen platzierten Kabelkanal im Serverraum.'
+                : 'Netzwerkdosen lassen sich nur an bereits platzierten Kabelkanälen befestigen.'
+        }
         return snapped
     }
     if (!device.wallMounted && device.id !== 'workstation' && device.id !== 'standing-table') {
@@ -375,12 +479,18 @@ function resolvePlacement(device, point, rotation, report = false, placementId =
     const walls = wallsById.value.values()
     if (device.wallMounted) {
         const snapped = snapToNetworkWall(walls, bounds, point)
-        if (!snapped && report) {
-            placementFeedback.value = 'Lege den Kabelkanal in Wandnähe ab.'
+        if (!snapped) {
+            if (report) placementFeedback.value = 'Lege den Kabelkanal auf der gewünschten Raumseite in Wandnähe ab.'
+            return null
         }
-        if (snapped && placementId && snapped.wallId !== channelsById.value.get(placementId)?.wallId
+        const channels = channelsById.value
+        if ([...channels.values()].some(channel => channel.id !== placementId && channel.wallId === snapped.wallId)) {
+            if (report) placementFeedback.value = 'An dieser Wandseite liegt bereits ein Kabelkanal.'
+            return null
+        }
+        if (placementId && snapped.wallId !== channels.get(placementId)?.wallId
             && !attachedOutletsFit(placementId, wallsById.value.get(snapped.wallId), bounds)) {
-            if (report) placementFeedback.value = 'Die montierten Netzwerkdosen passen an dieser Wandstelle nicht auf den Kanal.'
+            if (report) placementFeedback.value = 'Die montierten Anschlüsse passen an dieser Wandstelle nicht auf den Kanal.'
             return null
         }
         return snapped
@@ -401,8 +511,8 @@ function resolvePlacement(device, point, rotation, report = false, placementId =
 
 function startMarkerDrag(event, placement) {
     handledPlanTap = false
-    if (patchActive.value) {
-        patchTap.startActionTap(event)
+    if (wiringActive.value) {
+        if (!bundle.startDraw(event, placement)) patchTap.startActionTap(event)
         return
     }
     selectedPatchId.value = null
@@ -445,22 +555,79 @@ function cornerStyle({ x, y, shift }) {
 
 function selectMarker(event, placement) {
     if (consumePlanTap(event)) return
-    if (patchActive.value) {
-        patch.chooseMarker(placement, event)
+    if (wiringActive.value) {
+        wireMarker(event, placement)
         return
     }
     selectDevice(event, placement.device, placement.id)
-    if (event.detail === 0 && selectedRemovable.value?.id === placement.id) {
+    if (event.detail === 0 && actionPlacement.value?.id === placement.id) {
         pendingFocusMarkerId = placement.id
     }
 }
 
 function finishMarkerTap(event, placement) {
-    if (!patchActive.value) return
+    if (bundle.finishDraw(event)) {
+        handledPlanTap = true
+        return
+    }
+    if (!wiringActive.value) return
     patchTap.finishActionTap(event, () => {
         handledPlanTap = true
-        patch.chooseMarker(placement, event)
+        wireMarker(event, placement)
     })
+}
+
+function wireMarker(event, placement) {
+    if (patchActive.value) patch.chooseMarker(placement, event)
+    else bundle.choose(placement)
+}
+
+function rejectWiringTarget() {
+    if (patchActive.value) patch.rejectTarget()
+    else bundle.guide()
+}
+
+function toggleBundle() {
+    const outlet = actionPlacement.value
+    if (outlet.rackId) {
+        bundle.unlink(outlet)
+        return
+    }
+    beginBundle(outlet)
+}
+
+function beginBundle(outlet = null) {
+    patch.cancel()
+    selectedPatchId.value = null
+    const started = bundle.begin(outlet)
+    if (started || !outlet) selection.value = null
+}
+
+function cancelWiring() {
+    patch.cancel()
+    bundle.cancel()
+}
+
+function openRackConfiguration() {
+    rackConfigurationId.value = actionPlacement.value.id
+    selection.value = null
+}
+
+function closeRackConfiguration() {
+    const marker = markerElements.get(rackConfigurationId.value)
+    rackConfigurationId.value = null
+    nextTick(() => marker?.focus({ preventScroll: true }))
+}
+
+function saveRackConfiguration(modules) {
+    const rack = rackBeingConfigured.value
+    rack.rackModules = modules
+    bundleFeedback.value = ''
+    if (!rackHasPatchPanel(rack) && linkedRackOutlets.value.length) {
+        for (const outlet of linkedRackOutlets.value) delete outlet.rackId
+        bundleFeedback.value = 'Die Kabelstränge wurden vom Serverschrank getrennt.'
+    }
+    closeRackConfiguration()
 }
 
 function consumePlanTap(event) {
@@ -471,13 +638,15 @@ function consumePlanTap(event) {
 }
 
 function escapeMarker() {
-    if (patchActive.value) patch.cancel()
+    if (wiringActive.value) cancelWiring()
     else closeMarkerActions()
 }
 
 function startPaletteDrag(event, device) {
     handledPlanTap = false
-    if (device.id === 'patch-cable') patch.startPaletteDrag(event)
+    if (device.wiringTool === 'bundle') return
+    bundle.cancel()
+    if (device.wiringTool === 'patch') patch.startPaletteDrag(event)
     else {
         patch.cancel()
         selectedPatchId.value = null
@@ -486,12 +655,18 @@ function startPaletteDrag(event, device) {
 }
 
 function paletteSelected(device) {
-    return device.id === 'patch-cable' ? patchActive.value
-        : selection.value?.device.id === device.id && selection.value.placementId === null
+    if (device.wiringTool) return device.wiringTool === 'patch' ? patchActive.value : bundleActive.value
+    return selection.value?.device.id === device.id && selection.value.placementId === null
 }
 
 function clickPalette(event, device) {
-    if (device.id === 'patch-cable') patch.clickPalette(event)
+    if (device.wiringTool === 'bundle') {
+        if (bundleActive.value) bundle.cancel()
+        else beginBundle()
+        return
+    }
+    bundle.cancel()
+    if (device.wiringTool === 'patch') patch.clickPalette(event)
     else {
         patch.cancel()
         selectedPatchId.value = null
@@ -502,6 +677,7 @@ function clickPalette(event, device) {
 function movePointer(event) {
     moveDrag(event)
     patch.pointerMove(event)
+    bundle.moveDraw(event)
 }
 
 function finishPointer(event) {
@@ -512,18 +688,19 @@ function finishPointer(event) {
 function cancelPointer(event) {
     cancelDrag(event)
     patch.cancelPaletteDrag(event)
+    bundle.cancelDraw(event)
 }
 
 function startSurfaceTap(event) {
     handledPlanTap = false
-    if (patchActive.value) patchTap.startActionTap(event)
+    if (wiringActive.value) patchTap.startActionTap(event)
     else startPlanTap(event)
 }
 
 function finishSurfaceTap(event) {
-    if (patchActive.value) patchTap.finishActionTap(event, () => {
+    if (wiringActive.value) patchTap.finishActionTap(event, () => {
         handledPlanTap = true
-        patch.rejectTarget()
+        rejectWiringTarget()
     })
     else finishPlanTap(event)
 }
@@ -531,7 +708,7 @@ function finishSurfaceTap(event) {
 function clickPlanOrCable(event) {
     if (consumePlanTap(event)) return
     selectedPatchId.value = null
-    if (patchActive.value) patch.rejectTarget()
+    if (wiringActive.value) rejectWiringTarget()
     else clickPlan(event)
 }
 
@@ -601,7 +778,14 @@ function deviceShape({ device, rotation }) {
         'is-channel-mounted': device.channelMounted, 'is-turned': rotation % 180 !== 0 }
 }
 
-function markerLabel({ device, rotation }) {
+function markerLabel({ device, rotation, wallId }) {
+    const roomId = wallsById.value.get(wallId)?.roomId
+    const room = roomLabels[roomId]
+    if (room) {
+        const preposition = roomId === 'foyer' || roomId === 'server' ? 'im' : 'in'
+        return `${device.label} ${preposition} ${room}`
+    }
+
     return device.id === 'workstation'
         ? `${device.label} im Grundriss, Drehung ${rotation}°`
         : `${device.label} im Grundriss`
@@ -617,11 +801,11 @@ function resetZoom() {
 }
 
 function removeMarker() {
-    if (channelHasOutlets(selectedRemovable.value?.id)) {
-        actionFeedback.value = 'Entferne zuerst die Netzwerkdosen an diesem Kabelkanal.'
+    if (channelHasOutlets(actionPlacement.value?.id)) {
+        actionFeedback.value = 'Entferne zuerst die montierten Anschlüsse an diesem Kabelkanal.'
         return
     }
-    patch.removeDeviceConnections(selectedRemovable.value?.id)
+    patch.removeDeviceConnections(actionPlacement.value?.id)
     removeSelectedPlacement()
     viewport.value?.focus({ preventScroll: true })
 }
@@ -634,6 +818,7 @@ function attachedOutletsFit(channelId, wall, bounds) {
     const range = outletMountRange(wall, bounds)
     return placements.value.every(placement => {
         if (placement.channelId !== channelId) return true
+        if (placement.device.bundleEnd && wall.roomId !== 'server') return false
         const along = pointAlongWall(wall, outletMountPoint(wall, placement.channelPosition))
         return range && along >= range.start && along <= range.end
     })
@@ -832,11 +1017,25 @@ function attachedOutletsFit(channelId, wall, bounds) {
     max-width: 905px;
 }
 
+.network-floor__device-groups {
+    display: grid;
+    gap: 12px;
+}
+
+.network-floor__rack-summary {
+    font-size: .875rem;
+    line-height: 1.5;
+}
+
+.network-floor__rack-summary ol {
+    padding-inline-start: 1.25em;
+}
+
 .network-floor__placements {
     --channel-stroke: calc(var(--channel-stroke-screen) / var(--floor-zoom));
-    --channel-border: #223a55;
-    --channel-fill: #57718a;
-    --channel-highlight: #aabed1;
+    --channel-border: #626a72;
+    --channel-fill: #cdd2d6;
+    --channel-highlight: #f4f5f6;
     position: absolute;
     z-index: 2;
     inset: 0;
@@ -865,6 +1064,23 @@ function attachedOutletsFit(channelId, wall, bounds) {
 .network-floor__patch-outline,
 .network-floor__patch-hit {
     vector-effect: non-scaling-stroke;
+}
+
+.network-floor__bundle-line {
+    vector-effect: non-scaling-stroke;
+    fill: none;
+    stroke: #655183;
+    stroke-width: 6px;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.network-floor__bundle-preview {
+    stroke-dasharray: 8 5;
+}
+
+.network-floor__bundle-preview.is-invalid {
+    stroke: #b3262b;
 }
 
 .network-floor__patch-line,
@@ -926,6 +1142,16 @@ function attachedOutletsFit(channelId, wall, bounds) {
     outline-offset: 2px;
 }
 
+.network-floor__marker.is-bundle-source {
+    outline: 2px dashed #655183;
+    outline-offset: 2px;
+    cursor: crosshair;
+}
+
+.network-floor__marker.is-bundle-start {
+    outline-style: solid;
+}
+
 .network-floor__device,
 .network-floor__marker {
     cursor: grab;
@@ -964,6 +1190,15 @@ function attachedOutletsFit(channelId, wall, bounds) {
 
 .network-floor__marker-actions.is-workstation {
     --action-width: 166px;
+}
+
+.network-floor__marker-actions.has-text-action {
+    --action-width: min(270px, calc(100vw - 16px));
+}
+
+.network-floor__marker-actions.has-text-action button:first-child {
+    min-inline-size: 0;
+    white-space: normal;
 }
 
 .network-floor__action-feedback {
@@ -1099,9 +1334,12 @@ function attachedOutletsFit(channelId, wall, bounds) {
     transform: scale(var(--furniture-scale));
 }
 
-.network-floor__marker.is-server-rack {
-    --rack-width: 29px;
-    --rack-height: 42px;
+.network-floor__marker.is-server-rack,
+.network-floor__drag-preview.is-server-rack {
+    --rack-width: calc(58px * var(--furniture-scale, var(--rack-preview-scale, 1)));
+    --rack-height: calc(82px * var(--furniture-scale, var(--rack-preview-scale, 1)));
+    --half-width: calc(var(--rack-width) / 2 + 3px);
+    --half-height: calc(var(--rack-height) / 2 + 10px);
     border: 0;
     border-radius: 0;
     background: transparent;
@@ -1110,6 +1348,10 @@ function attachedOutletsFit(channelId, wall, bounds) {
 .network-floor__marker.is-server-rack.is-selected {
     box-shadow: none;
     outline: 2px solid #315b8d;
+}
+
+.network-floor__marker.is-moving-rack {
+    opacity: 0;
 }
 
 .network-floor__workstation-graphic {
@@ -1156,6 +1398,7 @@ function attachedOutletsFit(channelId, wall, bounds) {
 
 .network-floor__drag-preview.is-workstation,
 .network-floor__drag-preview.is-standing-table,
+.network-floor__drag-preview.is-server-rack,
 .network-floor__drag-preview.is-cable-duct {
     box-shadow: none;
 }
@@ -1236,7 +1479,7 @@ function attachedOutletsFit(channelId, wall, bounds) {
     pointer-events: auto;
 }
 
-.network-floor__placements.is-wiring .network-floor__marker.is-cable-duct > .network-floor__channel-segment {
+.network-floor__placements:is(.is-wiring, .is-placing-wall-device) .network-floor__marker.is-cable-duct > .network-floor__channel-segment {
     pointer-events: none;
 }
 
@@ -1252,8 +1495,8 @@ function attachedOutletsFit(channelId, wall, bounds) {
 }
 
 .network-floor__marker.is-cable-duct:is(.is-selected, :focus-visible) .network-floor__channel-segment::before {
-    border-color: #0c3060;
-    background: #326bad;
+    border-color: #333a41;
+    background: #b4bcc3;
 }
 
 .horizontal > .network-floor__channel-segment::before {
@@ -1301,11 +1544,11 @@ function attachedOutletsFit(channelId, wall, bounds) {
     transform: translate(-50%, -50%) rotate(90deg);
 }
 
-.is-cable-duct.vertical[data-wall-side="partition"] > .network-floor__channel-label {
-    inset-inline-start: -12px;
+.is-cable-duct[data-wall-side="south"][data-shared-wall] > .network-floor__channel-label {
+    inset-block: auto 80%;
 }
 
-.is-cable-duct[data-wall-side="south"] > .network-floor__channel-label {
+.is-cable-duct[data-wall-side="south"]:not([data-shared-wall]) > .network-floor__channel-label {
     inset-block: auto calc(var(--door-size) + 4px);
 }
 
@@ -1319,9 +1562,9 @@ function attachedOutletsFit(channelId, wall, bounds) {
 
 .network-floor__channel-preview,
 .network-floor__channel-corner.is-preview {
-    --channel-border: #0b346a;
-    --channel-fill: #0755ab;
-    --channel-highlight: #b5d8ff;
+    --channel-border: #424b54;
+    --channel-fill: #e1e4e7;
+    --channel-highlight: #fff;
 }
 
 .network-floor__channel-corner {

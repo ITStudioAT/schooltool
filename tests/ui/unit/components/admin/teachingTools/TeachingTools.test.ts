@@ -32,16 +32,20 @@ const navigationCard = defineComponent({
     },
 })
 
-afterEach(() => { wrappers.splice(0).forEach(wrapper => wrapper.unmount()); vi.unstubAllGlobals() })
+afterEach(() => {
+    wrappers.splice(0).forEach(wrapper => wrapper.unmount())
+    window.localStorage.clear()
+    vi.unstubAllGlobals()
+})
 
-async function renderTools(path, deliveryMode = 'mailpit') {
+async function renderTools(path, deliveryMode = 'mailpit', userId?: number) {
     const router = createRouter({ history: createMemoryHistory(), routes: routes.filter(route => route.path.startsWith('/admin/teaching-tools')) })
     await router.push(path)
     await router.isReady()
     const wrapper = mount(RouterView, {
         attachTo: document.body,
         global: { plugins: [router, createTestingPinia({ createSpy: vi.fn, initialState: {
-            AdminAdminStore: { config: { teaching_email_delivery: { mode: deliveryMode } } },
+            AdminAdminStore: { config: { teaching_email_delivery: { mode: deliveryMode }, user: { id: userId, school_id: 21 } } },
         } })], stubs: { AdminPageHeader: true, 'v-btn': navigationButton, 'v-card': navigationCard,
             'v-overlay': true,
             'v-sheet': { template: '<div><slot /></div>' }, 'v-container': { template: '<div><slot /></div>' },
@@ -53,6 +57,25 @@ async function renderTools(path, deliveryMode = 'mailpit') {
 }
 
 describe('Teaching tools navigation', () => {
+    it('restores the saved room plan and zoom for the same user after a new mount', async () => {
+        const path = '/admin/teaching-tools/tests/networks/build-network/room-plan/1'
+        const { wrapper } = await renderTools(path, 'mailpit', 1)
+        const palette = wrapper.get('[aria-label="Geräteauswahl"]')
+        await palette.findAll('button[aria-pressed]').find(button => button.text() === 'Router')!.trigger('click')
+        await wrapper.get('[aria-label="Geräte im Grundriss"]').trigger('keydown.enter')
+        await wrapper.get('[aria-label="Grundriss vergrößern"]').trigger('click')
+        const marker = '[aria-label="Router im Grundriss"]'
+        const position = wrapper.get(marker).attributes('style')
+
+        const { wrapper: restored } = await renderTools(path, 'mailpit', 1)
+        expect(restored.get(marker).attributes('style')).toBe(position)
+        expect(restored.get('[aria-label="Zoomstufe"]').text()).toBe('105 %')
+
+        const { wrapper: otherUser } = await renderTools(path, 'mailpit', 2)
+        expect(otherUser.find(marker).exists()).toBe(false)
+        expect(otherUser.get('[aria-label="Zoomstufe"]').text()).toBe('100 %')
+    })
+
     it('keeps the local-only simulator out of Office navigation and explains direct links without contacting Mailpit', async () => {
         const { wrapper } = await renderTools('/admin/teaching-tools/simulator', 'office_outlook')
         expect(wrapper.find('a[href="/admin/teaching-tools/simulator"]').exists()).toBe(false)
@@ -136,9 +159,14 @@ describe('Teaching tools navigation', () => {
             'Büro 1', 'Büro 2', 'Serverraum', 'Foyer',
         ])
         const palette = wrapper.get('[aria-label="Geräteauswahl"]')
-        expect(palette.findAll('button[aria-pressed]').map(button => button.text())).toEqual([
-            '5 × Arbeitsplatz', '4 × Stehtisch', 'Router', 'Switch', 'Access Point', 'Server', 'Serverschrank',
-            'Kabelkanal', 'Einfache Netzwerkdose', 'Doppelte Netzwerkdose', 'Patchkabel',
+        expect(palette.findAll('section').map(group => ({
+            title: group.get('h3').text(),
+            devices: group.findAll('button[aria-pressed]').map(button => button.text()),
+        }))).toEqual([
+            { title: 'Arbeitsplätze und Möbel', devices: ['5 × Arbeitsplatz', '4 × Stehtisch'] },
+            { title: 'Netzwerk und Server', devices: ['Router', 'Switch', 'Access Point', 'Server', 'Serverschrank'] },
+            { title: 'Verkabelung', devices: ['Kabelkanal', 'Einfache Netzwerkdose', 'Doppelte Netzwerkdose',
+                'Kabelstrang-Ausgang', 'Kabelstrang', 'Patchkabel'] },
         ])
         expect(palette.findAll('button[aria-haspopup="dialog"]').map(button => button.attributes('aria-label'))).toEqual([
             'Foto anzeigen: Router', 'Foto anzeigen: Switch', 'Foto anzeigen: Access Point', 'Foto anzeigen: Serverschrank',

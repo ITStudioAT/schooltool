@@ -2,19 +2,18 @@ import { computed, ref } from 'vue'
 
 const dragThreshold = 6
 
-export function useNetworkDevicePlacement(resolvePlacement) {
+export function useNetworkDevicePlacement(resolvePlacement, initialPlacements) {
     const layer = ref(null)
-    const placements = ref([])
+    const placements = ref(initialPlacements)
     const selection = ref(null)
     const drag = ref(null)
-    let nextPlacementId = 1
+    let nextPlacementId = 1 + Math.max(0, ...initialPlacements.map(placement => placement.id))
     let handledButton = null
     let planTap = null
     let handledPlanTap = false
-    const selectedRemovable = computed(() => placements.value.find(item =>
-        item.id === selection.value?.placementId && item.device.removable))
-    const selectedWorkstation = computed(() => selectedRemovable.value?.device.id === 'workstation'
-        ? selectedRemovable.value
+    const selectedPlacement = computed(() => placements.value.find(item => item.id === selection.value?.placementId))
+    const selectedWorkstation = computed(() => selectedPlacement.value?.device.id === 'workstation'
+        ? selectedPlacement.value
         : undefined)
     const canPlaceBySelection = computed(() => selection.value?.placementId === null)
 
@@ -182,8 +181,8 @@ export function useNetworkDevicePlacement(resolvePlacement) {
     }
 
     function removeSelectedPlacement() {
-        const selected = selectedRemovable.value
-        if (!selected) {
+        const selected = selectedPlacement.value
+        if (!selected?.device.removable) {
             return
         }
 
@@ -230,7 +229,7 @@ export function useNetworkDevicePlacement(resolvePlacement) {
         }
     }
 
-    return { layer, placements, selection, selectedRemovable, selectedWorkstation, canPlaceBySelection, drag, remaining, startDrag,
+    return { layer, placements, selection, selectedPlacement, selectedWorkstation, canPlaceBySelection, drag, remaining, startDrag,
         moveDrag, finishDrag, cancelDrag, selectDevice, clickPlan, startPlanTap, finishPlanTap, placeAtCenter,
         rotateWorkstation, removeSelectedPlacement }
 }

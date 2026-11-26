@@ -1,14 +1,18 @@
 import { computed, ref, shallowRef, watch } from 'vue'
 
-export function useNetworkPatchCables({ layer, placements, markerElements, move, clearSelection }) {
+export function canConnectPatchDevices(first, second) {
+    return Boolean(first?.ports && second?.ports) && Boolean(first.channelMounted) !== Boolean(second.channelMounted)
+}
+
+export function useNetworkPatchCables({ layer, placements, markerElements, move, clearSelection, initialConnections }) {
     const active = ref(false)
     const firstEnd = shallowRef(null)
     const hover = shallowRef(null)
     const status = ref('')
-    const connections = ref([])
+    const connections = ref(initialConnections)
     const selectedConnectionId = ref(null)
     const positions = shallowRef(new Map())
-    let nextId = 1
+    let nextId = 1 + Math.max(0, ...initialConnections.map(connection => connection.id))
     let paletteGesture = null
     let handledButton = null
 
@@ -36,25 +40,43 @@ export function useNetworkPatchCables({ layer, placements, markerElements, move,
         const measured = new Map()
         for (const placement of placements.value) {
             const marker = markerElements.get(placement.id)
-            if (!marker || !placement.device.ports) continue
+            if (!marker || (!placement.device.ports && !placement.device.bundleEnd && placement.device.id !== 'server-rack')) continue
+            const rack = marker.querySelector('.network-rack-icon')
+            if (rack) {
+                const rect = rack.getBoundingClientRect()
+                const markerRect = marker.getBoundingClientRect()
+                const centerX = rect.left + rect.width / 2
+                measured.set(placement.id, {
+                    points: [normalizedPoint(surface, centerX, rect.top)],
+                    rackHalfWidth: rect.width / (2 * surface.width),
+                    dragOffset: { x: centerX - (markerRect.left + markerRect.width / 2),
+                        y: rect.top - (markerRect.top + markerRect.height / 2) },
+                })
+                continue
+            }
             const sockets = [...marker.querySelectorAll('.network-outlet-icon > span')]
             const equipment = marker.querySelector('.network-floor__workstation-graphic, .network-standing-table-icon__laptop')
                 ?? marker.querySelector('.network-floor__device-drawing')
-            measured.set(placement.id, (sockets.length ? sockets : [equipment ?? marker]).map(node => {
+            const points = (sockets.length ? sockets : [equipment ?? marker]).map(node => {
                 const rect = node.getBoundingClientRect()
                 return normalizedPoint(surface, rect.left + rect.width / 2, rect.top + rect.height / 2)
-            }))
+            })
+            measured.set(placement.id, { points })
         }
         positions.value = measured
     }
 
     function endPoint({ placementId, index }, followDrag = false) {
+        const position = positions.value.get(placementId)
+        const points = position?.points
+        let point = points?.[index] ?? points?.[0]
         const gesture = move.value
         if (followDrag && gesture?.placementId === placementId && gesture.moved && gesture.position) {
-            return normalizedPoint(layer.value.getBoundingClientRect(), gesture.x, gesture.y)
+            const offset = position?.dragOffset
+            point = normalizedPoint(layer.value.getBoundingClientRect(),
+                gesture.x + (offset?.x ?? 0), gesture.y + (offset?.y ?? 0))
         }
-        const points = positions.value.get(placementId)
-        return points?.[index] ?? points?.[0]
+        return point && position?.rackHalfWidth != null ? { ...point, rackHalfWidth: position.rackHalfWidth } : point
     }
 
     function endLabel({ placementId, index }) {
@@ -63,15 +85,18 @@ export function useNetworkPatchCables({ layer, placements, markerElements, move,
     }
 
     function availablePort(placement, point) {
-        if (!placement?.device.ports || firstEnd.value?.placementId === placement.id) return null
+        if (!placement?.device.ports) return null
+        if (firstEnd.value) {
+            const start = placements.value.find(item => item.id === firstEnd.value.placementId)?.device
+            if (!canConnectPatchDevices(start, placement.device)) return null
+        }
         const used = new Set(connections.value.flatMap(({ start, end }) => [start, end])
             .filter(port => port.placementId === placement.id).map(port => port.index))
-        const limit = placement.device.ports === 'multiple' ? used.size + 1 : placement.device.ports
-        const available = Array.from({ length: limit }, (_, index) => index).filter(index => !used.has(index))
+        const available = Array.from({ length: placement.device.ports }, (_, index) => index).filter(index => !used.has(index))
         if (!available.length) return null
 
-        const index = available.length === 2 && point && positions.value.get(placement.id)?.length === 2
-            && point.x > (positions.value.get(placement.id)[0].x + positions.value.get(placement.id)[1].x) / 2
+        const points = positions.value.get(placement.id)?.points
+        const index = available.length === 2 && point && points?.length === 2 && point.x > (points[0].x + points[1].x) / 2
             ? available[1] : available[0]
         return { placementId: placement.id, index }
     }
@@ -100,9 +125,14 @@ export function useNetworkPatchCables({ layer, placements, markerElements, move,
     }
 
     function guide() {
-        const device = firstEnd.value && placements.value.find(item => item.id === firstEnd.value.placementId)?.device.label
-        status.value = device ? `${device} verbunden. Wähle den zweiten Anschluss.`
-            : 'Wähle den ersten Anschluss für das Patchkabel.'
+        const device = firstEnd.value && placements.value.find(item => item.id === firstEnd.value.placementId)?.device
+        if (!device) {
+            status.value = 'Wähle eine Netzwerkdose, einen Arbeitsplatz, einen Stehtisch oder einen Access Point.'
+        } else if (device.channelMounted) {
+            status.value = 'Wähle einen Arbeitsplatz, einen Stehtisch oder einen Access Point mit freiem Anschluss.'
+        } else {
+            status.value = 'Wähle eine Netzwerkdose mit freiem Anschluss.'
+        }
     }
 
     function cancel() {
@@ -135,7 +165,9 @@ export function useNetworkPatchCables({ layer, placements, markerElements, move,
 
     function chooseMarker(placement, event) {
         const point = event.detail === 0 && event.type === 'click' ? null : pointerTarget(event)?.point
-        choose(availablePort(placement, point))
+        const port = availablePort(placement, point)
+        if (port) choose(port)
+        else guide()
     }
 
     function startPaletteDrag(event) {
@@ -200,7 +232,7 @@ export function useNetworkPatchCables({ layer, placements, markerElements, move,
         }
     }
 
-    return { active, status, firstEnd, hover, visibleConnections, previewLine, selectedConnectionId, refreshPositions,
+    return { active, status, firstEnd, hover, connections, visibleConnections, previewLine, selectedConnectionId, refreshPositions, endPoint,
         availablePort, chooseMarker, startPaletteDrag, finishPaletteDrag, cancelPaletteDrag, pointerMove, clickPalette,
         cancel, selectConnection, removeConnection, removeDeviceConnections, rejectTarget: () => choose(null) }
 }
