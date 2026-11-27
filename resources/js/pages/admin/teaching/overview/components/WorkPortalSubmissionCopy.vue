@@ -29,8 +29,7 @@
                     </li>
                 </ul>
             </v-card-text>
-            <v-card-actions>
-                <v-spacer />
+            <v-card-actions class="portal-copy-actions">
                 <v-btn v-if="!running && counts.open && available" min-height="44" :disabled="disabled"
                     @click="copyOriginals">Erneut prüfen und kopieren</v-btn>
                 <v-btn min-height="44" :disabled="running" @click="opened = false">Schließen</v-btn>
@@ -166,6 +165,9 @@ onBeforeUnmount(cancel)
 .portal-copy-person__status { display: flex; align-items: center; gap: .35rem; font-size: .875rem; }
 .portal-copy-person__status :deep(.v-icon), .portal-copy-person__status :deep(.v-progress-circular) { flex: none; }
 .portal-copy-person__errors { grid-column: 1 / -1; padding-inline-start: 1rem; font-size: .875rem; }
+.portal-copy-actions { flex-wrap: wrap; justify-content: flex-end; }
+.portal-copy-actions :deep(.v-btn) { height: auto; max-inline-size: 100%; }
+.portal-copy-actions :deep(.v-btn__content) { min-inline-size: 0; white-space: normal; overflow-wrap: anywhere; }
 @media (max-width: 400px) {
     .portal-copy-person { grid-template-columns: minmax(0, 1fr); }
 }

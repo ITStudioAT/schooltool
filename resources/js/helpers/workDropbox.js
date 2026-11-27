@@ -64,7 +64,7 @@ export function confirmCreatedWorkExercise(key, work, date, binding, folder, pre
     return checkedAt
 }
 
-export async function loadWorkExercise(key, work, date = '', fresh = false, deadlineDraft = null, refreshCollection = false, progressId = null, stream = null, statusOnly = false, storedOnly = false) {
+export async function loadWorkExercise(key, work, date = '', fresh = false, deadlineDraft = null, refreshCollection = false, progressId = null, stream = null, statusOnly = false, storedOnly = false, overall = false) {
     if (!key) return null
     const cached = workExerciseCheck(key, work, date)
     if (cached && !fresh && !storedOnly && !(cached.restored && cached.status === 'missing')) {
@@ -73,7 +73,7 @@ export async function loadWorkExercise(key, work, date = '', fresh = false, dead
     }
     const cacheKey = exerciseKey(key, work, date)
     const binding = workDropboxBinding(workDropboxStates.get(key))
-    const requestKey = JSON.stringify([cacheKey, binding, fresh, deadlineDraft, refreshCollection, progressId, statusOnly, storedOnly])
+    const requestKey = JSON.stringify([cacheKey, binding, fresh, deadlineDraft, refreshCollection, progressId, statusOnly, storedOnly, overall])
     if (exercisePending.has(requestKey)) return exercisePending.get(requestKey)
     const requestGeneration = generation
     const creationConfirmedDuringCheck = () => {
@@ -83,6 +83,7 @@ export async function loadWorkExercise(key, work, date = '', fresh = false, dead
     const request = (fresh ? axios.post(refresh.url(work.id), {
         ...(date ? { date } : {}),
         ...(statusOnly ? { status_only: true } : {}),
+        ...(overall ? { overall: true } : {}),
         finish_until_date: !statusOnly && deadlineDraft ? deadlineDraft.date || null : work.finish_until_date || null,
         finish_until_time: !statusOnly && deadlineDraft ? deadlineDraft.time || null : work.finish_until_time || null,
         expected: { date: work.finish_until_date || null, time: work.finish_until_time || null },

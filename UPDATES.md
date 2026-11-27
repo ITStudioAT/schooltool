@@ -1,5 +1,15 @@
 # UPDATES
 
+## 3.54.11
+
+### Arbeiten
+
+- Verbessern des Workflows
+
+### UI-Design 2027
+
+- Design erweitern
+
 ## 3.54.10
 
 ### Netzwerktest

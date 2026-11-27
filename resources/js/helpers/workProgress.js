@@ -245,7 +245,7 @@ export function workWorkflowProgress(work, date = '', now = Date.now(), dispatch
     const checkedTarget = exercise?.status === 'found' && !exercise.deletion_pending && !exercise.deletionPending
         && exercise.preparation?.status === 'ready' && exercise.preparation.portal_candidates_id !== null ? exercise.folder?.id : null
     const useCheck = ['found', 'missing'].includes(exercise?.status)
-        && (!copy || (Date.parse(exercise.checked_at || exercise.checkedAt) || 0) >= (Date.parse(copy.observed_at) || 0))
+        && (!copy?.observed_at || (Date.parse(exercise.checked_at || exercise.checkedAt) || 0) > Date.parse(copy.observed_at))
     const target = useCheck ? checkedTarget : (copy?.candidates_id !== null && copy?.folder_id) || checkedTarget
     const sameCandidates = !useCheck || exercise.preparation?.portal_candidates_id === undefined
         || copy?.candidates_id === exercise.preparation.portal_candidates_id

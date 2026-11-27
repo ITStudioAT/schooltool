@@ -6,7 +6,14 @@
             :disabled="mutationDisabled" @add-test="exercise?.openMcSelection()" />
         <header class="work-workflow__header">
             <h3>Ablauf der Arbeit</h3>
-            <p v-if="lastCheck && !activity" data-testid="work-dialog-last-check">Zuletzt geprüft: {{ lastCheck }}</p>
+            <div v-if="active" class="work-workflow__check" :data-primary="nextAction?.action === 'check'">
+                <v-btn color="primary" variant="tonal" prepend-icon="mdi-refresh" min-height="44" :loading="checkingOverall"
+                    :disabled="checkingOverall || (disabled && !activity)" @click="checkOverall">Gesamtstatus prüfen</v-btn>
+            </div>
+            <p v-if="(overallCheckedAt || lastCheck) && !activity" data-testid="work-dialog-last-check">Zuletzt geprüft: {{ overallCheckedAt || lastCheck }}</p>
+            <p v-if="overallMessage" :role="overallError ? 'alert' : 'status'" class="work-workflow__result" :class="{ 'text-error': overallError }">
+                {{ overallMessage }}
+            </p>
         </header>
         <v-alert v-if="activity" role="status" type="info" variant="tonal" density="compact" class="mb-3" data-testid="assessment-background-status">
             {{ assessmentActivityLabel(activity) }}
@@ -23,7 +30,7 @@
                     <article v-for="phase in phasesFor(stages, dispatch)"
                         :key="phase.key" class="work-phase"
                         :class="{ 'work-phase--current': phase.current && (phase.primary || phase.nextLabel === 'Abgeben'), 'work-phase--open': phaseOpen(phase),
-                            'work-phase--complete': phase.complete, 'work-phase--next-assessment': phase.nextLabel === 'Bewerten',
+                            'work-phase--complete': phase.complete, 'work-phase--next': phase.next, 'work-phase--next-assessment': phase.nextLabel === 'Bewerten',
                             'work-phase--next-copy': phase.portalNext }">
                         <h4 class="work-phase__heading">
                             <button type="button" class="work-phase__toggle" :disabled="phaseLocked(phase)" :aria-expanded="phaseOpen(phase)"
@@ -34,7 +41,9 @@
                                 <span class="work-phase__caption">
                                     <span class="work-phase__title" :class="{ 'text-success': phase.complete }">{{ phase.title }}</span>
                                     <span v-if="phase.complete" class="work-phase__status text-success font-weight-bold">Erledigt</span>
-                                    <span v-if="phase.nextLabel === 'Bewerten' || phase.portalNext" class="work-phase__status text-orange-darken-2 font-weight-bold">Nächster Schritt</span>
+                                    <span v-if="phase.next" class="work-phase__status text-orange-darken-2 font-weight-bold">
+                                        Nächster Schritt<span v-if="phase.nextLabel && phase.nextLabel !== phase.title"> · {{ phase.nextLabel }}</span>
+                                    </span>
                                     <span class="work-phase__status">
                                         {{ phaseLocked(phase) ? followUpLockReason : phase.status }}
                                     </span>
@@ -44,7 +53,7 @@
                         </h4>
                         <div v-if="!phaseLocked(phase)" v-show="phaseOpen(phase)" :id="panelId + phase.key" class="work-phase__body">
                             <template v-if="phase.key === 'preparation'">
-                                <div v-if="automation || linked" class="work-phase__item" role="group" aria-label="Leistungsfeststellung">
+                                <div v-show="automation || linked" class="work-phase__item" role="group" aria-label="Leistungsfeststellung">
                                     <div class="work-phase__item-label">
                                         <strong>Leistungsfeststellung</strong>
                                         <span v-if="assessmentStatus !== phase.status">{{ assessmentStatus }}</span>
@@ -63,9 +72,9 @@
                                                     @create="exercise?.openDialog()" @deleted="exercise?.recheck()" />
                                             </div>
                                         </div>
-                                        <div class="workflow-command workflow-command--check" :data-primary="phase.primary === 'check'">
+                                        <div class="workflow-command workflow-command--check">
                                             <WorkExerciseExport :ref="trackExercise" :work="work" :course="course" :date="date" :active="active"
-                                                :disabled="disabled" :check-progress="checkProgress" passive-status hide-folder-name hide-activator hide-mc-test hide-check-time
+                                                :disabled="disabled" :check-progress="checkProgress" passive-status hide-folder-name hide-activator hide-mc-test hide-check-time hide-status-check
                                                 @exercise-status="emit('exercise-status', $event)" @progress-checked="emit('progress-checked', $event)"
                                                 @assessment-recheck="queueProgress?.restart()" @deadline-saved="emit('deadline-saved', $event)" @check-busy="emit('check-busy', $event)" @busy="emit('busy', $event)" />
                                         </div>
@@ -259,11 +268,67 @@ const activity = computed(() => workAssessmentActivity(admin.config?.user?.id, p
 const mutationDisabled = computed(() => props.disabled || Boolean(activity.value))
 const assignmentMail = ref(null)
 const confirmedRun = ref(null)
+const checkingOverall = ref(false)
+const overallCheckedAt = ref('')
+const overallMessage = ref('')
+const overallError = ref(false)
+let overallSequence = 0
 let exercise = null
 
 function trackExercise(component) {
     exercise = component
 }
+
+async function checkOverall() {
+    if (activity.value) {
+        queueProgress.value?.restart()
+        return
+    }
+    const operation = ++overallSequence
+    checkingOverall.value = true
+    overallMessage.value = ''
+    overallError.value = false
+    try {
+        const data = await exercise?.checkOverall()
+        if (operation !== overallSequence) return
+        const saved = data?.saved_work
+        if (String(saved?.id) !== String(props.work.id) || String(saved?.teaching_course_id) !== String(props.work.teaching_course_id)) {
+            throw new Error('Der Arbeitsstatus konnte nicht bestätigt werden.')
+        }
+        emit('saved', saved)
+        selectedPhase.value = null
+        const checkedAt = Date.parse(data.workflow_checked_at)
+        if (Number.isFinite(checkedAt)) {
+            overallCheckedAt.value = new Intl.DateTimeFormat('de-AT', { timeZone: 'Europe/Vienna', dateStyle: 'short', timeStyle: 'short' }).format(checkedAt)
+        }
+        const portal = data.portal_reconciliation
+        if (portal?.total) {
+            overallMessage.value = [`${portal.confirmed} von ${portal.total} Portaldateien in Dropbox bestätigt`,
+                portal.missing === 1 ? '1 fehlt' : portal.missing && `${portal.missing} fehlen`,
+                portal.different === 1 ? '1 weicht ab' : portal.different && `${portal.different} weichen ab`,
+                portal.unverifiable && `${portal.unverifiable} nicht prüfbar`].filter(Boolean).join(' · ') + '.'
+        }
+        const message = portal?.message || data.collection_error?.message
+            || (data.exercise?.status === 'unknown' && data.exercise?.message)
+        overallError.value = Boolean(message)
+        if (message) overallMessage.value = [overallMessage.value, message].filter(Boolean).join(' ')
+    } catch (failure) {
+        if (operation !== overallSequence) return
+        overallError.value = true
+        overallMessage.value = Object.values(failure.response?.data?.errors || {}).flat()[0]
+            || failure.response?.data?.message || 'Der Arbeitsstatus konnte nicht geprüft werden. Bitte erneut versuchen.'
+    } finally {
+        if (operation === overallSequence) checkingOverall.value = false
+    }
+}
+
+watch([() => props.work.id, () => props.date, () => props.active], () => {
+    ++overallSequence
+    checkingOverall.value = false
+    overallCheckedAt.value = ''
+    overallMessage.value = ''
+    overallError.value = false
+})
 
 function openPortalTarget() {
     const date = workflowProgress.value.portalCopyDate
@@ -401,10 +466,12 @@ function phasesFor(stages, dispatch) {
     const run = confirmedRun.value || props.work.assessment_run
     const completedRun = run?.state === 'completed' && (run.date ? run.date === props.date
         : progress.scoped === props.work)
-    const preparationDocumented = props.exerciseReady || props.work.local_task_copy || completedRun
-        || props.work.status?.email_preparation_completed === true
-    const prepared = !activity.value && (preparationDocumented || progress.preparationProven)
-    const preparationStatus = prepared && !preparationDocumented ? 'Durch spätere Schritte belegt' : assessmentStatus.value
+    const preparationEvidence = props.exerciseReady || props.assessment?.preparation?.status === 'ready' || progress.portalCopyTargetConfirmed
+        ? 'Aufgabenstellung bestätigt' : completedRun ? 'Leistungsfeststellung angelegt'
+            : props.work.local_task_copy ? 'Aufgabenstellung vorhanden'
+                : props.work.status?.email_preparation_completed === true ? 'E-Mail vorbereitet' : ''
+    const prepared = !activity.value && (Boolean(preparationEvidence) || progress.preparationProven)
+    const preparationStatus = prepared ? preparationEvidence || 'Durch spätere Schritte belegt' : assessmentStatus.value
 
     return [
         { key: 'preparation', title: 'Vorbereiten', icon: 'mdi-clipboard-text-outline', status: preparationStatus, complete: prepared },
@@ -414,7 +481,8 @@ function phasesFor(stages, dispatch) {
             status: submissionStatus, complete: !progress.portalCopyPending && (progress.submissionComplete || progress.portalSubmissionClosed) },
         { key: 'assessment', title: 'Bewerten', icon: 'mdi-clipboard-check-outline', complete: progress.assessmentComplete,
             status: assessmentProgress.value ?? stepStatus(stages[1]) },
-    ].map(phase => ({ ...phase, current: phase.key === next?.phase, primary: phase.key === next?.phase ? primary : null,
+    ].map(phase => ({ ...phase, current: phase.key === next?.phase, next: phase.key === next?.phase && Boolean(primary || next.label),
+        primary: phase.key === next?.phase ? primary : null,
         portalNext: phase.key === 'submission' && phase.key === next?.phase && progress.portalCopyPending,
         nextLabel: phase.key === next?.phase ? next.label : null }))
 }
@@ -475,6 +543,10 @@ function stepStatus(stage) {
 }
 .work-workflow__header h3 { font-size: 1rem; font-weight: 700; letter-spacing: -.012em; }
 .work-workflow__header p { color: var(--flow-muted); font-size: .75rem; overflow-wrap: anywhere; }
+.work-workflow__check { max-inline-size: 100%; }
+.work-workflow__check :deep(.v-btn) { max-inline-size: 100%; height: auto; }
+.work-workflow__check :deep(.v-btn__content) { min-inline-size: 0; white-space: normal; overflow-wrap: anywhere; }
+.work-workflow__result { flex-basis: 100%; }
 .work-workflow__phases {
     border: 1px solid var(--flow-divider);
     border-radius: .875rem;
@@ -517,10 +589,8 @@ function stepStatus(stage) {
 }
 .work-phase--current .work-phase__icon { background: var(--flow-current-accent, var(--flow-accent)); color: var(--flow-current-on-accent, rgb(var(--v-theme-on-primary))); }
 .work-phase--complete .work-phase__icon { background: rgba(var(--v-theme-success), .12); }
-.work-phase--next-assessment .work-phase__toggle,
-.work-phase--next-copy .work-phase__toggle { background: rgba(var(--v-theme-warning), .11); }
-.work-phase--next-assessment,
-.work-phase--next-copy { --flow-current-accent: rgb(var(--v-theme-warning)); --flow-current-on-accent: #201400; }
+.work-phase--next .work-phase__toggle { background: rgba(var(--v-theme-warning), .11); }
+.work-phase--next { --flow-current-accent: rgb(var(--v-theme-warning)); --flow-current-on-accent: #201400; }
 .work-phase--next-copy .work-phase__title { font-size: 1.0625rem; }
 .work-phase__caption { display: grid; min-inline-size: 0; }
 .work-phase__title { font-size: .9375rem; font-weight: 700; line-height: 1.25; }

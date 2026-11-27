@@ -365,6 +365,22 @@ beforeEach(function () {
     $this->actingAs($this->teacher, 'sanctum');
 });
 
+test('the evaluation export starts with the literal chat name of the selected work', function (string $title, string $mode): void {
+    Http::preventStrayRequests();
+    $this->work->update(['title' => $title]);
+    $before = $this->work->fresh()->getAttributes();
+
+    $data = $this->getJson($this->url.'?purpose=evaluation&evaluation_mode='.$mode.'&date=2026-10-20')->assertOk()->json('data');
+    $chatName = json_encode($title.' bewerten', JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+
+    expect($data['text'])->toStartWith('Öffnen Sie für diese Leistungsfeststellung einen neuen Chat mit dem exakten Namen '.$chatName
+        ." und führen Sie die Bewertung in diesem Chat durch.\n\n# Auftrag: ")
+        ->toContain('Verwenden Sie den Skill grade-exercise');
+    expect($data['context'])->toMatchArray(['purpose' => 'grade-exercise', 'mode' => $mode]);
+    expect($this->work->fresh()->getAttributes())->toBe($before);
+    Http::assertNothingSent();
+})->with([['Word-Test', 'grade'], ['Übung "Formatierung"', 'repeat']]);
+
 test('exercise handoff ignores stale MC selection and exports only active saved work candidates without changing work data', function (bool $mc): void {
     Http::preventStrayRequests();
     $other = User::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->year->id,

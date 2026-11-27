@@ -13,7 +13,7 @@
         </span>
         <span v-if="linkedMcTest && !hideMcTest" class="exercise-folder text-body-2">MC-Test: {{ linkedMcTest }}</span>
         <span v-if="!work?.id" class="d-block text-caption mt-1">Arbeit zuerst speichern, damit Arbeitskennung und Prüfungskandidaten bestätigt werden können.</span>
-        <v-btn v-if="active && current && (activity || (moduleLinked && !exerciseChecking))" size="small" variant="tonal" prepend-icon="mdi-refresh"
+        <v-btn v-if="!hideStatusCheck && active && current && (activity || (moduleLinked && !exerciseChecking))" size="small" variant="tonal" prepend-icon="mdi-refresh"
             class="exercise-check-button" :disabled="disabled && !activity" @click="recheckStatus">
             <span class="d-flex flex-column align-start">
                 <span>Status erneut prüfen</span>
@@ -27,7 +27,7 @@
         <p v-if="!activity && checkProgressState?.state === 'done' && checkedStatus === 'missing'" class="exercise-check-message text-caption" role="status">Statusprüfung abgeschlossen: Der Prüfungsordner ist noch nicht angelegt.</p>
     </div>
     <span v-if="!needsPreparation && linkedMcTest && !hideMcTest" class="exercise-folder text-body-2">MC-Test: {{ linkedMcTest }}</span>
-    <WorkProgressCheck v-if="!activity && workAutomationEnabled(work) && shouldCheckProgress && !needsPreparation && active && current" :work="work" :disabled="disabled"
+    <WorkProgressCheck v-if="!hideStatusCheck && !activity && workAutomationEnabled(work) && shouldCheckProgress && !needsPreparation && active && current" :work="work" :disabled="disabled"
         :check-key="workDropboxKey(admin.config?.user?.id, work)" @checked="emit('progress-checked', $event)"
         @saved="emit('deadline-saved', $event)" @busy="emit('check-busy', $event)" />
     <v-dialog v-if="opened" :model-value="opened" max-width="640" :persistent="dialogBusy"
@@ -199,7 +199,7 @@ import WorkCheckProgress from './WorkCheckProgress.vue'
 import WorkExerciseStatus from './WorkExerciseStatus.vue'
 import { createWorkCheckStream, useWorkCheckProgress } from './workCheckProgress'
 
-const props = defineProps({ work: Object, course: Object, date: { type: String, default: '' }, disabled: Boolean, active: { type: Boolean, default: true }, hideFolderName: Boolean, hideActivator: Boolean, hideMcTest: Boolean, hideCheckTime: Boolean, checkProgress: Boolean, passiveStatus: Boolean, deadlineDraft: { type: Object, default: null } })
+const props = defineProps({ work: Object, course: Object, date: { type: String, default: '' }, disabled: Boolean, active: { type: Boolean, default: true }, hideFolderName: Boolean, hideActivator: Boolean, hideMcTest: Boolean, hideCheckTime: Boolean, hideStatusCheck: Boolean, checkProgress: Boolean, passiveStatus: Boolean, deadlineDraft: { type: Object, default: null } })
 const emit = defineEmits(['exercise-status', 'progress-checked', 'deadline-saved', 'check-busy', 'busy', 'assessment-recheck'])
 const admin = useAdminStore()
 const schoolHourStore = useSchoolHourStore()
@@ -322,13 +322,13 @@ watch(() => activity.value?.state, state => {
 })
 watch(operationBusy, value => emit('busy', value), { immediate: true, flush: 'sync' })
 
-async function checkExercise(fresh = false, opening = false) {
+async function checkExercise(fresh = false, opening = false, overall = false) {
     if (!fresh && opened.value && (loading.value || runInProgress.value)) return
     const operation = ++exerciseSequence
     const storedOnly = !fresh && props.passiveStatus
     const key = workDropboxKey(admin.config?.user?.id, props.work)
     const requestContext = openExerciseContext.value
-    const shouldLoad = Boolean(key && requestContext && (needsPreparation.value || storedOnly))
+    const shouldLoad = Boolean(key && requestContext && (needsPreparation.value || storedOnly || overall))
     if (storedOnly && !requestContext) {
         exerciseChecking.value = false
         return
@@ -373,30 +373,33 @@ async function checkExercise(fresh = false, opening = false) {
     if (!shouldLoad) return
     const openingRequest = verifyMissing || storedOnly ? { context: requestContext } : null
     if (openingRequest) openingCheck = openingRequest
-    const progressId = fresh ? crypto.randomUUID() : null
+    const progressId = fresh && !overall ? crypto.randomUUID() : null
     let progressOperation = null
     let finalProgress = null
     let progressFailed = false
-    if (fresh) {
+    if (progressId) {
         progressOperation = startProgressPolling(props.work.id, progressId, ['connection', 'folder', 'verification'], true)
         emit('check-busy', true)
     }
     try {
-        const stream = fresh ? createWorkCheckStream(progress => updateProgress(progressOperation, progress)) : null
+        const stream = progressId ? createWorkCheckStream(progress => updateProgress(progressOperation, progress)) : null
         const recheck = fresh || verifyMissing
+        const refreshCollection = fresh && (overall
+            ? workAutomationEnabled(props.work) && shouldCheckProgress.value && props.work.status?.submission_method?.channel !== 'portal'
+            : props.checkProgress)
         const data = await loadWorkExercise(key, props.work, props.date, recheck, fresh ? props.deadlineDraft : null,
-            fresh && props.checkProgress, progressId, stream, recheck, storedOnly)
+            refreshCollection, progressId, stream, recheck, storedOnly, overall)
         if (operation !== exerciseSequence || requestContext !== openExerciseContext.value) return
         initialCheckPending = false
         if (storedOnly) context.fromStoredProof = true
         if (fresh && data.progress) finalProgress = data.progress
         const savedWork = data.saved_work
-        if (fresh && props.checkProgress && data.collection_error) {
+        if (fresh && !overall && props.checkProgress && data.collection_error) {
             const failure = new Error('Der Arbeitsstand konnte nicht geprüft werden.')
             failure.response = { data: data.collection_error }
             throw failure
         }
-        if (fresh && props.checkProgress && (String(savedWork?.id) !== String(context.workId)
+        if (fresh && !overall && props.checkProgress && (String(savedWork?.id) !== String(context.workId)
             || String(savedWork?.teaching_course_id) !== String(context.courseId))) {
             throw new Error('Der Arbeitsstand konnte nicht geprüft werden.')
         }
@@ -411,12 +414,14 @@ async function checkExercise(fresh = false, opening = false) {
             exerciseMessage.value = data.deadline_sync?.message || ''
         } else {
             exerciseFolder.value = null
-            publish(data.exercise?.status === 'missing' ? 'missing'
+            publish(data.exercise?.status === 'missing' && (!overall || moduleLinked.value) ? 'missing'
                 : storedOnly && !data.exercise?.checked_at ? 'unchecked' : 'unknown')
-            exerciseMessage.value = checkedStatus.value === 'unknown'
+            exerciseMessage.value = checkedStatus.value === 'unknown' && (!overall || moduleLinked.value)
                 ? data.exercise?.message || 'Der Anlagezustand konnte nicht bestätigt werden.' : ''
         }
+        return data
     } catch (failure) {
+        if (overall) throw failure
         progressFailed = true
         if (operation === exerciseSequence && requestContext === openExerciseContext.value) {
             initialCheckPending = false
@@ -428,7 +433,7 @@ async function checkExercise(fresh = false, opening = false) {
         }
     } finally {
         if (openingCheck === openingRequest) openingCheck = null
-        if (fresh && finishProgressPolling(progressOperation, finalProgress, progressFailed)) {
+        if (progressId && finishProgressPolling(progressOperation, finalProgress, progressFailed)) {
             if (operation !== exerciseSequence && checkProgressState.value?.state === 'running') checkProgressState.value = null
             emit('check-busy', false)
         }
@@ -526,7 +531,7 @@ function showPreparationDialog(onlyMc, suggestDeadline = false) {
     else loadAssessmentRun(true)
 }
 
-defineExpose({ openDialog, openMcSelection, recheck: recheckStatus,
+defineExpose({ openDialog, openMcSelection, recheck: recheckStatus, checkOverall: () => checkExercise(true, false, true),
     refreshStored: () => { if (!opened.value) checkExercise(false) } })
 
 function updateDialog(value) {

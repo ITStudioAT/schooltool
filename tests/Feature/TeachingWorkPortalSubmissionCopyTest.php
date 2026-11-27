@@ -18,6 +18,7 @@ use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Testing\TestResponse;
 use Spatie\Permission\Models\Role;
 
 require_once dirname(__DIR__).'/Support/MultipleChoiceTestDatabase.php';
@@ -84,7 +85,7 @@ function portalCopyReceipt(object $test, User $student, string $name, string $by
     return $file;
 }
 
-function fakePortalCopyDropbox(object $test, bool $confirm = true, bool $wrongWork = false, bool $destinationExists = true): void
+function fakePortalCopyDropbox(object $test, bool $confirm = true, bool $wrongWork = false, bool $destinationExists = true, ?Closure $existing = null): void
 {
     $folder = fn (string $id, string $path): array => ['.tag' => 'folder', 'id' => 'id:'.$id, 'path_lower' => $path, 'name' => basename($path)];
     $root = $test->modulePath.'/leistungsfeststellungen';
@@ -107,12 +108,20 @@ function fakePortalCopyDropbox(object $test, bool $confirm = true, bool $wrongWo
         'id:candidates/Test Ada' => $folder('candidate', $exam.'/kandidaten/test ada'),
         ...($destinationExists ? ['id:candidate/Abgaben' => $folder('destination', $destination)] : []),
     ];
-    Http::fake(function (Request $request) use ($status, $metadata, $destination, $confirm, &$stored) {
+    Http::fake(function (Request $request) use ($status, $metadata, $destination, $confirm, $existing, &$stored) {
         if (str_ends_with($request->url(), '/oauth2/token')) {
             return Http::response(['access_token' => 'synthetic-access']);
         }
         if (str_ends_with($request->url(), '/files/get_metadata')) {
             $path = $request['path'];
+            if ($existing && str_starts_with($path, 'id:destination/')) {
+                $file = $existing(substr($path, strlen('id:destination/')));
+                if ($file !== null) {
+                    return Http::response(['.tag' => 'file', 'id' => 'id:existing-'.sha1($path), 'rev' => 'existing-rev',
+                        'path_lower' => $destination.'/'.mb_strtolower(substr($path, strlen('id:destination/'))),
+                        'size' => strlen($file), 'content_hash' => hash('sha256', hash('sha256', $file, true))]);
+                }
+            }
 
             return isset($metadata[$path]) || isset($stored[$path])
                 ? Http::response($metadata[$path] ?? $stored[$path])
@@ -143,6 +152,89 @@ function fakePortalCopyDropbox(object $test, bool $confirm = true, bool $wrongWo
     });
 }
 
+function overallPortalStatusRequest(object $test, ?string $date = null): TestResponse
+{
+    return $test->postJson(route('teaching.work-dropbox.refresh', $test->work), ['overall' => true, 'date' => $date ?? $test->date,
+        'finish_until_date' => null, 'finish_until_time' => null, 'expected' => ['date' => null, 'time' => null]]);
+}
+
+it('reconciles only the selected active portal originals by content without Dropbox write permission', function (): void {
+    $first = portalCopyReceipt($this, $this->student, 'Erste.bin', 'eins');
+    $second = portalCopyReceipt($this, $this->student, 'Zweite.bin', 'zwei');
+    portalCopyReceipt($this, $this->student, 'Dritte.bin', 'drei');
+    portalCopyReceipt($this, $this->student, 'Zurückgezogen.bin', 'withdrawn', true);
+    portalCopyReceipt($this, $this->peer, 'Anderer-Termin.bin', 'other');
+    $before = $this->work->fresh()->status;
+    DropboxConnection::query()->where('user_id', $this->teacher->id)->firstOrFail()->update([
+        'credentials' => ['refresh_token' => 'synthetic-refresh', 'scopes' => ['files.content.read', 'files.metadata.read']],
+    ]);
+    $remote = ['Erste.bin' => 'eins', 'Zweite.bin' => 'vier'];
+    fakePortalCopyDropbox($this, existing: function (string $file) use (&$remote): ?string {
+        return $remote[$file] ?? null;
+    });
+    $progress = "saved_work.portal_copy_progress.{$this->date}.complete";
+
+    overallPortalStatusRequest($this)->assertOk()->assertJsonPath('portal_reconciliation', [
+        'total' => 3, 'confirmed' => 1, 'missing' => 1, 'different' => 1, 'unverifiable' => 0,
+    ])->assertJsonPath($progress, false);
+    expect(array_keys($this->work->fresh()->status['portal_submission_copy'][$this->date]['files']))->toBe([$first['id']]);
+
+    $remote['Zweite.bin'] = 'zwei';
+    $remote['Dritte.bin'] = 'drei';
+    overallPortalStatusRequest($this)->assertOk()->assertJsonPath('portal_reconciliation.confirmed', 3)->assertJsonPath($progress, true);
+    $after = $this->work->fresh()->status;
+    overallPortalStatusRequest($this)->assertOk()->assertJsonPath($progress, true);
+    expect($this->work->fresh()->status)->toBe($after);
+
+    $remote['Erste.bin'] = 'zwei';
+    overallPortalStatusRequest($this)->assertOk()->assertJsonPath('portal_reconciliation.different', 1)->assertJsonPath($progress, false);
+    $current = $this->work->fresh()->status;
+    expect($current['portal_submission_copy'])->toHaveKeys([$this->date])->not->toHaveKey($this->otherDate)
+        ->and($current['portal_submission_copy'][$this->date]['files'])->toHaveKey($second['id'])->not->toHaveKey($first['id'])
+        ->and(collect($current)->except('portal_submission_copy')->all())->toBe($before);
+    Http::assertNotSent(fn (Request $request): bool => ! in_array(parse_url($request->url(), PHP_URL_PATH), [
+        '/oauth2/token', '/2/files/get_metadata', '/2/files/list_folder', '/2/files/download',
+    ], true));
+});
+
+it('leaves ambiguous Dropbox destinations and revisions changed during the overall check open', function (): void {
+    portalCopyReceipt($this, $this->student, 'Original.bin', 'original');
+    portalCopyReceipt($this, $this->student, 'original.bin', 'conflict');
+    portalCopyReceipt($this, $this->student, 'Revision.bin', 'original');
+    $seen = [];
+    fakePortalCopyDropbox($this, existing: function (string $file) use (&$seen): string {
+        $seen[] = $file;
+
+        return count($seen) === 1 ? 'original' : 'changed!';
+    });
+
+    overallPortalStatusRequest($this)->assertOk()->assertJsonPath('portal_reconciliation.unverifiable', 3)
+        ->assertJsonPath("saved_work.portal_copy_progress.{$this->date}.complete", false);
+    expect($seen)->toBe(['Revision.bin', 'Revision.bin'])
+        ->and($this->work->fresh()->status['portal_submission_copy'][$this->date]['files'])->toBe([]);
+});
+
+it('allows only a current owned scope to save an overall status proof', function (): void {
+    $file = portalCopyReceipt($this, $this->student, 'Original.bin', 'original');
+    $this->actingAs($this->otherTeacher, 'sanctum');
+    overallPortalStatusRequest($this)->assertForbidden();
+    Http::assertNothingSent();
+    $this->actingAs($this->teacher, 'sanctum');
+    fakePortalCopyDropbox($this, existing: function () use ($file): string {
+        $current = $this->work->fresh();
+        $status = $current->status;
+        $status['portal_submissions'][0] = array_replace($file, ['withdrawn_at' => now()->toIso8601String()]);
+        $current->update(['status' => $status]);
+
+        return 'original';
+    });
+    overallPortalStatusRequest($this, '2099-12-31')->assertOk()->assertJsonPath('portal_reconciliation.message',
+        'Bitte wähle einen gültigen Durchführungstermin dieser Arbeit.');
+    overallPortalStatusRequest($this)->assertOk()->assertJsonPath('portal_reconciliation.message',
+        'Arbeit, Portalabgaben oder Kopierstand wurden während der Prüfung geändert. Bitte erneut prüfen.');
+    expect($this->work->fresh()->status)->not->toHaveKey('portal_submission_copy');
+});
+
 it('copies original bytes for the selected date, preserves every receipt and detects repeats and conflicting originals', function (): void {
     $first = portalCopyReceipt($this, $this->student, 'Original.bin', "a\0b\xff");
     portalCopyReceipt($this, $this->student, 'Original.bin', 'different bytes');
@@ -150,7 +242,9 @@ it('copies original bytes for the selected date, preserves every receipt and det
     portalCopyReceipt($this, $this->peer, 'other-date.bin', 'different date');
     $before = $this->work->fresh()->status;
     fakePortalCopyDropbox($this);
-    $run = $this->postJson($this->url, ['date' => $this->date])->assertOk()->assertJsonCount(2, 'data.files')->json('data.run_id');
+    $run = $this->postJson($this->url, ['date' => $this->date])->assertOk()->assertJsonCount(2, 'data.files')
+        ->assertJsonPath('data.candidates', [['id' => $this->student->id, 'name' => $this->student->full_name]])
+        ->assertJsonPath('data.files.0.candidate_id', $this->student->id)->json('data.run_id');
     $this->postJson($this->fileUrl, ['run_id' => $run, 'item' => 0])->assertOk()->assertJsonPath('data.status', 'copied')
         ->assertJsonPath("data.portal_copy_progress.{$this->date}.complete", false);
     $this->postJson($this->fileUrl, ['run_id' => $run, 'item' => 1])->assertOk()->assertJsonPath('data.status', 'open')
@@ -162,6 +256,15 @@ it('copies original bytes for the selected date, preserves every receipt and det
     expect($uploads)->toHaveCount(1)->and($uploads->first()[0]->body())->toBe("a\0b\xff")
         ->and(collect($this->work->fresh()->status)->except('portal_submission_copy')->all())->toBe($before);
     Storage::disk('local')->assertExists($first['file_path']);
+});
+
+it('includes assigned candidates without an active original from the chosen date', function (): void {
+    portalCopyReceipt($this, $this->student, 'Original.bin', 'original');
+    $this->work->update(['groups' => [['date' => $this->date, 'student_ids' => [$this->student->id, $this->peer->id]]]]);
+    fakePortalCopyDropbox($this);
+    $data = $this->postJson($this->url, ['date' => $this->date])->assertOk()->assertJsonCount(1, 'data.files')->json('data');
+    expect(array_column($data['candidates'], 'id'))->toEqualCanonicalizing([$this->student->id, $this->peer->id])
+        ->and(array_column($data['files'], 'candidate_id'))->toBe([$this->student->id]);
 });
 
 it('rebuilds the copy recommendation from current active originals and the current target after reload', function (): void {

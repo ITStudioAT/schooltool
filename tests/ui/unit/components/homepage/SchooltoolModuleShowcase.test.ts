@@ -1,23 +1,20 @@
-import { fireEvent, render, screen } from '@testing-library/vue'
+import { render, screen, within } from '@testing-library/vue'
 import { expect, it } from 'vitest'
 import SchooltoolModuleShowcase from '@/pages/homepage/index/SchooltoolModuleShowcase.vue'
 
-it('keeps exactly one module preview open when a selection has six entries', async () => {
+it('shows the title and description of all six modules at once', () => {
     const modules = ['Anmeldesystem', 'Lehrertool', 'SEPP', 'Schülerportal', 'Termine', 'Lernmaterialien']
-        .map((title, index) => ({ id: `module-${index}`, title, description: `Beispiel für ${title}`, motif: 'books' }))
+        .map((title, index) => ({ id: `module-${index}`, title, description: `Beispiel für ${title}`, image: `/example-${index}.webp` }))
 
     render(SchooltoolModuleShowcase, { props: { modules } })
 
-    expect(screen.getAllByRole('button')).toHaveLength(6)
-    expect(screen.getByRole('region', { name: 'Anmeldesystem' })).toBeVisible()
+    const cards = within(screen.getByRole('list')).getAllByRole('listitem')
+    expect(cards).toHaveLength(6)
 
-    const lastChoice = screen.getByRole('button', { name: 'Lernmaterialien' })
-    await fireEvent.click(lastChoice)
-
-    const preview = screen.getByRole('region', { name: 'Lernmaterialien' })
-    expect(preview).toBeVisible()
-    expect(preview).toHaveTextContent('Beispiel für Lernmaterialien')
-    expect(lastChoice).toHaveAttribute('aria-expanded', 'true')
-    expect(lastChoice).toHaveAttribute('aria-controls', preview.id)
-    expect(screen.queryByRole('region', { name: 'Anmeldesystem' })).not.toBeInTheDocument()
+    cards.forEach((card, index) => {
+        const { title, description, image } = modules[index]
+        expect(within(card).getByRole('heading', { name: title, level: 3 })).toBeVisible()
+        expect(within(card).getByText(description)).toBeVisible()
+        expect(card.querySelector('img')).toHaveAttribute('src', image)
+    })
 })

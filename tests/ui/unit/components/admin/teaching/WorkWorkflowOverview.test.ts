@@ -114,7 +114,7 @@ it('opens the MC picker directly from a prepared worksheet summary', async () =>
 it('loads only an existing proof when opening, with no invented check time, and refreshes only after the explicit click', async () => {
     const status = { ...connection, exercise: { status: 'unknown', checked_at: null } }
     const get = vi.fn().mockResolvedValue({ data: status })
-    const post = vi.fn().mockResolvedValue({ data: { ...connection, exercise: { status: 'missing', checked_at: `${date}T10:00:00Z` } } })
+    const post = vi.fn().mockResolvedValue({ data: { ...connection, saved_work: work, exercise: { status: 'missing', checked_at: `${date}T10:00:00Z` } } })
     vi.stubGlobal('axios', { get, post })
     workDropboxStates.set('7:2:65', connection)
     const { wrapper, action } = render()
@@ -128,10 +128,50 @@ it('loads only an existing proof when opening, with no invented check time, and 
         expect(action('Bereitstellungsweg vorbereiten')).toBeDefined()
         expect(action('Aufgaben bereitstellen')).toBeUndefined()
         expect(post).not.toHaveBeenCalled()
-        await action('Status erneut prüfen')!.trigger('click')
+        await action('Gesamtstatus prüfen')!.trigger('click')
         await flushPromises()
-        expect(post).toHaveBeenCalledWith(expect.stringContaining('/dropbox/refresh'), expect.objectContaining({ status_only: true, date }), expect.any(Object))
+        expect(post).toHaveBeenCalledWith(expect.stringContaining('/dropbox/refresh'), expect.objectContaining({ status_only: true, overall: true, date }), expect.any(Object))
         expect(wrapper.emitted('exercise-status')?.at(-1)?.[0]).toMatchObject({ status: 'missing', checkedAt: `${date}T10:00:00Z` })
+    } finally { wrapper.unmount() }
+})
+
+it('checks the selected date with the phases collapsed and advances only after every portal original is confirmed', async () => {
+    const folder = { id: 'id:exam', name: 'Fiktive Prüfung' }
+    const confirmed = { status: 'found', folder, checked_at: `${date}T13:00:00Z`, preparation: { status: 'ready', portal_candidates_id: 'id:candidates' } }
+    const current = { ...work, groups: [{ date, student_ids: [12] }], status: {
+        submission_method: { channel: 'portal' }, student_distribution: { published_at: `${date}T09:00:00Z`, ended_at: `${date}T12:00:00Z`, student_ids: [12] },
+        portal_submissions: [{ id: 'original-1', student_id: 12 }, { id: 'original-2', student_id: 12 }],
+    } }
+    const result = (complete: boolean) => ({ data: { ...connection, exercise: confirmed, workflow_checked_at: confirmed.checked_at,
+        saved_work: { ...current, portal_copy_progress: { [date]: { complete, observed_at: confirmed.checked_at, folder_id: folder.id, candidates_id: 'id:candidates' } } },
+        portal_reconciliation: { total: 2, confirmed: complete ? 2 : 1, different: complete ? 0 : 1 },
+    } })
+    const post = vi.fn().mockResolvedValueOnce(result(false)).mockResolvedValueOnce(result(true))
+    vi.stubGlobal('axios', { get: vi.fn().mockResolvedValue({ data: connection }), post })
+    workDropboxStates.set('7:2:65', connection)
+    const { wrapper, action } = render(current, true, saved => { void wrapper.setProps({ work: saved }) })
+    const next = () => wrapper.get('.work-phase--next .work-phase__title').text()
+    const completed = () => wrapper.findAll('.work-phase--complete .work-phase__title').map(phase => phase.text())
+    try {
+        await wrapper.setProps({ assessment: confirmed })
+        await flushPromises()
+        await wrapper.get('.work-phase--next .work-phase__toggle').trigger('click')
+        expect(wrapper.findAll('.work-phase__toggle[aria-expanded="true"]')).toHaveLength(0)
+        expect(action('Gesamtstatus prüfen')!.isVisible()).toBe(true)
+        expect(completed()).toEqual(['Vorbereiten', 'Bereitstellen'])
+        await action('Gesamtstatus prüfen')!.trigger('click')
+        await flushPromises()
+        expect(next()).toBe('Abgeben')
+        expect(wrapper.text()).toContain('1 von 2 Portaldateien in Dropbox bestätigt · 1 weicht ab')
+        await action('Gesamtstatus prüfen')!.trigger('click')
+        await flushPromises()
+        expect(next()).toBe('Bewerten')
+        expect(completed()).toEqual(['Vorbereiten', 'Bereitstellen', 'Abgeben'])
+        expect(wrapper.text()).toContain('2 von 2 Portaldateien in Dropbox bestätigt')
+        expect(post.mock.calls.map(([url, data]) => [url, data.date, data.overall])).toEqual([
+            ['/api/admin/teaching/course_works/65/dropbox/refresh', date, true],
+            ['/api/admin/teaching/course_works/65/dropbox/refresh', date, true],
+        ])
     } finally { wrapper.unmount() }
 })
 
@@ -188,7 +228,7 @@ it('opens the applicable phase and highlights one real action as the saved work 
     const primary = () => wrapper.get('[data-primary="true"] button').text()
     try {
         await flushPromises()
-        expect(primary()).toBe('Status erneut prüfen')
+        expect(primary()).toBe('Gesamtstatus prüfen')
         expect(wrapper.findAll('.work-phase__title').map(item => item.text())).toEqual(['Vorbereiten', 'Bereitstellen', 'Abgeben', 'Bewerten'])
         expect(wrapper.findAll('.work-phase__toggle[disabled]')).toHaveLength(0)
         await wrapper.setProps({ exerciseReady: true })
@@ -658,11 +698,11 @@ it('shows an active background job and leaves status and read-only module access
             expect(toggle.attributes('aria-expanded')).toBe('false')
         }
         expect(action('Leistungsfeststellung erstellen')).toBeUndefined()
-        expect(action('Status erneut prüfen')!.attributes('disabled')).toBeUndefined()
+        expect(action('Gesamtstatus prüfen')!.attributes('disabled')).toBeUndefined()
         expect(action('Erstellungsauftrag anzeigen')!.attributes('disabled')).toBeUndefined()
         expect(action('Lernmodul ansehen')!.attributes('disabled')).toBeUndefined()
         expect(action('Bewertung eintragen')).toBeUndefined()
-        await action('Status erneut prüfen')!.trigger('click')
+        await action('Gesamtstatus prüfen')!.trigger('click')
         expect(axios.post).not.toHaveBeenCalled()
         observeAssessmentRun('7:2:65', { ...run, state: 'running' })
         await flushPromises()
@@ -770,6 +810,52 @@ it.each([false, true])('recommends copying from Abgeben until the server confirm
     } finally { wrapper.unmount() }
 })
 
+
+it('shows the candidate of the in-flight request and confirms a row only after all its originals succeed', async () => {
+    const target = { status: 'found', folder: { id: 'id:exam' }, preparation: { status: 'ready' } }
+    const candidates = [{ id: 12, name: 'Ada Test' }, { id: 13, name: 'Ben Test' }, { id: 14, name: 'Cem Test' }]
+    const originals = [
+        { item: 0, candidate_id: 12, name: 'Erste.docx' }, { item: 1, candidate_id: 12, name: 'Zweite.docx' },
+        { item: 2, candidate_id: 14, name: 'Dritte.docx' },
+    ]
+    const plan = (run_id: string) => ({ data: { data: { work_id: work.id, date, run_id, candidates, files: originals } } })
+    const result = (status: string, message?: string) => ({ data: { data: { status, message } } })
+    let confirmFirst: (value: ReturnType<typeof result>) => void = () => {}
+    const post = vi.fn().mockResolvedValueOnce(plan('one'))
+        .mockImplementationOnce(() => new Promise(resolve => { confirmFirst = resolve }))
+        .mockResolvedValueOnce(result('open', 'Namenskonflikt')).mockResolvedValueOnce(result('copied'))
+        .mockResolvedValueOnce(plan('two'))
+        .mockResolvedValueOnce(result('existing')).mockResolvedValueOnce(result('copied')).mockResolvedValueOnce(result('existing'))
+    vi.stubGlobal('axios', { post, get: vi.fn().mockResolvedValue({ data: connection }) })
+    const { wrapper, action } = render({ ...work, groups: [{ date, student_ids: [12, 13, 14] }], status: {
+        student_distribution: { published_at: date + 'T09:00:00Z', ended_at: date + 'T11:00:00Z', student_ids: [12, 13, 14] },
+        submission_method: { channel: 'portal' }, portal_submissions: [{ student_id: 12, id: 'a' }, { student_id: 14, id: 'b' }],
+    } }, false)
+    const row = (name: string) => wrapper.findAll('[aria-label="Kandidat:innen und Kopierstatus"] > li').find(row => row.text().includes(name))!
+    try {
+        await wrapper.setProps({ assessment: target, now: Date.parse(date + 'T12:00:00Z') })
+        await action('Portalabgaben nach Dropbox kopieren')!.trigger('click')
+        await flushPromises()
+        expect(row('Ada Test').attributes('aria-current')).toBe('true')
+        expect(row('Ada Test').text()).toContain('Wird bearbeitet · 0/2 Dateien')
+        expect(row('Ben Test').text()).toContain('Keine Portalabgabe')
+        expect(row('Cem Test').text()).toContain('Wartet')
+
+        confirmFirst(result('copied'))
+        await flushPromises()
+        expect(row('Ada Test').text()).toContain('Offen · 1/2 Dateien')
+        expect(row('Ada Test').text()).toContain('Zweite.docx · Namenskonflikt')
+        expect(row('Ada Test').find('[icon="mdi-check-circle"]').exists()).toBe(false)
+        expect(row('Cem Test').find('[icon="mdi-check-circle"]').exists()).toBe(true)
+
+        await action('Erneut prüfen und kopieren')!.trigger('click')
+        await flushPromises()
+        expect(row('Ada Test').text()).toContain('Abgelegt · 2/2 Dateien')
+        expect(row('Ada Test').find('[icon="mdi-check-circle"]').exists()).toBe(true)
+        expect(row('Cem Test').text()).toContain('Abgelegt')
+        expect(action('Erneut prüfen und kopieren')).toBeUndefined()
+    } finally { wrapper.unmount() }
+})
 
 it('shows documented delivery methods for the current group independently of the submission method', async () => {
     const time = date + 'T10:00:00Z'

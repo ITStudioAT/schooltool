@@ -347,10 +347,8 @@ describe('CourseTable manual work completion', () => {
         const { wrapper, works, date, first } = mountCompletionTable(false, true)
         const work = { ...first, local_task_copy: true, automation_enabled: true, groups: [{ student_ids: [12] }],
             status: { student_distribution: { prepared_at: '2026-10-12T10:00:00Z', student_ids: [12] } } }
-        const get = vi.fn().mockImplementation((_url, options) => Promise.resolve(options?.params?.refresh_collection
-            ? { data: { data: work, progress: { state: 'done', completed: ['connection', 'folder', 'collection'], skipped: [] } } }
-            : { data: { connected: false } }))
-        const post = vi.fn()
+        const get = vi.fn().mockResolvedValue({ data: { connected: false } })
+        const post = vi.fn().mockResolvedValue({ data: { connected: false, saved_work: work, workflow_checked_at: '2026-10-12T12:00:00Z' } })
         vi.stubGlobal('axios', { get, post })
         try {
             useAdminStore().config = { user: { id: 7, email: 'guenther.kron@cdgym.at' } } as never
@@ -359,17 +357,16 @@ describe('CourseTable manual work completion', () => {
             await flushPromises()
             const form = wrapper.get('.course-table-date-work-form')
             const actions = form.get('[aria-label="Ablauf der Arbeit"]')
-            const progress = actions.getComponent({ name: 'WorkProgressCheck' })
-            const check = progress.get('button, v-btn')
-            expect(check.text()).toContain('Status erneut prüfen')
+            const check = actions.findAll('header button, header v-btn').find(button => button.text() === 'Gesamtstatus prüfen')!
+            expect(check.isVisible()).toBe(true)
             expect(check.attributes('disabled')).toBeUndefined()
             expect(actions.text()).toContain('Kontext kopieren')
             expect(form.findAll('button, v-btn').some(button => button.text() === 'Test')).toBe(false)
             await check.trigger('click')
             await flushPromises()
-            expect(get.mock.calls.some(([, options]) => options?.params?.refresh_collection && options.params.stream_progress)).toBe(true)
+            expect(post).toHaveBeenCalledExactlyOnceWith(expect.stringContaining('/dropbox/refresh'),
+                expect.objectContaining({ status_only: true, overall: true, refresh_collection: true, date: date.date }), expect.any(Object))
             expect(form.get('[data-testid="work-dialog-last-check"]').text()).not.toContain('Kein belegter Zeitpunkt')
-            expect(post).not.toHaveBeenCalled()
         } finally { wrapper.unmount(); clearWorkDropboxStates(); vi.unstubAllGlobals() }
     })
 
@@ -1961,7 +1958,7 @@ describe('CourseTable evaluation PDF links', () => {
             expect(form.get('[data-testid="work-dialog-last-check"]').text()).not.toContain('2028')
             expect(form.findAll('v-btn').filter(button => button.text() === 'Verknüpfen')).toHaveLength(0)
             const actions = form.get('[aria-label="Ablauf der Arbeit"]')
-            expect(actions.findAll('v-btn').map(button => button.text())).toEqual(expect.arrayContaining(['Ordner verknüpfen', 'Kontext kopieren', 'Status erneut prüfen', 'Gesamtauswertung (PDF)']))
+            expect(actions.findAll('v-btn').map(button => button.text())).toEqual(expect.arrayContaining(['Ordner verknüpfen', 'Kontext kopieren', 'Gesamtstatus prüfen', 'Gesamtauswertung (PDF)']))
             const workflow = form.getComponent({ name: 'WorkWorkflowOverview' })
             vm.workSaving = true
             await flushPromises()

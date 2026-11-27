@@ -29,6 +29,9 @@
 
 <script setup>
 import { onMounted, ref } from 'vue'
+import registrationImage from '../../../../images/schooltool-module-anmeldesystem.webp'
+import teachingImage from '../../../../images/schooltool-module-lehrertool.webp'
+import timetableImage from '../../../../images/schooltool-module-sepp.webp'
 import SchooltoolModuleShowcase from './SchooltoolModuleShowcase.vue'
 
 const modules = [
@@ -36,19 +39,19 @@ const modules = [
         id: 'anmeldesystem',
         title: 'Anmeldesystem',
         description: 'Anmeldungen für Schulveranstaltungen und Elternabende organisieren.',
-        motif: 'registration',
+        image: registrationImage,
     },
     {
         id: 'lehrertool',
         title: 'Lehrertool',
         description: 'Unterricht, Aufgaben und Beurteilungen verwalten.',
-        motif: 'books',
+        image: teachingImage,
     },
     {
         id: 'sepp',
         title: 'SEPP',
         description: 'Persönliche Stundenpläne zusammenstellen.',
-        motif: 'timetable',
+        image: timetableImage,
     },
 ]
 

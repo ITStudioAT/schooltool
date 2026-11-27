@@ -23,7 +23,9 @@ use App\Services\TeachingWorkDispatchImport;
 use App\Services\TeachingWorkFolderImport;
 use App\Services\TeachingWorkFolderVerification;
 use App\Services\TeachingWorkJsonImport;
+use App\Services\TeachingWorkPortalSubmissionCopy;
 use App\Services\TeachingWorkRefreshProgress;
+use App\Services\TeachingWorkSubmissions;
 use Illuminate\Contracts\Debug\ExceptionHandler;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -52,6 +54,7 @@ class WorkDropboxController extends Controller
             'progress_id' => ['sometimes', 'uuid'],
             'stream_progress' => ['sometimes', 'boolean'],
             'status_only' => ['sometimes', 'boolean'],
+            'overall' => ['sometimes', 'boolean'],
         ]);
         if ($data['stream_progress'] ?? false) {
             $request->merge(['stream_progress' => false]);
@@ -60,7 +63,7 @@ class WorkDropboxController extends Controller
         }
         $progressService = app(TeachingWorkRefreshProgress::class);
         $progressKey = isset($data['progress_id']) ? $progressService->key($actor, $course_work, $data['progress_id']) : null;
-        if ($data['status_only'] ?? false) {
+        if (($data['status_only'] ?? false) || ($data['overall'] ?? false)) {
             return $this->checkStoredWorkflow($request, $course_work, $dropbox, $actor, $progressService, $progressKey);
         }
         $progress = ['state' => 'running', 'active' => 'connection', 'completed' => [], 'skipped' => [],
@@ -139,7 +142,8 @@ class WorkDropboxController extends Controller
     private function checkStoredWorkflow(Request $request, TeachingCourseWork $work, DropboxWorkImport $dropbox, User $actor,
         TeachingWorkRefreshProgress $tracker, ?string $key): JsonResponse
     {
-        $collect = $request->boolean('refresh_collection');
+        $overall = $request->boolean('overall');
+        $collect = $request->boolean('refresh_collection') && (! $overall || (TeachingWorkSubmissions::method($work)['channel'] ?? null) !== 'portal');
         $steps = ['connection', 'folder', 'verification'];
         if ($collect) {
             $steps[] = 'collection';
@@ -168,6 +172,22 @@ class WorkDropboxController extends Controller
                 $progress['active'] = 'collection';
                 $tracker->save($key, $progress);
                 $this->checkCollection($request, $work, $actor, $binding, $body, $progress);
+            }
+            if ($overall) {
+                $work->refresh();
+                $this->authorizeTeachingCourseAccess($work->teachingCourse, $actor);
+                try {
+                    $body['portal_reconciliation'] = app(TeachingWorkPortalSubmissionCopy::class)->reconcile($work, $actor,
+                        $request->input('date'), fn (TeachingCourseWork $current) => $this->authorizeTeachingCourseAccess($current->teachingCourse, $actor));
+                } catch (ValidationException $failure) {
+                    $body['portal_reconciliation'] = ['message' => collect($failure->errors())->flatten()->first()];
+                } catch (HttpExceptionInterface $failure) {
+                    if ($failure->getStatusCode() !== 409) {
+                        throw $failure;
+                    }
+                    $body['portal_reconciliation'] = ['message' => $failure->getMessage()];
+                }
+                $body['workflow_checked_at'] = now()->toIso8601String();
             }
             if ($progress['state'] !== 'failed') {
                 $progress['state'] = 'done';

@@ -9,8 +9,10 @@ use App\Models\TeachingWorkDropboxFolder;
 use App\Models\TeachingWorkModuleLink;
 use App\Models\User;
 use App\Support\SchooltoolAssessmentJson;
+use Closure;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -105,13 +107,7 @@ class TeachingWorkPortalSubmissionCopy
             $name = $this->candidateNames($work)[$student] ?? null;
             abort_unless($name && hash('sha256', $name) === $selection['candidate_digest'], 409,
                 'Die Zuordnung zum persönlichen Prüfungsordner wurde seit Beginn geändert.');
-            $path = TeachingWorkSubmissions::storagePath($work, $file);
-            $size = $file['size'] ?? null;
-            abort_unless($path && is_int($size) && $size > 0 && $size <= TeachingWorkSubmissions::MAX_FILE_KIB * 1024
-                && Storage::disk('local')->size($path) === $size, 409, 'Das gespeicherte Portaloriginal fehlt oder ist unvollständig.');
-            $bytes = Storage::disk('local')->get($path);
-            abort_unless(is_string($bytes) && strlen($bytes) === $size && is_string($file['sha256'] ?? null)
-                && hash_equals($file['sha256'], hash('sha256', $bytes)), 409, 'Die Prüfsumme des Portaloriginals stimmt nicht.');
+            $bytes = $this->originalBytes($work, $file);
 
             $candidates = $plan['candidates'];
             $person = $this->dropbox->findExerciseChildFolder($connection, $candidates, $name);
@@ -132,6 +128,170 @@ class TeachingWorkPortalSubmissionCopy
             return ['status' => 'open', 'message' => $failure instanceof DropboxExerciseRequestFailed
                 ? $failure->safePublicMessage : $failure->getMessage()];
         }
+    }
+
+    /** Check existing Dropbox files and replace the proof for this date using a fresh, locked work record. */
+    public function reconcile(TeachingCourseWork $work, User $actor, ?string $date, Closure $authorize): ?array
+    {
+        if ((TeachingWorkSubmissions::method($work)['channel'] ?? null) !== 'portal' || ! $work->studentReleaseEnded()
+            || empty($work->status['portal_submissions'])) {
+            return null;
+        }
+        $snapshot = $this->reconciliationSnapshot($work, $date);
+        $date = $snapshot['date'];
+        $files = $snapshot['files'];
+        if ($files === []) {
+            return null;
+        }
+
+        $counts = ['total' => count($files), 'confirmed' => 0, 'missing' => 0, 'different' => 0, 'unverifiable' => 0];
+        $link = $snapshot['link'];
+        abort_unless($link, 409, 'Für diesen Termin fehlt ein eindeutig zugeordneter Dropbox-Prüfungsordner.');
+        $connection = $this->dropbox->connection($actor);
+        abort_unless($link->dropbox_connection_id === $connection->id
+            && (! ($link instanceof TeachingWorkModuleLink) || $link->account_id === $connection->account_id),
+            409, 'Die Dropbox-Verbindung gehört nicht zur gespeicherten Zuordnung.');
+
+        $target = null;
+        $proofs = [];
+        try {
+            $folder = $this->modules->portalSubmissionTarget($connection, $work, $link, $date);
+            $candidates = $this->dropbox->findExerciseChildFolder($connection, $folder, 'Kandidaten');
+            abort_unless($candidates, 409, 'Im bestätigten Prüfungsordner fehlt der Kandidatenordner.');
+            [$counts, $matches] = $this->checkCandidateOriginals($connection, $work, $snapshot, $candidates, $counts);
+
+            $currentFolder = $this->modules->portalSubmissionTarget($connection, $work, $link, $date);
+            $currentCandidates = $this->dropbox->findExerciseChildFolder($connection, $currentFolder, 'Kandidaten');
+            abort_unless($currentFolder['id'] === $folder['id'] && $currentFolder['path_lower'] === $folder['path_lower']
+                && ($currentCandidates['id'] ?? null) === $candidates['id'], 409, 'Der Dropbox-Prüfungsordner wurde während der Prüfung geändert.');
+            $proofs = $this->confirmOriginalRevisions($connection, $matches);
+            $counts['confirmed'] = count($proofs);
+            $counts['unverifiable'] += count($matches) - $counts['confirmed'];
+            $target = ['binding' => $snapshot['binding'], 'folder_id' => $folder['id'], 'candidates_id' => $candidates['id']];
+        } catch (HttpExceptionInterface $failure) {
+            $counts = ['total' => count($files), 'confirmed' => 0, 'missing' => 0, 'different' => 0, 'unverifiable' => count($files),
+                'message' => $failure->getMessage()];
+        }
+
+        DB::transaction(function () use ($work, $actor, $date, $snapshot, $target, $proofs, $connection, $authorize): void {
+            $current = TeachingCourseWork::query()->with('teachingCourse')->lockForUpdate()->findOrFail($work->id);
+            $authorize($current);
+            $currentSnapshot = $this->reconciliationSnapshot($current, $date, lock: true);
+            $currentConnection = $this->dropbox->connection($actor);
+            abort_unless($this->snapshotDigest($currentSnapshot) === $this->snapshotDigest($snapshot)
+                && $currentConnection->id === $connection->id && $currentConnection->account_id === $connection->account_id, 409,
+                'Arbeit, Portalabgaben oder Kopierstand wurden während der Prüfung geändert. Bitte erneut prüfen.');
+
+            $status = $current->status;
+            if ($target === null) {
+                unset($status['portal_submission_copy'][$date]);
+            } else {
+                $record = $target + ['files' => $proofs, 'observed_at' => now()->toIso8601String()];
+                if (SchooltoolAssessmentJson::digest($record) === SchooltoolAssessmentJson::digest($snapshot['previous'])) {
+                    return;
+                }
+                $status['portal_submission_copy'][$date] = $record;
+            }
+            if ($status !== $current->status) {
+                $current->update(['status' => $status]);
+            }
+        });
+
+        return $counts;
+    }
+
+    private function reconciliationSnapshot(TeachingCourseWork $work, ?string $date, bool $lock = false): array
+    {
+        $selection = $this->closedSelection($work, $date, $lock);
+        $date = $selection['date'];
+        $eligible = array_column($selection['students'], 'id');
+        $groups = app(TeachingCourseWorkEntrySyncService::class)->groupsForWork($work);
+        $files = $this->activeFiles($work, $groups, $date, $eligible)->all();
+        $link = $this->targetBinding($work);
+        $fileIds = array_filter(array_column($files, 'id'), fn ($id): bool => is_string($id));
+        $candidateIds = array_fill_keys(array_column($files, 'student_id'), true);
+
+        return ['date' => $date, 'course_id' => $work->teaching_course_id, 'ended_at' => $work->status['student_distribution']['ended_at'],
+            'eligible' => $eligible, 'files' => $files,
+            'candidate_names' => $candidateIds === [] ? [] : array_intersect_key($this->candidateNames($work), $candidateIds),
+            'id_counts' => collect($work->status['portal_submissions'] ?? [])->pluck('id')->filter(fn ($id): bool => in_array($id, $fileIds, true))->countBy()->all(),
+            'link' => $link, 'binding' => $link ? $this->binding($work, $link) : null,
+            'previous' => $work->status['portal_submission_copy'][$date] ?? []];
+    }
+
+    private function snapshotDigest(array $snapshot): string
+    {
+        unset($snapshot['link']);
+
+        return SchooltoolAssessmentJson::digest($snapshot);
+    }
+
+    private function checkCandidateOriginals(DropboxConnection $connection, TeachingCourseWork $work, array $snapshot, array $candidates, array $counts): array
+    {
+        $destinationKey = fn (array $file): string => (int) $file['student_id'].':'.mb_strtolower((string) ($file['name'] ?? ''));
+        $pathCounts = collect($snapshot['files'])->countBy($destinationKey);
+        $destinations = [];
+        $matches = [];
+        foreach ($snapshot['files'] as $file) {
+            $student = (int) $file['student_id'];
+            $name = $snapshot['candidate_names'][$student] ?? null;
+            $id = $file['id'] ?? null;
+            $filename = (string) ($file['name'] ?? '');
+            if (! $name || ! in_array($student, $snapshot['eligible'], true) || ! is_string($id) || ! Str::isUuid($id)
+                || ($snapshot['id_counts'][$id] ?? 0) !== 1 || $pathCounts->get($destinationKey($file)) !== 1) {
+                $counts['unverifiable']++;
+
+                continue;
+            }
+            try {
+                if (! array_key_exists($student, $destinations)) {
+                    $person = $this->dropbox->findExerciseChildFolder($connection, $candidates, $name);
+                    $destinations[$student] = $person ? $this->dropbox->findExerciseChildFolder($connection, $person, 'Abgaben') : null;
+                }
+                $destination = $destinations[$student];
+                $result = $destination ? $this->dropbox->checkPortalOriginal($connection, $destination, $filename, $this->originalBytes($work, $file))
+                    : ['state' => 'missing'];
+                if ($result['state'] === 'confirmed') {
+                    $matches[$id] = [$destination, $filename, $result['proof'], ['receipt_digest' => SchooltoolAssessmentJson::digest($file),
+                        'candidate_digest' => hash('sha256', $name), 'destination_id' => $destination['id']]];
+                } else {
+                    $counts[$result['state']]++;
+                }
+            } catch (DropboxExerciseRequestFailed|HttpExceptionInterface|UnableToReadFile|UnableToRetrieveMetadata) {
+                $counts['unverifiable']++;
+            }
+        }
+
+        return [$counts, $matches];
+    }
+
+    private function confirmOriginalRevisions(DropboxConnection $connection, array $matches): array
+    {
+        $proofs = [];
+        foreach ($matches as $id => [$destination, $filename, $remoteProof, $localProof]) {
+            try {
+                if ($this->dropbox->portalOriginalUnchanged($connection, $destination, $filename, $remoteProof)) {
+                    $proofs[$id] = $localProof;
+                }
+            } catch (DropboxExerciseRequestFailed) {
+                // Keep an original open if Dropbox can no longer verify its revision.
+            }
+        }
+
+        return $proofs;
+    }
+
+    private function originalBytes(TeachingCourseWork $work, array $file): string
+    {
+        $path = TeachingWorkSubmissions::storagePath($work, $file);
+        $size = $file['size'] ?? null;
+        abort_unless($path && is_int($size) && $size > 0 && $size <= TeachingWorkSubmissions::MAX_FILE_KIB * 1024
+            && Storage::disk('local')->size($path) === $size, 409, 'Das gespeicherte Portaloriginal fehlt oder ist unvollständig.');
+        $bytes = Storage::disk('local')->get($path);
+        abort_unless(is_string($bytes) && strlen($bytes) === $size && is_string($file['sha256'] ?? null)
+            && hash_equals($file['sha256'], hash('sha256', $bytes)), 409, 'Die Prüfsumme des Portaloriginals stimmt nicht.');
+
+        return $bytes;
     }
 
     /** Confirm a selected exam folder without reading or copying any portal original. */

@@ -538,8 +538,11 @@ class TeachingWorkAiExport
         while (str_contains($json, $fence)) {
             $fence .= '`';
         }
+        $chatName = json_encode($work->title.' bewerten', JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
         $result['context'] = $context;
-        $result['text'] = '# Auftrag: '.($repeat ? 'Arbeit erneut bewerten' : 'Arbeit bewerten')."\n\n"
+        $result['text'] = "Öffnen Sie für diese Leistungsfeststellung einen neuen Chat mit dem exakten Namen {$chatName} "
+            ."und führen Sie die Bewertung in diesem Chat durch.\n\n"
+            .'# Auftrag: '.($repeat ? 'Arbeit erneut bewerten' : 'Arbeit bewerten')."\n\n"
             .'Verwenden Sie den Skill grade-exercise für genau diese bestehende Leistungsfeststellung und die bestätigte Teilnehmerliste. '
             .'Prüfen Sie Aufgabenblatt, verbindliche Bewertungskriterien, zugehörige Stoffquellen und den gesicherten Abgabenbestand vollständig. '
             .'Fehlende oder mehrdeutige Pflichtquellen gezielt klären; keine Bewertungskriterien, Punkte, Abgaben oder Fristbelege erfinden. '
