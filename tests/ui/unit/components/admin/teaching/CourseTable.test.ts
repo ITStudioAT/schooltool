@@ -442,10 +442,11 @@ describe('CourseTable manual work completion', () => {
 
     it('shows the closed upload and opens manual grading when the portal deadline passes without files', async () => {
         vi.useFakeTimers({ toFake: ['Date'] })
-        const { wrapper, works, courses, date, first } = mountCompletionTable(false, true)
         const deadline = '2026-11-26'
         const beforeDeadline = Date.parse(`${deadline}T11:29:59Z`)
         const afterDeadline = Date.parse(`${deadline}T11:30:01Z`)
+        vi.setSystemTime(beforeDeadline)
+        const { wrapper, works, courses, date, first } = mountCompletionTable(true, true)
         const published = {
             submission_method: { channel: 'portal' },
             student_distribution: { published_at: `${date.date}T09:00:00Z`, student_ids: [12] },

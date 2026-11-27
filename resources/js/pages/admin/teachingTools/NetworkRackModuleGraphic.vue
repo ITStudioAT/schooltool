@@ -7,7 +7,7 @@
             <i v-for="port in portCount" :key="port" :data-rack-port="port - 1"
                 :class="{ 'is-connected': connectedPorts.includes(port - 1), 'is-patched': patchedPorts.includes(port - 1) }" />
         </span>
-        <span v-if="type !== 'patch-panel'" class="rack-module-graphic__status" />
+        <span class="rack-module-graphic__status" :class="{ 'is-lit': operational }" />
     </span>
 </template>
 
@@ -19,6 +19,7 @@ const props = defineProps({
     type: { type: String, required: true },
     connectedPorts: { type: Array, default: () => [] },
     patchedPorts: { type: Array, default: () => [] },
+    operational: { type: Boolean, default: false },
 })
 const portCount = computed(() => Math.max(rackModulePorts[props.type], ...props.connectedPorts.map(port => port + 1),
     ...props.patchedPorts.map(port => port + 1)))
@@ -90,7 +91,7 @@ const portCount = computed(() => Math.max(rackModulePorts[props.type], ...props.
     content: '';
 }
 
-.rack-module-graphic__ports > i.is-patched { box-shadow: inset 0 0 0 2px #64dcc2; }
+.rack-module-graphic__ports > i.is-patched { box-shadow: inset 0 0 0 2px #9bb6d0; }
 
 .rack-module-graphic.is-router .rack-module-graphic__ports > i {
     flex-basis: 10px;
@@ -109,8 +110,14 @@ const portCount = computed(() => Math.max(rackModulePorts[props.type], ...props.
     inline-size: 5px;
     block-size: 5px;
     flex: none;
-    border: 1px solid #1e5b45;
+    border: 1px solid #364653;
     border-radius: 50%;
-    background: #61d1a0;
+    background: #687886;
+}
+
+.rack-module-graphic__status.is-lit {
+    border-color: #075c34;
+    background: #39db84;
+    box-shadow: 0 0 2px #169957;
 }
 </style>

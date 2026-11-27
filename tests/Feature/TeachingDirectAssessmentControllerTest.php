@@ -23,6 +23,7 @@ use App\Services\TeachingDirectAssessment;
 use GuzzleHttp\Psr7\Response;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
@@ -72,16 +73,12 @@ test('keeps an assessment ready for Redis after an outage without forwarding ass
     $redis = Mockery::mock(Illuminate\Contracts\Queue\Queue::class);
     Queue::shouldReceive('connection')->with('redis')->andReturn($redis);
     $relay = app(TeachingAssessmentQueue::class);
-    $redis->shouldReceive('pushRaw')->once()->withAnyArgs()->andThrow(new RuntimeException('Redis unavailable'));
+    $redis->shouldReceive('push')->once()->withAnyArgs()->andThrow(new RuntimeException('Redis unavailable'));
 
     expect(fn () => $relay->publishPending())->toThrow(RuntimeException::class, 'Redis unavailable');
     expect($database->size(CreateTeachingAssessment::QUEUE))->toBe(2);
 
-    $redis->shouldReceive('pushRaw')->once()->with(
-        Mockery::on(fn (string $payload): bool => json_decode($payload, true)['data']['commandName'] === CreateTeachingAssessment::class
-            && str_contains($payload, $runId)),
-        CreateTeachingAssessment::QUEUE,
-    )->andReturn($runId);
+    $redis->shouldReceive('push')->once()->withArgs(fn (CreateTeachingAssessment $job, string $data, string $queue): bool => $job->runId === $runId && $queue === CreateTeachingAssessment::QUEUE)->andReturn($runId);
     $relay->publishPending();
     $relay->publishPending();
 
@@ -94,9 +91,9 @@ test('publishes a newly accepted assessment to Redis after storing its waiting s
     $redis = Mockery::mock(Illuminate\Contracts\Queue\Queue::class);
     Queue::partialMock()->shouldReceive('connection')->with('database')->andReturn($database);
     Queue::shouldReceive('connection')->with('redis')->andReturn($redis);
-    $redis->shouldReceive('pushRaw')->once()->andReturnUsing(function (string $payload, string $queue): string {
+    $redis->shouldReceive('push')->once()->andReturnUsing(function (CreateTeachingAssessment $job, string $data, string $queue): string {
         expect($queue)->toBe(CreateTeachingAssessment::QUEUE);
-        expect(json_decode($payload, true)['data']['commandName'])->toBe(CreateTeachingAssessment::class);
+        expect($job->workId)->toBe($this->work->id);
         expect(app(TeachingAssessmentRuns::class)->show($this->work, $this->teacher, null)['state'])->toBe('queued');
 
         return 'assessment-queued';
@@ -105,6 +102,9 @@ test('publishes a newly accepted assessment to Redis after storing its waiting s
     $this->postJson($this->url.'/store-exercise', ['kind' => 'direct',
         'generation_id' => '11111111-1111-4111-8111-111111111111', 'approved' => true])->assertAccepted();
     expect($database->size(CreateTeachingAssessment::QUEUE))->toBe(0);
+
+    Cache::store('database')->flush();
+    $this->getJson($this->url.'/exercise-run')->assertOk()->assertJsonPath('run.state', 'queued');
 });
 
 test('the real direct endpoint creates a verified package with a separate MC selection', function (bool $withMc, string $mode, bool $multipleClasses = false): void {

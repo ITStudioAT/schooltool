@@ -343,7 +343,7 @@ class TeachingAssessmentRuns
 
     private function state(): Repository
     {
-        return Cache::store('database');
+        return Cache::store('teaching-assessment');
     }
 
     private function key(int $workId): string

@@ -161,7 +161,7 @@ class TeachingDirectAssessment
         $plan = ['context_digest' => $this->digest($context), 'link' => $link->getAttributes(), 'module' => $module,
             'template' => $this->templateIdentity($template), 'date' => $date, 'mc_id' => $mc['id'] ?? null, 'reusable' => $reusable,
             'mc_digest' => SchooltoolAssessmentJson::digest(['mc' => $mc])];
-        Cache::put($this->key($work, $actor, $id), $plan, now()->addMinutes(30));
+        Cache::store('teaching-assessment')->put($this->key($work, $actor, $id), $plan, now()->addMinutes(30));
         $progress?->__invoke('completed', 'assessment_target');
 
         $result = ['id' => $id, 'points' => $template['points'], 'target' => ($module['path_display'] ?? $module['path_lower']).'/Leistungsfeststellungen/'.$this->folderName($context),
@@ -292,7 +292,8 @@ class TeachingDirectAssessment
     public function store(TeachingCourseWork $work, User $actor, string $id, ?\Closure $progress = null): array
     {
         $key = $this->key($work, $actor, $id);
-        $plan = Cache::get($key);
+        $plans = Cache::store('teaching-assessment');
+        $plan = $plans->get($key);
         abort_unless(is_array($plan), 409, 'Die Vorschau ist abgelaufen. Bitte erneut prüfen.');
         $progress?->__invoke('configure_mc', null, ($plan['mc_id'] ?? null) !== null);
         if (isset($plan['completed'])) {
@@ -302,7 +303,7 @@ class TeachingDirectAssessment
         }
         [$guard, $lock] = $this->acquireModuleLock($plan['module']['id']);
         try {
-            $plan = Cache::get($key);
+            $plan = $plans->get($key);
             abort_unless(is_array($plan), 409, 'Die Vorschau ist abgelaufen. Bitte erneut prüfen.');
             if (isset($plan['completed'])) {
                 $progress?->__invoke('replayed');
@@ -365,7 +366,7 @@ class TeachingDirectAssessment
                 }
                 $folder = $reusable ? $reusable['folder'] : $this->createLockedFolder($connection, $root['id'], $this->folderName($context), $root['path_lower']);
                 $plan['started'] = ['folder' => $folder, 'root' => $root];
-                Cache::put($key, $plan, now()->addMinutes(30));
+                $plans->put($key, $plan, now()->addMinutes(30));
             }
             $path = $folder['path_display'] ?? $folder['path_lower'];
             $phase = 'status';
@@ -513,7 +514,7 @@ class TeachingDirectAssessment
                 'participants_count' => count($copies), 'points' => $template['points'], 'scheduled_date' => $context['work']['scheduled_date']];
             $result['multiple_choice'] = $mc ? array_intersect_key($mc, array_flip(['id', 'title', 'points', 'status'])) : null;
             $plan['completed'] = $result;
-            Cache::put($key, $plan, now()->addMinutes(30));
+            $plans->put($key, $plan, now()->addMinutes(30));
             $progress?->__invoke('completed', 'assessment_verify');
 
             return $result;

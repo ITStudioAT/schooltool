@@ -50,13 +50,11 @@ export function roomPlanTaskCompletion({ placements, rooms, walls, neighborsByCh
         deviceCables: workstations.length === 5 && workstations.every(({ id }) => patchedDevices.has(id))
             && foyerAccessPoints.some(({ id }) => patchedDevices.has(id)),
         bundle: serverRacks.some(rack => rackHasPatchPanel(rack) && bundleRacks.has(rack.id)),
-        rackCables: wiredRacks.some(({ incoming, internetPorts }) =>
-            incoming.length > 0 && incoming.every(({ port }) => internetPorts.has(port))),
-        dataServer: workstations.length === 5 && wiredRacks.some(({ incoming, serverPortGroups }) =>
-            serverPortGroups.some(ports => workstations.every(({ id }) =>
-                incoming.some(({ port, placement }) => placement.id === id && ports.has(port))))),
-        connections: workstations.length === 5 && standingTables.length === 4
+        rackCables: workstations.length === 5 && standingTables.length === 4
             && workstations.every(placement => hasInternet(placement, 'lan'))
-            && standingTables.every(placement => hasInternet(placement, 'wlan')),
+            && standingTables.every(placement => hasInternet(placement, 'wlan'))
+            && wiredRacks.some(({ hasReachableServer, incoming, internetPorts }) =>
+                hasReachableServer && incoming.some(({ placement }) => placement.device.id === 'access-point')
+                && incoming.every(({ port }) => internetPorts.has(port))),
     }
 }

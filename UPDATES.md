@@ -6,6 +6,10 @@
 
 - Weitere Komponenten
 
+### System
+
+- Workers adaptiert
+
 ### Arbeiten
 
 - Arbeit als erledigt markieren

@@ -2287,8 +2287,8 @@ test('unlink is serialized with assessment writes and rechecks after an assessme
 test('a failed creation only blocks unlink when the current folder evidence requires it', function (bool $hasRemnants): void {
     linkExerciseFixture($this);
     $key = 'teaching-assessment-run:'.$this->work->id;
-    Cache::store('database')->put($key, 'fixture-run', 60);
-    Cache::store('database')->put($key.':fixture-run', ['state' => 'failed'], 60);
+    Cache::store('teaching-assessment')->put($key, 'fixture-run', 60);
+    Cache::store('teaching-assessment')->put($key.':fixture-run', ['state' => 'failed'], 60);
     if ($hasRemnants) {
         $path = addModernExerciseFixture($this);
         $this->online = array_values(array_filter($this->online, fn (array $entry): bool => $entry['path_lower'] !== mb_strtolower($path.'/status.json')));

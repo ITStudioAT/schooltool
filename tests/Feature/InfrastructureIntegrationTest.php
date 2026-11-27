@@ -1,10 +1,13 @@
 <?php
 
+use App\Jobs\CreateTeachingAssessment;
 use App\Models\MaterialV2Item;
 use App\Models\School;
 use App\Models\User;
 use App\Services\MaterialsV2\MaterialV2ScoutSearchService;
+use App\Services\TeachingAssessmentQueue;
 use Illuminate\Foundation\Testing\DatabaseTruncation;
+use Illuminate\Queue\Connectors\RedisConnector;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Redis;
@@ -108,5 +111,32 @@ it('pushes and consumes an isolated Redis queue job', function (): void {
         $queue->clear($queueName);
         $redis->del($probeKey);
         Redis::purge('integration');
+    }
+})->group('integration', 'redis');
+
+it('lets a Redis worker reserve an assessment transferred from the database', function (): void {
+    $redisConfig = config('database.redis.integration');
+    $redisConfig['prefix'] .= 'assessments-'.Str::lower(Str::random(20)).':';
+    config([
+        'database.redis.assessment-integration' => $redisConfig,
+        'queue.connections.redis.connection' => 'assessment-integration',
+    ]);
+    Queue::extend('redis', fn () => new RedisConnector(app('redis')));
+    $queue = Queue::connection('redis');
+    $queueName = CreateTeachingAssessment::QUEUE;
+    $runId = (string) Str::uuid();
+    Queue::connection('database')->push((new CreateTeachingAssessment(42, $runId))->beforeCommit(), queue: $queueName);
+
+    try {
+        app(TeachingAssessmentQueue::class)->publishPending();
+        expect(Queue::connection('database')->size($queueName))->toBe(0);
+        $reserved = $queue->pop($queueName);
+        expect($reserved)->not->toBeNull()
+            ->and($reserved->attempts())->toBe(1)
+            ->and($reserved->payload()['data']['command'])->toContain($runId);
+        $reserved->delete();
+    } finally {
+        $queue->clear($queueName);
+        Redis::purge('assessment-integration');
     }
 })->group('integration', 'redis');

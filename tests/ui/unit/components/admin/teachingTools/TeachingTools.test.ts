@@ -256,12 +256,12 @@ describe('Teaching tools navigation', () => {
         expect(steps[1].attributes('color')).toBe('success')
         expect(steps[1].attributes('aria-pressed')).toBe('false')
         expect(steps[1].attributes('aria-label')).toContain('erfüllt')
-        expect(steps[7].attributes('color')).toBe('primary')
-        for (const step of [1, 2, 3, 4, 5, 6, 7, 9]) {
+        expect(steps[6].attributes('color')).toBe('primary')
+        for (const step of [1, 2, 3, 4, 5, 6]) {
             await steps[step - 1].trigger('click')
             expect(card.text(), `Schritt ${step}`).toContain(completionText)
         }
-        await steps[7].trigger('click')
+        await steps[6].trigger('click')
         expect(card.text()).not.toContain(completionText)
 
         const actions = new DOMWrapper(document.body)
@@ -274,7 +274,19 @@ describe('Teaching tools navigation', () => {
         expect(card.text()).not.toContain(completionText)
         await dialog.findAll('button').find(button => button.text() === 'Speichern')!.trigger('click')
         expect(card.text()).toContain(completionText)
-        expect(steps[7].attributes('color')).toBe('success')
+        expect(steps[6].attributes('color')).toBe('success')
+
+        await wrapper.get('[data-placement-id="40"]').trigger('click')
+        await actions.get('#network-floor-marker-actions button').trigger('click')
+        const reopenedDialog = wrapper.get('[role="dialog"]')
+        await reopenedDialog.get('[aria-label="Patchkabel zwischen Platz 2, Switch, Buchse 8 und Platz 4, Datenserver, Buchse 1 entfernen"]')
+            .trigger('click')
+        await reopenedDialog.findAll('button').find(button => button.text() === 'Speichern')!.trigger('click')
+        expect(wrapper.get('[aria-label="Netzwerkstatus"]').text()).toMatch(
+            /^LAN\s*aktivWLAN\s*aktivInternet\s*aktivDatenserver\s*nicht erreichbar$/,
+        )
+        expect(card.text()).not.toContain(completionText)
+        expect(steps[6].attributes('color')).toBe('primary')
 
         await wrapper.get('[data-placement-id="33"]').trigger('click')
         await actions.get('#network-floor-marker-actions [aria-label="Einfache Netzwerkdose entfernen"]').trigger('click')
@@ -284,14 +296,14 @@ describe('Teaching tools navigation', () => {
         await wrapper.get('[data-placement-id="1"]').trigger('click')
         await actions.get('#network-floor-marker-actions [aria-label="Arbeitsplatz entfernen"]').trigger('click')
         expect(card.text()).not.toContain(completionText)
-        expect(steps[7].attributes('color')).toBe('primary')
+        expect(steps[6].attributes('color')).toBe('primary')
         await steps[0].trigger('click')
         expect(card.text()).not.toContain(completionText)
-        await steps[8].trigger('click')
+        await steps[6].trigger('click')
         expect(card.text()).not.toContain(completionText)
     })
 
-    it('offers rack patching only while two components with ports are installed', async () => {
+    it('confirms rack component removal before disconnecting its patch cables', async () => {
         const path = '/admin/teaching-tools/tests/networks/build-network/room-plan/1'
         window.localStorage.setItem('schooltool:network-room-plan:v1:1:21:1', JSON.stringify({
             placements: [{ id: 1, deviceId: 'server-rack', x: .25, y: .8 }],
@@ -313,12 +325,32 @@ describe('Teaching tools navigation', () => {
         await patchButton()!.trigger('click')
         expect(dialog.get('[aria-label="Buchsen auf Platz 3"]').exists()).toBe(true)
 
-        await dialog.get('[aria-label="Router aus Platz 5 entfernen"]').trigger('click')
+        const switchPort = '[aria-label="Platz 3, Switch, Buchse 1"]'
+        const routerPort = '[aria-label="Platz 5, Router, Buchse 1"]'
+        const cable = '[aria-label="Patchkabel zwischen Platz 3, Switch, Buchse 1 und Platz 5, Router, Buchse 1 entfernen"]'
+        await dialog.get(switchPort).trigger('click')
+        await dialog.get(routerPort).trigger('click')
+        const removeRouter = '[aria-label="Router aus Platz 5 entfernen"]'
+        const confirmation = () => wrapper.get('[role="dialog"][aria-labelledby="network-rack-remove-title"]')
+
+        await dialog.get(removeRouter).trigger('click')
+        expect(confirmation().text()).toContain('Router aus Platz 5 entfernen?')
+        expect(dialog.find(cable).exists()).toBe(true)
+        await confirmation().findAll('button').find(candidate => candidate.text() === 'Abbrechen')!.trigger('click')
+        expect(dialog.find(removeRouter).exists()).toBe(true)
+        expect(dialog.find(cable).exists()).toBe(true)
+
+        await dialog.get(removeRouter).trigger('click')
+        await confirmation().findAll('button').find(candidate => candidate.text() === 'Entfernen')!.trigger('click')
+        expect(dialog.find(cable).exists()).toBe(false)
         expect(patchButton()).toBeUndefined()
         expect(dialog.find('[aria-label="Buchsen auf Platz 3"]').exists()).toBe(false)
-        await button('Datenserver')!.trigger('click')
+        await button('Router')!.trigger('click')
         await dialog.get('[aria-label="Platz 5, frei"]').trigger('click')
         expect(patchButton()!.attributes('aria-pressed')).toBe('false')
+        await patchButton()!.trigger('click')
+        expect(dialog.find(routerPort).exists()).toBe(true)
+        expect(dialog.find(cable).exists()).toBe(false)
     })
 
     it('updates the internet cloud immediately when the switch-to-router cable is added or removed', async () => {
@@ -367,7 +399,7 @@ describe('Teaching tools navigation', () => {
         expect(internet.text()).toMatch(/Internet\s*inaktiv/)
     })
 
-    it('enables LAN, WLAN and cable activity once the missing office duct completes the path to the rack', async () => {
+    it('reports LAN, WLAN, internet and data-server reachability along the wired paths', async () => {
         const path = '/admin/teaching-tools/tests/networks/build-network/room-plan/1'
         const endpoint = (slot, port) => ({ slot, port })
         window.localStorage.setItem('schooltool:network-room-plan:v1:1:21:1', JSON.stringify({
@@ -380,7 +412,7 @@ describe('Teaching tools navigation', () => {
                 { id: 5, deviceId: 'standing-table', x: .2, y: .2 },
                 { id: 6, deviceId: 'workstation', x: .3, y: .2 },
                 { id: 7, deviceId: 'access-point', x: .4, y: .2 },
-                { id: 8, deviceId: 'server-rack', x: .25, y: .8, rackModules: ['patch-panel', 'switch', 'router', 'switch'],
+                { id: 8, deviceId: 'server-rack', x: .25, y: .8, rackModules: ['patch-panel', 'switch', 'router', 'switch', 'server'],
                     rackPatchConnections: [
                         { start: endpoint(0, 0), end: endpoint(3, 0) },
                         { start: endpoint(0, 1), end: endpoint(1, 0) },
@@ -419,6 +451,10 @@ describe('Teaching tools navigation', () => {
         const connectionStatus = () => wrapper.get('.network-floor__connection-status').text()
         const activeChannels = () => wrapper.findAll('[data-wall]').filter(marker =>
             marker.attributes('aria-label')?.includes('Verbindung aktiv')).map(marker => marker.attributes('data-placement-id'))
+        const workingComponents = dialog => dialog.findAll('button[aria-description="Funktionsfähig"]')
+            .map(button => button.attributes('aria-label'))
+        const litRackSlots = () => mark(8).findAll('.network-rack-icon > [data-module].is-lit')
+            .map(slot => slot.attributes('data-module'))
         const assignedDevices = (dialog) => dialog.get('[aria-labelledby="network-rack-panel-devices"]').findAll('dl > div')
             .map(entry => [entry.get('dt').text(), entry.get('dd').text()])
         async function openRack() {
@@ -429,17 +465,23 @@ describe('Teaching tools navigation', () => {
 
         expect(onlineIds()).toEqual([])
         expect(activeChannels()).toEqual([])
-        expect(connectionStatus()).toMatch(/^LAN\s*inaktivWLAN\s*inaktivInternet\s*inaktiv$/)
+        expect(connectionStatus()).toMatch(/^LAN\s*inaktivWLAN\s*inaktivInternet\s*inaktivDatenserver\s*nicht erreichbar$/)
         expect(mark(7).attributes('aria-label')).not.toContain('mit Internet verbunden')
         expect(mark(4).text()).toBe('Arbeitsplatz 1')
         expect(mark(6).text()).toBe('Arbeitsplatz 2')
         expect(mark(5).text()).toBe('Stehtisch 1')
         const dialog = await openRack()
         expect(dialog.text()).toContain('Eingehende Kabel: 0')
+        expect(workingComponents(dialog)).toEqual([])
+        expect(dialog.findAll('.rack-module-graphic__status.is-lit')).toHaveLength(0)
+        expect(litRackSlots()).toEqual([])
         await clickButton(dialog, 'Patchkabel ein-/ausstecken')
         await dialog.get('[aria-label="Platz 2, Switch, Buchse 4"]').trigger('click')
         await dialog.get('[aria-label="Platz 3, Router, Buchse 1"]').trigger('click')
-        expect(connectionStatus()).toMatch(/^LAN\s*inaktivWLAN\s*inaktivInternet\s*aktiv$/)
+        expect(connectionStatus()).toMatch(/^LAN\s*inaktivWLAN\s*inaktivInternet\s*aktivDatenserver\s*nicht erreichbar$/)
+        expect(workingComponents(dialog)).toEqual(['Platz 2, Switch', 'Platz 3, Router'])
+        expect(dialog.findAll('.rack-module-graphic__status.is-lit')).toHaveLength(2)
+        expect(litRackSlots()).toEqual(['switch', 'router'])
         expect(activeChannels()).toEqual([])
         await clickButton(dialog, 'Speichern')
 
@@ -463,9 +505,12 @@ describe('Teaching tools navigation', () => {
         expect(mark(5).attributes('aria-label')).toContain('mit Internet verbunden')
         expect(mark(7).attributes('aria-label')).toContain('mit Internet verbunden')
         expect(mark(11).attributes('aria-label')).toContain('per WLAN mit Internet verbunden')
-        expect(connectionStatus()).toMatch(/^LAN\s*aktivWLAN\s*aktivInternet\s*aktiv$/)
+        expect(connectionStatus()).toMatch(/^LAN\s*aktivWLAN\s*aktivInternet\s*aktivDatenserver\s*nicht erreichbar$/)
 
         const connectedDialog = await openRack()
+        expect(workingComponents(connectedDialog)).toEqual([
+            'Platz 1, Patchpanel, 4 Anschlüsse belegt', 'Platz 2, Switch', 'Platz 3, Router', 'Platz 4, Switch',
+        ])
         expect(assignedDevices(connectedDialog)).toEqual([
             ['Buchse 1', 'Arbeitsplatz 1'],
             ['Buchse 2', 'Stehtisch 1'],
@@ -474,14 +519,29 @@ describe('Teaching tools navigation', () => {
         ])
         await clickButton(connectedDialog, 'Patchkabel ein-/ausstecken')
         expect(connectedDialog.get('[data-rack-slot="0"] [data-rack-patch-port="2"]').attributes('title')).toBe('Arbeitsplatz 2')
-        await connectedDialog.get('[aria-label="Patchkabel zwischen Platz 2, Switch, Buchse 4 und Platz 3, Router, Buchse 1 entfernen"]')
+        await connectedDialog.get('[aria-label="Platz 2, Switch, Buchse 5"]').trigger('click')
+        await connectedDialog.get('[aria-label="Platz 5, Datenserver, Buchse 1"]').trigger('click')
+        expect(connectionStatus()).toMatch(/^LAN\s*aktivWLAN\s*aktivInternet\s*aktivDatenserver\s*erreichbar$/)
+        expect(workingComponents(connectedDialog)).toContain('Platz 5, Datenserver')
+        expect(connectedDialog.get('[data-rack-slot="4"] .rack-module-graphic__status').classes()).toContain('is-lit')
+        expect(litRackSlots()).toEqual(['patch-panel', 'switch', 'router', 'switch', 'server'])
+        await clickButton(connectedDialog, 'Speichern')
+
+        const withoutUplinkDialog = await openRack()
+        await clickButton(withoutUplinkDialog, 'Patchkabel ein-/ausstecken')
+        await withoutUplinkDialog.get('[aria-label="Patchkabel zwischen Platz 2, Switch, Buchse 4 und Platz 3, Router, Buchse 1 entfernen"]')
             .trigger('click')
-        expect(connectionStatus()).toMatch(/^LAN\s*aktivWLAN\s*aktivInternet\s*inaktiv$/)
+        expect(connectionStatus()).toMatch(/^LAN\s*aktivWLAN\s*aktivInternet\s*inaktivDatenserver\s*erreichbar$/)
+        expect(workingComponents(withoutUplinkDialog)).toEqual([
+            'Platz 1, Patchpanel, 4 Anschlüsse belegt', 'Platz 2, Switch', 'Platz 4, Switch', 'Platz 5, Datenserver',
+        ])
+        expect(withoutUplinkDialog.get('[data-rack-slot="2"] .rack-module-graphic__status').classes()).not.toContain('is-lit')
+        expect(litRackSlots()).toEqual(['patch-panel', 'switch', 'switch', 'server'])
         expect(activeChannels()).toEqual(connectedChannels)
         expect(badgeCounts()).toEqual([1, 1, 1, 1, 1])
         expect(mark(5).attributes('aria-label')).toContain('per LAN verbunden')
         expect(mark(11).attributes('aria-label')).toContain('per WLAN verbunden')
-        await clickButton(connectedDialog, 'Abbrechen')
+        await clickButton(withoutUplinkDialog, 'Abbrechen')
         await mark(4).trigger('click')
         await actions.get('[aria-label="Arbeitsplatz entfernen"]').trigger('click')
         expect(onlineIds()).toEqual(['5', '6', '7', '11'])
@@ -491,7 +551,7 @@ describe('Teaching tools navigation', () => {
         await edited.get('[aria-label="Patchkabel zwischen Platz 1, Patchpanel, Buchse 4 und Platz 2, Switch, Buchse 3 entfernen"]')
             .trigger('click')
         expect(onlineIds()).toEqual(['5', '6'])
-        expect(connectionStatus()).toMatch(/^LAN\s*aktivWLAN\s*inaktivInternet\s*aktiv$/)
+        expect(connectionStatus()).toMatch(/^LAN\s*aktivWLAN\s*inaktivInternet\s*aktivDatenserver\s*erreichbar$/)
         expect(mark(7).attributes('aria-label')).not.toContain('mit Internet verbunden')
         await clickButton(edited, 'Speichern')
         expect(onlineIds()).toEqual(['5', '6'])
@@ -499,7 +559,7 @@ describe('Teaching tools navigation', () => {
         await wrapper.get('[data-wall="partition-office-1-top"]').trigger('click')
         await actions.get('[aria-label="Kabelkanal entfernen"]').trigger('click')
         expect(activeChannels()).toEqual([])
-        expect(connectionStatus()).toMatch(/^LAN\s*inaktivWLAN\s*inaktivInternet\s*aktiv$/)
+        expect(connectionStatus()).toMatch(/^LAN\s*inaktivWLAN\s*inaktivInternet\s*aktivDatenserver\s*nicht erreichbar$/)
         await placeMissingDuct()
         expect(onlineIds()).toEqual(['5', '6'])
 
@@ -507,7 +567,7 @@ describe('Teaching tools navigation', () => {
         await clickButton(actions.get('#network-floor-marker-actions'), 'Verbindung lösen')
         expect(onlineIds()).toEqual([])
         expect(activeChannels()).toEqual([])
-        expect(connectionStatus()).toMatch(/^LAN\s*inaktivWLAN\s*inaktivInternet\s*aktiv$/)
+        expect(connectionStatus()).toMatch(/^LAN\s*inaktivWLAN\s*inaktivInternet\s*aktivDatenserver\s*nicht erreichbar$/)
     })
 
     it.each([
@@ -600,6 +660,7 @@ describe('Teaching tools navigation', () => {
             const movedPanel = dialog().get('button[aria-label="Platz 3, Patchpanel, 2 Anschlüsse belegt"]')
             expect(movedPanel.findAll('.rack-module-graphic__ports > .is-connected')).toHaveLength(cableCount)
             await dialog().get('button[aria-label="Patchpanel aus Platz 3 entfernen"]').trigger('click')
+            await clickNamedButton(wrapper.get('[role="dialog"][aria-labelledby="network-rack-remove-title"]'), 'Entfernen')
             expect(connectedPorts()).toHaveLength(0)
         }
         await clickNamedButton(dialog(), 'Abbrechen')
@@ -713,7 +774,93 @@ describe('Teaching tools navigation', () => {
         expect(axios.get).not.toHaveBeenCalled()
     })
 
-    it('only lets the build card navigate from the network areas to the five room plans', async () => {
+    it('opens the device questions separately and saves the edited model answers', async () => {
+        const overview = '/admin/teaching-tools/tests/networks'
+        const page = `${overview}/device-questions`
+        const endpoint = `/api${page}`
+        const serverData = {
+            school_id: 21, revision: 0,
+            answers: {
+                patch_panel: 'Feste Netzwerkkabel enden hier.', switch: 'Verbindet Geräte im LAN.',
+                router: 'Verbindet Netzwerke.', data_server: 'Stellt Dateien bereit.', access_point: 'Stellt WLAN bereit.',
+            },
+        }
+        const loadAnswers = vi.fn().mockResolvedValue({ data: serverData })
+        const saveAnswers = vi.fn().mockImplementation((url, payload) => Promise.resolve({ data: { ...payload, revision: 1 } }))
+        vi.stubGlobal('axios', { get: loadAnswers, put: saveAnswers })
+        const { wrapper, router } = await renderTools(overview)
+
+        await wrapper.get(`li a[href="${page}"]`).trigger('click')
+        await flushPromises()
+        expect(router.currentRoute.value.path).toBe(page)
+        expect(wrapper.get('h1').text()).toBe('Fragen zu Geräten')
+        expect(wrapper.find('#ground-floor-task-title').exists()).toBe(false)
+        expect(loadAnswers).toHaveBeenCalledWith(endpoint)
+        const fields = wrapper.findAll<HTMLTextAreaElement>('textarea')
+        expect(fields.map(field => wrapper.get(`label[for="${field.element.id}"]`).text())).toEqual([
+            'Was ist die Aufgabe des Patchpanels?',
+            'Was ist die Aufgabe des Switchs?',
+            'Was ist die Aufgabe des Routers?',
+            'Was ist die Aufgabe des Datenservers?',
+            'Was ist die Aufgabe des WLAN-Access-Points?',
+        ])
+        expect(fields.map(field => field.element.value)).toEqual(Object.values(serverData.answers))
+        await fields[2].setValue('Der Router leitet Pakete zwischen IP-Netzen weiter.')
+        await wrapper.get('form').trigger('submit')
+        await flushPromises()
+        expect(saveAnswers).toHaveBeenCalledWith(endpoint, {
+            ...serverData, answers: { ...serverData.answers, router: 'Der Router leitet Pakete zwischen IP-Netzen weiter.' },
+        })
+        expect(wrapper.get('[role="status"]').text()).toBe('Musterantworten gespeichert.')
+    })
+
+    it('creates, edits and deletes a question from Weitere Fragen', async () => {
+        const overview = '/admin/teaching-tools/tests/networks'
+        const page = overview + '/additional-questions'
+        const endpoint = '/api' + page
+        const initial = { id: 15, question: 'Was ist ein LAN?', answer: 'Ein lokales Netzwerk.' }
+        const revised = { ...initial, question: 'Was ist ein WLAN?', answer: 'Ein drahtloses lokales Netzwerk.' }
+        const request = {
+            get: vi.fn().mockResolvedValue({ data: [] }),
+            post: vi.fn().mockResolvedValue({ data: initial }),
+            put: vi.fn().mockResolvedValue({ data: revised }),
+            delete: vi.fn().mockResolvedValue({}),
+        }
+        vi.stubGlobal('axios', request)
+        const { wrapper, router } = await renderTools(overview)
+        const action = (text: string) => wrapper.findAll('button').find(button => button.text() === text)!
+
+        await wrapper.get('li a[href="' + page + '"]').trigger('click')
+        await flushPromises()
+        expect(router.currentRoute.value.path).toBe(page)
+        expect(wrapper.get('h1').text()).toBe('Weitere Fragen')
+        expect(request.get).toHaveBeenCalledWith(endpoint)
+
+        await action('Frage hinzufügen').trigger('click')
+        await wrapper.get('#additional-question').setValue(initial.question)
+        await wrapper.get('#additional-answer').setValue(initial.answer)
+        await wrapper.get('form').trigger('submit')
+        await flushPromises()
+        expect(request.post).toHaveBeenCalledWith(endpoint, { question: initial.question, answer: initial.answer })
+        expect(wrapper.text()).toContain(initial.question)
+
+        await action('Bearbeiten').trigger('click')
+        await wrapper.get('#additional-question').setValue(revised.question)
+        await wrapper.get('#additional-answer').setValue(revised.answer)
+        await wrapper.get('form').trigger('submit')
+        await flushPromises()
+        expect(request.put).toHaveBeenCalledWith(endpoint + '/15', { question: revised.question, answer: revised.answer })
+        expect(wrapper.text()).toContain(revised.answer)
+
+        await action('Löschen').trigger('click')
+        expect(wrapper.text()).toContain('Diese Frage löschen?')
+        await action('Löschen').trigger('click')
+        await flushPromises()
+        expect(request.delete).toHaveBeenCalledWith(endpoint + '/15')
+        expect(wrapper.text()).toContain('Noch keine Fragen vorhanden.')
+    })
+
+    it('shows the network test areas and opens the only room plan', async () => {
         const testsPath = '/admin/teaching-tools/tests'
         const networksPath = `${testsPath}/networks`
         const buildPath = `${networksPath}/build-network`
@@ -726,20 +873,15 @@ describe('Teaching tools navigation', () => {
         expect(wrapper.get('h1').text()).toBe('Netzwerke')
         const sections = wrapper.findAll('li')
         expect(sections.map(section => section.get('h2').text())).toEqual([
-            'Netzwerk bauen', 'Andere Fragen', 'Andere Fragen', 'Andere Fragen', 'Andere Fragen',
+            'Netzwerk bauen', 'Fragen zu Geräten', 'Weitere Fragen',
         ])
-        for (const placeholder of sections.slice(1)) {
-            expect(placeholder.find('a, button, [tabindex]').exists()).toBe(false)
-        }
         await sections[0].get(`a[href="${buildPath}"]`).trigger('click')
         await flushPromises()
 
         expect(router.currentRoute.value.path).toBe(buildPath)
         expect(wrapper.get('h1').text()).toBe('Netzwerk bauen')
         const plans = wrapper.findAll('li a')
-        expect(plans.map(plan => plan.get('h2').text())).toEqual([
-            'Raumplan 1', 'Raumplan 2', 'Raumplan 3', 'Raumplan 4', 'Raumplan 5',
-        ])
+        expect(plans.map(plan => plan.get('h2').text())).toEqual(['Raumplan 1'])
         expect(wrapper.get(`a[href="${testsPath}"]`).attributes('aria-pressed')).toBe('true')
 
         const firstPlanPath = `${buildPath}/room-plan/1`
@@ -751,14 +893,15 @@ describe('Teaching tools navigation', () => {
         const instructions = wrapper.get<HTMLDetailsElement>('details[aria-labelledby="ground-floor-task-title"]')
         const stepButtons = instructions.get('[aria-label="Arbeitsschritte"]').findAll('button')
         const taskCard = instructions.get('#ground-floor-task-card')
-        expect(stepButtons.map(button => button.text())).toEqual(['1', '2', '3', '4', '5', '6', '7', '8', '9'])
+        expect(stepButtons.map(button => button.text())).toEqual(['1', '2', '3', '4', '5', '6', '7'])
         expect(stepButtons[0].attributes('aria-pressed')).toBe('true')
         expect(taskCard.text()).toContain('fünf Arbeitsplätze')
         expect(taskCard.text()).toContain('Foyer vier Stehtische')
-        await stepButtons[7].trigger('click')
-        expect(stepButtons[7].attributes('aria-pressed')).toBe('true')
+        await stepButtons[6].trigger('click')
+        expect(stepButtons[6].attributes('aria-pressed')).toBe('true')
         expect(stepButtons[0].attributes('aria-pressed')).toBe('false')
-        expect(taskCard.text()).toContain('den Verbindungsweg von einem Arbeitsplatz bis zum Datenserver')
+        expect(taskCard.text()).toContain('der Zugriff auf den Datenserver funktionieren')
+        expect(taskCard.text()).toContain('alle fünf Arbeitsplätze per LAN und alle vier Laptops an den Stehtischen per WLAN')
         expect(taskCard.text()).not.toContain('Foyer vier Stehtische')
         expect(instructions.element.open).toBe(true)
         await instructions.get('summary').trigger('click')
@@ -804,9 +947,8 @@ describe('Teaching tools navigation', () => {
     })
 
     it.each([
-        ['/admin/teaching-tools/tests/networks', 'Netzwerke', 5],
-        ['/admin/teaching-tools/tests/networks/build-network', 'Netzwerk bauen', 5],
-        ['/admin/teaching-tools/tests/networks/build-network/room-plan/5', 'Raumplan 5', 0],
+        ['/admin/teaching-tools/tests/networks', 'Netzwerke', 3],
+        ['/admin/teaching-tools/tests/networks/build-network', 'Netzwerk bauen', 1],
     ])('renders %s directly', async (path, title, cardCount) => {
         const { wrapper } = await renderTools(path)
         expect(wrapper.get('h1').text()).toBe(title)

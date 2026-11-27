@@ -9,12 +9,13 @@
                 <p class="text-body-2 mb-4">
                     Ziehe eine Komponente auf einen Platz im Serverschrank oder wähle sie aus und klicke auf den Zielplatz.
                 </p>
-                <v-btn v-if="canPatch" type="button" height="44" variant="outlined" prepend-icon="mdi-ethernet-cable"
-                    class="text-none mb-3" :aria-pressed="patchMode" @click="togglePatchMode">Patchkabel ein-/ausstecken</v-btn>
-                <p v-if="patchMode && feedback" class="text-body-2 mb-3" role="status">{{ feedback }}</p>
                 <div ref="editor" class="network-rack-config__editor" @pointermove="moveDrag" @pointerup="finishDrag"
                     @pointercancel="cancelDrag" @lostpointercapture="cancelDrag">
                     <section class="network-rack-config__palette" aria-labelledby="network-rack-components">
+                        <v-btn v-if="canPatch" type="button" height="44" variant="flat" prepend-icon="mdi-ethernet-cable"
+                            :color="patchMode ? '#00636e' : '#234f7a'"
+                            class="network-rack-config__patch-toggle text-none font-weight-bold mb-3"
+                            :aria-pressed="patchMode" @click="togglePatchMode">Patchkabel ein-/ausstecken</v-btn>
                         <h3 id="network-rack-components" class="text-subtitle-2 font-weight-bold mb-2">Komponenten</h3>
                         <div class="network-rack-config__choices">
                             <button v-for="(label, type) in rackModuleLabels" :key="type" type="button"
@@ -28,6 +29,7 @@
                     </section>
                     <section class="network-rack-config__cabinet" aria-labelledby="network-rack-cabinet">
                         <h3 id="network-rack-cabinet" class="text-subtitle-2 font-weight-bold mb-2">Einbauplätze</h3>
+                        <p v-if="patchMode && feedback" class="text-body-2 mb-3" role="status">{{ feedback }}</p>
                         <ol ref="rackFrame" class="network-rack-config__frame"
                             :class="{ 'has-cables': wiredPatchPanelSlot > 0 || localPatchConnections.length }" role="list">
                             <li v-for="number in slotCount" :key="number" :data-rack-slot="number - 1"
@@ -39,11 +41,13 @@
                                 <button type="button" class="network-rack-config__slot"
                                     :class="{ 'is-occupied': slots[number - 1] }"
                                     :aria-label="slotLabel(number)"
+                                    :aria-description="activeSlots.has(number - 1) ? 'Funktionsfähig' : undefined"
                                     :aria-pressed="selection?.index === number - 1"
                                     @pointerdown="startDrag($event, slots[number - 1], number - 1)"
                                     @click="chooseSlot($event, number - 1)">
                                     <NetworkRackModuleGraphic v-if="slots[number - 1]" :type="slots[number - 1]"
                                         :patched-ports="patchedPorts(number - 1)"
+                                        :operational="activeSlots.has(number - 1)"
                                         :connected-ports="number === wiredPatchPanelSlot ? incomingPorts : []" />
                                     <span>{{ rackModuleLabels[slots[number - 1]] ?? 'Frei' }}</span>
                                 </button>
@@ -51,7 +55,7 @@
                                     class="network-rack-config__remove"
                                     :aria-label="`${rackModuleLabels[slots[number - 1]]} aus Platz ${number} entfernen`"
                                     :title="`${rackModuleLabels[slots[number - 1]]} entfernen`"
-                                    @click="removeModule(number - 1)" />
+                                    aria-haspopup="dialog" @click="pendingRemovalSlot = number - 1" />
                                 <div v-if="patchMode && slots[number - 1]" class="network-rack-config__ports" role="group"
                                     :aria-label="`Buchsen auf Platz ${number}`">
                                     <button v-for="port in portCount(number - 1)" :key="port" type="button"
@@ -109,6 +113,23 @@
                     @click="emit('save', normalizeRackModules(slots), localPatchConnections)">Speichern</v-btn>
             </v-card-actions>
         </v-card>
+        <v-dialog v-if="pendingRemovalSlot !== null" :model-value="true" max-width="440" persistent
+            aria-labelledby="network-rack-remove-title" aria-describedby="network-rack-remove-description">
+            <v-card>
+                <v-card-title id="network-rack-remove-title" class="text-wrap">
+                    {{ rackModuleLabels[slots[pendingRemovalSlot]] }} aus Platz {{ pendingRemovalSlot + 1 }} entfernen?
+                </v-card-title>
+                <v-card-text id="network-rack-remove-description">
+                    Angeschlossene Patchkabel werden mit entfernt. Wenn du das Gerät wieder einsetzt, musst du die Kabel neu verbinden.
+                </v-card-text>
+                <v-card-actions class="justify-end flex-wrap ga-2">
+                    <v-btn type="button" height="44" variant="text" class="text-none" autofocus
+                        @click="cancelModuleRemoval">Abbrechen</v-btn>
+                    <v-btn type="button" height="44" color="error" variant="flat" class="text-none"
+                        @click="removeModule">Entfernen</v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
         <Teleport to="body">
             <div v-if="drag" class="network-rack-config__ghost" :style="{ left: `${drag.x}px`, top: `${drag.y}px` }"
                 aria-hidden="true">
@@ -128,6 +149,7 @@ const props = defineProps({
     modules: { type: Array, default: () => [] },
     incomingConnections: { type: Array, default: null },
     patchConnections: { type: Array, default: () => [] },
+    activeSlots: { type: Set, default: () => new Set() },
 })
 const emit = defineEmits(['close', 'save', 'preview-change'])
 const editor = ref(null)
@@ -136,6 +158,7 @@ const patchLineOverlay = ref(null)
 const patchLines = shallowRef([])
 const patchColors = ['#ffbd67', '#6ee5c9', '#8dc7ff', '#f8a7c1', '#e3d47f']
 const slots = ref(normalizeRackModules(props.modules))
+const pendingRemovalSlot = ref(null)
 const localPatchConnections = ref(normalizeRackPatchConnections(props.patchConnections, slots.value))
 const patchMode = ref(false)
 const canPatch = computed(() => slots.value.filter(module => rackModulePorts[module] > 0).length >= 2)
@@ -395,7 +418,17 @@ function placeModule(source, target) {
         : `${rackModuleLabels[source.type]} auf Platz ${target + 1} eingesetzt.`
 }
 
-function removeModule(index) {
+function cancelModuleRemoval() {
+    const index = pendingRemovalSlot.value
+    pendingRemovalSlot.value = null
+    nextTick(() => rackFrame.value?.querySelector(`[data-rack-slot="${index}"] .network-rack-config__remove`)?.focus())
+}
+
+function removeModule() {
+    const index = pendingRemovalSlot.value
+    if (index === null) return
+
+    pendingRemovalSlot.value = null
     const module = slots.value[index]
     const patch = selectedPatch.value
     if (selectedPort.value?.slot === index || patch?.start.slot === index || patch?.end.slot === index) selectedPort.value = null
@@ -420,6 +453,11 @@ function removeModule(index) {
 
 .network-rack-config__palette { grid-area: palette; }
 .network-rack-config__cabinet { grid-area: cabinet; position: relative; }
+
+.network-rack-config__patch-toggle {
+    max-inline-size: 100%;
+    letter-spacing: normal;
+}
 
 .network-rack-config__choices {
     display: grid;

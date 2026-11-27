@@ -47,8 +47,14 @@ class TeachingAssessmentQueue
                 return;
             }
 
-            // Keep the durable copy until Redis accepts it. The run claims its queued state only once.
-            if (! Queue::connection('redis')->pushRaw($payload, CreateTeachingAssessment::QUEUE)) {
+            $command = json_decode($payload, true, flags: JSON_THROW_ON_ERROR)['data']['command'] ?? null;
+            $job = is_string($command) ? unserialize($command, ['allowed_classes' => [CreateTeachingAssessment::class]]) : null;
+            if (! $job instanceof CreateTeachingAssessment) {
+                throw new RuntimeException('Invalid stored assessment job.');
+            }
+
+            // Let RedisQueue build its own reservation payload before removing the durable copy.
+            if (! Queue::connection('redis')->push((new CreateTeachingAssessment($job->workId, $job->runId))->beforeCommit(), queue: CreateTeachingAssessment::QUEUE)) {
                 throw new RuntimeException('Redis did not acknowledge the assessment job.');
             }
             $pending->delete();

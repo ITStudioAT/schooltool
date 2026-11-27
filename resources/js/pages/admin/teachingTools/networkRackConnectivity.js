@@ -67,7 +67,7 @@ export function rackCableAssignments(placements, assignments, neighborsByChannel
 
 export function networkStatus(placements, assignmentsByRack) {
     const racks = new Map(placements.filter(placement => placement.device.id === 'server-rack')
-        .map(rack => [rack.id, rackNetworkStatus(rack)]))
+        .map(rack => [rack.id, rackNetworkStatus(rack, assignmentsByRack.get(rack.id) ?? [])]))
     const wiredAssignments = [...racks].flatMap(([id, { localPorts, internetPorts }]) =>
         (assignmentsByRack.get(id) ?? []).filter(({ port }) => localPorts.has(port))
             .map(assignment => ({ ...assignment, hasInternet: internetPorts.has(assignment.port) })))
@@ -94,15 +94,17 @@ export function networkStatus(placements, assignmentsByRack) {
         }
     }
 
-    return { internet: [...racks.values()].some(rack => rack.hasUplink), lan, clients, accessPoints, internetDevices, activeChannels,
-        racks }
+    const dataServer = [...racks.values()].some(rack => rack.hasReachableServer)
+
+    return { internet: [...racks.values()].some(rack => rack.hasUplink), lan, dataServer, clients, accessPoints, internetDevices,
+        activeChannels, racks }
 }
 
-function rackNetworkStatus({ rackModules = [], rackPatchConnections = [] }) {
+function rackNetworkStatus({ rackModules = [], rackPatchConnections = [] }, incomingAssignments) {
     const peers = rackPatchConnections.flatMap(({ start, end }) => [[start, end], [end, start]])
-    const uplinkSwitches = new Set(peers
-        .filter(([source, target]) => rackModules[source.slot] === 'router' && rackModules[target.slot] === 'switch')
-        .map(([, target]) => target.slot))
+    const routerLinks = peers.filter(([source, target]) =>
+        rackModules[source.slot] === 'router' && rackModules[target.slot] === 'switch')
+    const uplinkSwitches = new Set(routerLinks.map(([, target]) => target.slot))
 
     for (const slot of uplinkSwitches) {
         for (const [source, target] of peers) {
@@ -114,9 +116,21 @@ function rackNetworkStatus({ rackModules = [], rackPatchConnections = [] }) {
     const switchLinks = peers.filter(([source, target]) => source.slot === panelSlot && rackModules[target.slot] === 'switch')
     const localPorts = new Set(switchLinks.map(([source]) => source.port))
     const internetPorts = new Set(switchLinks.filter(([, target]) => uplinkSwitches.has(target.slot)).map(([source]) => source.port))
-    const serverSwitches = new Set(peers.filter(([source, target]) =>
-        rackModules[source.slot] === 'server' && rackModules[target.slot] === 'switch').map(([, target]) => target.slot))
-    const serverPortGroups = [...serverSwitches].map(slot =>
-        new Set(switchLinks.filter(([, target]) => target.slot === slot).map(([source]) => source.port)))
-    return { hasUplink: uplinkSwitches.size > 0, localPorts, internetPorts, serverPortGroups }
+    const serverLinks = peers.filter(([source, target]) =>
+        rackModules[source.slot] === 'server' && rackModules[target.slot] === 'switch')
+    const activeSlots = new Set(uplinkSwitches)
+    for (const [router] of routerLinks) activeSlots.add(router.slot)
+    const incomingDevices = new Map(incomingAssignments.map(({ port, placement }) => [port, placement.device.id]))
+    const workstationSwitches = new Set()
+    for (const [panel, target] of switchLinks) {
+        if (!incomingDevices.has(panel.port)) continue
+        activeSlots.add(panel.slot)
+        activeSlots.add(target.slot)
+        if (incomingDevices.get(panel.port) === 'workstation') workstationSwitches.add(target.slot)
+    }
+    const reachableServers = serverLinks.filter(([, target]) => workstationSwitches.has(target.slot))
+    for (const [server] of reachableServers) activeSlots.add(server.slot)
+
+    return { hasUplink: uplinkSwitches.size > 0, localPorts, internetPorts, activeSlots,
+        hasReachableServer: reachableServers.length > 0 }
 }

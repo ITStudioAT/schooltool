@@ -5,7 +5,8 @@
         <span class="network-workstation-icon__tower" />
     </span>
     <span v-else-if="device.id === 'server-rack'" class="network-rack-icon" aria-hidden="true">
-        <span v-for="(module, index) in rackModules" :key="index" :data-module="module" />
+        <span v-for="(module, index) in rackModules" :key="index" :data-module="module"
+            :class="{ 'is-lit': rackActiveSlots.has(index) }" />
     </span>
     <span v-else-if="device.id === 'standing-table'" class="network-standing-table-icon" aria-hidden="true">
         <span class="network-standing-table-icon__pedestal" />
@@ -26,6 +27,7 @@
 defineProps({
     device: { type: Object, required: true },
     rackModules: { type: Array, default: () => [] },
+    rackActiveSlots: { type: Set, default: () => new Set() },
 })
 </script>
 
@@ -108,13 +110,23 @@ defineProps({
 .network-rack-icon > [data-module="router"] { background: #cdd5de; }
 .network-rack-icon > [data-module="server"] { background: #b6c4d2; }
 
-.network-rack-icon > span::after {
+.network-rack-icon > [data-module]::after {
     position: absolute;
-    inset: 1px 1px auto auto;
-    inline-size: 2px;
-    block-size: 2px;
-    background: currentColor;
+    inset-block-start: 50%;
+    inset-inline-end: 2px;
+    inline-size: 6px;
+    block-size: min(6px, 100%);
+    transform: translateY(-50%);
+    border: 1px solid #364653;
+    border-radius: 50%;
+    background: #687886;
     content: '';
+}
+
+.network-rack-icon > .is-lit::after {
+    border-color: #075c34;
+    background: #4af28b;
+    box-shadow: 0 0 3px 1px #16995780;
 }
 
 .network-rack-icon > span:not([data-module]) {

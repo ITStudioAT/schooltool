@@ -1,6 +1,8 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAdminStore } from '@/stores/admin/AdminStore'
-import { networkBuildPath, networkRoomPlanNumbers, networkRoomPlanPath } from '@/pages/admin/teachingTools/networkRoomPlans'
+import {
+    networkAdditionalQuestionsPath, networkBuildPath, networkDeviceQuestionsPath, networkRoomPlanNumbers, networkRoomPlanPath,
+} from '@/pages/admin/teachingTools/networkRoomPlans'
 
 const Index = () => import('@/pages/admin/index/Index.vue')
 const Auth_Login = () => import('@/pages/admin/auth/Login.vue')
@@ -63,6 +65,18 @@ export const routes = [
         path: networkBuildPath,
         component: TeachingTools,
         props: { section: 'tests', testPage: 'build-network' },
+        meta: { capability: 'teaching' },
+    },
+    {
+        path: networkDeviceQuestionsPath,
+        component: TeachingTools,
+        props: { section: 'tests', testPage: 'device-questions' },
+        meta: { capability: 'teaching' },
+    },
+    {
+        path: networkAdditionalQuestionsPath,
+        component: TeachingTools,
+        props: { section: 'tests', testPage: 'additional-questions' },
         meta: { capability: 'teaching' },
     },
     ...networkRoomPlanNumbers.map(roomPlanNumber => ({

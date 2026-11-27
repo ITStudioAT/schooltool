@@ -52,6 +52,11 @@
                         class="network-floor__connection-icon" aria-hidden="true" />
                     <span>Internet<span class="d-sr-only"> {{ network.internet ? 'aktiv' : 'inaktiv' }}</span></span>
                 </div>
+                <div class="network-floor__connection" :class="{ 'is-online': network.dataServer }">
+                    <v-icon :icon="network.dataServer ? 'mdi-server' : 'mdi-server-off'"
+                        class="network-floor__connection-icon" aria-hidden="true" />
+                    <span>Datenserver<span class="d-sr-only"> {{ network.dataServer ? 'erreichbar' : 'nicht erreichbar' }}</span></span>
+                </div>
             </div>
             <div v-if="patchActive || patchStatus" class="network-floor__patch-instructions">
                 <span role="status">{{ patchStatus }}</span>
@@ -90,7 +95,7 @@
                                 <span class="d-sr-only">Arbeitsschritt erfüllt</span>
                             </span>
                         </div>
-                        <p class="text-body-2">{{ taskSteps[selectedTaskStep].text }}</p>
+                        <p class="network-floor__task-text text-body-2">{{ taskSteps[selectedTaskStep].text }}</p>
                     </v-card-text>
                 </v-card>
             </details>
@@ -202,7 +207,10 @@
                                     <span class="network-floor__workstation-label">{{ patchDeviceLabel(placement) }}</span>
                                 </span>
                                 <span v-else class="network-floor__device-drawing" aria-hidden="true">
-                                    <NetworkDeviceIcon :device="placement.device" :rack-modules="placement.rackModules"
+                                    <NetworkDeviceIcon :device="placement.device"
+                                        :rack-modules="placement.id === rackConfigurationId
+                                            ? rackPreview?.rackModules ?? placement.rackModules : placement.rackModules"
+                                        :rack-active-slots="network.racks.get(placement.id)?.activeSlots"
                                         :class="{ 'network-floor__access-point-online': onlineAccessPoints.has(placement.id) }" />
                                     <span v-if="!placement.device.channelMounted" class="network-floor__object-label">
                                         {{ patchDeviceLabel(placement) }}
@@ -238,7 +246,8 @@
                                     <span class="network-floor__workstation-label">{{ placementPreview.device.label }}</span>
                                 </span>
                                 <span v-else class="network-floor__device-drawing">
-                                    <NetworkDeviceIcon :device="placementPreview.device" :rack-modules="movingRack?.rackModules" />
+                                    <NetworkDeviceIcon :device="placementPreview.device" :rack-modules="movingRack?.rackModules"
+                                        :rack-active-slots="network.racks.get(movingRack?.id)?.activeSlots" />
                                     <span v-if="!placementPreview.device.channelMounted" class="network-floor__object-label">
                                         {{ placementPreview.device.label }}
                                     </span>
@@ -295,7 +304,13 @@
                 <strong>Serverschrank</strong>
                 <ol v-if="rack.rackModules?.length" aria-label="Bestückung von oben nach unten">
                     <template v-for="(module, index) in rack.rackModules" :key="index">
-                        <li v-if="module" :value="index + 1">{{ rackModuleLabels[module] }}</li>
+                        <li v-if="module" :value="index + 1">
+                            {{ rackModuleLabels[module] }}
+                            <template v-if="network.racks.get(rack.id)?.activeSlots.has(index)">
+                                <v-icon class="ms-1" icon="mdi-circle" color="success" size="10" aria-hidden="true" />
+                                <span class="d-sr-only">, funktionsfähig</span>
+                            </template>
+                        </li>
                     </template>
                 </ol>
                 <div v-else>Leer</div>
@@ -303,19 +318,35 @@
         </v-tooltip>
         <NetworkServerRackDialog v-if="rackBeingConfigured" :modules="rackBeingConfigured.rackModules"
             :patch-connections="rackBeingConfigured.rackPatchConnections"
-            :incoming-connections="incomingRackConnections" @preview-change="rackPreview = $event"
+            :incoming-connections="incomingRackConnections" :active-slots="network.racks.get(rackBeingConfigured.id)?.activeSlots"
+            @preview-change="rackPreview = $event"
             @save="saveRackConfiguration" @close="closeRackConfiguration" />
-        <section class="network-floor__draft mt-6" aria-labelledby="ground-floor-devices-title">
-            <h2 id="ground-floor-devices-title" class="text-h6 font-weight-bold mb-1">Geräte</h2>
-            <p class="text-body-2 mb-3">
-                Ziehe ein Gerät auf den Plan oder wähle es aus und tippe auf die gewünschte Stelle.
-                Setze den Kabelkanal auf der gewünschten Raumseite dicht an die Wand.
-                Netzwerkdosen werden an bereits platzierten Kabelkanälen befestigt.
-                Verlege einen durchgehenden Kabelweg von den Netzwerkdosen bis in den Serverraum.
-                Passende Kanalenden an Türen und fluchtende Kanalenden beiderseits einer Trennwand werden automatisch verbunden.
-                Setze im Serverraum einen Kabelstrang-Ausgang an den Kabelkanal. Wähle „Kabelstrang“ und ziehe die Leitung
-                vom Ausgang zum Serverschrank mit Patchpanel.
-            </p>
+        <div class="network-floor__draft mt-6">
+            <aside class="network-floor__hints" aria-labelledby="ground-floor-hints-title">
+                <h2 id="ground-floor-hints-title" class="d-flex align-center ga-2 text-subtitle-1 font-weight-bold mb-3">
+                    <v-icon icon="mdi-information-outline" size="20" aria-hidden="true" />
+                    Hinweise
+                </h2>
+                <ul class="network-floor__hint-list text-body-2" role="list">
+                    <li>
+                        <strong>Geräte platzieren</strong>
+                        <p>Ziehe ein Gerät auf den Plan oder wähle es aus und tippe auf die gewünschte Stelle.</p>
+                    </li>
+                    <li>
+                        <strong>Kabelkanäle und Dosen</strong>
+                        <p>Setze Kabelkanäle auf der gewünschten Raumseite dicht an die Wand.</p>
+                        <p>Befestige Netzwerkdosen an einem bereits platzierten Kabelkanal.</p>
+                    </li>
+                    <li>
+                        <strong>Übergänge</strong>
+                        <p>Passende Kanalenden an Türen und fluchtende Enden auf beiden Seiten einer Trennwand verbinden sich automatisch.</p>
+                    </li>
+                    <li>
+                        <strong>Kabelstrang</strong>
+                        <p>Wähle „Kabelstrang“ und ziehe vom Ausgang zu einem Serverschrank mit Patchpanel.</p>
+                    </li>
+                </ul>
+            </aside>
             <p v-if="placementFeedback" role="status" class="text-body-2 mb-3">{{ placementFeedback }}</p>
             <p v-if="draftSaveFailed" role="status" class="text-body-2 mb-3">
                 Der Raumplan konnte in diesem Browser nicht gespeichert werden.
@@ -341,13 +372,14 @@
                     </div>
                 </section>
             </div>
-        </section>
+        </div>
         <Teleport to="body">
             <div v-if="drag?.moved && !placementPreview" class="network-floor__drag-preview" :class="deviceShape(drag)" aria-hidden="true"
                 :style="{ left: `${drag.x}px`, top: `${drag.y}px`, '--device-rotation': `${drag.rotation}deg`,
                     '--rack-preview-scale': furnitureScale }">
                 <span v-if="drag.device.id === 'server-rack'" class="network-floor__device-drawing">
-                    <NetworkDeviceIcon :device="drag.device" :rack-modules="movingRack?.rackModules" />
+                    <NetworkDeviceIcon :device="drag.device" :rack-modules="movingRack?.rackModules"
+                        :rack-active-slots="network.racks.get(movingRack?.id)?.activeSlots" />
                     <span class="network-floor__object-label">{{ drag.device.label }}</span>
                 </span>
                 <NetworkDeviceIcon v-else :device="drag.device" />
@@ -382,26 +414,28 @@ const taskSteps = [
     {
         id: 'furniture',
         title: 'Büros und Foyer einrichten',
-        text: 'Verteile fünf Arbeitsplätze auf Büro 1 und Büro 2. Du entscheidest, welches Büro drei Plätze bekommt '
-            + 'und welches zwei. Stelle im Foyer vier Stehtische für Besucher:innen mit Laptops auf.',
+        text: 'Verteile fünf Arbeitsplätze auf Büro 1 und Büro 2.\n'
+            + 'Du entscheidest, welches Büro drei Plätze bekommt und welches zwei.\n'
+            + 'Stelle im Foyer vier Stehtische für Besucher:innen mit Laptops auf.',
     },
     {
         id: 'rack',
         title: 'Serverschrank bestücken',
-        text: 'Stelle einen Serverschrank in den Serverraum. Baue über „Serverschrank konfigurieren“ ein Patchpanel, '
-            + 'einen Switch, einen Router und einen Datenserver ein. Speichere die Bestückung.',
+        text: 'Stelle einen Serverschrank in den Serverraum.\n'
+            + 'Baue über „Serverschrank konfigurieren“ ein Patchpanel, einen Switch, einen Router und einen Datenserver ein.\n'
+            + 'Speichere die Bestückung.',
     },
     {
         id: 'ducts',
         title: 'Kabelwege zum Serverraum verlegen',
-        text: 'Verlege Kabelkanäle so, dass von jedem Büro ein durchgehender Kabelweg bis zum Serverraum entsteht. '
+        text: 'Verlege Kabelkanäle so, dass von jedem Büro ein durchgehender Kabelweg bis zum Serverraum entsteht.\n'
             + 'Verwende in beiden Büros ausreichend Netzwerkdosen, damit jeder Arbeitsplatz eine eigene Buchse hat.',
     },
     {
         id: 'accessPoint',
         title: 'WLAN im Foyer vorbereiten',
-        text: 'Platziere im Foyer ein passendes Gerät, damit sich die Laptops per WLAN verbinden können. '
-            + 'Falls nötig, verlege auch im Foyer Kabelkanäle, damit der Kabelweg bis zum Serverraum durchgehend ist. '
+        text: 'Platziere im Foyer ein passendes Gerät, damit sich die Laptops per WLAN verbinden können.\n'
+            + 'Falls nötig, verlege auch im Foyer Kabelkanäle, damit der Kabelweg bis zum Serverraum durchgehend ist.\n'
             + 'Stelle für das Gerät eine freie Netzwerkbuchse bereit.',
     },
     {
@@ -412,29 +446,17 @@ const taskSteps = [
     {
         id: 'bundle',
         title: 'Kabelstrang anschließen',
-        text: 'Setze im Serverraum einen Kabelstrang-Ausgang an den Kabelkanal. Verbinde den Ausgang '
-            + 'mit dem Werkzeug „Kabelstrang“ mit dem Serverschrank.',
+        text: 'Setze im Serverraum einen Kabelstrang-Ausgang an den Kabelkanal.\n'
+            + 'Verbinde den Ausgang mit dem Werkzeug „Kabelstrang“ mit dem Serverschrank.',
     },
     {
         id: 'rackCables',
         title: 'Serverschrank verkabeln',
-        text: 'Öffne erneut die Serverschrank-Konfiguration. Verbinde unter „Patchkabel ein-/ausstecken“ '
-            + 'jede belegte Patchpanel-Buchse mit einer freien Buchse am Switch. '
-            + 'Verbinde dann den Switch mit dem Router und speichere.',
-    },
-    {
-        id: 'dataServer',
-        title: 'Zugriff auf den Datenserver einrichten',
-        text: 'Richte von allen fünf Arbeitsplätzen den Zugriff auf den Datenserver ein. Verbinde den Datenserver '
-            + 'per Patchkabel mit demselben Switch wie die Arbeitsplätze und speichere. '
-            + 'Zeige im Plan und im Serverschrank den Verbindungsweg von einem Arbeitsplatz bis zum Datenserver.',
-    },
-    {
-        id: 'connections',
-        title: 'LAN, WLAN und Internet prüfen',
-        text: 'Prüfe, ob LAN, WLAN und Internet aktiv sind. Kontrolliere die Symbole an allen fünf Arbeitsplätzen '
-            + 'und den vier Stehtischen. Die Arbeitsplätze sollen per LAN und die Laptops an den Stehtischen per WLAN '
-            + 'mit dem Internet verbunden sein.',
+        text: 'Konfiguriere den Serverschrank (mittels Patchkabel) so, dass das LAN, WLAN, Internet '
+            + 'und der Zugriff auf den Datenserver funktionieren.\n'
+            + 'Die Symbole werden grün.\n'
+            + 'Prüfe, ob alle fünf Arbeitsplätze per LAN und alle vier Laptops an den Stehtischen per WLAN '
+            + 'mit dem Internet verbunden sind.',
     },
 ]
 const selectedTaskStep = ref(0)
@@ -1094,6 +1116,10 @@ function attachedOutletsFit(channelId, wall, bounds) {
     min-inline-size: 0;
 }
 
+.network-floor__task-text {
+    white-space: pre-line;
+}
+
 .network-floor__task-title {
     cursor: pointer;
     font-size: clamp(1rem, 2cqi, 1.25rem);
@@ -1161,6 +1187,7 @@ function attachedOutletsFit(channelId, wall, bounds) {
 
 .network-floor__connection-status {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     flex-basis: 100%;
     gap: 12px;
@@ -1241,6 +1268,29 @@ function attachedOutletsFit(channelId, wall, bounds) {
 
 .network-floor__draft {
     max-width: 905px;
+}
+
+.network-floor__hints {
+    margin-block-end: 16px;
+    padding: 12px 16px;
+    border: 1px solid #cedce8;
+    border-inline-start: 3px solid #416e99;
+    border-radius: 6px;
+    background: #f4f8fc;
+    color: #20364e;
+}
+
+.network-floor__hint-list {
+    display: grid;
+    gap: 12px 24px;
+    padding: 0;
+    list-style: none;
+}
+
+@container (min-width: 680px) {
+    .network-floor__hint-list {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
 }
 
 .network-floor__device-groups {

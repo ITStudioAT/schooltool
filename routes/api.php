@@ -31,6 +31,8 @@ use App\Http\Controllers\Admin\MaterialsV2\MaterialV2ItemController;
 use App\Http\Controllers\Admin\MaterialsV2\MaterialV2LinkPreviewController;
 use App\Http\Controllers\Admin\MultipleChoiceController;
 use App\Http\Controllers\Admin\NavigationController;
+use App\Http\Controllers\Admin\NetworkDeviceAnswerKeyController;
+use App\Http\Controllers\Admin\NetworkTestQuestionController;
 use App\Http\Controllers\Admin\NumberSystemGameController;
 use App\Http\Controllers\Admin\NumberSystemLocalProbeController;
 use App\Http\Controllers\Admin\RegisterDateBookingController;
@@ -257,6 +259,24 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/{explanation}/publication', [TeachingExplanationController::class, 'publish'])->name('publish');
         Route::delete('/{explanation}/publication', [TeachingExplanationController::class, 'revoke'])->name('revoke');
         Route::post('/{explanation}/email-preview', [TeachingExplanationController::class, 'emailPreview'])->name('emailPreview');
+    });
+
+    Route::prefix('/admin/teaching-tools/tests/networks/device-questions')->middleware([
+        'auth:sanctum', 'api-allowed:scope:teaching_access',
+        'tool-licensed:Lehrertool,auth,scope:teaching_access',
+    ])->name('admin.teaching-tools.network-device-questions.')->group(function (): void {
+        Route::get('/', [NetworkDeviceAnswerKeyController::class, 'show'])->name('show');
+        Route::put('/', [NetworkDeviceAnswerKeyController::class, 'update'])->name('update');
+    });
+
+    Route::prefix('/admin/teaching-tools/tests/networks/additional-questions')->middleware([
+        'auth:sanctum', 'api-allowed:scope:teaching_access',
+        'tool-licensed:Lehrertool,auth,scope:teaching_access',
+    ])->name('admin.teaching-tools.network-test-questions.')->group(function (): void {
+        Route::get('/', [NetworkTestQuestionController::class, 'index'])->name('index');
+        Route::post('/', [NetworkTestQuestionController::class, 'store'])->name('store');
+        Route::put('/{question}', [NetworkTestQuestionController::class, 'update'])->whereNumber('question')->name('update');
+        Route::delete('/{question}', [NetworkTestQuestionController::class, 'destroy'])->whereNumber('question')->name('destroy');
     });
 
     Route::prefix('/admin/number-systems')->middleware([
