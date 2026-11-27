@@ -1,5 +1,6 @@
 <?php
 
+use App\Jobs\CreateTeachingAssessment;
 use Illuminate\Contracts\Queue\Queue as QueueContract;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Queue;
@@ -19,7 +20,7 @@ describe('local database queue health', function (): void {
 
     it('reads queue sizes and a fresh critical heartbeat without contacting Horizon', function (): void {
         $queue = Mockery::mock(QueueContract::class);
-        $queue->shouldReceive('size')->times(6)->andReturn(0);
+        $queue->shouldReceive('size')->times(7)->andReturn(0);
         Queue::shouldReceive('connection')->with('database')->once()->andReturn($queue);
         Cache::put('health:worker', now()->toIso8601String());
 
@@ -31,7 +32,7 @@ describe('local database queue health', function (): void {
 
     it('does not report missing stale or invalid heartbeats as healthy', function (?string $heartbeat): void {
         $queue = Mockery::mock(QueueContract::class);
-        $queue->shouldReceive('size')->times(6)->andReturn(0);
+        $queue->shouldReceive('size')->times(7)->andReturn(0);
         Queue::shouldReceive('connection')->with('database')->once()->andReturn($queue);
 
         if ($heartbeat !== null) {
@@ -68,7 +69,7 @@ it('reports a running Horizon supervisor', function (): void {
         (object) [
             'status' => 'running',
             'options' => [
-                'queue' => 'critical,notifications,default,imports,materials,maintenance',
+                'queue' => 'critical,notifications,default,imports,materials,maintenance,'.CreateTeachingAssessment::QUEUE,
             ],
         ],
     ]);
@@ -97,7 +98,7 @@ it('reports queues missing from running Horizon supervisors', function (): void 
 
     $this->artisan('queue:health-check')
         ->expectsOutputToContain('Horizon bedient nicht alle erwarteten Queues.')
-        ->expectsOutputToContain('Fehlende Queues: default, imports, materials, maintenance')
+        ->expectsOutputToContain('Fehlende Queues: default, imports, materials, maintenance, '.CreateTeachingAssessment::QUEUE)
         ->assertExitCode(3);
 });
 
@@ -120,7 +121,7 @@ it('reports Horizon as inactive without starting or killing processes', function
 
     $this->artisan('queue:health-check')
         ->expectsOutputToContain('Horizon ist inaktiv.')
-        ->expectsOutputToContain('Erwartete Queues: critical, notifications, default, imports, materials, maintenance')
+        ->expectsOutputToContain('Erwartete Queues: critical, notifications, default, imports, materials, maintenance, '.CreateTeachingAssessment::QUEUE)
         ->expectsOutputToContain('Produktionsprozess: php artisan horizon')
         ->assertExitCode(2);
 
@@ -178,7 +179,7 @@ it('uses only supervisors owned by a replacement Horizon master', function (): v
             'name' => 'schooltool-old-supervisor',
             'status' => 'running',
             'options' => [
-                'queue' => 'critical,notifications,default,imports,materials,maintenance',
+                'queue' => 'critical,notifications,default,imports,materials,maintenance,'.CreateTeachingAssessment::QUEUE,
             ],
         ],
         (object) [
@@ -191,7 +192,7 @@ it('uses only supervisors owned by a replacement Horizon master', function (): v
 
     $this->artisan('queue:health-check --exclude-master-pid=123')
         ->expectsOutputToContain('Horizon bedient nicht alle erwarteten Queues.')
-        ->expectsOutputToContain('Fehlende Queues: default, imports, materials, maintenance')
+        ->expectsOutputToContain('Fehlende Queues: default, imports, materials, maintenance, '.CreateTeachingAssessment::QUEUE)
         ->assertExitCode(3);
 });
 
@@ -224,7 +225,7 @@ it('accepts a replacement Horizon master serving every configured queue', functi
             'name' => 'schooltool-new-supervisor',
             'status' => 'running',
             'options' => [
-                'queue' => 'critical,notifications,default,imports,materials,maintenance',
+                'queue' => 'critical,notifications,default,imports,materials,maintenance,'.CreateTeachingAssessment::QUEUE,
             ],
         ],
     ]);
