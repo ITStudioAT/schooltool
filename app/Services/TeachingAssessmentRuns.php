@@ -18,7 +18,7 @@ use Throwable;
 
 class TeachingAssessmentRuns
 {
-    public function __construct(private TeachingDirectAssessment $direct) {}
+    public function __construct(private TeachingDirectAssessment $direct, private TeachingAssessmentQueue $assessmentQueue) {}
 
     public function show(TeachingCourseWork $work, User $actor, ?string $date): ?array
     {
@@ -177,7 +177,8 @@ class TeachingAssessmentRuns
                 'progress' => null, 'generation' => null, 'result' => null, 'message' => null];
             $this->save($work->id, $run);
             $this->state()->put($this->key($work->id), $run['id'], now()->addDays(7));
-            $queue->push((new CreateTeachingAssessment($work->id, $run['id']))->beforeCommit(), queue: CreateTeachingAssessment::QUEUE);
+            $jobId = $queue->push((new CreateTeachingAssessment($work->id, $run['id']))->beforeCommit(), queue: CreateTeachingAssessment::QUEUE);
+            $this->assessmentQueue->publishAfterCommit((int) $jobId);
 
             return $this->visible($run);
         });

@@ -855,7 +855,7 @@ class TeachingDirectAssessment
     {
         $this->activeModuleLock = null;
         try {
-            if ($lock->refresh(self::LOCK_LEASE_SECONDS)) {
+            if ($this->renewLock($lock)) {
                 $lock->release();
             }
         } catch (Throwable $exception) {
@@ -869,11 +869,18 @@ class TeachingDirectAssessment
     private function refreshModuleLock(): void
     {
         try {
-            $owned = $this->activeModuleLock?->refresh(self::LOCK_LEASE_SECONDS) === true;
+            $owned = $this->activeModuleLock !== null && $this->renewLock($this->activeModuleLock);
         } catch (Throwable) {
             $owned = false;
         }
         abort_unless($owned, 409, 'Die Anlagesperre konnte nicht sicher erneuert werden. Bitte den Stand prüfen und erneut versuchen.');
+    }
+
+    private function renewLock(Lock $lock): bool
+    {
+        // MySQL can report zero changed rows when the expiration is set twice in the same second.
+        return $lock->refresh(self::LOCK_LEASE_SECONDS)
+            || ($lock instanceof DatabaseLock && $lock->refresh(self::LOCK_LEASE_SECONDS + 1));
     }
 
     /** @return array<string, mixed> */

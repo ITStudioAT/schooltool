@@ -354,7 +354,8 @@ test('direct assessment uses real Dropbox transport for initial status retry and
             expect($state->files[$assignmentFolder['id'].'/LF_Word.pdf']['contents'] ?? null)->toBe('pdf');
         }
         $assignmentFiles = array_filter($state->files, fn (array $file, string $path): bool => str_ends_with($path, '/LF_Word.pdf') && $file['contents'] === 'pdf', ARRAY_FILTER_USE_BOTH);
-        expect($assignmentFiles)->toHaveCount(30)
+        expect($assignmentFiles)->toHaveCount($participantCount + 1)
+            ->and($assignmentFiles[$result['folder']['id'].'/LF_Word.pdf']['contents'])->toBe('pdf')
             ->and($state->files[$result['folder']['id'].'/Beurteilung.md']['contents'])->toBe('criteria')
             ->and($state->files[$result['folder']['id'].'/Beurteilung.pdf']['contents'])->toBe('criteria pdf');
         if (getenv('SCHOOLTOOL_COUNT_REQUESTS') === '1') {

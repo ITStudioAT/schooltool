@@ -1,6 +1,7 @@
 <?php
 
 use App\Jobs\CreateTeachingAssessment;
+use App\Jobs\SendTeachingWorkAssignments;
 use App\Models\DropboxConnection;
 use App\Models\McCatalog;
 use App\Models\McTest;
@@ -15,13 +16,16 @@ use App\Models\TeachingWorkModuleLink;
 use App\Models\User;
 use App\Services\DropboxModuleLinks;
 use App\Services\DropboxWorkImport;
+use App\Services\TeachingAssessmentQueue;
 use App\Services\TeachingAssessmentRuns;
 use App\Services\TeachingAssessmentTemplate;
 use App\Services\TeachingDirectAssessment;
 use GuzzleHttp\Psr7\Response;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Validation\ValidationException;
 use Spatie\Permission\Models\Role;
 
@@ -43,6 +47,64 @@ beforeEach(function (): void {
     $this->url = '/api/admin/teaching/course_works/'.$this->work->id;
     $this->actingAs($this->teacher, 'sanctum');
     Http::preventStrayRequests();
+});
+
+test('renews a MySQL module lock twice in the same second and releases it', function (): void {
+    config(['cache.default' => 'database']);
+    $this->freezeTime();
+    $moduleId = 'module-lock-test';
+    $key = config('cache.prefix').'teaching:direct-assessment:'.hash('sha256', $moduleId);
+
+    app(TeachingDirectAssessment::class)->withModuleLock($moduleId, function (Closure $renew) use ($key): void {
+        $renew();
+        $renew();
+        expect(DB::table('cache_locks')->where('key', $key)->exists())->toBeTrue();
+    });
+
+    expect(DB::table('cache_locks')->where('key', $key)->exists())->toBeFalse();
+});
+
+test('keeps an assessment ready for Redis after an outage without forwarding assignment mail', function (): void {
+    $database = Queue::connection('database');
+    $runId = '11111111-1111-4111-8111-111111111111';
+    $database->push((new CreateTeachingAssessment($this->work->id, $runId))->beforeCommit(), queue: CreateTeachingAssessment::QUEUE);
+    $database->push((new SendTeachingWorkAssignments($this->work->id, 'all', $runId, 'example'))->beforeCommit(), queue: CreateTeachingAssessment::QUEUE);
+    $redis = Mockery::mock(Illuminate\Contracts\Queue\Queue::class);
+    Queue::shouldReceive('connection')->with('redis')->andReturn($redis);
+    $relay = app(TeachingAssessmentQueue::class);
+    $redis->shouldReceive('pushRaw')->once()->withAnyArgs()->andThrow(new RuntimeException('Redis unavailable'));
+
+    expect(fn () => $relay->publishPending())->toThrow(RuntimeException::class, 'Redis unavailable');
+    expect($database->size(CreateTeachingAssessment::QUEUE))->toBe(2);
+
+    $redis->shouldReceive('pushRaw')->once()->with(
+        Mockery::on(fn (string $payload): bool => json_decode($payload, true)['data']['commandName'] === CreateTeachingAssessment::class
+            && str_contains($payload, $runId)),
+        CreateTeachingAssessment::QUEUE,
+    )->andReturn($runId);
+    $relay->publishPending();
+    $relay->publishPending();
+
+    expect($database->size(CreateTeachingAssessment::QUEUE))->toBe(1);
+});
+
+test('publishes a newly accepted assessment to Redis after storing its waiting status', function (): void {
+    config(['queue.default' => 'redis']);
+    $database = Queue::connection('database');
+    $redis = Mockery::mock(Illuminate\Contracts\Queue\Queue::class);
+    Queue::partialMock()->shouldReceive('connection')->with('database')->andReturn($database);
+    Queue::shouldReceive('connection')->with('redis')->andReturn($redis);
+    $redis->shouldReceive('pushRaw')->once()->andReturnUsing(function (string $payload, string $queue): string {
+        expect($queue)->toBe(CreateTeachingAssessment::QUEUE);
+        expect(json_decode($payload, true)['data']['commandName'])->toBe(CreateTeachingAssessment::class);
+        expect(app(TeachingAssessmentRuns::class)->show($this->work, $this->teacher, null)['state'])->toBe('queued');
+
+        return 'assessment-queued';
+    });
+
+    $this->postJson($this->url.'/store-exercise', ['kind' => 'direct',
+        'generation_id' => '11111111-1111-4111-8111-111111111111', 'approved' => true])->assertAccepted();
+    expect($database->size(CreateTeachingAssessment::QUEUE))->toBe(0);
 });
 
 test('the real direct endpoint creates a verified package with a separate MC selection', function (bool $withMc, string $mode, bool $multipleClasses = false): void {

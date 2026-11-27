@@ -3,6 +3,7 @@
 use App\Jobs\HealthJob;
 use App\Models\QueueTest;
 use App\Models\StudentTimetableV3Timetable;
+use App\Services\TeachingAssessmentQueue;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
@@ -51,6 +52,13 @@ Schedule::command('teaching:backup-maintenance')
     ->everyFiveMinutes()
     ->onOneServer()
     ->withoutOverlapping(10);
+
+Schedule::call(fn () => app(TeachingAssessmentQueue::class)->publishPending())
+    ->name('teaching-assessments:publish-pending')
+    ->everyMinute()
+    ->when(fn (): bool => app(TeachingAssessmentQueue::class)->usesRedis())
+    ->onOneServer()
+    ->withoutOverlapping(2);
 
 Schedule::command('teaching:send-reminders')
     ->everyMinute()

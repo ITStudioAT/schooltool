@@ -13,7 +13,7 @@ class CreateTeachingAssessment implements ShouldQueue
 
     public const QUEUE = 'teaching-assessments';
 
-    public const TIMEOUT = 1830;
+    public const TIMEOUT = 1800;
 
     public int $tries = 1;
 

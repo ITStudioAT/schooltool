@@ -1,6 +1,7 @@
 <?php
 
 use App\Jobs\BuildMaterialStorageAuditJob;
+use App\Jobs\CreateTeachingAssessment;
 use App\Jobs\HealthJob;
 use App\Jobs\MaterialsV2\ProcessMaterialV2Item;
 use App\Jobs\StudentsTimetables\ProcessTimetableImportJob;
@@ -85,7 +86,7 @@ it('segments latency-sensitive, import, material, and maintenance workloads', fu
         ->and(config('horizon.defaults.supervisor-imports.queue'))
         ->toBe(['imports'])
         ->and(config('horizon.defaults.supervisor-long-running.queue'))
-        ->toBe(['materials', 'maintenance'])
+        ->toBe(['materials', 'maintenance', CreateTeachingAssessment::QUEUE])
         ->and((new HealthJob)->queue)->toBe('critical')
         ->and((new ProcessTimetableImportJob(1))->queue)->toBe('imports')
         ->and((new ProcessMaterialV2Item(1))->queue)->toBe('materials')
@@ -100,7 +101,7 @@ it('provisions the segmented supervisors in the testing environment', function (
         ->and($plan->optionsFor('testing', 'supervisor-critical')->queue)->toBe('critical,notifications')
         ->and($plan->optionsFor('testing', 'supervisor-default')->queue)->toBe('default')
         ->and($plan->optionsFor('testing', 'supervisor-imports')->queue)->toBe('imports')
-        ->and($plan->optionsFor('testing', 'supervisor-long-running')->queue)->toBe('materials,maintenance');
+        ->and($plan->optionsFor('testing', 'supervisor-long-running')->queue)->toBe('materials,maintenance,'.CreateTeachingAssessment::QUEUE);
 });
 
 it('starts segmented queue workers and the scheduler in the local development workflow', function (): void {

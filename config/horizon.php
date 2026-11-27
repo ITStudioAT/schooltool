@@ -1,5 +1,6 @@
 <?php
 
+use App\Jobs\CreateTeachingAssessment;
 use Illuminate\Support\Str;
 
 return [
@@ -245,7 +246,7 @@ return [
         ],
         'supervisor-long-running' => [
             'connection' => 'redis',
-            'queue' => ['materials', 'maintenance'],
+            'queue' => ['materials', 'maintenance', CreateTeachingAssessment::QUEUE],
             'balance' => 'auto',
             'autoScalingStrategy' => 'time',
             'maxProcesses' => 1,
