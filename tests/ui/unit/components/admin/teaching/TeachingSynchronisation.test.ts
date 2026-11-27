@@ -97,6 +97,21 @@ describe('Teaching synchronisation', () => {
         expect(wrapper.text()).toContain('Arbeit #70 bleibt im Sicherheitsbackup')
     })
 
+    it('shows course notification reads and reports obsolete confirmations before applying', async () => {
+        const { post } = await mountSynchronisation()
+        const preview = reviewedPreview()
+        preview.data.data.summary = [{ table: 'teaching_course_notification_reads', live: 3, replaced: 1, bytes: 100 }]
+        Object.assign(preview.data.data, { skipped_notification_reads: 1 })
+        post.mockResolvedValueOnce(preview)
+
+        await wrapper.get('button').trigger('click')
+        await flushPromises()
+
+        expect(wrapper.text()).toContain('Gelesen-Bestätigungen zu Kursbenachrichtigungen')
+        expect(wrapper.text()).toContain('Gelesen-Bestätigungen ohne passende Nachricht im LIVE-Stand werden ausgelassen (1)')
+        expect(wrapper.text()).not.toContain('Übernahme gesperrt')
+    })
+
     it('checks availability without reading cloud data automatically', async () => {
         const { post } = await mountSynchronisation(false)
         expect(post).not.toHaveBeenCalled()

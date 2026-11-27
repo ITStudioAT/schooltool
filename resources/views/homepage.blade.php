@@ -57,7 +57,9 @@
 <body class="antialiased">
 
     <div id="app">
-
+        @if (request()->is('/'))
+            @include('homepage.startup')
+        @endif
     </div>
 
     {!! CookieConsent::scripts(options: [

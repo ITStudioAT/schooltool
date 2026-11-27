@@ -1,13 +1,116 @@
 <template>
-    <div class="intro-page" :class="{ 'intro-page--cinematic': showNewHomepage }">
+    <div class="intro-page" :class="{ 'intro-page--starting': !step }">
         <!-- Animated Background -->
-        <div v-if="!showNewHomepage" class="animated-bg">
+        <div v-if="step && (step === 'login' || !homepageDesignEnabled)" class="animated-bg">
             <div class="hero-bg-image st-cloudflare-bg-image"></div>
         </div>
 
         <!-- Step: Select School -->
-        <SchoolSelectionPreview v-if="showNewHomepage" :schools="login_schools" @select="selectLoginSchool" />
-        <section class="hero-section" v-if="step === 'selectSchool' && !showNewHomepage">
+        <section v-if="step === 'selectSchool' && homepageDesignEnabled" class="school-entry" aria-labelledby="school-entry-title">
+            <SchoolEntryHeader show-documentation />
+
+            <div class="school-entry-shell school-entry-content">
+                <div class="school-entry-hero school-entry-hero--with-info">
+                    <div>
+                        <h1 id="school-entry-title">Mehr Zeit für das <span>Wesentliche.</span></h1>
+                        <p>Wir machen Schulprozesse schneller, einfacher und übersichtlicher.</p>
+                    </div>
+                    <router-link
+                        :to="{ name: 'schooltool-introduction' }"
+                        class="school-entry-info-link"
+                        :class="{ 'school-entry-info-link--local-motion': previewDiscoveryMotion }">
+                        <span class="school-entry-info-link-smoke" aria-hidden="true"></span>
+                        <span class="school-entry-info-link-dial" aria-hidden="true">
+                            <svg viewBox="0 0 100 100">
+                                <path
+                                    d="M50 5.5v4 M94.5 50h-4 M50 94.5v-4 M5.5 50h4"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    stroke-opacity="0.76"
+                                    stroke-width="1.05"
+                                    stroke-linecap="round" />
+                            </svg>
+                            <span ref="discoveryClock" class="school-entry-info-link-point"></span>
+                        </span>
+                        <span class="school-entry-info-link-label">Schooltool entdecken</span>
+                    </router-link>
+                </div>
+
+                <section class="school-entry-selection" aria-labelledby="school-entry-selection-title">
+                    <h2 id="school-entry-selection-title">Wählen Sie Ihre Schule</h2>
+
+                    <div v-if="schoolListLoadFailed" class="school-entry-load-error">
+                        <p role="alert">Die Schulauswahl konnte nicht geladen werden.</p>
+                        <button type="button" class="school-entry-back" :disabled="isInitializing" @click="initializeHomepage">
+                            Erneut laden
+                        </button>
+                    </div>
+                    <p v-else-if="login_schools.length === 0" class="school-entry-empty">Derzeit steht keine Schule zur Auswahl.</p>
+                    <ul v-else-if="login_schools.length <= 6" class="school-entry-list">
+                        <li v-for="school in login_schools" :key="school.id">
+                            <button
+                                type="button"
+                                class="school-entry-card homepage-school-card"
+                                :aria-label="`${school.long_name} auswählen`"
+                                :aria-describedby="school.short_name ? `school-entry-short-${school.id}` : undefined"
+                                :disabled="isSelectingSchool"
+                                @click="selectLoginSchool(school)">
+                                <span
+                                    class="school-entry-logo"
+                                    :class="{
+                                        'school-entry-logo--dark': schoolLogos[school.id]?.dark,
+                                        'school-entry-logo--wide': schoolLogos[school.id]?.wide,
+                                    }">
+                                    <img
+                                        v-if="school.logo"
+                                        :src="schoolLogoSrc(school)"
+                                        alt=""
+                                        crossorigin="anonymous"
+                                        @load="analyzeSchoolLogo($event, school.id)" />
+                                    <v-icon v-else icon="mdi-school-outline" size="27" aria-hidden="true" />
+                                </span>
+                                <span class="school-entry-school">
+                                    <strong>{{ school.long_name }}</strong>
+                                    <span v-if="school.short_name" :id="`school-entry-short-${school.id}`">
+                                        {{ school.short_name }}
+                                    </span>
+                                </span>
+                                <span class="school-entry-arrow" aria-hidden="true">
+                                    <v-icon icon="mdi-arrow-right" size="20" />
+                                </span>
+                            </button>
+                        </li>
+                    </ul>
+
+                    <div v-else class="school-entry-search">
+                        <v-autocomplete
+                            v-model="selected_login_school_id"
+                            :items="login_schools"
+                            item-title="long_name"
+                            item-value="id"
+                            label="Schule suchen …"
+                            variant="outlined"
+                            density="comfortable"
+                            prepend-inner-icon="mdi-magnify"
+                            auto-select-first
+                            bg-color="white"
+                            hide-details
+                            :disabled="isSelectingSchool"
+                            class="school-entry-search-field"
+                        />
+                        <v-btn
+                            variant="flat"
+                            size="large"
+                            class="school-entry-continue"
+                            :disabled="!selected_login_school_id || isSelectingSchool"
+                            @click="selectLoginSchoolById(selected_login_school_id)"
+                        >Weiter</v-btn>
+                    </div>
+                </section>
+            </div>
+        </section>
+
+        <section v-else-if="step === 'selectSchool'" class="hero-section legacy-homepage">
             <div class="hero-content st-shell-1440">
                 <header class="cloud-header">
                     <div class="cloud-header-left">
@@ -33,30 +136,36 @@
                 <div class="tools-container">
                     <h2 class="section-title">Wählen Sie Ihre Schule</h2>
 
-                    <!-- Cards mode (up to 6 schools) -->
-                    <div class="tools-grid" v-if="login_schools.length <= 6">
-                        <div
+                    <div v-if="schoolListLoadFailed" class="school-entry-load-error">
+                        <p role="alert">Die Schulauswahl konnte nicht geladen werden.</p>
+                        <button type="button" class="school-entry-back" :disabled="isInitializing" @click="initializeHomepage">
+                            Erneut laden
+                        </button>
+                    </div>
+                    <p v-else-if="login_schools.length === 0">Derzeit steht keine Schule zur Auswahl.</p>
+                    <div v-else-if="login_schools.length <= 6" class="tools-grid">
+                        <button
                             v-for="school in login_schools"
                             :key="school.id"
+                            type="button"
                             class="tool-card"
-                            @click="selectLoginSchool(school)"
-                            tabindex="0"
-                            @keydown.enter="selectLoginSchool(school)"
-                        >
+                            :aria-label="`${school.long_name} auswählen`"
+                            :disabled="isSelectingSchool"
+                            @click="selectLoginSchool(school)">
                             <div class="card-glow"></div>
                             <div class="card-content">
-                                <div class="card-icon school-select-icon" :class="[school.logo ? 'school-select-icon--has-logo' : 'school-select-icon--no-logo', schoolLogoDarkFlags[school.id] ? 'school-select-icon--dark-logo' : '']">
-                                    <img v-if="school.logo" :src="schoolLogoSrc(school.logo)" :alt="school.long_name" class="school-select-logo-img" crossorigin="anonymous" @load="analyzeSchoolCardLogo($event, school.id)" />
+                                <div class="card-icon school-select-icon" :class="[school.logo ? 'school-select-icon--has-logo' : 'school-select-icon--no-logo', schoolLogos[school.id]?.dark ? 'school-select-icon--dark-logo' : '']">
+                                    <img v-if="school.logo" :src="schoolLogoSrc(school)" :alt="school.long_name" class="school-select-logo-img" crossorigin="anonymous" @load="analyzeSchoolLogo($event, school.id)" />
                                     <v-icon v-else size="40">mdi-school</v-icon>
                                 </div>
                                 <h3 class="card-title school-card-title">{{ school.long_name }}</h3>
-                                <p class="card-description school-card-short">{{ school.short_name || '&nbsp;' }}</p>
+                                <p class="card-description school-card-short">{{ school.short_name || '\u00a0' }}</p>
                                 <div class="card-action">
                                     <span class="action-text">Auswählen</span>
                                     <v-icon size="20">mdi-arrow-right</v-icon>
                                 </div>
                             </div>
-                        </div>
+                        </button>
                     </div>
 
                     <!-- Search mode (more than 6 schools) -->
@@ -72,13 +181,14 @@
                             prepend-inner-icon="mdi-magnify"
                             auto-select-first
                             bg-color="white"
+                            :disabled="isSelectingSchool"
                             class="school-search-field"
                         />
                         <v-btn
                             color="success"
                             flat
                             size="large"
-                            :disabled="!selected_login_school_id"
+                            :disabled="!selected_login_school_id || isSelectingSchool"
                             @click="selectLoginSchoolById(selected_login_school_id)"
                         >Weiter</v-btn>
                     </div>
@@ -86,8 +196,70 @@
             </div>
         </section>
 
+        <section v-if="step === 'schoolSelected' && homepageDesignEnabled" class="school-entry school-tools" aria-labelledby="school-tools-title">
+            <SchoolEntryHeader show-documentation />
+
+            <div class="school-entry-shell school-entry-content">
+                <button type="button" class="school-entry-back" @click="backToSchoolSelection">
+                    <v-icon icon="mdi-arrow-left" size="19" aria-hidden="true" />
+                    Andere Schule
+                </button>
+
+                <div
+                    class="school-entry-hero school-entry-hero--compact school-tools-hero"
+                    :class="{ 'school-tools-hero--with-logo': selected_login_school?.logo }">
+                    <div
+                        v-if="selected_login_school?.logo"
+                        class="school-entry-logo school-tools-logo"
+                        :class="{
+                            'school-entry-logo--dark': schoolLogos[selected_login_school.id]?.dark,
+                            'school-entry-logo--wide': schoolLogos[selected_login_school.id]?.wide,
+                        }">
+                        <img
+                            :src="schoolLogoSrc(selected_login_school)"
+                            alt=""
+                            crossorigin="anonymous"
+                            @load="analyzeSchoolLogo($event, selected_login_school.id)" />
+                    </div>
+                    <div class="school-tools-heading">
+                        <h1 id="school-tools-title">{{ selected_login_school?.long_name }}</h1>
+                        <p><strong>Mehr Zeit für das Wesentliche.</strong> Wir machen Schulprozesse schneller, einfacher und übersichtlicher.</p>
+                    </div>
+                </div>
+
+                <section class="school-entry-selection" aria-labelledby="school-tools-list-title">
+                    <h2 id="school-tools-list-title">Anwendungen</h2>
+                    <ul class="school-tools-list">
+                        <li v-for="tool in schoolToolCards" :key="tool.key">
+                            <button
+                                type="button"
+                                class="school-entry-card school-tool-card"
+                                :class="{ 'school-tool-card--teaching': tool.key === 'Lehrertool' }"
+                                :aria-disabled="tool.disabled || undefined"
+                                @click="openToolForSchool(tool.key)">
+                                <span class="school-entry-logo school-tool-icon">
+                                    <v-icon :icon="tool.icon" size="26" aria-hidden="true" />
+                                </span>
+                                <span class="school-tool-copy">
+                                    <strong>{{ tool.title }}</strong>
+                                    <span>{{ tool.description }}</span>
+                                    <span v-if="tool.badge" class="school-tool-status">
+                                        <v-icon :icon="tool.badge.icon" size="16" aria-hidden="true" />
+                                        {{ tool.badge.label }}
+                                    </span>
+                                </span>
+                                <span class="school-entry-arrow" aria-hidden="true">
+                                    <v-icon icon="mdi-arrow-right" size="20" />
+                                </span>
+                            </button>
+                        </li>
+                    </ul>
+                </section>
+            </div>
+        </section>
+
         <!-- Step: School Selected — show licensed tools -->
-        <section class="hero-section" v-if="step === 'schoolSelected'">
+        <section v-else-if="step === 'schoolSelected'" class="hero-section legacy-homepage">
             <div class="hero-content st-shell-1440">
                 <header class="cloud-header">
                     <div class="cloud-header-left">
@@ -111,13 +283,13 @@
                 </div>
 
                 <div class="school-logo-banner" v-if="selected_login_school?.logo">
-                    <div class="school-logo-box" :class="{ 'school-logo-box--dark': logoNeedsDarkBg }">
+                    <div class="school-logo-box" :class="{ 'school-logo-box--dark': schoolLogos[selected_login_school.id]?.dark }">
                         <img
-                            :src="schoolLogoSrc(selected_login_school.logo)"
+                            :src="schoolLogoSrc(selected_login_school)"
                             :alt="selected_login_school.long_name"
                             class="school-logo-img"
                             crossorigin="anonymous"
-                            @load="analyzeLogoBrightness"
+                            @load="analyzeSchoolLogo($event, selected_login_school.id, true)"
                         />
                     </div>
                 </div>
@@ -132,99 +304,32 @@
                     </div>
 
                     <div class="tools-grid">
-                        <!-- Anmeldetool Card -->
-                        <div
-                            class="tool-card card-register"
-                            :class="{ 'card-disabled': isRegisterDisabled }"
-                            @click="openToolForSchool('Anmeldetool')"
-                            v-if="canShowRegister">
+                        <button
+                            v-for="tool in schoolToolCards"
+                            :key="tool.key"
+                            type="button"
+                            class="tool-card"
+                            :class="[tool.legacyClass, { 'card-disabled': tool.disabled }]"
+                            :aria-disabled="tool.disabled || undefined"
+                            @click="openToolForSchool(tool.key)">
                             <div class="card-glow"></div>
                             <div class="card-content">
                                 <div class="card-icon">
-                                    <v-icon size="40">mdi-calendar-check</v-icon>
+                                    <v-icon :icon="tool.icon" size="40" aria-hidden="true" />
                                 </div>
-                                <h3 class="card-title">Anmeldetool</h3>
-                                <p class="card-description">Einfache Anmeldung zu Schulveranstaltungen, Elternabenden und Events.</p>
-                                <div class="card-action">
-                                    <span class="action-text">Starten</span>
+                                <h3 class="card-title">{{ tool.title }}</h3>
+                                <p class="card-description">{{ tool.description }}</p>
+                                <div class="card-action" aria-hidden="true">
+                                    <span>{{ tool.key === 'Restaurant' ? 'Zum Restaurant' : 'Starten' }}</span>
                                     <v-icon size="20">mdi-arrow-right</v-icon>
                                 </div>
-                                <div class="card-badge" v-if="registerBadge">
-                                    <v-icon size="16">{{ registerBadge.icon }}</v-icon>
-                                    <span>{{ registerBadge.label }}</span>
+                                <div v-if="tool.badge" class="card-badge">
+                                    <v-icon :icon="tool.badge.icon" size="16" aria-hidden="true" />
+                                    <span>{{ tool.badge.label }}</span>
                                 </div>
                             </div>
-                        </div>
-
-                        <!-- Unterricht Card -->
-                        <div class="tool-card card-lernportal" :class="{ 'card-disabled': isTeachingDisabled }" @click="openToolForSchool('Lehrertool')" v-if="canShowTeaching">
-                            <div class="card-glow"></div>
-                            <div class="card-content">
-                                <div class="card-icon">
-                                    <v-icon size="40">mdi-rocket-launch-outline</v-icon>
-                                </div>
-                                <h3 class="card-title">Unterricht</h3>
-                                <p class="card-description">Einstieg in den Login-Bereich für Schüler.</p>
-                                <div class="card-action">
-                                    <span class="action-text">Starten</span>
-                                    <v-icon size="20">mdi-arrow-right</v-icon>
-                                </div>
-                                <div class="card-badge" v-if="teachingBadge">
-                                    <v-icon size="16">{{ teachingBadge.icon }}</v-icon>
-                                    <span>{{ teachingBadge.label }}</span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- SEPP Card -->
-                        <div
-                            class="tool-card card-students-timetables"
-                            :class="{ 'card-disabled': isStudentsTimetablesDisabled }"
-                            @click="openToolForSchool('StudentsTimetables')"
-                            v-if="canShowStudentsTimetables">
-                            <div class="card-glow"></div>
-                            <div class="card-content">
-                                <div class="card-icon">
-                                    <v-icon size="40">mdi-calendar-clock-outline</v-icon>
-                                </div>
-                                <h3 class="card-title">SEPP</h3>
-                                <p class="card-description">Stundenplanerstellungs- und -planungsprogramm</p>
-                                <div class="card-action">
-                                    <span class="action-text">Starten</span>
-                                    <v-icon size="20">mdi-arrow-right</v-icon>
-                                </div>
-                                <div class="card-badge" v-if="studentsTimetablesBadge">
-                                    <v-icon size="16">{{ studentsTimetablesBadge.icon }}</v-icon>
-                                    <span>{{ studentsTimetablesBadge.label }}</span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Restaurant Card -->
-                        <div
-                            class="tool-card card-lunch"
-                            :class="{ 'card-disabled': isRestaurantDisabled }"
-                            @click="openToolForSchool('Restaurant')"
-                            v-if="canShowRestaurant">
-                            <div class="card-glow"></div>
-                            <div class="card-content">
-                                <div class="card-icon">
-                                    <v-icon size="40">mdi-food</v-icon>
-                                </div>
-                                <h3 class="card-title">Restaurant</h3>
-                                <p class="card-description">Speisepläne, Bestellungen und Abholinfos an einem Ort. Direkt in SchoolTool.</p>
-                                <div class="card-action">
-                                    <span class="action-text">Zum Restaurant</span>
-                                    <v-icon size="20">mdi-arrow-right</v-icon>
-                                </div>
-                                <div class="card-badge" v-if="restaurantBadge">
-                                    <v-icon size="16">{{ restaurantBadge.icon }}</v-icon>
-                                    <span>{{ restaurantBadge.label }}</span>
-                                </div>
-                            </div>
-                        </div>
+                        </button>
                     </div>
-
                 </div>
             </div>
         </section>
@@ -329,45 +434,116 @@
 </template>
 
 <script>
-import { nextTick } from 'vue'
+import { nextTick, ref, watch } from 'vue'
 import { resolveSelectedSchoolLogoSrc } from '@/helpers/adminSchoolLogo'
 import { useValidationRulesSetup } from '@/helpers/rules'
 import { mapWritableState } from 'pinia'
-import { useHomepageStore } from '@/stores/homepage/HomepageStore'
+import { homepageStartupRequestTimeout, useHomepageStore } from '@/stores/homepage/HomepageStore'
 import { useNotificationStore } from '@/stores/spa/NotificationStore'
-import SchoolSelectionPreview from './SchoolSelectionPreview.vue'
+import SchoolEntryHeader from './SchoolEntryHeader.vue'
+
+const schoolLogosForLightBackgrounds = {
+    BGZ: {
+        // Positive school mark from the BG Zaunergasse homepage.
+        current: '/storage/images/logos/logo_2.png',
+        positive: '/images/school-logo-bgz-positive.jpg',
+    },
+    CDGym: {
+        // Original image embedded in the school's Info-Folder_SRG_CD-Gym_US.pdf.
+        current: '/storage/images/logos/logo_1.png',
+        positive: '/images/school-logo-cdgym-positive.png',
+    },
+}
 
 export default {
     setup() {
-        return useValidationRulesSetup()
+        const discoveryClock = ref(null)
+        const previewDiscoveryMotion = import.meta.env.DEV && window.location.hostname === 'localhost'
+
+        watch(discoveryClock, (point, _, onCleanup) => {
+            if (!point) return
+
+            const link = point.closest('a')
+            const motionPreference = window.matchMedia('(prefers-reduced-motion: reduce)')
+            const canAnimate = () => previewDiscoveryMotion || !motionPreference.matches
+            let nextSecondTimeout
+            let displayedSecond = 0
+            let hoveringClock = false
+
+            function setSecond(second) {
+                displayedSecond = second
+                point.style.offsetDistance = `${second / 60 * 100 - 25}%`
+                point.classList.toggle('school-entry-info-link-point--held', hoveringClock && second === 0)
+            }
+
+            function syncClock() {
+                window.clearTimeout(nextSecondTimeout)
+                hoveringClock = false
+                if (document.hidden) return
+
+                const now = Date.now()
+                setSecond(new Date(now).getSeconds())
+
+                if (canAnimate()) {
+                    nextSecondTimeout = window.setTimeout(syncClock, 1000 - now % 1000)
+                }
+            }
+
+            function moveToTwelve(event) {
+                if (event.pointerType !== 'mouse' || !canAnimate() || document.hidden) return
+
+                window.clearTimeout(nextSecondTimeout)
+                hoveringClock = true
+                if (displayedSecond === 0) {
+                    setSecond(0)
+                    return
+                }
+
+                const clockwise = displayedSecond >= 30
+                const direction = clockwise ? 1 : -1
+                const steps = clockwise ? 60 - displayedSecond : displayedSecond
+                const interval = Math.min(100, 900 / steps)
+
+                function advance() {
+                    setSecond((displayedSecond + direction + 60) % 60)
+                    if (displayedSecond !== 0) {
+                        nextSecondTimeout = window.setTimeout(advance, interval)
+                    }
+                }
+
+                nextSecondTimeout = window.setTimeout(advance, interval)
+            }
+
+            function leaveClock(event) {
+                if (event.pointerType === 'mouse' && hoveringClock) syncClock()
+            }
+
+            syncClock()
+            link?.addEventListener('pointerenter', moveToTwelve)
+            link?.addEventListener('pointerleave', leaveClock)
+            link?.addEventListener('pointercancel', leaveClock)
+            document.addEventListener('visibilitychange', syncClock)
+            window.addEventListener('pageshow', syncClock)
+            motionPreference.addEventListener('change', syncClock)
+            onCleanup(() => {
+                window.clearTimeout(nextSecondTimeout)
+                link?.removeEventListener('pointerenter', moveToTwelve)
+                link?.removeEventListener('pointerleave', leaveClock)
+                link?.removeEventListener('pointercancel', leaveClock)
+                document.removeEventListener('visibilitychange', syncClock)
+                window.removeEventListener('pageshow', syncClock)
+                motionPreference.removeEventListener('change', syncClock)
+            })
+        }, { flush: 'post' })
+
+        return { ...useValidationRulesSetup(), discoveryClock, previewDiscoveryMotion }
     },
 
-    components: { SchoolSelectionPreview },
+    components: { SchoolEntryHeader },
 
     async beforeMount() {
         this.homepageStore = useHomepageStore()
-        this.school_name = this.$route.query.school
-        this.app_name = this.$route.query.app
-        const toolFromUrl = this.$route.query.tool
-        if (!this.school) {
-            await this.homepageStore.loadConfig(this.school_name, this.app_name)
-        }
-        this.selected_school = null
-        this.selected_school_id = null
-
-        await this.loadLoginSchools()
-
-        if (this.school_name && this.login_schools.length > 0) {
-            const match = this.login_schools.find((s) => s.short_name === this.school_name)
-            if (match) {
-                await this.selectLoginSchool(match)
-                if (toolFromUrl) {
-                    this.openToolForSchool(toolFromUrl)
-                }
-                return
-            }
-        }
-        this.step = 'selectSchool'
+        await this.initializeHomepage()
     },
 
     mounted() {},
@@ -379,12 +555,14 @@ export default {
             homepageStore: null,
             step: null,
             homepageDesignEnabled: false,
+            isInitializing: false,
+            schoolListLoadFailed: false,
+            isSelectingSchool: false,
             login_schools: [],
             selected_login_school: null,
             selected_login_school_id: null,
             selected_tool: null,
-            logoNeedsDarkBg: false,
-            schoolLogoDarkFlags: {},
+            schoolLogos: {},
             loginStep: 'EMAIL',
             loginFormValid: false,
             loginPasswordVisible: false,
@@ -398,9 +576,6 @@ export default {
     },
 
     computed: {
-        showNewHomepage() {
-            return this.step === 'selectSchool' && this.homepageDesignEnabled
-        },
         ...mapWritableState(useHomepageStore, ['config', 'is_loading', 'schools', 'licence', 'selected_school', 'selected_school_id']),
         toolStatuses() {
             return this.config?.tool_licence_statuses || {}
@@ -489,6 +664,50 @@ export default {
         restaurantBadge() {
             return this.buildBadge('active', this.restaurantModuleStatus)
         },
+        schoolToolCards() {
+            return [
+                {
+                    key: 'Anmeldetool',
+                    legacyClass: 'card-register',
+                    title: 'Anmeldetool',
+                    description: 'Einfache Anmeldung zu Schulveranstaltungen, Elternabenden und Events.',
+                    icon: 'mdi-calendar-check',
+                    visible: this.canShowRegister,
+                    disabled: this.isRegisterDisabled,
+                    badge: this.registerBadge,
+                },
+                {
+                    key: 'Lehrertool',
+                    legacyClass: 'card-lernportal',
+                    title: 'Unterricht',
+                    description: 'Einstieg in den Login-Bereich für Schüler.',
+                    icon: 'mdi-rocket-launch-outline',
+                    visible: this.canShowTeaching,
+                    disabled: this.isTeachingDisabled,
+                    badge: this.teachingBadge,
+                },
+                {
+                    key: 'StudentsTimetables',
+                    legacyClass: 'card-students-timetables',
+                    title: 'SEPP',
+                    description: 'Stundenplanerstellungs- und -planungsprogramm',
+                    icon: 'mdi-calendar-clock-outline',
+                    visible: this.canShowStudentsTimetables,
+                    disabled: this.isStudentsTimetablesDisabled,
+                    badge: this.studentsTimetablesBadge,
+                },
+                {
+                    key: 'Restaurant',
+                    legacyClass: 'card-lunch',
+                    title: 'Restaurant',
+                    description: 'Speisepläne, Bestellungen und Abholinfos an einem Ort. Direkt in SchoolTool.',
+                    icon: 'mdi-food',
+                    visible: this.canShowRestaurant,
+                    disabled: this.isRestaurantDisabled,
+                    badge: this.restaurantBadge,
+                },
+            ].filter((tool) => tool.visible)
+        },
     },
 
     watch: {
@@ -501,27 +720,56 @@ export default {
     },
 
     methods: {
-        schoolLogoSrc(logo) {
-            return resolveSelectedSchoolLogoSrc(logo)
-        },
-        async loadLoginSchools() {
-            const result = await this.homepageStore.loadLoginSchools()
-            if (result) {
-                this.login_schools = result.schools || []
-                this.homepageDesignEnabled = result.homepage_design_enabled === true
-            }
-            this.step = 'selectSchool'
-        },
+        async initializeHomepage() {
+            this.isInitializing = true
 
-        async selectLoginSchool(school) {
-            this.selected_login_school = school
-            this.logoNeedsDarkBg = false
-            await this.homepageStore.loadConfig(school.short_name)
-            const currentQuery = this.$route.query.school
-            if (currentQuery !== school.short_name) {
-                this.$router.replace({ query: { school: school.short_name } })
+            try {
+                const { school, app, tool } = this.$route.query
+                this.school_name = school
+                this.app_name = app
+                if (!this.school) {
+                    await this.homepageStore.loadConfig(school, app, { timeout: homepageStartupRequestTimeout })
+                }
+                this.selected_school = null
+                this.selected_school_id = null
+
+                const result = await this.homepageStore.loadLoginSchools()
+                this.schoolListLoadFailed = !result
+                this.login_schools = result?.schools || []
+                this.homepageDesignEnabled = result?.homepage_design_enabled === true
+                this.step = 'selectSchool'
+
+                const match = school && this.login_schools.find((entry) => entry.short_name === school)
+                if (match && await this.selectLoginSchool(match) && tool) {
+                    this.openToolForSchool(tool)
+                }
+            } finally {
+                this.isInitializing = false
             }
-            this.step = 'schoolSelected'
+        },
+        schoolLogoSrc(school) {
+            const current = resolveSelectedSchoolLogoSrc(school.logo)
+            const variant = schoolLogosForLightBackgrounds[school.short_name]
+
+            return this.homepageDesignEnabled && variant?.current === current ? variant.positive : current
+        },
+        async selectLoginSchool(school) {
+            if (this.isSelectingSchool || this.$route.path !== '/') return false
+
+            this.isSelectingSchool = true
+            try {
+                const result = await this.homepageStore.loadConfig(school.short_name, null, { timeout: homepageStartupRequestTimeout })
+                if (result === false || this.$route.path !== '/') return false
+
+                this.selected_login_school = school
+                if (this.$route.query.school !== school.short_name) {
+                    this.$router.replace({ query: { school: school.short_name } })
+                }
+                this.step = 'schoolSelected'
+                return true
+            } finally {
+                this.isSelectingSchool = false
+            }
         },
 
         selectLoginSchoolById(id) {
@@ -767,7 +1015,7 @@ export default {
             this.step = 'selectSchool'
         },
 
-        isLogoBright(img, includeTransparentBrightDetails = false) {
+        isLogoBright(img, isSchoolBanner) {
             const canvas = document.createElement('canvas')
             const ctx = canvas.getContext('2d')
             canvas.width = img.naturalWidth
@@ -796,29 +1044,29 @@ export default {
                 return true
             }
 
-            const brightRatio = brightPixels / opaquePixels
             const veryBrightRatio = veryBrightPixels / opaquePixels
             const transparentRatio = transparentPixels / (transparentPixels + opaquePixels)
 
-            return brightRatio > 0.45
-                || (includeTransparentBrightDetails && transparentRatio > 0.2 && veryBrightRatio > 0.04)
-                || (includeTransparentBrightDetails && transparentRatio > 0.35 && brightRatio > 0.14)
+            if (this.homepageDesignEnabled) return transparentRatio > 0.18 && veryBrightRatio > 0.1
+
+            return brightPixels / opaquePixels > 0.45
+                || (!isSchoolBanner && (
+                    (transparentRatio > 0.2 && veryBrightRatio > 0.04)
+                    || (transparentRatio > 0.35 && brightPixels / opaquePixels > 0.14)
+                ))
         },
 
-        analyzeLogoBrightness(event) {
+        analyzeSchoolLogo(event, schoolId, isSchoolBanner = false) {
+            const logo = event.target
+            const wide = logo.naturalWidth >= 1.6 * logo.naturalHeight
+            let dark = true
             try {
-                this.logoNeedsDarkBg = this.isLogoBright(event.target)
+                dark = this.isLogoBright(logo, isSchoolBanner)
             } catch {
-                this.logoNeedsDarkBg = true
+                // Keep a dark backdrop when the image cannot be sampled.
             }
-        },
 
-        analyzeSchoolCardLogo(event, schoolId) {
-            try {
-                this.schoolLogoDarkFlags[schoolId] = this.isLogoBright(event.target, true)
-            } catch {
-                this.schoolLogoDarkFlags[schoolId] = true
-            }
+            this.schoolLogos[schoolId] = { wide, dark }
         },
 
         getParticleStyle(n) {
@@ -845,22 +1093,27 @@ export default {
     background: #f7901e;
 }
 
-/* Animated Background */
-.intro-page--cinematic {
-    background: #000d18;
-    min-height: calc(100svh - 64px);
+.intro-page--starting {
+    background: #fafafa;
 }
 
-:global(.v-application:has(.intro-page--cinematic) .v-footer) {
-    background: #000d18 !important;
-    color: #e7f0f3 !important;
-    border-top: 1px solid rgba(152, 187, 198, 0.12);
+.school-entry-load-error {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 16px;
+    color: var(--entry-ink);
 }
 
-:global(.v-application:has(.intro-page--cinematic)) {
-    background: #000d18;
+.school-entry-load-error .school-entry-back {
+    border: 1px solid var(--entry-border);
+    background: #fff;
 }
 
+.school-entry-load-error .school-entry-back:disabled {
+    opacity: 0.6;
+    cursor: wait;
+}
 .animated-bg {
     position: fixed;
     top: 0;
@@ -1174,6 +1427,368 @@ export default {
     font-weight: 400;
 }
 
+.intro-page:has(.school-entry) {
+    min-height: 0;
+}
+
+.school-entry-hero--with-info {
+    grid-template-columns: minmax(0, 1fr) clamp(9rem, 24vw, 20rem);
+    align-items: center;
+    gap: clamp(24px, 4vw, 56px);
+    padding-block: clamp(22px, 3.7vw, 44px);
+}
+
+.school-entry-info-link {
+    position: relative;
+    isolation: isolate;
+    display: grid;
+    width: clamp(9rem, 13vw, 11.5rem);
+    aspect-ratio: 1;
+    align-content: center;
+    justify-items: center;
+    justify-self: center;
+    border: 1px solid rgb(16 38 58 / 28%);
+    border-radius: 50%;
+    background: rgb(255 250 240 / 50%);
+    color: var(--entry-ink);
+    font-size: clamp(0.875rem, 1.25vw, 1.03125rem);
+    font-weight: 600;
+    line-height: 1.28;
+    text-align: center;
+    text-decoration: none;
+}
+
+.school-entry-info-link::before {
+    position: absolute;
+    inset: -7px;
+    border: 1px solid rgb(16 38 58 / 38%);
+    border-radius: inherit;
+    content: '';
+    pointer-events: none;
+}
+
+.school-entry-info-link-smoke {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    border-radius: inherit;
+    opacity: 0;
+    transition: opacity 700ms ease-out;
+    pointer-events: none;
+}
+
+.school-entry-info-link-smoke::before,
+.school-entry-info-link-smoke::after {
+    position: absolute;
+    width: 39%;
+    height: 58%;
+    border-radius: 50%;
+    opacity: 0;
+    filter: blur(8px);
+    content: '';
+    animation: schooltool-smoke-rise 3s ease-in-out 250ms infinite both paused;
+}
+
+.school-entry-info-link-smoke::before {
+    --info-smoke-drift: -14%;
+    --info-smoke-tilt: -20deg;
+    right: 41%;
+    bottom: 5%;
+    background: radial-gradient(ellipse at 64% 58%, rgb(248 128 62 / 85%), transparent 71%);
+}
+
+.school-entry-info-link-smoke::after {
+    --info-smoke-drift: 15%;
+    --info-smoke-tilt: 18deg;
+    right: 18%;
+    bottom: 1%;
+    background: radial-gradient(ellipse at 37% 52%, rgb(220 99 149 / 74%), transparent 72%);
+    animation-delay: 1550ms;
+}
+
+.school-entry-info-link-dial {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+
+.school-entry-info-link-dial svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
+.school-entry-info-link-point {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 6px;
+    height: 6px;
+    offset-path: circle(33% at 50% 50%);
+    offset-distance: -25%;
+    offset-rotate: 0deg;
+}
+
+.school-entry-info-link-point::before {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: var(--entry-orange);
+    content: '';
+}
+
+.school-entry-info-link-point--held::before {
+    transform: scale(3);
+    transition: transform 220ms ease-out;
+}
+
+.school-entry-info-link-label {
+    z-index: 1;
+    width: min-content;
+}
+
+.school-entry-info-link:focus-visible {
+    outline: 3px solid var(--entry-ink);
+    outline-offset: 7px;
+}
+
+@media (max-width: 700px) {
+    .school-entry-hero--with-info {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 24px;
+    }
+
+    .school-entry-info-link {
+        justify-self: start;
+        margin-inline-start: 7px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .school-entry-info-link:not(.school-entry-info-link--local-motion) .school-entry-info-link-smoke {
+        transition: none;
+    }
+
+    .school-entry-info-link:not(.school-entry-info-link--local-motion) .school-entry-info-link-smoke::before,
+    .school-entry-info-link:not(.school-entry-info-link--local-motion) .school-entry-info-link-smoke::after {
+        animation: none;
+        opacity: 0.32;
+    }
+}
+
+@media (hover: hover) {
+    .school-entry-info-link:hover .school-entry-info-link-smoke {
+        opacity: 1;
+    }
+
+    .school-entry-info-link:hover .school-entry-info-link-smoke::before,
+    .school-entry-info-link:hover .school-entry-info-link-smoke::after {
+        animation-play-state: running;
+    }
+}
+
+@keyframes schooltool-smoke-rise {
+    from {
+        opacity: 0;
+        transform: translateY(13%) rotate(var(--info-smoke-tilt)) scale(0.78);
+    }
+
+    22% {
+        opacity: 0.16;
+    }
+
+    49% {
+        opacity: 0.76;
+    }
+
+    76% {
+        opacity: 0.36;
+    }
+
+    to {
+        opacity: 0;
+        transform: translate(var(--info-smoke-drift), -48%) rotate(var(--info-smoke-tilt)) scale(1.16);
+    }
+}
+
+.homepage-school-card {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: 88px 1fr;
+    align-items: start;
+    gap: 14px;
+    padding: 16px 18px;
+}
+
+.homepage-school-card .school-entry-logo {
+    grid-column: 1 / -1;
+    justify-self: center;
+    width: min(100%, 200px);
+    height: 100%;
+    padding: 0;
+    background: transparent;
+}
+
+.homepage-school-card .school-entry-logo--dark {
+    width: 76px;
+    height: 76px;
+    align-self: center;
+    padding: 5px 8px;
+    background: #183044;
+}
+
+.homepage-school-card .school-entry-logo--wide.school-entry-logo--dark {
+    width: min(100%, 188px);
+}
+
+.school-entry-logo--wide.school-entry-logo--dark {
+    background: #142131;
+}
+
+.homepage-school-card .school-entry-logo img {
+    max-width: 68px;
+    max-height: 68px;
+}
+
+.homepage-school-card .school-entry-logo--wide img {
+    max-width: 200px;
+    max-height: 88px;
+}
+
+.homepage-school-card .school-entry-school strong {
+    font-size: 1.05rem;
+}
+
+.school-tools .school-entry-back {
+    margin: -8px 0 12px -10px;
+}
+
+.school-tools-hero {
+    align-items: center;
+    gap: clamp(14px, 3vw, 28px);
+}
+
+.school-tools-hero--with-logo {
+    grid-template-columns: auto minmax(0, 1fr);
+}
+
+.school-tools-heading p {
+    max-width: 58ch;
+}
+
+.school-tools-logo {
+    width: clamp(62px, 8vw, 108px);
+    height: clamp(62px, 8vw, 108px);
+    padding: 10px;
+    border-radius: 12px;
+}
+
+.school-tools-logo:not(.school-entry-logo--dark) {
+    background: #fff;
+}
+
+.school-tools-logo.school-entry-logo--wide {
+    width: clamp(176px, 19vw, 216px);
+    height: auto;
+    padding: 8px;
+    aspect-ratio: 2 / 1;
+}
+
+.school-tools-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    padding: 0;
+    list-style: none;
+}
+
+.school-tool-card {
+    gap: clamp(10px, 2vw, 18px);
+}
+
+.school-tool-card--teaching:not([aria-disabled='true']) {
+    border-color: #e4ab79;
+}
+
+.school-tool-card--teaching .school-tool-icon {
+    background: #fff1df;
+    color: var(--entry-accent);
+}
+
+.school-tool-card[aria-disabled='true'] {
+    background: #f3f5f7;
+    cursor: not-allowed;
+}
+
+.school-tool-card[aria-disabled='true'] .school-entry-arrow {
+    background: #e9edf1;
+    color: var(--entry-muted);
+}
+
+.school-tool-copy {
+    display: grid;
+    gap: 4px;
+    color: var(--entry-muted);
+    font-size: 0.875rem;
+    overflow-wrap: anywhere;
+}
+
+.school-tool-copy > strong {
+    color: var(--entry-ink);
+    font-size: 1.1rem;
+}
+
+.school-tool-status {
+    display: inline-flex;
+    justify-self: start;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 7px;
+    border-radius: 6px;
+    background: #fff1df;
+    color: #803908;
+    font-weight: 600;
+}
+
+@media (max-width: 639px) {
+    .homepage-school-card {
+        padding: 12px 14px;
+    }
+
+    .school-tools-list {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 8px;
+    }
+
+    .school-tools-hero--with-logo {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(30px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.legacy-homepage {
+    --entry-ink: #10263a;
+    --entry-border: #dce3e8;
+}
+
+.legacy-homepage .tool-card {
+    text-align: start;
+}
+
+.legacy-homepage .tool-card:focus-visible {
+    outline: 3px solid var(--entry-ink);
+    outline-offset: 3px;
+}
+
 /* School Selection */
 .school-select-icon {
     color: #f39200 !important;
@@ -1275,17 +1890,6 @@ export default {
 .back-to-schools:hover {
     background: rgba(255, 255, 255, 0.2) !important;
     color: #fff !important;
-}
-
-@keyframes fadeInUp {
-    from {
-        opacity: 0;
-        transform: translateY(30px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
 }
 
 .section-title {
@@ -1468,6 +2072,53 @@ export default {
     font-size: 0.85rem;
     font-weight: 500;
     margin-top: 12px;
+}
+
+@media (max-width: 768px) {
+    .legacy-homepage .tools-grid {
+        gap: 16px;
+    }
+
+    .legacy-homepage .tool-card {
+        padding: 20px;
+    }
+
+    .legacy-homepage .card-icon {
+        width: 52px;
+        height: 52px;
+    }
+
+    .legacy-homepage .card-title,
+    .legacy-homepage .section-title {
+        font-size: 1.25rem;
+    }
+
+    .legacy-homepage .section-title {
+        margin-bottom: 24px;
+    }
+
+    .legacy-homepage .tools-header {
+        flex-wrap: wrap;
+    }
+}
+
+@media (max-width: 480px) {
+    .legacy-homepage .card-description {
+        font-size: 0.9rem;
+    }
+
+    .legacy-homepage .school-search-wrap {
+        flex-wrap: wrap;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .legacy-homepage .tool-card,
+    .legacy-homepage .tool-card:hover,
+    .legacy-homepage .tool-card:hover .card-icon {
+        transform: none;
+        transition: none;
+    }
 }
 
 /* Documentation Section */
@@ -2359,29 +3010,6 @@ export default {
         border-radius: 16px;
     }
 
-    .tools-grid {
-        gap: 16px;
-        max-width: 100%;
-    }
-
-    .tool-card {
-        padding: 20px;
-    }
-
-    .card-icon {
-        width: 52px;
-        height: 52px;
-    }
-
-    .card-title {
-        font-size: 1.25rem;
-    }
-
-    .section-title {
-        font-size: 1.25rem;
-        margin-bottom: 24px;
-    }
-
     .docs-section {
         margin-top: 32px;
     }
@@ -2472,14 +3100,6 @@ export default {
 
     .brand-tagline {
         font-size: 0.95rem;
-    }
-
-    .tool-card {
-        padding: 20px;
-    }
-
-    .card-description {
-        font-size: 0.9rem;
     }
 }
 
@@ -2593,17 +3213,8 @@ export default {
     .cf-wave,
     .cf-haze,
     .particle,
-    .tool-card,
     .logo-wrapper {
         animation: none;
-    }
-
-    .tool-card:hover {
-        transform: none;
-    }
-
-    .tool-card:hover .card-icon {
-        transform: none;
     }
 }
 </style>

@@ -17,7 +17,7 @@ class TeachingCourseWork extends Model
 
     /** These fields are written only by their individual workflow actions. */
     public const ManagedWorkflowFields = ['provision_method', 'submission_method', 'submission_started_at', 'portal_started_student_ids',
-        'portal_submissions', 'portal_submission_reopenings', 'assignment_mail', 'grade_visibility'];
+        'portal_submissions', 'portal_submission_reopenings', 'portal_submission_copy', 'assignment_mail', 'grade_visibility'];
 
     public function scopeLinkedToMultipleChoiceTest(Builder $query, int $testId): Builder
     {

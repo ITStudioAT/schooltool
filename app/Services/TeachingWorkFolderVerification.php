@@ -13,7 +13,11 @@ use JsonException;
 
 class TeachingWorkFolderVerification
 {
-    public function __construct(private DropboxWorkImport $dropbox, private DropboxModuleLinks $modules) {}
+    public function __construct(
+        private DropboxWorkImport $dropbox,
+        private DropboxModuleLinks $modules,
+        private TeachingWorkPortalSubmissionCopy $portalCopy,
+    ) {}
 
     public function required(TeachingCourseWork $work): bool
     {
@@ -26,21 +30,26 @@ class TeachingWorkFolderVerification
         return false;
     }
 
-    public function preview(DropboxConnection $connection, TeachingCourseWork $work, string $folderId): array
+    public function preview(DropboxConnection $connection, TeachingCourseWork $work, string $folderId, ?string $portalDate = null): array
     {
         $state = $this->fingerprint($connection, $work);
-        $verified = $this->inspect($connection, $work, $folderId);
+        $target = $portalDate !== null ? $this->portalCopy->verifySelectedTarget($connection, $work, $folderId, $portalDate) : null;
+        $verifyOriginals = $portalDate === null || $this->required($work);
+        $verified = $verifyOriginals ? $this->inspect($connection, $work, $folderId)
+            : ['folder' => $target['folder'], 'checked_files' => [], 'differences' => [], 'identity' => 'portal_target'];
         $proof = Crypt::encryptString(json_encode(['connection_id' => $connection->id, 'user_id' => $connection->user_id,
             'account_id' => $connection->account_id, 'work_id' => $work->id, 'folder_id' => $folderId,
-            'state' => $state, 'inventory' => $verified['inventory'], 'revisions' => $verified['revisions'],
+            'state' => $state, 'inventory' => $verified['inventory'] ?? null, 'revisions' => $verified['revisions'] ?? null,
+            'portal_date' => $portalDate, 'portal_target' => $target,
             'expires' => now()->addMinutes(10)->timestamp], JSON_THROW_ON_ERROR));
 
         return ['candidate' => $verified['folder'], 'checked_files' => $verified['checked_files'],
             'differences' => $verified['differences'], 'identity' => $verified['identity'], 'proof' => $proof,
-            'message' => 'Die Ordnerzuordnung ist anhand gespeicherter Originalnachweise bestätigt. Bitte den vollständigen Pfad bestätigen. Bewertungen bleiben unverändert.'];
+            'message' => $verifyOriginals ? 'Die Ordnerzuordnung ist anhand gespeicherter Originalnachweise bestätigt. Bitte den vollständigen Pfad bestätigen. Bewertungen bleiben unverändert.'
+                : 'Der vorhandene Prüfungsordner ist für diese Arbeit und diesen Termin bestätigt. Bitte den vollständigen Pfad bestätigen.'];
     }
 
-    public function store(DropboxConnection $connection, TeachingCourseWork $work, string $folderId, string $proof): void
+    public function store(DropboxConnection $connection, TeachingCourseWork $work, string $folderId, string $proof, ?string $portalDate = null): void
     {
         try {
             $pending = json_decode(Crypt::decryptString($proof), true, 16, JSON_THROW_ON_ERROR);
@@ -50,21 +59,28 @@ class TeachingWorkFolderVerification
         abort_unless(is_array($pending) && ($pending['connection_id'] ?? null) === $connection->id
             && ($pending['user_id'] ?? null) === $connection->user_id && ($pending['account_id'] ?? null) === $connection->account_id
             && ($pending['work_id'] ?? null) === $work->id && ($pending['folder_id'] ?? null) === $folderId
+            && ($pending['portal_date'] ?? null) === $portalDate
             && ($pending['expires'] ?? 0) >= now()->timestamp && ($pending['state'] ?? null) === $this->fingerprint($connection, $work),
             409, 'Arbeit, Konto oder Ordnerbestätigung hat sich geändert. Bitte erneut prüfen.');
-        $verified = $this->inspect($connection, $work, $folderId, $pending['revisions'] ?? null);
-        if (! isset($pending['revisions'])) {
+        $target = $portalDate !== null ? $this->portalCopy->verifySelectedTarget($connection, $work, $folderId, $portalDate) : null;
+        abort_unless($target === ($pending['portal_target'] ?? null), 409, 'Der Prüfungsordner wurde seit der Vorschau verändert. Bitte erneut prüfen.');
+        $verifyOriginals = $portalDate === null || $this->required($work);
+        $verified = $verifyOriginals ? $this->inspect($connection, $work, $folderId, $pending['revisions'] ?? null) : $target;
+        if ($verifyOriginals && ! isset($pending['revisions'])) {
             abort_unless($verified['inventory'] === ($pending['inventory'] ?? null), 409,
                 'Der Ordnerinhalt wurde seit der Vorschau geändert. Bitte erneut prüfen.');
         }
-        DB::transaction(function () use ($connection, $work, $pending, $verified): void {
+        DB::transaction(function () use ($connection, $work, $pending, $verified, $portalDate, $target): void {
             $lockedConnection = DropboxConnection::query()->lockForUpdate()->findOrFail($connection->id);
             $lockedWork = TeachingCourseWork::query()->with('teachingCourse')->lockForUpdate()->findOrFail($work->id);
             abort_unless(! $lockedConnection->revoked_at && $lockedWork->automationEnabled()
                 && $this->fingerprint($lockedConnection, $lockedWork) === $pending['state'],
                 409, 'Die Arbeit oder Dropbox-Zuordnung wurde inzwischen geändert. Bitte erneut prüfen.');
-            TeachingWorkDropboxFolder::query()->updateOrCreate(['dropbox_connection_id' => $connection->id,
+            $link = TeachingWorkDropboxFolder::query()->updateOrCreate(['dropbox_connection_id' => $connection->id,
                 'teaching_course_work_id' => $work->id], ['folder_id' => $verified['folder']['id'], 'folder_name' => $verified['folder']['name']]);
+            if ($portalDate !== null) {
+                $this->portalCopy->rememberSelectedTarget($lockedWork, $link, $portalDate, $target);
+            }
         });
     }
 

@@ -69,3 +69,8 @@ Schedule::command('multiple-choice:finalize-expired')
     ->everyMinute()
     ->onOneServer()
     ->withoutOverlapping();
+
+Schedule::command('teaching:end-expired-portal-releases')
+    ->everyMinute()
+    ->onOneServer()
+    ->withoutOverlapping(10);

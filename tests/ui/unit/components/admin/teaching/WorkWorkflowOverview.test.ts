@@ -232,7 +232,7 @@ it('shows the portal cutoff independently of the selected date and the end of th
         expect(submission().text()).toContain('Erledigt')
         const notice = wrapper.get('[role="dialog"] label:has(> input[value="portal"]) + [role="status"]')
         expect(notice.text()).toBe('Abgabefrist abgelaufen. Datei-Upload gesperrt.')
-        expect(action('Abgaben einsammeln')).toBeUndefined()
+        expect(action('Schülerabgaben einsehen')).toBeUndefined()
 
         await wrapper.setProps({ date: '2026-11-25' })
         expect(submission().text()).toContain('Abgabe geschlossen')
@@ -345,23 +345,23 @@ it('moves a closed portal to Bewerten and shows submission evidence for the sele
         expect(next()).toBe('Bewerten')
         expect(wrapper.get('.work-phase--next-assessment').text()).toContain('Nächster Schritt')
         expect(wrapper.findAll('.work-phase--complete').every(phase => phase.text().includes('Erledigt'))).toBe(true)
-        expect(action('Abgaben einsammeln')).toBeUndefined()
+        expect(action('Schülerabgaben einsehen')).toBeUndefined()
         expect(action('Abgabestatus ansehen')).toBeDefined()
 
         await wrapper.setProps({ date: otherDate })
         expect(completed()).toEqual(['Vorbereiten', 'Bereitstellen', 'Abgeben'])
         expect(next()).toBe('Bewerten')
-        expect(action('Abgaben einsammeln')).toBeDefined()
+        expect(action('Schülerabgaben einsehen')).toBeDefined()
 
         await wrapper.setProps({ work: withFiles([12]) })
         expect(next()).toBe('Bewerten')
-        expect(action('Abgaben einsammeln')).toBeUndefined()
+        expect(action('Schülerabgaben einsehen')).toBeUndefined()
         expect(completed()).toEqual(['Vorbereiten', 'Bereitstellen', 'Abgeben'])
 
         await wrapper.setProps({ work: withFiles([12, 13, 14]) })
         expect(completed()).toContain('Abgeben')
         expect(next()).toBe('Bewerten')
-        expect(action('Abgaben einsammeln')).toBeUndefined()
+        expect(action('Schülerabgaben einsehen')).toBeUndefined()
 
         const graded = withFiles([12])
         await wrapper.setProps({ work: { ...graded, groups: [graded.groups[0], { ...graded.groups[1], grade: '2' }] } })
@@ -372,7 +372,8 @@ it('moves a closed portal to Bewerten and shows submission evidence for the sele
 
 it('copies the canonical grading order directly from Bewerten for the selected prepared date', async () => {
     const otherDate = '2026-11-23'
-    const released = { ...work, groups: [{ date, student_ids: [12] }, { date: otherDate, student_ids: [13] }], status: {
+    const released = { ...work, groups: [{ date, student_ids: [12] }, { date: otherDate, student_ids: [13] }],
+        portal_copy_progress: { [otherDate]: { linked: true, folder_id: 'id:exam', complete: true } }, status: {
         submission_method: { channel: 'portal' }, student_distribution: { published_at: `${date}T08:00:00Z`, student_ids: [12, 13],
             ended_at: '2026-11-24T11:00:00Z' },
         portal_submissions: [{ id: 'file-13', student_id: 13, sha256: 'a'.repeat(64), submitted_at: `${otherDate}T10:00:00Z` }],
@@ -475,11 +476,10 @@ it('keeps a saved portal upload accessible after the release is ended', async ()
     vi.stubGlobal('axios', { get })
     const { wrapper, action } = render(released, false)
     try {
-        expect(wrapper.get('.work-phase--next-assessment .work-phase__title').text()).toBe('Bewerten')
+        expect(wrapper.get('.work-phase--next-copy .work-phase__title').text()).toBe('Abgeben')
         const submission = wrapper.findAll('.work-phase__toggle').find(button => button.text().includes('Abgeben'))!
         expect(submission.text()).toContain('Abgabe geschlossen')
-        await submission.trigger('click')
-        const collect = action('Abgaben einsammeln')!
+        const collect = action('Schülerabgaben einsehen')!
         expect(collect.isVisible()).toBe(true)
         expect(collect.element.hasAttribute('disabled')).toBe(false)
         await collect.trigger('click')
@@ -712,6 +712,61 @@ it('offers a read-only entry for an ended release without reopening provisioning
         await action('Freigabe ansehen')!.trigger('click')
         expect(openRelease).toHaveBeenCalledOnce()
         expect(openMail).not.toHaveBeenCalled()
+    } finally { wrapper.unmount() }
+})
+
+it.each([false, true])('recommends copying from Abgeben until the server confirms all originals: %s', async complete => {
+    const openedTarget = { status: 'found', folder: { id: 'id:exam' }, preparation: { status: 'ready' } }
+    const progress = { [date]: { folder_id: 'id:exam', complete } }
+    const post = vi.fn().mockResolvedValueOnce({ data: { data: { work_id: work.id, date, run_id: 'a-run',
+        files: [
+            { item: 0, name: 'Original.pdf' },
+            { item: 1, name: 'Schon-da.pdf' },
+            { item: 2, name: 'Offen.pdf' },
+        ] } } })
+        .mockResolvedValueOnce({ data: { data: { status: 'copied' } } })
+        .mockResolvedValueOnce({ data: { data: { status: 'existing' } } })
+        .mockResolvedValueOnce({ data: { data: {
+            ...(complete ? { status: 'copied' } : { status: 'open', message: 'Der persönliche Dropbox-Abgabeordner fehlt.' }),
+            portal_copy_progress: progress,
+        } } })
+    vi.stubGlobal('axios', { post, get: vi.fn().mockResolvedValue({ data: connection }) })
+    const distribution = { published_at: date + 'T09:00:00Z', ended_at: date + 'T11:00:00Z', student_ids: [12] }
+    const status = { student_distribution: distribution, submission_method: { channel: 'portal' },
+        portal_submissions: [{ student_id: 12, id: 'an-original' }] }
+    const current = { ...work, groups: [{ date, student_ids: [12] }], status }
+    const { wrapper, action } = render(current)
+    const label = 'Portalabgaben nach Dropbox kopieren'
+    try {
+        await wrapper.setProps({ now: Date.parse(date + 'T12:00:00Z'), assessment: openedTarget })
+        const next = () => wrapper.get('.work-phase--current .work-phase__title').text()
+        expect(next()).toBe('Abgeben')
+        expect(action(label)?.isVisible()).toBe(true)
+        expect(action(label)?.element.closest('[data-primary="true"]')).toBeTruthy()
+        expect(action('Schülerabgaben einsehen')).toBeDefined()
+        expect(post).not.toHaveBeenCalled()
+        await action(label)!.trigger('click')
+        await flushPromises()
+        expect(post.mock.calls.map(([url, data]) => [url, data])).toEqual([
+            ['/api/admin/teaching/course_works/65/submissions/copy', { date }],
+            ...[0, 1, 2].map(item => ['/api/admin/teaching/course_works/65/submissions/copy/file', { run_id: 'a-run', item }]),
+        ])
+        expect(wrapper.text()).toContain(complete ? '2 kopiert · 1 bereits vorhanden · 0 offen' : '1 kopiert · 1 bereits vorhanden · 1 offen')
+        if (!complete) expect(wrapper.text()).toContain('Der persönliche Dropbox-Abgabeordner fehlt.')
+        expect(wrapper.emitted('saved')?.at(-1)?.[0]).toMatchObject({ portal_copy_progress: progress })
+        await wrapper.setProps({ work: { ...current, portal_copy_progress: progress } })
+        expect(next()).toBe(complete ? 'Bewerten' : 'Abgeben')
+        expect(wrapper.get('[role="dialog"]').isVisible()).toBe(true)
+
+        await wrapper.setProps({ work: { ...current, status: { ...status, portal_submission_reopenings: [
+            { student_id: 12, date, release_ended_at: distribution.ended_at, ends_at: date + 'T13:00:00Z' },
+        ] } } })
+        expect(action(label)).toBeUndefined()
+        await wrapper.setProps({ work: { ...current, status: { ...status, submission_method: { channel: 'email' } } } })
+        expect(action(label)).toBeUndefined()
+        await wrapper.setProps({ work: { ...current, status: { ...status,
+            student_distribution: { ...distribution, ended_at: null, withdrawn_at: date + 'T11:00:00Z' } } } })
+        expect(action(label)).toBeUndefined()
     } finally { wrapper.unmount() }
 })
 

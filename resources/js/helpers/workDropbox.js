@@ -152,12 +152,14 @@ export async function loadWorkDropbox(key, workId, fresh = false, options = {}) 
 }
 
 export async function loadWorkDropboxSuggestions(key, work, options = {}) {
-    const cacheKey = JSON.stringify([key, work.title, work.date_for_all_groups, (work.groups || []).map(group => group.date)])
+    const { portalDate, ...requestOptions } = options
+    const cacheKey = JSON.stringify([key, work.title, work.date_for_all_groups, (work.groups || []).map(group => group.date), portalDate])
     const cached = suggestions.get(cacheKey)
-    if (cached && Date.now() - cached.at < 60000) return cached.data
+    if (cached && Date.now() - cached.at < 60000 && (!portalDate || cached.data.portal_candidate)) return cached.data
     const requestGeneration = generation
-    const response = await axios.get(folders.url(work.id, { query: { suggest: true } }), { timeout: 45000, ...options })
-    if (generation === requestGeneration && !options.signal?.aborted) suggestions.set(cacheKey, { data: response.data, at: Date.now() })
+    const response = await axios.get(folders.url(work.id, { query: { suggest: true, ...(portalDate ? { portal_date: portalDate } : {}) } }),
+        { timeout: 45000, ...requestOptions })
+    if (generation === requestGeneration && !requestOptions.signal?.aborted) suggestions.set(cacheKey, { data: response.data, at: Date.now() })
     return response.data
 }
 

@@ -1,7 +1,7 @@
 <?php
 
 return [
-    'version' => '3.54.9',
+    'version' => '3.54.10',
     'environment_versions' => [
         'composer' => env('APP_COMPOSER_VERSION'),
         'npm' => env('APP_NPM_VERSION'),

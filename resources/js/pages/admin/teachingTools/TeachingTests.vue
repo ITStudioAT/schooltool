@@ -34,8 +34,8 @@
                 <TeachingToolCard :title="`Raumplan ${planNumber}`" heading-tag="h2" :to="networkRoomPlanPath(planNumber)" />
             </li>
         </ul>
-        <NetworkDeviceQuestions v-else-if="page === 'device-questions'" :key="schoolId" />
-        <NetworkAdditionalQuestions v-else-if="page === 'additional-questions'" :key="schoolId" />
+        <NetworkQuestions v-else-if="page === 'device-questions' || page === 'additional-questions'"
+            :key="`${page}:${schoolId}`" :device="page === 'device-questions'" />
         <NetworkGroundFloorPlan v-else-if="isGroundFloorPlan" :key="roomPlanDraftKey" :draft-key="roomPlanDraftKey" />
     </section>
 </template>
@@ -43,9 +43,8 @@
 <script setup>
 import { computed } from 'vue'
 import { useAdminStore } from '@/stores/admin/AdminStore'
-import NetworkAdditionalQuestions from './NetworkAdditionalQuestions.vue'
-import NetworkDeviceQuestions from './NetworkDeviceQuestions.vue'
 import NetworkGroundFloorPlan from './NetworkGroundFloorPlan.vue'
+import NetworkQuestions from './NetworkQuestions.vue'
 import TeachingToolCard from './TeachingToolCard.vue'
 import {
     networkAdditionalQuestionsPath, networkBuildPath, networkDeviceQuestionsPath, networkRoomPlanNumbers, networkRoomPlanPath,

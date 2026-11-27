@@ -3,27 +3,47 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\NetworkDeviceAnswerKey;
 use App\Models\NetworkTestQuestion;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\DB;
 
 class NetworkTestQuestionController extends Controller
 {
-    public function index(): JsonResponse
+    public function index(Request $request): JsonResponse
     {
-        return response()->json($this->questions($this->teacher())->orderBy('id')->get())
-            ->header('Cache-Control', 'private, no-store');
+        $teacher = $this->teacher();
+        $device = $this->isDeviceSection($request);
+        $schoolId = (int) $teacher->school_id;
+        if ($device) {
+            NetworkDeviceAnswerKey::initializeQuestionsForSchool($schoolId);
+        }
+
+        $questions = $this->questions($teacher, $device)->orderBy('id')->get();
+        $data = $device ? ['school_id' => $schoolId, 'questions' => $questions] : $questions;
+
+        return response()->json($data)->header('Cache-Control', 'private, no-store');
     }
 
     public function store(Request $request): JsonResponse
     {
         $teacher = $this->teacher();
-        $question = NetworkTestQuestion::query()->create($this->validated($request) + [
-            'user_id' => $teacher->id,
-            'school_id' => $teacher->school_id,
+        $device = $this->isDeviceSection($request);
+        $schoolId = (int) $teacher->school_id;
+        $data = $this->validated($request);
+        if ($device) {
+            $context = $request->validate(['school_id' => ['required', 'integer']]);
+            abort_unless((int) $context['school_id'] === $schoolId, 409);
+            NetworkDeviceAnswerKey::initializeQuestionsForSchool($schoolId);
+        }
+
+        $question = NetworkTestQuestion::query()->create($data + [
+            'user_id' => $device ? null : $teacher->id,
+            'school_id' => $schoolId,
         ]);
 
         return response()->json($question, 201);
@@ -31,17 +51,34 @@ class NetworkTestQuestionController extends Controller
 
     public function update(Request $request, int $question): JsonResponse
     {
-        $entry = $this->questions($this->teacher())->findOrFail($question);
-        $entry->update($this->validated($request));
+        $teacher = $this->teacher();
+        $device = $this->isDeviceSection($request);
+        $entry = DB::transaction(function () use ($request, $teacher, $device, $question): NetworkTestQuestion {
+            $entry = $this->editableQuestion($request, $teacher, $device, $question);
+            $entry->fill($this->validated($request));
+            $entry->revision++;
+            $entry->save();
+
+            return $entry;
+        }, 3);
 
         return response()->json($entry);
     }
 
-    public function destroy(int $question): Response
+    public function destroy(Request $request, int $question): Response
     {
-        abort_unless($this->questions($this->teacher())->whereKey($question)->delete() === 1, 404);
+        $teacher = $this->teacher();
+        $device = $this->isDeviceSection($request);
+        DB::transaction(function () use ($request, $teacher, $device, $question): void {
+            $this->editableQuestion($request, $teacher, $device, $question)->delete();
+        }, 3);
 
         return response()->noContent();
+    }
+
+    private function isDeviceSection(Request $request): bool
+    {
+        return $request->routeIs('admin.teaching-tools.network-device-questions.*');
     }
 
     private function teacher(): User
@@ -53,11 +90,25 @@ class NetworkTestQuestionController extends Controller
     }
 
     /** @return Builder<NetworkTestQuestion> */
-    private function questions(User $teacher): Builder
+    private function questions(User $teacher, bool $device): Builder
     {
-        return NetworkTestQuestion::query()->where('user_id', $teacher->id)->where('school_id', $teacher->school_id);
+        return NetworkTestQuestion::query()
+            ->where('school_id', $teacher->school_id)
+            ->where('user_id', $device ? null : $teacher->id);
     }
 
+    private function editableQuestion(Request $request, User $teacher, bool $device, int $question): NetworkTestQuestion
+    {
+        $entry = $this->questions($teacher, $device)->lockForUpdate()->findOrFail($question);
+        $data = $request->validate(['revision' => [$device ? 'required' : 'sometimes', 'integer', 'min:0', 'max:4294967294']]);
+        if (isset($data['revision'])) {
+            abort_unless((int) $data['revision'] === $entry->revision, 409);
+        }
+
+        return $entry;
+    }
+
+    /** @return array{question: string, answer: string} */
     private function validated(Request $request): array
     {
         return $request->validate([

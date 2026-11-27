@@ -82,25 +82,26 @@ test('enforces each Helpers switch for superadmins in navigation and direct requ
     expect($navigation->routeCapabilities($user, $menu)['helpers'])->toBe($elections || $matura);
 })->with([[true, false], [false, true], [false, false], [true, true]]);
 
-test('never exposes the new homepage to guests or ordinary accounts', function (?string $role, bool $active, bool $expected) {
-    [$user] = versionFourFeatureFixture($role ?? 'admin');
+test('uses the stored homepage design for every visitor and both public entry endpoints', function (?string $role, bool $enabled) {
+    [$user] = versionFourFeatureFixture($role ?? 'admin', ['homepage' => $enabled]);
     if ($role !== null) {
-        $user->is_active = $active;
-        $user->save();
         $this->actingAs($user);
     }
 
-    $this->getJson('/api/homepage/login_schools')->assertOk()->assertJsonPath('homepage_design_enabled', $expected);
+    $this->getJson('/api/homepage/login_schools')->assertOk()->assertJsonPath('homepage_design_enabled', $enabled);
+    $this->getJson('/api/homepage/student/config')->assertOk()->assertJsonPath('homepage_design_enabled', $enabled);
 })->with([
-    [null, true, false],
-    ['admin', true, false],
-    ['teacher', true, false],
-    ['super_admin', true, true],
-    ['super_admin', false, false],
+    'guest, on' => [null, true],
+    'guest, off' => [null, false],
+    'teacher, on' => ['teacher', true],
+    'teacher, off' => ['teacher', false],
+    'superadmin, on' => ['super_admin', true],
+    'superadmin, off' => ['super_admin', false],
 ]);
 
-test('switching off the homepage restores the original entry page for superadmins', function () {
-    [$user] = versionFourFeatureFixture(features: ['homepage' => false]);
+test('uses the stored homepage default when the setting is absent', function () {
+    versionFourFeatureFixture();
 
-    $this->actingAs($user)->getJson('/api/homepage/login_schools')->assertOk()->assertJsonPath('homepage_design_enabled', false);
+    $this->getJson('/api/homepage/login_schools')->assertOk()->assertJsonPath('homepage_design_enabled', true);
+    $this->getJson('/api/homepage/student/config')->assertOk()->assertJsonPath('homepage_design_enabled', true);
 });

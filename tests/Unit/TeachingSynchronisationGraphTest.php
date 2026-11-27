@@ -1,7 +1,17 @@
 <?php
 
 use App\Services\TeachingSynchronisationGraph;
+use Illuminate\Database\SQLiteConnection;
 use Illuminate\Encryption\Encrypter;
+
+test('reports an unknown teaching table even when the assessment cache is installed', function (bool $target): void {
+    $connection = new SQLiteConnection(new PDO('sqlite::memory:'), 'main');
+    $connection->statement('CREATE TABLE teaching_assessment_cache (key TEXT PRIMARY KEY, value TEXT, expiration INTEGER)');
+    $connection->statement('CREATE TABLE teaching_unknown_fixture (id INTEGER PRIMARY KEY)');
+
+    expect(fn (): array => (new TeachingSynchronisationGraph)->capture($connection, 1, target: $target))
+        ->toThrow(RuntimeException::class, 'Unbekannte Unterrichtstabelle teaching_unknown_fixture; Umfang zuerst prüfen.');
+})->with(['source' => [false], 'target' => [true]]);
 
 test('teaching tools keep their relationships and histories when all local IDs differ', function (): void {
     $source = teachingGraphFixture();

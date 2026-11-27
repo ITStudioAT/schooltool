@@ -995,7 +995,7 @@
         </v-dialog>
 
         <WorkEvaluationImport ref="evaluationImport" @imported="evaluationImported" />
-        <WorkDropboxLink ref="moduleLink" :course-id="selected_course?.id" @linked="dateHandshakeLinked" />
+        <WorkDropboxLink ref="moduleLink" :course-id="selected_course?.id" @linked="dateHandshakeLinked" @portal-target-saved="applySavedCourseWork({ data: $event })" />
         <v-dialog v-model="workDialog.open" persistent max-width="720">
             <v-card>
                 <v-card-title class="text-subtitle-1 font-weight-bold d-flex flex-wrap align-center ga-2 text-wrap">
@@ -3509,7 +3509,7 @@ export default {
             return workDropboxStates.get(workDropboxKey(useAdminStore().config?.user?.id, work))
         },
         workNextAction(work, next, checked, key) {
-            if (next) return next.label === 'Offen' && !workAutomationEnabled(work) ? '' : next.label
+            if (next) return next.label === 'Offen' && !workAutomationEnabled(work) ? '' : next.compactLabel || next.label
             if (!workAutomationEnabled(work)) return ''
             const state = this.workFolderState(work)
             if (!workNeedsPreparation(work, state)) return ''
@@ -3526,7 +3526,7 @@ export default {
                 const key = workDropboxKey(useAdminStore().config?.user?.id, work)
                 const checked = workExerciseCheck(key, work, courseDate.date || work.date_for_all_groups || '')
                 const progress = workWorkflowProgress(work, courseDate.date, this.deadlineNow,
-                    checked?.data?.exercise?.email_dispatch, this.selected_course?.students_info || [])
+                    checked?.data?.exercise?.email_dispatch, this.selected_course?.students_info || [], checked?.data?.exercise)
                 const nextAction = this.workNextAction(work, progress.next, checked, key)
                 const portalStatus = this.workStudentDistributionStatus(work, progress)
                 const portalUploadClosed = portalStatus === 'Abgabe geschlossen'
@@ -3965,10 +3965,11 @@ export default {
                 student: null,
             }
         },
-        openLink(work) {
+        openLink(work, options = {}) {
             const savedWork = this.courseWorks.find(item => String(item.id) === String(work?.id))
             if (!savedWork || workAssessmentActivity(this.config?.user?.id, savedWork) || String(savedWork.teaching_course_id) !== String(this.selected_course?.id)) return
-            this.$refs.moduleLink.openLink(savedWork)
+            if (options.portalDate) this.$refs.moduleLink.openLink(savedWork, null, false, false, options.portalDate)
+            else this.$refs.moduleLink.openLink(savedWork)
         },
         openImport(work, quick = false, results = null) {
             if (!workAutomationEnabled(work)) return

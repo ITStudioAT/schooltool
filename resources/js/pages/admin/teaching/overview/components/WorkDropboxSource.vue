@@ -15,7 +15,7 @@
             <v-btn size="small" variant="text" @click="cancelResolution">Abbrechen</v-btn>
         </div>
         <template v-else>
-            <p v-if="loading" role="status" class="text-caption">{{ verificationPhase === 'checking' ? 'Originalnachweise mit Dropbox abgleichen …' : verificationPhase === 'saving' ? 'Ordnerverknüpfung bestätigen und speichern …' : listing ? 'Unterordner laden …' : 'Dropbox-Verbindung prüfen …' }}</p>
+            <p v-if="loading" role="status" class="text-caption">{{ verificationPhase === 'checking' ? (portalDate ? 'Prüfungsordner in Dropbox bestätigen …' : 'Originalnachweise mit Dropbox abgleichen …') : verificationPhase === 'saving' ? 'Ordnerverknüpfung bestätigen und speichern …' : listing ? 'Unterordner laden …' : 'Dropbox-Verbindung prüfen …' }}</p>
             <v-progress-linear v-if="loading && verificationPhase" indeterminate class="my-2" aria-label="Ordnerprüfung läuft" />
             <p v-else-if="state && !state.can_quick_import && !selectionOnly" class="text-caption">{{ state.message }}</p>
             <v-alert v-if="state?.folder_plausibility?.status === 'mismatch'" type="error" variant="tonal" icon="mdi-alert-circle" role="alert" class="mt-2 work-folder-mismatch">{{ state.folder_plausibility.message }}</v-alert>
@@ -24,6 +24,8 @@
                 <v-btn v-if="!state.connected" size="small" variant="outlined" :disabled="busy || loading" @click="connectDropbox">Dropbox verbinden</v-btn>
                 <template v-else>
                     <v-btn v-if="state.folder && !selectionOnly" size="small" variant="tonal" :disabled="busy || loading || state.can_preview === false" @click="$emit('preview')">Dropbox-Vorschau laden</v-btn>
+                    <v-btn v-if="portalDate && boundFolder" min-height="44" variant="tonal" :disabled="busy || loading"
+                        @click="assignFolder(boundFolder)">Verknüpften Ordner prüfen</v-btn>
                     <v-btn size="small" variant="text" :disabled="busy || loading" @click="browseSuggested">{{ state.folder ? 'Dropbox-Ordner ändern' : 'Ordner manuell wählen' }}</v-btn>
                     <details v-if="!selectionOnly" class="text-caption"><summary>Verbindung verwalten</summary>
                         <v-btn size="small" variant="text" :disabled="busy || loading" @click="disconnectDropbox">Verbindung in Schooltool entfernen</v-btn>
@@ -38,15 +40,19 @@
                     <p class="text-body-2"><strong>Vorschlag: {{ suggestedFolder.name }}</strong></p>
                     <p class="text-caption work-dropbox-suggestion-path">{{ suggestedFolder.path || 'Vollständiger Pfad nicht verfügbar.' }}</p>
                     <p class="text-caption">Noch nicht zugeordnet.</p>
-                    <v-btn v-if="!state?.folder && directSuggestion?.id === suggestedFolder.id && suggestedFolder.path?.startsWith('/')" size="small" color="primary" :disabled="busy || loading"
-                        @click="assignFolder(suggestedFolder, !selectionOnly)">{{ needsVerification ? 'Diesen Ordner prüfen' : 'Vorschlag zuordnen und Vorschau laden' }}</v-btn>
+                    <v-btn v-if="portalDate && portalCandidate?.id === suggestedFolder.id" min-height="44" color="primary" :disabled="busy || loading"
+                        @click="assignFolder(suggestedFolder)">Diesen Prüfungsordner prüfen</v-btn>
+                    <v-btn v-else-if="portalDate" min-height="44" color="primary" :disabled="busy || loading"
+                        @click="browseSuggestion(suggestedFolder)">Vorgeschlagenen Ordner öffnen</v-btn>
+                    <v-btn v-else-if="!state?.folder && directSuggestion?.id === suggestedFolder.id && suggestedFolder.path?.startsWith('/')" size="small" color="primary" :disabled="busy || loading"
+                        @click="assignFolder(suggestedFolder, !selectionOnly)">{{ needsVerification ? 'Diesen Ordner prüfen' : selectionOnly ? 'Diesen Ordner zuordnen' : 'Vorschlag zuordnen und Vorschau laden' }}</v-btn>
                 </div>
             </template>
             <div v-if="suggestions.length && (!suggestedFolder || suggestions.length > 1)" class="mt-2">
                 <strong class="text-body-2">Mögliche Ordner · Vorschläge</strong>
                 <ul class="ps-5">
                     <li v-for="folder in suggestions" :key="folder.id">
-                        <v-btn variant="text" class="text-wrap" :disabled="busy || loading" @click="browseSuggestion(folder)">{{ folder.name }}</v-btn>
+                        <v-btn variant="text" class="work-dropbox-folder-button" :disabled="busy || loading" @click="browseSuggestion(folder)">{{ folder.name }}</v-btn>
                         <p class="text-caption">{{ folder.path || 'Vollständiger Pfad nicht verfügbar.' }}</p>
                         <p v-if="folder.reason" class="text-caption">{{ folder.reason }}</p>
                     </li>
@@ -64,7 +70,7 @@
                     <v-btn v-if="error && !loading" variant="outlined" @click="loadFolders()">Ordner erneut laden</v-btn>
                 </div>
                 <ul class="mt-2 ps-5">
-                    <li v-for="folder in folders" :key="folder.id"><v-btn variant="text" class="text-wrap" :disabled="busy || loading" @click="browseFolder(folder)">{{ folder.name }}</v-btn></li>
+                    <li v-for="folder in folders" :key="folder.id"><v-btn variant="text" class="work-dropbox-folder-button" :disabled="busy || loading" @click="browseFolder(folder)">{{ folder.name }}</v-btn></li>
                 </ul>
                 <p v-if="!loading && !folders.length" class="mt-2">Keine weiteren Unterordner.</p>
                 <v-btn v-if="cursor" variant="outlined" class="mt-2" :disabled="busy || loading" @click="loadFolders(true)">Weitere Ordner</v-btn>
@@ -73,6 +79,7 @@
                 <strong>Ordnerzuordnung geprüft</strong>
                 <p class="work-dropbox-bound-path mt-2">{{ verification.candidate.path }}</p>
                 <p v-if="verification.identity === 'assessment_package'" class="text-body-2 mt-2">Das Bewertungspaket stimmt mit dem bereits importierten Stand dieser Arbeit überein.</p>
+                <p v-else-if="verification.identity === 'portal_target'" class="text-body-2 mt-2">Der Prüfungsordner passt zu dieser Arbeit und zum Durchführungstermin.</p>
                 <p v-else class="text-body-2 mt-2">Die gespeicherten Originalbelege stimmen überein.</p>
                 <v-alert v-if="verification.differences?.length" type="warning" variant="tonal" class="mt-2" role="alert" aria-label="Abweichende Originaldateien">
                     <strong>{{ verification.differences.length }} Dateiabweichung(en) zu prüfen</strong>
@@ -95,13 +102,13 @@ import { useAdminStore } from '@/stores/admin/AdminStore'
 import { connect, disconnect, folders as listFolders, show, storeFolder } from '@/actions/App/Http/Controllers/Admin/Teaching/WorkDropboxController'
 import { clearWorkDropboxStates, loadWorkDropbox, loadWorkDropboxSuggestions, workDropboxKey, workDropboxStates } from '@/helpers/workDropbox'
 
-const props = defineProps({ work: Object, active: Boolean, busy: Boolean, selectionOnly: Boolean })
+const props = defineProps({ work: Object, active: Boolean, busy: Boolean, selectionOnly: Boolean, portalDate: String })
 const emit = defineEmits(['preview', 'changed', 'busy'])
 const admin = useAdminStore()
 const key = computed(() => workDropboxKey(admin.config?.user?.id, props.work))
 const state = computed(() => workDropboxStates.get(key.value))
-const needsVerification = computed(() => props.selectionOnly || state.value?.has_import === true
-    || Boolean(props.work?.status?.folder_imported_at))
+const needsVerification = computed(() => Boolean(props.portalDate) || (state.value?.folder_verification_required
+    ?? (props.selectionOnly || state.value?.has_import === true || Boolean(props.work?.status?.folder_imported_at))))
 const verification = ref(null)
 const verificationPhase = ref('')
 const previewAfterVerification = ref(false)
@@ -125,6 +132,7 @@ const cursor = ref(null)
 const suggestions = ref([])
 const suggestedFolder = ref(null)
 const directSuggestion = ref(null)
+const portalCandidate = ref(null)
 const suggestionMessage = ref('')
 const suggestionStart = ref(null)
 const resolving = ref(false)
@@ -318,13 +326,14 @@ async function initializeSource() {
             return
         }
         searching = true
-        const data = await loadWorkDropboxSuggestions(selectedKey, props.work, { signal: controller.signal })
+        const data = await loadWorkDropboxSuggestions(selectedKey, props.work, { signal: controller.signal, portalDate: props.portalDate })
         if (!current()) return
         suggestions.value = data.suggestions || []
-        suggestedFolder.value = data.suggested_folder || null
+        portalCandidate.value = data.portal_candidate || null
+        suggestedFolder.value = portalCandidate.value || data.suggested_folder || null
         directSuggestion.value = suggestedFolder.value
         suggestionStart.value = data.start_folder || null
-        suggestionMessage.value = data.message || ''
+        suggestionMessage.value = portalCandidate.value ? '' : data.message || ''
     } catch (exception) {
         if (current()) {
             if (searching) suggestionMessage.value = `Ordnersuche fehlgeschlagen: ${errorText(exception)} Bitte den Ordner manuell auswählen.`
@@ -341,7 +350,7 @@ async function initializeSource() {
 
 function browseSuggestion(folder) {
     verification.value = null
-    if (props.selectionOnly) {
+    if (props.selectionOnly && !props.portalDate) {
         suggestedFolder.value = folder
         directSuggestion.value = folder
         browsing.value = false
@@ -381,9 +390,10 @@ async function assignFolder(folder = ancestors.value.at(-1), previewAfterAssignm
         browsing.value = false
         verificationPhase.value = 'checking'
         try {
-            const response = await perform(() => axios.post(storeFolder.url(props.work.id), { folder_id: folder.id, verify: true }, { timeout: 120000 }))
+            const response = await perform(() => axios.post(storeFolder.url(props.work.id), { folder_id: folder.id, verify: true,
+                ...(props.portalDate ? { portal_date: props.portalDate } : {}) }, { timeout: 120000 }))
             if (response?.data?.candidate?.id === folder.id && response.data.candidate.path?.startsWith('/')
-                && Array.isArray(response.data.checked_files) && response.data.checked_files.length && response.data.proof) {
+                && (response.data.checked_files?.length || (props.portalDate && response.data.identity === 'portal_target')) && response.data.proof) {
                 verification.value = response.data
                 previewAfterVerification.value = previewAfterAssignment
             } else if (response) {
@@ -411,7 +421,8 @@ async function confirmFolder() {
 async function saveFolder(folder, previewAfterAssignment, proof = null) {
     const selectedKey = key.value
     const response = await perform(() => proof
-        ? axios.post(storeFolder.url(props.work.id), { folder_id: folder.id, folder_proof: proof }, { timeout: 120000 })
+        ? axios.post(storeFolder.url(props.work.id), { folder_id: folder.id, folder_proof: proof,
+            ...(props.portalDate ? { portal_date: props.portalDate } : {}) }, { timeout: 120000 })
         : axios.post(storeFolder.url(props.work.id), { folder_id: folder.id }))
     if (response) {
         const assigned = response.data.folder
@@ -424,7 +435,7 @@ async function saveFolder(folder, previewAfterAssignment, proof = null) {
         suggestedFolder.value = null
         directSuggestion.value = null
         suggestionMessage.value = ''
-        emit('changed')
+        emit('changed', response.data.saved_work)
         if (previewAfterAssignment && props.active && key.value === selectedKey) emit('preview')
         return true
     }
@@ -442,6 +453,7 @@ watch(() => [props.active, key.value], async () => {
     suggestions.value = []
     suggestedFolder.value = null
     directSuggestion.value = null
+    portalCandidate.value = null
     suggestionMessage.value = ''
     suggestionStart.value = null
     resolvedFolder.value = null
@@ -472,4 +484,24 @@ watch(loading, value => emit('busy', value))
 .work-dropbox-source { overflow-wrap: anywhere; }
 .work-dropbox-source summary { cursor: pointer; }
 .work-dropbox-differences { max-height: 280px; overflow-y: auto; }
+.work-dropbox-path, .work-dropbox-bound-path, .work-dropbox-suggestion-path {
+    min-inline-size: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+.work-dropbox-folder-button {
+    max-inline-size: 100%;
+    min-inline-size: 0;
+    min-block-size: 44px;
+    block-size: auto;
+    padding-block: .5rem;
+    text-align: start;
+    text-transform: none;
+    letter-spacing: normal;
+}
+.work-dropbox-folder-button :deep(.v-btn__content) {
+    min-inline-size: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
 </style>

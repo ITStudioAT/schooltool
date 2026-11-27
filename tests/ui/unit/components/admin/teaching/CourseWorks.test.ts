@@ -45,12 +45,17 @@ describe('New work overview and assessment mode', () => {
         } finally { wrapper.unmount() }
     })
 
-    it('shows grading for a closed portal in the work row and details while keeping collection accessible', async () => {
+    it.each(['manual', 'unbound', 'linked'])('shows the closed portal next step in the work row and detail: %s', async mode => {
         const date = '2026-11-20'
+        const linked = mode === 'linked'
+        const shouldCopy = mode !== 'manual'
+        const targetLabel = linked ? 'Dropbox-Prüfungsordner prüfen' : 'Dropbox-Prüfungsordner verknüpfen'
         const file = student_id => ({ id: `file-${student_id}`, student_id, name: 'Beispiel.pdf',
             sha256: 'a'.repeat(64), submitted_at: '2026-11-20T10:00:00Z' })
         const work = { id: 65, teaching_course_id: 2, type: 'A5', title: 'Fiktive Portalarbeit', date_for_all_groups: date,
-            groups: [{ student_ids: [12, 13] }], status: {
+            groups: [{ student_ids: [12, 13] }], automation_enabled: shouldCopy,
+            portal_copy_progress: linked ? { [date]: { linked: true, folder_id: null, complete: false } } : {},
+            status: {
                 submission_method: { channel: 'portal' }, portal_submissions: [file(12)],
                 student_distribution: { published_at: `${date}T08:00:00Z`, ended_at: `${date}T12:00:00Z`, student_ids: [12, 13] },
             },
@@ -59,20 +64,28 @@ describe('New work overview and assessment mode', () => {
         const wrapper = mountOverview(work, { folder: null }, true)
         try {
             await flushPromises()
-            expect(wrapper.get('.work-row .text-orange-darken-2').text()).toBe('Bewerten')
+            expect(wrapper.get('.work-row .text-orange-darken-2').text()).toBe(shouldCopy ? (linked ? 'Ordner prüfen' : 'Ordner verknüpfen') : 'Bewerten')
             await wrapper.get('.work-row').trigger('click')
             await flushPromises()
             const workflow = wrapper.get('[aria-label="Ablauf der Arbeit"]')
-            expect(workflow.get('.work-phase--current .work-phase__title').text()).toBe('Bewerten')
+            expect(workflow.get('.work-phase--current .work-phase__title').text()).toBe(shouldCopy ? 'Abgeben' : 'Bewerten')
             const submission = workflow.findAll('.work-phase__toggle').find(button => button.text().includes('Abgeben'))!
             expect(submission.text()).toContain('Abgabe geschlossen')
-            await submission.trigger('click')
+            if (shouldCopy) {
+                const recommended = workflow.get('.work-phase--next-copy')
+                expect(recommended.get('[data-primary="true"] button').text()).toBe(targetLabel)
+                expect(recommended.get('[data-primary="true"] button').isVisible()).toBe(true)
+            } else {
+                await submission.trigger('click')
+            }
             const collection = workflow.getComponent(WorkSubmissionCollection)
             expect(collection.isVisible()).toBe(true)
             expect(collection.props('date')).toBe(date)
             expect(collection.props('work').status?.portal_submissions).toEqual([file(12)])
 
-            wrapper.vm.courseWorkStore.courseWorks = [{ ...work, status: { ...work.status, portal_submissions: [file(12), file(13)] } }]
+            wrapper.vm.courseWorkStore.courseWorks = [{ ...work,
+                portal_copy_progress: shouldCopy ? { [date]: { linked: true, folder_id: 'id:exam', complete: true } } : {},
+                status: { ...work.status, portal_submissions: [file(12), file(13)] } }]
             await flushPromises()
             expect(workflow.get('.work-phase--next-assessment .work-phase__title').text()).toBe('Bewerten')
             expect(workflow.findComponent(WorkSubmissionCollection).exists()).toBe(false)

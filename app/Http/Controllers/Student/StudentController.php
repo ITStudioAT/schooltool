@@ -8,6 +8,7 @@ use App\Http\Resources\Teaching\UserResource;
 use App\Models\SchoolTool;
 use App\Services\LicenceService;
 use App\Services\ParentStudentAccessService;
+use App\Services\SchoolToolModuleStatusService;
 use App\Services\StudentService;
 use App\Services\UserService;
 use Carbon\Carbon;
@@ -18,12 +19,13 @@ use Illuminate\Support\Facades\Hash;
 
 class StudentController extends Controller
 {
-    public function config(LicenceService $licenceService)
+    public function config(LicenceService $licenceService, SchoolToolModuleStatusService $moduleStatuses): JsonResponse
     {
         $schools = $licenceService->selectableSchoolsForTool('Lehrertool')['schools'];
 
         $data = [
             'schools' => SchoolWithLicenceRecource::collection($schools),
+            'homepage_design_enabled' => $moduleStatuses->versionFourFeatures()['homepage'],
             'config' => [
                 'schooltool' => [
                     'teaching_max_schools_shown' => (int) config('schooltool.teaching_max_schools_shown', 20),

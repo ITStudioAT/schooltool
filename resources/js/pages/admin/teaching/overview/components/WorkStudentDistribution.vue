@@ -309,6 +309,15 @@ function openPreview() {
 
 watch(previewOpen, isOpen => { if (!isOpen) clearPreview() })
 watch(() => props.disabled, disabled => { if (disabled) dialog.value = false })
+watch(ended, value => {
+    if (!value || !dialog.value || !currentWork.value || dialogEnded.value) return
+    editing.value = false
+    confirmEnd.value = false
+    confirmWithdrawal.value = false
+    confirmDelete.value = false
+    applyWork(props.work)
+    if (hasLinkedTests.value) loadMcTests()
+})
 watch(dialog, isOpen => {
     if (isOpen) {
         clockTimer = window.setInterval(() => { clockNow.value = Date.now() + clockOffset }, 1000)
@@ -540,8 +549,8 @@ async function open() {
 }
 
 function applyWork(work) {
-    currentWork.value = work
-    expectedVersion.value = work.student_distribution_version
+    currentWork.value = ended.value && !work.status?.student_distribution?.ended_at ? props.work : work
+    expectedVersion.value = currentWork.value.student_distribution_version
     resetPreparationFields()
 }
 

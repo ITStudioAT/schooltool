@@ -774,90 +774,136 @@ describe('Teaching tools navigation', () => {
         expect(axios.get).not.toHaveBeenCalled()
     })
 
-    it('opens the device questions separately and saves the edited model answers', async () => {
+    it.each([
+        { section: 'device-questions', title: 'Fragen zu Geräten', device: true },
+        { section: 'additional-questions', title: 'Weitere Fragen', device: false },
+    ])('creates, reloads, edits and deletes a single question in $title', async ({ section, title, device }) => {
         const overview = '/admin/teaching-tools/tests/networks'
-        const page = `${overview}/device-questions`
+        const page = `${overview}/${section}`
         const endpoint = `/api${page}`
-        const serverData = {
-            school_id: 21, revision: 0,
-            answers: {
-                patch_panel: 'Feste Netzwerkkabel enden hier.', switch: 'Verbindet Geräte im LAN.',
-                router: 'Verbindet Netzwerke.', data_server: 'Stellt Dateien bereit.', access_point: 'Stellt WLAN bereit.',
-            },
+        const existing = { id: 10, question: 'Was macht ein Router?', answer: 'Verbindet IP-Netzwerke.', revision: 0 }
+        const original = device ? [existing] : []
+        const initial = { id: 15, question: 'Was ist ein LAN?', answer: 'Ein lokales Netzwerk.', revision: 0 }
+        const revised = { ...initial, question: 'Was ist ein WLAN?', answer: 'Ein drahtloses lokales Netzwerk.', revision: 1 }
+        const response = (questions: typeof original) => ({ data: device ? { school_id: 21, questions } : questions })
+        const deletion = Promise.withResolvers()
+        const request = {
+            get: vi.fn().mockResolvedValueOnce(response(original)).mockResolvedValueOnce(response([...original, initial])),
+            post: vi.fn().mockResolvedValue({ data: initial }),
+            put: vi.fn().mockResolvedValue({ data: revised }),
+            delete: vi.fn().mockReturnValue(deletion.promise),
         }
-        const loadAnswers = vi.fn().mockResolvedValue({ data: serverData })
-        const saveAnswers = vi.fn().mockImplementation((url, payload) => Promise.resolve({ data: { ...payload, revision: 1 } }))
-        vi.stubGlobal('axios', { get: loadAnswers, put: saveAnswers })
+        vi.stubGlobal('axios', request)
         const { wrapper, router } = await renderTools(overview)
+        const action = (text: string) => wrapper.findAll('button').filter(button => button.text() === text).at(-1)!
 
         await wrapper.get(`li a[href="${page}"]`).trigger('click')
         await flushPromises()
         expect(router.currentRoute.value.path).toBe(page)
-        expect(wrapper.get('h1').text()).toBe('Fragen zu Geräten')
-        expect(wrapper.find('#ground-floor-task-title').exists()).toBe(false)
-        expect(loadAnswers).toHaveBeenCalledWith(endpoint)
-        const fields = wrapper.findAll<HTMLTextAreaElement>('textarea')
-        expect(fields.map(field => wrapper.get(`label[for="${field.element.id}"]`).text())).toEqual([
-            'Was ist die Aufgabe des Patchpanels?',
-            'Was ist die Aufgabe des Switchs?',
-            'Was ist die Aufgabe des Routers?',
-            'Was ist die Aufgabe des Datenservers?',
-            'Was ist die Aufgabe des WLAN-Access-Points?',
-        ])
-        expect(fields.map(field => field.element.value)).toEqual(Object.values(serverData.answers))
-        await fields[2].setValue('Der Router leitet Pakete zwischen IP-Netzen weiter.')
-        await wrapper.get('form').trigger('submit')
-        await flushPromises()
-        expect(saveAnswers).toHaveBeenCalledWith(endpoint, {
-            ...serverData, answers: { ...serverData.answers, router: 'Der Router leitet Pakete zwischen IP-Netzen weiter.' },
-        })
-        expect(wrapper.get('[role="status"]').text()).toBe('Musterantworten gespeichert.')
-    })
-
-    it('creates, edits and deletes a question from Weitere Fragen', async () => {
-        const overview = '/admin/teaching-tools/tests/networks'
-        const page = overview + '/additional-questions'
-        const endpoint = '/api' + page
-        const initial = { id: 15, question: 'Was ist ein LAN?', answer: 'Ein lokales Netzwerk.' }
-        const revised = { ...initial, question: 'Was ist ein WLAN?', answer: 'Ein drahtloses lokales Netzwerk.' }
-        const request = {
-            get: vi.fn().mockResolvedValue({ data: [] }),
-            post: vi.fn().mockResolvedValue({ data: initial }),
-            put: vi.fn().mockResolvedValue({ data: revised }),
-            delete: vi.fn().mockResolvedValue({}),
-        }
-        vi.stubGlobal('axios', request)
-        const { wrapper, router } = await renderTools(overview)
-        const action = (text: string) => wrapper.findAll('button').find(button => button.text() === text)!
-
-        await wrapper.get('li a[href="' + page + '"]').trigger('click')
-        await flushPromises()
-        expect(router.currentRoute.value.path).toBe(page)
-        expect(wrapper.get('h1').text()).toBe('Weitere Fragen')
+        expect(wrapper.get('h1').text()).toBe(title)
         expect(request.get).toHaveBeenCalledWith(endpoint)
 
         await action('Frage hinzufügen').trigger('click')
-        await wrapper.get('#additional-question').setValue(initial.question)
-        await wrapper.get('#additional-answer').setValue(initial.answer)
+        await wrapper.get('#network-question').setValue(initial.question)
+        await wrapper.get('#network-answer').setValue(initial.answer)
         await wrapper.get('form').trigger('submit')
         await flushPromises()
-        expect(request.post).toHaveBeenCalledWith(endpoint, { question: initial.question, answer: initial.answer })
+        expect(request.post).toHaveBeenCalledWith(endpoint, {
+            question: initial.question, answer: initial.answer, ...(device ? { school_id: 21 } : {}),
+        })
         expect(wrapper.text()).toContain(initial.question)
 
-        await action('Bearbeiten').trigger('click')
-        await wrapper.get('#additional-question').setValue(revised.question)
-        await wrapper.get('#additional-answer').setValue(revised.answer)
+        await router.push(overview)
+        await router.push(page)
+        await flushPromises()
+        expect(request.get).toHaveBeenCalledTimes(2)
+        expect(wrapper.text()).toContain(initial.question)
+
+        await wrapper.get(`button[aria-label="Frage „${initial.question}“ bearbeiten"]`).trigger('click')
+        await wrapper.get('#network-question').setValue(revised.question)
+        await wrapper.get('#network-answer').setValue(revised.answer)
         await wrapper.get('form').trigger('submit')
         await flushPromises()
-        expect(request.put).toHaveBeenCalledWith(endpoint + '/15', { question: revised.question, answer: revised.answer })
+        expect(request.put).toHaveBeenCalledWith(`${endpoint}/15`, {
+            question: revised.question, answer: revised.answer, revision: initial.revision,
+        })
         expect(wrapper.text()).toContain(revised.answer)
 
-        await action('Löschen').trigger('click')
-        expect(wrapper.text()).toContain('Diese Frage löschen?')
+        const deleteIcon = wrapper.get(`button[aria-label="Frage „${revised.question}“ löschen"]`)
+        await deleteIcon.trigger('click')
+        const dialog = wrapper.get('[role="dialog"]')
+        expect(dialog.text()).toContain(revised.question)
+        expect(dialog.attributes()).toHaveProperty('persistent')
+        expect(request.delete).not.toHaveBeenCalled()
+        await action('Abbrechen').trigger('click')
+        expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+        expect(wrapper.text()).toContain(revised.question)
+        expect(request.delete).not.toHaveBeenCalled()
+
+        await deleteIcon.trigger('click')
+        const confirmDelete = action('Löschen')
+        await confirmDelete.trigger('click')
+        await confirmDelete.trigger('click')
+        expect(request.delete).toHaveBeenCalledTimes(1)
+        expect(request.delete).toHaveBeenCalledWith(`${endpoint}/15`, { data: { revision: revised.revision } })
+        deletion.resolve({})
+        await flushPromises()
+        expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+        expect(wrapper.text()).not.toContain(revised.question)
+        expect(wrapper.text()).toContain(device ? existing.question : 'Noch keine Fragen vorhanden.')
+    })
+
+    it('keeps a conflicting device-question draft visible until the teacher reloads it', async () => {
+        const page = '/admin/teaching-tools/tests/networks/device-questions'
+        const original = { id: 15, question: 'Was macht ein Switch?', answer: 'Verbindet Geräte.', revision: 0 }
+        const newer = { ...original, answer: 'Verbindet Geräte im lokalen Netzwerk.', revision: 1 }
+        const get = vi.fn()
+            .mockResolvedValueOnce({ data: { school_id: 21, questions: [original] } })
+            .mockResolvedValueOnce({ data: { school_id: 21, questions: [newer] } })
+        const put = vi.fn().mockRejectedValue({ response: { status: 409 } })
+        vi.stubGlobal('axios', { get, put })
+        const { wrapper } = await renderTools(page)
+        const action = (text: string) => wrapper.findAll('button').find(button => button.text() === text)!
+
+        await wrapper.get(`button[aria-label="Frage „${original.question}“ bearbeiten"]`).trigger('click')
+        await wrapper.get('#network-answer').setValue('Meine neue Antwort')
+        await wrapper.get('form').trigger('submit')
+        await flushPromises()
+
+        expect(wrapper.get<HTMLTextAreaElement>('#network-answer').element.value).toBe('Meine neue Antwort')
+        expect(wrapper.get('[role="alert"]').text()).toContain('Der gespeicherte Stand hat sich geändert.')
+        await action('Gespeicherten Stand laden').trigger('click')
+        await flushPromises()
+        expect(wrapper.find('form').exists()).toBe(false)
+        expect(wrapper.get('.network-questions__answer').text()).toBe(newer.answer)
+    })
+
+    it('keeps deletion errors in the dialog and reloads the current question after a conflict', async () => {
+        const page = '/admin/teaching-tools/tests/networks/additional-questions'
+        const original = { id: 15, question: 'Was macht ein Switch?', answer: 'Verbindet Geräte.', revision: 0 }
+        const newer = { ...original, question: 'Was ist die Aufgabe eines Switchs?', revision: 1 }
+        const get = vi.fn().mockResolvedValueOnce({ data: [original] }).mockResolvedValueOnce({ data: [newer] })
+        const remove = vi.fn().mockRejectedValueOnce({ response: { status: 503 } }).mockRejectedValueOnce({ response: { status: 409 } })
+        vi.stubGlobal('axios', { get, delete: remove })
+        const { wrapper } = await renderTools(page)
+
+        await wrapper.get(`button[aria-label="Frage „${original.question}“ löschen"]`).trigger('click')
+        const dialog = wrapper.get('[role="dialog"]')
+        const action = (text: string) => dialog.findAll('button').find(button => button.text() === text)!
+
         await action('Löschen').trigger('click')
         await flushPromises()
-        expect(request.delete).toHaveBeenCalledWith(endpoint + '/15')
-        expect(wrapper.text()).toContain('Noch keine Fragen vorhanden.')
+        expect(dialog.get('[role="alert"]').text()).toBe('Die Frage konnte nicht gelöscht werden.')
+        await action('Löschen').trigger('click')
+        await flushPromises()
+        expect(dialog.get('[role="alert"]').text()).toContain('Der gespeicherte Stand hat sich geändert.')
+        expect(action('Löschen').attributes()).toHaveProperty('disabled')
+
+        await action('Gespeicherten Stand laden').trigger('click')
+        await flushPromises()
+        expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+        expect(wrapper.text()).toContain(newer.question)
+        expect(remove).toHaveBeenCalledTimes(2)
     })
 
     it('shows the network test areas and opens the only room plan', async () => {

@@ -149,6 +149,44 @@ describe('Dropbox Quick-Import', () => {
             expect(wrapper.get('[aria-label="Schülerergebnisse"]').text()).toContain('Bestehende Bewertung bleibt')
         } finally { wrapper.unmount() }
     })
+    it.each([false, true])('assigns only the selected, date-verified exam folder with a direct suggestion: %s', async direct => {
+        const date = '2026-11-27'
+        const module = { id: 'id:module', name: 'Word-Lernmodul', path: '/Materialien/Word' }
+        const exam = { id: 'id:exam', name: 'Prüfungsordner 27.11.', path: '/Materialien/Word/Prüfungsordner 27.11.' }
+        const initial = { ...connected, folder: null, folder_verification_required: false }
+        const saved = { ...work, portal_copy_progress: { [date]: { folder_id: exam.id, linked: true, complete: false } } }
+        const get = vi.fn((url: string) => Promise.resolve({ data: url.includes('folder_id=')
+            ? { folders: url.includes('id%3Amodule') ? [exam] : [], cursor: null }
+            : url.includes('/folders') ? { suggested_folder: module, suggestions: [module], ...(direct ? { portal_candidate: exam } : {}) } : initial }))
+        const post = vi.fn().mockResolvedValueOnce({ data: { candidate: exam, identity: 'portal_target', checked_files: [], proof: 'dated-proof' } })
+            .mockResolvedValueOnce({ data: { ...initial, folder: exam, saved_work: saved } })
+        vi.stubGlobal('axios', { get, post })
+        const wrapper = mountComponent(WorkDropboxSource, { work, active: true, selectionOnly: true, portalDate: date })
+        const button = (label: string) => wrapper.findAll('button').find(item => item.text() === label)!
+        try {
+            await flushPromises()
+            expect(post).not.toHaveBeenCalled()
+            if (direct) {
+                await button('Diesen Prüfungsordner prüfen').trigger('click')
+            } else {
+                await button('Vorgeschlagenen Ordner öffnen').trigger('click')
+                await flushPromises()
+                expect(post).not.toHaveBeenCalled()
+                await button(exam.name).trigger('click')
+                await flushPromises()
+                await button('Diesen Ordner prüfen').trigger('click')
+            }
+            await flushPromises()
+            expect(wrapper.get('[aria-label="Geprüfte Ordnerzuordnung"]').text()).toContain('zum Durchführungstermin')
+            await button('Verknüpfung bestätigen').trigger('click')
+            await flushPromises()
+            expect(post.mock.calls.map(call => call[1])).toEqual([
+                { folder_id: exam.id, verify: true, portal_date: date },
+                { folder_id: exam.id, folder_proof: 'dated-proof', portal_date: date },
+            ])
+            expect(wrapper.emitted('changed')).toEqual([[saved]])
+        } finally { wrapper.unmount() }
+    })
     it('reports an incomplete historical verification response instead of silently leaving the selection blocked', async () => {
         const candidate = { id: 'id:matching', name: 'Bestätigter Gruppenordner', path: '/Materialien/Bestätigter Gruppenordner' }
         const get = vi.fn().mockImplementation((url: string) => Promise.resolve({ data: url.includes('/folders')

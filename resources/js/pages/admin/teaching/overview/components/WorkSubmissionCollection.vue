@@ -1,6 +1,6 @@
 <template>
     <v-btn v-if="work?.id && (!portal || hasPortalFiles)" min-height="44" size="small" variant="tonal" prepend-icon="mdi-inbox-arrow-down-outline"
-        :disabled="disabled || !available" @click.stop="openAction">{{ repeat && !portal ? 'Erneut einsammeln' : 'Abgaben einsammeln' }}</v-btn>
+        :disabled="disabled || !available" @click.stop="openAction">{{ portal ? 'Schülerabgaben einsehen' : repeat ? 'Erneut einsammeln' : 'Abgaben einsammeln' }}</v-btn>
     <v-dialog v-if="opened" v-model="opened" max-width="720" scrollable :persistent="loading">
         <v-card>
             <v-card-title class="text-wrap">{{ portal ? 'Abgaben im Schülerbereich' : repeat ? 'Abgaben erneut einsammeln' : 'Abgaben einsammeln' }} · {{ work.title }}</v-card-title>

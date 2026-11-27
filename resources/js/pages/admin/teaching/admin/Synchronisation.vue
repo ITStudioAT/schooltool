@@ -49,6 +49,9 @@
                     Diese Historieneinträge bleiben erhalten; für sie kann keine Datei kopiert werden.
                     <ul class="ml-5"><li v-for="warning in preview.file_warnings" :key="warning">{{ warning }}</li></ul>
                 </v-alert>
+                <v-alert v-if="preview.skipped_notification_reads" type="warning" variant="tonal" class="mb-3">
+                    Gelesen-Bestätigungen ohne passende Nachricht im LIVE-Stand werden ausgelassen ({{ preview.skipped_notification_reads }}).
+                </v-alert>
                 <v-alert v-if="preview.dropbox_notices?.length" type="info" variant="tonal" class="mb-3">
                     Lokale Dropbox-Ordner bleiben beim eindeutig passenden Unterricht erhalten.
                     <ul class="ml-5"><li v-for="notice in preview.dropbox_notices" :key="notice">{{ notice }}</li></ul>
@@ -137,6 +140,7 @@ function tableLabel(table) {
         teaching_course_works: 'Arbeiten und Aufgaben', teaching_course_work_group_students: 'Arbeitsgruppen und Einzelbewertungen',
         teaching_course_student_entries: 'Leistungseinträge', teaching_course_student_entry_notifications: 'Eintragsbenachrichtigungen',
         teaching_course_behaviour_entries: 'Verhaltens- und Erinnerungseinträge',
+        teaching_course_notification_reads: 'Gelesen-Bestätigungen zu Kursbenachrichtigungen',
         teaching_course_student_category_evaluations: 'Kategoriebeurteilungen',
         import116_runs: 'Schülerimporthistorie', import116_run_changes: 'Änderungen aus Schülerimporten',
         user_groups: 'Kurskontaktgruppen', user_group_members: 'Mitglieder der Kurskontaktgruppen',

@@ -10,6 +10,33 @@ afterEach(() => {
     vi.useRealTimers()
 })
 
+it('hands the saved portal release to the open work when status polling confirms its end', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    const work = { id: 29, teaching_course_id: 4, status: {
+        submission_method: { channel: 'portal' },
+        student_distribution: { published_at: '2026-11-09T10:00:00Z' },
+    } }
+    const completed = { ...work, status: { ...work.status, student_distribution: {
+        ...work.status.student_distribution, ended_at: '2026-11-10T10:00:00Z',
+    } } }
+    const get = vi.fn()
+        .mockResolvedValueOnce({ data: { run: null, completed_portal_work: { ...completed, teaching_course_id: 5 } } })
+        .mockResolvedValue({ data: { run: null, completed_portal_work: completed } })
+    vi.stubGlobal('axios', { get })
+    const wrapper = mount(WorkQueueProgress, { props: { ...props, work } })
+    try {
+        await flushPromises()
+        expect(get.mock.calls[0][1].params).toMatchObject({ include_portal_completion: 1 })
+        expect(wrapper.emitted('portal-completed')).toBeUndefined()
+        await vi.advanceTimersByTimeAsync(15000)
+        expect(wrapper.emitted('portal-completed')).toEqual([[completed]])
+        await wrapper.setProps({ work: completed })
+        await vi.advanceTimersByTimeAsync(15000)
+        expect(get.mock.calls.at(-1)?.[1].params).not.toHaveProperty('include_portal_completion')
+        expect(wrapper.emitted('portal-completed')).toHaveLength(1)
+    } finally { wrapper.unmount() }
+})
+
 it('shows real queue steps as the worker runs and restores a completed run compactly', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     const steps = ['assessment_documents', 'assessment_verify']

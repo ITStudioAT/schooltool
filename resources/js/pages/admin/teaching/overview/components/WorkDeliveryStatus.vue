@@ -86,7 +86,7 @@
                                 </li>
                             </ul>
                         </section>
-                        <p class="text-caption mt-3">{{ selectedStage?.manuallyCompleted ? 'Manuell als erledigt markiert; dies bestätigt keine Abgaben und keinen Sammellauf.' : 'Eine manuelle Erledigung gibt „Bewerten“ frei, bestätigt aber keinen Sammellauf.' }}</p>
+                        <p class="text-caption mt-3">{{ selectedStage?.manuallyCompleted ? 'Manuell als erledigt markiert; dies bestätigt keine Abgaben und keinen Sammellauf.' : workflowProgress?.portalCopyPending ? 'Die Bewertung kann weiterhin manuell erfasst werden.' : 'Eine manuelle Erledigung gibt „Bewerten“ frei, bestätigt aber keinen Sammellauf.' }}</p>
                         <p v-if="selectedStage?.simulation" class="text-caption mt-2">Simulator: {{ selectedStage.lastCollectedAt ? assessmentTimeText(selectedStage.lastCollectedAt) : 'Noch nicht eingesammelt.' }}</p>
                         <p v-else class="text-caption mt-2">Letztes belegtes Einsammeln: {{ lastCollectionAt ? assessmentTimeText(lastCollectionAt) : 'Zeitpunkt nicht gespeichert.' }}</p>
                         <p v-if="!selectedStage?.simulation && work.collection_run?.changes_detected === null" class="text-caption mt-2">Der ältere Einsammelbeleg enthält keinen auswertbaren Änderungsnachweis. Bisherige Bewertungsbelege bleiben erhalten.</p>
@@ -117,6 +117,12 @@
                     {{ selectedStage?.manuallyCompleted ? 'Markierung aufheben' : 'Als erledigt markieren' }}
                 </v-btn>
                 <WorkSubmissionCollection v-if="opened === 'collection' && portalEnded && !selectedStage?.simulation && !workflowProgress?.submissionComplete" :work="work" :date="date" :repeat="(!selectedStage?.manuallyCompleted && selectedStage?.complete) || Boolean(lastCollectionAt)" :disabled="savingCompletion" />
+                <v-btn v-if="opened === 'collection' && ['link-portal-target', 'check-portal-target'].includes(workflowProgress?.next?.action)"
+                    min-height="48" color="warning" variant="tonal" :disabled="savingCompletion || disabled"
+                    @click="emit('portal-target')">{{ workflowProgress.next.label }}</v-btn>
+                <WorkPortalSubmissionCopy v-else-if="opened === 'collection' && !selectedStage?.simulation" :work="work" :date="date"
+                    :closed="workflowProgress?.portalSubmissionClosed" :recommended="workflowProgress?.portalCopyPending" :disabled="savingCompletion || disabled"
+                    @saved="emit('saved', $event)" />
                 <v-btn v-if="opened === 'collection' && selectedStage?.simulation" variant="tonal" prepend-icon="mdi-flask-outline" to="/admin/teaching-tools/simulator">Simulator öffnen</v-btn>
                 <WorkGradingAction v-if="opened === 'evaluation'" :work="work" :date="date" :repeat="selectedStage?.complete && !selectedStage?.manuallyCompleted"
                     :disabled="selectedStage?.blocked || savingCompletion || (!stages[0]?.complete && !lastCollectionAt && !hasPortalSubmissions)" />
@@ -148,6 +154,7 @@ import { personalWorkAssessment, workCollectionStudentStatus } from '@/helpers/w
 import { workCompletedLabel, workHasProgress, workProgressStages, workProgressNextAction, workLastCollectionAt, workLastCollectionRunAt, workSimulationEvaluation, workManualCompletionFields } from '@/helpers/workProgress'
 import WorkEvaluationPdf from './WorkEvaluationPdf.vue'
 import WorkSubmissionCollection from './WorkSubmissionCollection.vue'
+import WorkPortalSubmissionCopy from './WorkPortalSubmissionCopy.vue'
 import WorkGradingAction from './WorkGradingAction.vue'
 import WorkResultNotification from './WorkResultNotification.vue'
 import WorkEmailPreparation from './WorkEmailPreparation.vue'
@@ -157,7 +164,7 @@ const props = defineProps({ work: { type: Object, required: true }, date: { type
 const admin = useAdminStore()
 const courseStore = useCourseStore()
 const slots = useSlots()
-const emit = defineEmits(['import', 'saved'])
+const emit = defineEmits(['import', 'saved', 'portal-target'])
 const modernPrepared = computed(() => {
     const state = props.state
     const key = workDropboxKey(admin.config?.user?.id, props.work)

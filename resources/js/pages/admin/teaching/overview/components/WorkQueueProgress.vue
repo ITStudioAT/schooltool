@@ -35,7 +35,7 @@ import { workDropboxKey } from '@/helpers/workDropbox'
 import WorkCheckProgress from './WorkCheckProgress.vue'
 
 const props = defineProps({ work: { type: Object, required: true }, date: { type: String, default: '' }, userId: [Number, String], monitorOnly: Boolean })
-const emit = defineEmits(['assessment-completed'])
+const emit = defineEmits(['assessment-completed', 'portal-completed'])
 const stateLabels = {
     queued: 'In der Warteschlange', running: 'Läuft', completed: 'Abgeschlossen', failed: 'Fehlgeschlagen', interrupted: 'Unterbrochen',
 }
@@ -66,12 +66,21 @@ async function refresh() {
     if (!props.work?.id || document.visibilityState === 'hidden') return
     const request = new AbortController()
     controller = request
+    const watchRelease = !props.monitorOnly && props.work.status?.submission_method?.channel === 'portal'
+        && !props.work.status.student_distribution?.ended_at
     try {
         const { data } = await axios.get(show.url(props.work.id), {
-            params: { progress_only: 1, ...(props.date ? { date: props.date } : {}) },
+            params: { progress_only: 1, ...(props.date ? { date: props.date } : {}),
+                ...(watchRelease ? { include_portal_completion: 1 } : {}) },
             signal: request.signal, timeout: 8000,
         })
         if (request.signal.aborted) return
+        const completed = data?.completed_portal_work
+        if (watchRelease && !props.work.status?.student_distribution?.ended_at
+            && completed?.status?.student_distribution?.ended_at
+            && String(completed.id) === String(props.work.id) && String(completed.teaching_course_id) === String(props.work.teaching_course_id)) {
+            emit('portal-completed', completed)
+        }
         if (data?.run !== null && !Object.hasOwn(stateLabels, data?.run?.state)) throw new Error()
         if (data.run?.state !== run.value?.state) {
             expanded.value = ['queued', 'running', 'failed', 'interrupted'].includes(data.run?.state)

@@ -78,6 +78,10 @@ class TeachingAssessmentRuns
             && ($result['scheduled_date'] ?? null) === $run['date'] && is_string($result['folder']['id'] ?? null)
             && (is_int($points) || is_float($points)) && is_finite((float) $points) && $points >= 0) {
             $summary['assignment_points'] = $points;
+            if (is_string($result['folder']['path'] ?? null)) {
+                $summary['portal_copy_target'] = ['id' => $result['folder']['id'], 'path' => $result['folder']['path'],
+                    'observed_at' => $run['finished_at'] ?? null];
+            }
         }
 
         return $summary;
@@ -106,6 +110,11 @@ class TeachingAssessmentRuns
             abort_unless(! $pending || $pending === $record, 409, 'Der Prüfungsordner der offenen LF-Löschung hat sich geändert.');
             if (! $pending) {
                 abort_unless($this->state()->forever($this->key($work->id).':deletion', $record), 503, 'Der Löschstand konnte nicht gesichert werden.');
+                $status = $work->status;
+                if (isset($status['portal_submission_copy'][$record['date']])) {
+                    unset($status['portal_submission_copy'][$record['date']]);
+                    $work->update(['status' => $status]);
+                }
             }
         });
 

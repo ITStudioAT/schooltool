@@ -533,7 +533,7 @@ class McTestService
     }
 
     /** The caller holds the test and attempt locks. */
-    public function stopWholeTest(McTest $test, iterable $attempts, ?CarbonImmutable $releaseEndedAt = null): void
+    public function stopWholeTest(McTest $test, iterable $attempts, ?CarbonImmutable $releaseEndedAt = null, bool $afterDeadline = false): void
     {
         $endedAt = $releaseEndedAt ?? CarbonImmutable::now()->floorSecond();
         $at = $test->paused_at ?? $endedAt;
@@ -542,7 +542,9 @@ class McTestService
                 continue;
             }
             $attemptAt = $releaseEndedAt !== null ? ($attempt->individualPausedAt()?->min($at) ?? $at) : $at;
-            $this->complete($test, $attempt, 'timeout', $attemptAt->min($attempt->effectiveDeadline($test) ?? $attemptAt));
+            $completedAt = $afterDeadline ? $attempt->timeoutDeadline($test)
+                : $attemptAt->min($attempt->effectiveDeadline($test) ?? $attemptAt);
+            $this->complete($test, $attempt, 'timeout', $completedAt);
         }
         $snapshot = [...($test->snapshot ?? []), 'work_stopped_at' => $endedAt->toIso8601String()];
         $changes = ['paused_at' => null, 'snapshot' => json_encode($snapshot, JSON_THROW_ON_ERROR)];
@@ -782,8 +784,7 @@ class McTestService
                         if ($attempt->started_at === null && $fixed?->isNowOrPast()) {
                             continue;
                         }
-                        $deadline = $test->paused_at !== null || $attempt->individualPausedAt() !== null
-                            ? $fixed : $attempt->effectiveDeadline($test);
+                        $deadline = $attempt->timeoutDeadline($test);
                         if ($deadline === null || $deadline->isFuture()
                             || ! app(TeachingWorkStudentDistribution::class)->mcAccessAllowed($attempt->setRelation('test', $test))) {
                             continue;

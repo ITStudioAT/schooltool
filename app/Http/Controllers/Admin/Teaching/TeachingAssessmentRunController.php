@@ -5,17 +5,20 @@ namespace App\Http\Controllers\Admin\Teaching;
 use App\Http\Controllers\Controller;
 use App\Models\TeachingCourseWork;
 use App\Services\TeachingAssessmentRuns;
+use App\Services\TeachingCourseWorkEntrySyncService;
+use App\Services\TeachingWorkSubmissions;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class TeachingAssessmentRunController extends Controller
 {
-    public function show(Request $request, TeachingCourseWork $course_work, TeachingAssessmentRuns $runs): JsonResponse
+    public function show(Request $request, TeachingCourseWork $course_work, TeachingAssessmentRuns $runs, TeachingCourseWorkEntrySyncService $entries): JsonResponse
     {
         $actor = $this->userHasRole(['admin', 'teaching_admin', 'teacher']);
         abort_unless($actor && $course_work->teachingCourse, 403);
         $this->authorizeTeachingCourseAccess($course_work->teachingCourse, $actor);
-        $data = $request->validate(['date' => ['nullable', 'date_format:Y-m-d'], 'progress_only' => ['sometimes', 'boolean']]);
+        $data = $request->validate(['date' => ['nullable', 'date_format:Y-m-d'], 'progress_only' => ['sometimes', 'boolean'],
+            'include_portal_completion' => ['sometimes', 'boolean']]);
         if ($request->boolean('progress_only')) {
             $mail = [];
             foreach ($course_work->status['assignment_mail']['batches'] ?? [] as $slot => $batch) {
@@ -30,7 +33,13 @@ class TeachingAssessmentRunController extends Controller
                 ];
             }
 
-            return response()->json($runs->progressForWork($course_work, $actor, $data['date'] ?? null) + ['mail' => $mail])
+            $progress = $runs->progressForWork($course_work, $actor, $data['date'] ?? null) + ['mail' => $mail];
+            if ($request->boolean('include_portal_completion') && $course_work->studentReleaseEnded()
+                && (TeachingWorkSubmissions::method($course_work)['channel'] ?? null) === 'portal') {
+                $progress['completed_portal_work'] = $entries->serializeWork($course_work);
+            }
+
+            return response()->json($progress)
                 ->header('Cache-Control', 'private, no-store');
         }
 

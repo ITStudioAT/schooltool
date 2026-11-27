@@ -21,6 +21,9 @@ const StudentTimetablesProfile = () => import('@/pages/homepage/studentsTimetabl
 const Cashier = () => import('@/pages/homepage/cashier/Cashier.vue')
 const Restaurant = () => import('@/pages/homepage/index/Restaurant.vue')
 const Products = () => import('@/pages/homepage/index/Products.vue')
+const SchooltoolIntroduction = import.meta.env.DEV && window.location.hostname === 'localhost'
+    ? () => import('@/pages/homepage/index/SchooltoolIntroductionPreview.vue')
+    : () => import('@/pages/homepage/index/SchooltoolIntroduction.vue')
 const NotesDemo = () => import('@/pages/homepage/NotesDemo.vue')
 
 const routes = [
@@ -29,6 +32,7 @@ const routes = [
     { path: '/learning-materials/course/:material', component: SharedTeachingExplanation, props: { materialContext: 'course' } },
     { path: '/explanations/:token', component: SharedTeachingExplanation },
     { path: '/', component: Index },
+    { path: '/homepage/schooltool', name: 'schooltool-introduction', component: SchooltoolIntroduction },
     { path: '/homepage/products', component: Products },
     { path: '/homepage/impressum', component: Impressum },
     { path: '/homepage/register', component: Register },
@@ -58,13 +62,30 @@ const routes = [
     { path: '/homepage/notes-demo', component: NotesDemo },
 ]
 
+if (import.meta.env.DEV && window.location.hostname === 'localhost') {
+    routes.push(
+        {
+            path: '/homepage/cta-vorschau',
+            component: () => import('@/pages/homepage/index/SchooltoolLinkPreview.vue'),
+        },
+        {
+            path: '/homepage/schooltool-entwurf',
+            component: SchooltoolIntroduction,
+        },
+    )
+}
+
 const router = createRouter({
     history: createWebHistory(),
     routes,
     scrollBehavior(to, from, savedPosition) {
         if (savedPosition) return savedPosition
 
-        if (to.path.startsWith('/students-timetables/')) {
+        if (
+            to.path.startsWith('/students-timetables/')
+            || to.name === 'schooltool-introduction'
+            || (from.name === 'schooltool-introduction' && to.path === '/')
+        ) {
             return { left: 0, top: 0 }
         }
 

@@ -845,7 +845,7 @@
         </v-card>
 
         <WorkEvaluationImport ref="evaluationImport" @imported="evaluationImported" @deadline-updated="importDeadlineUpdated" />
-        <WorkDropboxLink ref="moduleLink" :course-id="selected_course?.id" @linked="handshakeLinked" />
+        <WorkDropboxLink ref="moduleLink" :course-id="selected_course?.id" @linked="handshakeLinked" @portal-target-saved="workflowWorkSaved" />
         <v-dialog v-model="delete_work_dialog.open" persistent max-width="460">
             <v-card data-testid="work-delete-confirmation">
                 <v-card-title class="text-subtitle-1 font-weight-bold">Arbeit löschen</v-card-title>
@@ -1415,10 +1415,11 @@ export default {
         workHasProgress,
         workAutomationEnabled,
         formatImportDate: formatViennaDateTime,
-        openLink(work) {
+        openLink(work, options = {}) {
             const savedWork = this.courseWorks.find(item => String(item.id) === String(work?.id))
             if (!savedWork || this.assessmentActivity(savedWork) || String(savedWork.teaching_course_id) !== String(this.selected_course?.id)) return
-            this.$refs.moduleLink.openLink(savedWork)
+            if (options.portalDate) this.$refs.moduleLink.openLink(savedWork, null, false, false, options.portalDate)
+            else this.$refs.moduleLink.openLink(savedWork)
         },
         openImport(work, quick = false, results = null) {
             if (!workAutomationEnabled(work) || this.assessmentActivity(work)) return
@@ -2752,8 +2753,8 @@ export default {
             const date = this.workListDate(work) || ''
             const checked = workExerciseCheck(workDropboxKey(this.config?.user?.id, work), work, date)
             const next = workWorkflowProgress(work, date, this.deadlineNow, checked?.data?.exercise?.email_dispatch,
-                this.selected_course?.students_info || []).next
-            if (next) return next.label
+                this.selected_course?.students_info || [], checked?.data?.exercise).next
+            if (next) return next.compactLabel || next.label
             if (!workAutomationEnabled(work) || !workNeedsPreparation(work, this.workFolderState(work))) return ''
             return checked?.status === 'found' ? workPreparationLabel(checked) : ''
         },

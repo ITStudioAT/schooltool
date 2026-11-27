@@ -13,6 +13,7 @@ use App\Services\DropboxFolderContents;
 use App\Services\DropboxModuleLinks;
 use App\Services\DropboxWorkImport;
 use App\Services\TeachingAssessmentRuns;
+use App\Services\TeachingAssessmentTargetGuard;
 use App\Services\TeachingCourseWorkEntrySyncService;
 use App\Services\TeachingDirectAssessment;
 use App\Services\TeachingSimulation;
@@ -280,6 +281,7 @@ class WorkDropboxController extends Controller
             'suggested_folder' => $suggested ? ['id' => $suggested->folder_id, 'name' => $suggested->folder_name] : null,
             'folder_plausibility' => $plausibility,
             'has_import' => $hasImport,
+            'folder_verification_required' => app(TeachingWorkFolderVerification::class)->required($course_work),
             'can_preview' => (bool) $canPreview,
             'can_quick_import' => (bool) ($canPreview && $hasImport),
             'message' => ! $configured || ! $installed ? 'Dropbox ist noch nicht eingerichtet. Bitte Importieren verwenden.'
@@ -382,7 +384,7 @@ class WorkDropboxController extends Controller
             'section' => ['nullable', 'string', 'in:Angaben,Bewertungskriterien,Musterlösungen,Abgaben,Auswertungen'],
             'pdf' => ['sometimes', 'boolean'],
             'file_id' => ['required_if:pdf,1', 'nullable', 'string', 'max:255', 'regex:/\Aid:[A-Za-z0-9_-]+\z/'],
-            'date' => ['nullable', 'date_format:Y-m-d']]);
+            'date' => ['nullable', 'date_format:Y-m-d'], 'portal_date' => ['nullable', 'date_format:Y-m-d']]);
         $downloadPrepared = $request->boolean('download_prepared');
         if ($downloadPrepared) {
             abort_unless($request->boolean('contents') && $request->boolean('exercise') && ! $request->boolean('pdf')
@@ -526,7 +528,23 @@ class WorkDropboxController extends Controller
             return response()->json($contents + ['link_version' => $version])->header('Cache-Control', 'private, no-store');
         }
         if ($request->boolean('suggest')) {
-            return response()->json($dropbox->suggestFolders($dropbox->connection($actor), $course_work));
+            $connection = $dropbox->connection($actor);
+            $suggestions = $dropbox->suggestFolders($connection, $course_work);
+            $startPath = $suggestions['start_folder']['path'] ?? null;
+            if (isset($data['portal_date']) && is_string($startPath) && str_starts_with($startPath, '/')
+                && in_array($data['portal_date'], app(TeachingAssessmentTargetGuard::class)->dates($course_work), true)) {
+                try {
+                    $candidate = app(DropboxModuleLinks::class)->suggestDatedPortalFolder($connection, $course_work, $data['portal_date'], $startPath);
+                    if ($candidate) {
+                        $suggestions['portal_candidate'] = ['id' => $candidate['id'], 'name' => $candidate['name'],
+                            'path' => $candidate['path_display'] ?? $candidate['path_lower']];
+                    }
+                } catch (ValidationException|HttpExceptionInterface) {
+                    // Keep manual selection usable when the dated search is unavailable.
+                }
+            }
+
+            return response()->json($suggestions);
         }
 
         return response()->json($dropbox->folders($dropbox->connection($actor), $data['folder_id'] ?? '', $data['cursor'] ?? null));
@@ -584,15 +602,27 @@ class WorkDropboxController extends Controller
             return $this->prepareLinkedFolderResponse($course_work, $actor, $dropbox, $creating ? $module : null);
         }
         $data = $request->validate(['folder_id' => ['required', 'string', 'max:255', 'regex:/\Aid:[A-Za-z0-9_-]+\z/'],
-            'verify' => ['sometimes', 'boolean'], 'folder_proof' => ['nullable', 'string', 'max:8192']]);
+            'verify' => ['sometimes', 'boolean'], 'folder_proof' => ['nullable', 'string', 'max:8192'],
+            'portal_date' => ['nullable', 'date_format:Y-m-d']]);
         $connection = $dropbox->connection($actor);
         $verification = app(TeachingWorkFolderVerification::class);
+        $portalDate = $data['portal_date'] ?? null;
         if ($request->boolean('verify')) {
-            return response()->json($verification->preview($connection, $course_work, $data['folder_id']))->header('Cache-Control', 'private, no-store');
+            return response()->json($verification->preview($connection, $course_work, $data['folder_id'], $portalDate))->header('Cache-Control', 'private, no-store');
         }
-        if ($verification->required($course_work)) {
-            abort_unless(filled($data['folder_proof'] ?? null), 409, 'Vor dem Verknüpfen zuerst die vorhandenen Originalnachweise prüfen.');
-            $verification->store($connection, $course_work, $data['folder_id'], $data['folder_proof']);
+        if ($portalDate !== null || $verification->required($course_work)) {
+            abort_unless(filled($data['folder_proof'] ?? null), 409, $portalDate !== null
+                ? 'Vor dem Verknüpfen zuerst den ausgewählten Ordner prüfen.'
+                : 'Vor dem Verknüpfen zuerst die vorhandenen Originalnachweise prüfen.');
+            $verification->store($connection, $course_work, $data['folder_id'], $data['folder_proof'], $portalDate);
+            if ($portalDate !== null) {
+                $course_work->refresh();
+                $response = $this->show($course_work, $dropbox);
+
+                return $response->setData($response->getData(true) + [
+                    'saved_work' => app(TeachingCourseWorkEntrySyncService::class)->serializeWork($course_work),
+                ]);
+            }
 
             return $this->show($course_work, $dropbox);
         }

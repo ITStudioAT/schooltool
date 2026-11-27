@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\TeachingCourseWork;
 use App\Services\TeachingCourseWorkEntrySyncService;
 use App\Services\TeachingWorkPortalReopening;
+use App\Services\TeachingWorkPortalSubmissionCopy;
 use App\Services\TeachingWorkStudentDistribution;
 use App\Services\TeachingWorkSubmissions;
 use Illuminate\Http\Exceptions\HttpResponseException;
@@ -174,6 +175,36 @@ class WorkSubmissionController extends Controller
 
         return response()->json(['data' => $entries->serializeWork($work), 'reopened' => $count])
             ->header('Cache-Control', 'private, no-store');
+    }
+
+    public function preparePortalCopy(Request $request, TeachingCourseWork $course_work, TeachingWorkPortalSubmissionCopy $copy): JsonResponse
+    {
+        $actor = $this->userHasRole(['admin', 'teaching_admin', 'teacher']);
+        abort_unless($actor && $course_work->teachingCourse, 403);
+        $this->authorizeTeachingCourseAccess($course_work->teachingCourse, $actor);
+        $data = $request->validate(['date' => ['nullable', 'date_format:Y-m-d']]);
+
+        return response()->json(['data' => $copy->prepare($course_work, $actor, $data['date'] ?? null)])
+            ->header('Cache-Control', 'private, no-store');
+    }
+
+    public function copyPortalFile(Request $request, TeachingCourseWork $course_work, TeachingWorkPortalSubmissionCopy $copy): JsonResponse
+    {
+        $actor = $this->userHasRole(['admin', 'teaching_admin', 'teacher']);
+        abort_unless($actor && $course_work->teachingCourse, 403);
+        $this->authorizeTeachingCourseAccess($course_work->teachingCourse, $actor);
+        $data = $request->validate(['run_id' => ['required', 'uuid'], 'item' => ['required', 'integer', 'min:0']]);
+        $result = DB::transaction(function () use ($actor, $course_work, $copy, $data): array {
+            $work = TeachingCourseWork::query()->with('teachingCourse')->lockForUpdate()->findOrFail($course_work->id);
+            $this->authorizeTeachingCourseAccess($work->teachingCourse, $actor);
+
+            $result = $copy->copy($work, $actor, $data['run_id'], (int) $data['item']);
+            $entries = app(TeachingCourseWorkEntrySyncService::class);
+
+            return $result + ['portal_copy_progress' => $copy->progress($work, $entries->groupsForWork($work))];
+        });
+
+        return response()->json(['data' => $result])->header('Cache-Control', 'private, no-store');
     }
 
     public function download(TeachingCourseWork $course_work, string $fileId): StreamedResponse

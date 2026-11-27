@@ -30,6 +30,21 @@ class TeachingWorkPortalReopening
         return $work->studentReleaseEnded() || $standard?->lessThan($deadline) ? $deadline : null;
     }
 
+    /** Check while holding the work lock used for reopening and uploads. */
+    public function hasActiveDeadline(TeachingCourseWork $work): bool
+    {
+        $ids = $this->records($work)->filter(fn (array $record): bool => $this->recordDeadline($work, $record)?->isPast() === false)
+            ->pluck('student_id');
+
+        return $ids->isNotEmpty() && User::query()->whereKey($ids->all())->get(['id'])->contains(
+            function (User $student) use ($work): bool {
+                $status = $this->distribution->studentTaskStatus($work, $student);
+
+                return $status !== null && $this->deadlineFor($work, $student, $status)?->isPast() === false;
+            }
+        );
+    }
+
     /** @return array{date: ?string, ambiguous: bool, students: list<array{id:int,name:string,open_until:?string}>} */
     public function options(TeachingCourseWork $work, ?string $date, bool $lock = false): array
     {

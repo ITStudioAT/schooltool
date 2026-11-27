@@ -76,6 +76,7 @@ class TeachingSynchronisationService
             'new_schoolyears' => count($plan['new_years']),
             'new_accounts' => count($plan['new_users']), 'new_students' => count($plan['new_imports']),
             'new_teachers' => count($plan['new_teachers']), 'updated_teachers' => count($plan['updated_teachers']),
+            'skipped_notification_reads' => $plan['skipped_notification_reads'],
             'changed_teachers' => array_map(function (array $teacher) use ($local): array {
                 $existing = array_values(array_filter($local['teachers'], fn (array $row): bool => $row['id'] === $teacher['id']))[0];
                 $changes = array_diff_assoc(array_diff_key($teacher, ['id' => true]), $existing);
@@ -284,7 +285,11 @@ class TeachingSynchronisationService
             $query = DB::table($reference->TABLE_NAME)->whereIn($reference->COLUMN_NAME,
                 array_column($replacementTables[$reference->REFERENCED_TABLE_NAME], 'id'));
             if (isset($replacementTables[$reference->TABLE_NAME])) {
-                $query->whereNotIn('id', array_column($replacementTables[$reference->TABLE_NAME], 'id'));
+                if ($reference->TABLE_NAME === TeachingSynchronisationGraph::NOTIFICATION_READS) {
+                    $query->whereNotIn('teaching_course_id', array_column($replacementTables['teaching_courses'], 'id'));
+                } else {
+                    $query->whereNotIn('id', array_column($replacementTables[$reference->TABLE_NAME], 'id'));
+                }
             }
             if ($query->exists()) {
                 $state['conflicts'][] = "Fremde Daten in {$reference->TABLE_NAME} referenzieren zu ersetzende Unterrichtsdaten.";
@@ -309,19 +314,22 @@ class TeachingSynchronisationService
             $plan['conflicts'][] = 'Schuleinstellungen fehlen oder sind mehrdeutig.';
         }
         foreach (TeachingSynchronisationGraph::TABLES as $table => $scope) {
+            $isNotificationReads = $table === TeachingSynchronisationGraph::NOTIFICATION_READS;
             $owned = array_column($local['tables'][$table], 'id');
             $mappedIds = array_column($plan['tables'][$table], 'id');
-            if (DB::table($table)->whereIn('id', $mappedIds)->whereNotIn('id', $owned)->exists()) {
+            if (! $isNotificationReads && DB::table($table)->whereIn('id', $mappedIds)->whereNotIn('id', $owned)->exists()) {
                 $plan['conflicts'][] = "ID-Kollision mit fremden Daten in {$table}.";
             }
             $sourceIndexes = $source['unique_indexes'][$table] ?? [];
             $localIndexes = $local['unique_indexes'][$table] ?? [];
             sort($sourceIndexes);
             sort($localIndexes);
-            if ($sourceIndexes !== $localIndexes) {
+            if ($sourceIndexes !== $localIndexes || ($isNotificationReads && ($localIndexes !== []
+                || ($source['primary_keys'][$table] ?? []) !== TeachingSynchronisationGraph::NOTIFICATION_READ_KEY
+                || ($local['primary_keys'][$table] ?? []) !== TeachingSynchronisationGraph::NOTIFICATION_READ_KEY))) {
                 $plan['conflicts'][] = "Eindeutigkeitsschema unterscheidet sich: {$table}.";
             }
-            foreach ($localIndexes as $columns) {
+            foreach ($isNotificationReads ? [] : $localIndexes as $columns) {
                 $rows = array_values(array_filter($plan['tables'][$table],
                     fn (array $row): bool => ! in_array(null, array_map(fn (string $column): mixed => $row[$column] ?? null, $columns), true)));
                 foreach (array_chunk($rows, 100) as $chunk) {

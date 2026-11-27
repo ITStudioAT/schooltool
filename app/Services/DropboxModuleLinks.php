@@ -101,12 +101,31 @@ class DropboxModuleLinks
 
     private function exerciseCacheKey(DropboxConnection $connection, TeachingCourseWork $work, TeachingWorkModuleLink $link): string
     {
+        return $this->boundExerciseCacheKey($work, $link, $connection->id, $connection->account_id);
+    }
+
+    private function boundExerciseCacheKey(TeachingCourseWork $work, TeachingWorkModuleLink $link, int $connectionId, string $accountId): string
+    {
         $group = TeachingAssessmentTargetGuard::courseGroup($work->teachingCourse);
         // Invalidate checks made before multi-class courses had an assessment folder group.
         $version = $group['group_number'] === null && $group['folder_group'] !== null ? 'v3' : 'v2';
 
-        return "teaching:exercise-check:{$version}:".hash('sha256', serialize([$connection->id, $connection->account_id,
+        return "teaching:exercise-check:{$version}:".hash('sha256', serialize([$connectionId, $accountId,
             $work->id, $work->teaching_course_id, $link->getAttributes()]));
+    }
+
+    /** Read existing online evidence without refreshing the Dropbox folder inventory. */
+    public function cachedPortalCopyTargets(TeachingCourseWork $work, TeachingWorkModuleLink $link): ?array
+    {
+        $key = $this->boundExerciseCacheKey($work, $link, (int) $link->dropbox_connection_id, $link->account_id);
+        $record = Cache::store('database')->get($key);
+        $result = $record['result'] ?? [];
+        if (! in_array($result['status'] ?? null, ['found', 'missing'], true) || ! is_string($record['checked_at'] ?? null)) {
+            return null;
+        }
+
+        return ['observed_at' => $record['checked_at'], 'all_missing' => $result['status'] === 'missing',
+            'matches' => $result['matches'] ?? []];
     }
 
     private function storedExerciseCheck(string $key): ?array
@@ -169,6 +188,80 @@ class DropboxModuleLinks
     public function exerciseFolder(DropboxConnection $connection, TeachingCourseWork $work, TeachingWorkModuleLink $link, ?string $date): array
     {
         return $this->selectExercise($this->inspectExercises($connection, $work, $link, includeEmailStatus: false), $date);
+    }
+
+    /** @return array<string, mixed> */
+    public function portalSubmissionTarget(DropboxConnection $connection, TeachingCourseWork $work, TeachingWorkModuleLink|TeachingWorkDropboxFolder $link, string $date): array
+    {
+        abort_unless($link->dropbox_connection_id === $connection->id
+            && (! ($link instanceof TeachingWorkModuleLink) || $link->account_id === $connection->account_id),
+            409, 'Die Dropbox-Verbindung gehört nicht zur gespeicherten Zuordnung.');
+        $group = TeachingAssessmentTargetGuard::courseGroup($work->teachingCourse)['folder_group'];
+        abort_unless($group !== null, 409, 'Die Kursgruppe für den Prüfungsordner ist nicht eindeutig.');
+        if ($link instanceof TeachingWorkDropboxFolder) {
+            $folder = $this->dropbox->findFolderById($connection, $link->folder_id);
+            abort_if($folder && (! empty($folder['sharing_info']) || ($folder['has_explicit_shared_members'] ?? false)
+                || $this->dropbox->isTemporaryFolderPath($folder['path_lower'])
+                || TeachingWorkDropboxFolder::query()->where('folder_id', $folder['id'])
+                    ->where('teaching_course_work_id', '!=', $work->id)->exists()),
+                409, 'Der gespeicherte Prüfungsordner ist geteilt oder einer weiteren Arbeit zugeordnet.');
+        } else {
+            $module = $this->verifyExerciseModule($connection, $link);
+            $folder = $this->findDatedPortalFolder($connection, $work,
+                ['id' => $module['folder_id'], 'path_lower' => mb_strtolower($module['folder_path'])], $date);
+        }
+        $status = $folder ? $this->dropbox->readExerciseDocument($connection, $folder['id'], 'status.json') : null;
+        abort_unless($status, 409, 'Der Prüfungsordner für diesen Termin ist online nicht bestätigt.');
+        try {
+            $record = $this->parsePreparedExerciseStatus($status['contents'], $work, $group, $date);
+        } catch (JsonException) {
+            abort(409, 'Die Statusdatei des Prüfungsordners ist ungültig.');
+        }
+        abort_unless($record['prepared'], 409, 'Die Leistungsfeststellung ist noch nicht vollständig angelegt.');
+
+        return $folder;
+    }
+
+    /** Find the dated child of a known module; the caller still verifies its work identity. */
+    public function findDatedPortalFolder(DropboxConnection $connection, TeachingCourseWork $work, array $module, string $date): ?array
+    {
+        $name = $this->datedPortalFolderName($work, $date);
+        $root = $this->dropbox->findExerciseChildFolder($connection, $module, 'Leistungsfeststellungen');
+
+        return $root ? $this->dropbox->findExerciseChildFolder($connection, $root, $name) : null;
+    }
+
+    /** Suggest a single exact folder in the learning-materials tree. Assignment still requires the status proof. */
+    public function suggestDatedPortalFolder(DropboxConnection $connection, TeachingCourseWork $work, string $date, string $startPath): ?array
+    {
+        $name = $this->datedPortalFolderName($work, $date);
+        $prefix = mb_strtolower(rtrim($startPath, '/')).'/';
+        $suffix = '/leistungsfeststellungen/'.mb_strtolower($name);
+        $result = $this->dropbox->readModuleApi($connection, 'files/search_v2', ['query' => $name, 'options' => [
+            'path' => $startPath, 'filename_only' => true, 'file_status' => 'active', 'file_categories' => ['folder'],
+            'max_results' => 50,
+        ]])->json();
+        if (($result['has_more'] ?? null) !== false || ! is_array($result['matches'] ?? null)) {
+            return null;
+        }
+        $folders = collect($result['matches'])->map(fn ($match) => $match['metadata']['metadata'] ?? null)
+            ->filter(fn ($folder): bool => ($folder['.tag'] ?? null) === 'folder' && ($folder['name'] ?? null) === $name
+                && is_string($folder['id'] ?? null) && preg_match('/\Aid:[A-Za-z0-9_-]+\z/', $folder['id']) === 1
+                && is_string($folder['path_lower'] ?? null) && str_starts_with($folder['path_lower'], $prefix)
+                && str_ends_with($folder['path_lower'], $suffix) && ! $this->dropbox->isTemporaryFolderPath($folder['path_lower']))
+            ->unique('id')->values();
+
+        return $folders->count() === 1 ? $folders->first() : null;
+    }
+
+    private function datedPortalFolderName(TeachingCourseWork $work, string $date): string
+    {
+        $group = TeachingAssessmentTargetGuard::courseGroup($work->teachingCourse)['folder_group'];
+        abort_unless($group !== null, 409, 'Die Kursgruppe für den Prüfungsordner ist nicht eindeutig.');
+        $name = $date.' – '.$group.' – '.trim($work->title);
+        abort_unless(preg_match('~[/\\\\\x00-\x1f]~u', $name) === 0, 409, 'Der Name des Prüfungsordners ist ungültig.');
+
+        return $name;
     }
 
     /** @return list<array<string, string>> */
@@ -490,13 +583,15 @@ class DropboxModuleLinks
                     $documentSections[] = 'Musterlösungen';
                 }
             }
-            if (! $mc['included'] && collect($children)->contains(fn (array $entry): bool => $entry['.tag'] === 'folder' && $entry['name'] === 'Kandidaten')) {
+            $candidatesId = collect($children)->first(fn (array $entry): bool => $entry['.tag'] === 'folder' && $entry['name'] === 'Kandidaten')['id'] ?? null;
+            if (! $mc['included'] && $candidatesId !== null) {
                 $documentSections[] = 'Angaben';
             }
             $matches[] = ['date' => $date, 'folder' => ['id' => $confirmed['id'], 'name' => $confirmed['name'],
                 'path' => $confirmed['path_display'] ?? $confirmed['path_lower']], 'assignment_status' => 'unknown',
                 'preparation' => ['status' => 'ready', 'components' => $record['components'], 'total_points' => $record['total_points'],
-                    'document_sections' => array_values(array_unique($documentSections)), 'pdf_files' => $pdfFiles]];
+                    'document_sections' => array_values(array_unique($documentSections)), 'pdf_files' => $pdfFiles,
+                    'portal_candidates_id' => $candidatesId]];
         }
 
         return ['status' => 'found', 'matches' => $matches];

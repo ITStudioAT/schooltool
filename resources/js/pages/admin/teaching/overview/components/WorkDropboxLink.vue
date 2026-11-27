@@ -1,12 +1,13 @@
 <template>
     <component :is="container" v-if="!inline || opened" v-bind="containerProps" @update:model-value="opened = $event">
         <v-card :flat="inline">
-            <v-card-title v-if="!inline">Lernmodul prüfen · {{ work?.title }}</v-card-title>
+            <v-card-title v-if="!inline">{{ portalDate ? 'Dropbox-Prüfungsordner' : 'Lernmodul prüfen' }} · {{ work?.title }}</v-card-title>
             <v-card-text :class="{ 'pa-0': inline }">
                 <WorkCreationProgress v-if="inline" :step="creationStep" :status="creationStatus" with-dropbox />
                 <template v-if="legacyLink && state">
                     <p class="mb-4">Wählen Sie den vorhandenen Leistungsfeststellungsordner in Dropbox. Die Zuordnung verändert keine Bewertungen, Abgaben oder Versandbelege.</p>
-                    <WorkDropboxSource v-if="opened" :work="work" :active="opened" selection-only @changed="folderLinked" @busy="folderBusy = $event" />
+                    <WorkDropboxSource v-if="opened && !portalModule" :work="work" :active="opened" :portal-date="portalDate" selection-only @changed="folderLinked" @busy="folderBusy = $event" />
+                    <v-btn v-if="portalModule" min-height="44" :disabled="busy" @click="checkPortalModule">Prüfungsordner erneut prüfen</v-btn>
                 </template>
                 <p v-if="showPicker" class="mb-4">Ziehen Sie die handshake.json des Lernmoduls hierher oder wählen Sie die Datei mit einem Klick aus.</p>
                 <file-pond v-if="opened && showPicker" :key="pondKey" name="handshake" :allow-multiple="false" :max-files="1"
@@ -75,18 +76,20 @@ import FilePondPluginFileValidateType from 'filepond-plugin-file-validate-type'
 import 'filepond/dist/filepond.min.css'
 import { connect, storeFolder } from '@/actions/App/Http/Controllers/Admin/Teaching/WorkDropboxController'
 import { useAdminStore } from '@/stores/admin/AdminStore'
-import { loadWorkDropbox, workDropboxKey, workDropboxStates } from '@/helpers/workDropbox'
+import { loadWorkDropbox, loadWorkExercise, workDropboxKey, workDropboxStates } from '@/helpers/workDropbox'
 import { workAutomationEnabled } from '@/helpers/workAutomation'
 import { readModuleHandshake } from '@/helpers/moduleHandshake'
 import { workNeedsPreparation } from '@/helpers/workOverview'
+import { workWorkflowProgress } from '@/helpers/workProgress'
 import WorkCreationProgress from './WorkCreationProgress.vue'
 import WorkDropboxSource from './WorkDropboxSource.vue'
 
 const FilePond = vueFilePond(FilePondPluginFileValidateType)
 const props = defineProps({ courseId: [Number, String], inline: Boolean })
-const emit = defineEmits(['linked', 'link-saved', 'closed', 'defer'])
+const emit = defineEmits(['linked', 'link-saved', 'portal-target-saved', 'closed', 'defer'])
 const admin = useAdminStore()
 const opened = ref(false)
+const portalDate = ref('')
 const work = ref(null)
 const state = ref(null)
 const error = ref('')
@@ -110,7 +113,8 @@ const container = computed(() => props.inline ? 'div' : VDialog)
 const containerProps = computed(() => props.inline ? { 'data-testid': 'work-module-inline' }
     : { modelValue: opened.value, maxWidth: 680, persistent: busy.value || folderBusy.value })
 const key = computed(() => workDropboxKey(admin.config?.user?.id, work.value))
-const legacyLink = computed(() => Boolean(work.value) && !linkFromCreation.value && !workNeedsPreparation(work.value, state.value))
+const legacyLink = computed(() => Boolean(portalDate.value) || (Boolean(work.value) && !linkFromCreation.value && !workNeedsPreparation(work.value, state.value)))
+const portalModule = computed(() => Boolean(portalDate.value && state.value?.module_link?.folder?.id))
 const showPicker = computed(() => !legacyLink.value && !state.value?.module_link?.folder?.id && (!props.inline || !contents.value || choosingNewFile.value))
 const canRetryPreparation = computed(() => Boolean(state.value?.module_link?.folder?.id) && !legacyLink.value
     && (linkPreparation.value?.status === 'partial' || (!progress.value
@@ -138,7 +142,8 @@ function resetRequest() {
     folderBusy.value = false
 }
 
-function folderLinked() {
+function folderLinked(savedWork) {
+    if (portalDate.value && savedWork?.id === work.value?.id) emit('portal-target-saved', savedWork)
     if (workDropboxStates.get(key.value)?.folder?.id) opened.value = false
 }
 
@@ -159,10 +164,36 @@ function message(exception) {
         || exception.response?.data?.message || exception.message || 'Dropbox konnte nicht geprüft werden. Bitte erneut versuchen.'
 }
 
-async function openLink(value, selected = null, creationFlow = false, autoCommit = creationFlow === true) {
-    if (!workAutomationEnabled(value)) return
+async function checkPortalModule() {
+    const current = operation
+    const date = portalDate.value
+    busy.value = true
+    error.value = ''
+    try {
+        const result = await loadWorkExercise(key.value, work.value, date, true, null, false, null, null, true)
+        if (current !== operation) return
+        if (result?.exercise?.status === 'found' && !result.exercise.deletion_pending
+            && result.exercise.preparation?.status === 'ready' && result.exercise.preparation.portal_candidates_id !== null) {
+            opened.value = false
+        } else {
+            error.value = result?.exercise?.message || 'Der Prüfungsordner im verknüpften Lernmodul konnte für diesen Termin nicht bestätigt werden.'
+        }
+    } catch (exception) {
+        if (current === operation) error.value = message(exception)
+    } finally {
+        if (current === operation) busy.value = false
+    }
+}
+
+async function openLink(value, selected = null, creationFlow = false, autoCommit = creationFlow === true, targetDate = '') {
+    if (!targetDate && !creationFlow && !selected) {
+        const progress = workWorkflowProgress(value)
+        if (['link-portal-target', 'check-portal-target'].includes(progress.next?.action)) targetDate = progress.portalCopyDate
+    }
+    if (!workAutomationEnabled(value) && !targetDate) return
     resetRequest()
     work.value = value
+    portalDate.value = targetDate
     linkFromCreation.value = creationFlow || Boolean(selected)
     autoCommitAuthorized.value = autoCommit === true && Boolean(selected?.contents && selected?.filename)
     state.value = null
@@ -180,6 +211,11 @@ async function openLink(value, selected = null, creationFlow = false, autoCommit
     try {
         let result = await loadWorkDropbox(key.value, value.id, true, { signal: controller.signal })
         if (current !== operation) return
+        if (targetDate) {
+            state.value = result
+            if (portalModule.value) await checkPortalModule()
+            return
+        }
         if (result?.module_link?.folder?.id) {
             try {
                 result = await loadWorkDropbox(key.value, value.id, true, { signal: controller.signal, params: { include_exercise: 1, refresh: 1 } })

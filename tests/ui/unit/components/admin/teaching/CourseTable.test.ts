@@ -481,6 +481,48 @@ describe('CourseTable manual work completion', () => {
         } finally { wrapper.unmount(); vi.unstubAllGlobals(); vi.useRealTimers() }
     })
 
+    it.each([true, false])('advances from the Dropbox target action to the copy and grading for this date: %s', async linked => {
+        clearWorkDropboxStates()
+        const { wrapper, works, courses, date, first } = mountCompletionTable(true, true)
+        const get = vi.fn((_url, options) => options?.params?.include_exercise
+            ? new Promise(() => {}) : Promise.resolve({ data: { connected: true, module_link: { folder: { id: 'id:module' } } } }))
+        vi.stubGlobal('axios', { get })
+        try {
+            useAdminStore().config = { user: { id: 7 } } as never
+            courses.selected_course.students_info = [{ id: 901, user_id: 12, first_name: 'Ada', last_name: 'Test' }] as never
+            const ids = Array.from({ length: 17 }, (_, index) => index + 12)
+            const work = { ...first, automation_enabled: true, groups: ids.map(id => ({ student_ids: [id] })),
+                assessment_run: { state: 'completed', date: '2026-11-09' },
+                portal_copy_progress: linked ? { [date.date]: { linked: true, folder_id: null, complete: false } } : [],
+                status: { submission_method: { channel: 'portal' },
+                    portal_submissions: ids.slice(0, 7).map(id => ({ id: 'original-'+id, student_id: id })),
+                    student_distribution: { published_at: `${date.date}T08:00:00Z`, student_ids: ids, ended_at: `${date.date}T10:00:00Z` },
+                },
+            }
+            works.courseWorks = [work] as never
+            await flushPromises()
+            const label = linked ? 'Dropbox-Prüfungsordner prüfen' : 'Dropbox-Prüfungsordner verknüpfen'
+            const card = wrapper.get('.course-table-work-summary')
+            expect(card.text()).toContain(linked ? 'Ordner prüfen' : 'Ordner verknüpfen')
+            await card.trigger('click')
+            await flushPromises()
+            const phase = wrapper.get('[aria-label="Ablauf der Arbeit"] .work-phase--next-copy')
+            expect(phase.get('.work-phase__title').text()).toBe('Abgeben')
+            expect(phase.get('[data-primary="true"] button').text()).toBe(label)
+            expect(phase.isVisible()).toBe(true)
+            await phase.get('[data-primary="true"] button').trigger('click')
+            expect(openModuleLink).toHaveBeenLastCalledWith(expect.objectContaining({ id: work.id }), null, false, false, date.date)
+            const confirmed = { ...work, portal_copy_progress: { [date.date]: { linked: true, folder_id: 'id:exam', complete: false } } }
+            wrapper.getComponent({ name: 'WorkDropboxLink' }).vm.$emit('portal-target-saved', confirmed)
+            await flushPromises()
+            expect(card.text()).toContain('Portalabgaben nach Dropbox kopieren')
+            expect(phase.get('[data-primary="true"] button').text()).toBe('Portalabgaben nach Dropbox kopieren')
+            works.courseWorks = [{ ...confirmed, portal_copy_progress: { [date.date]: { linked: true, folder_id: 'id:exam', complete: true } } }] as never
+            await flushPromises()
+            expect(card.get('[aria-label^="Nächste Aktion:"]').text()).toBe('Bewerten')
+        } finally { wrapper.unmount(); clearWorkDropboxStates(); vi.unstubAllGlobals() }
+    })
+
     it('opens a closed portal submission directly with the confirmed primary grading action', async () => {
         clearWorkDropboxStates()
         const { wrapper, works, courses, date, first } = mountCompletionTable(true, true)

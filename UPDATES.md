@@ -1,19 +1,26 @@
 # UPDATES
 
-## 3.54.10 !!!
+## 3.54.10
 
 ### Netzwerktest
 
 - Weitere Komponenten
+- Fragen zu Geräten verwaltbar
+- Weitere Fragen verwaltbar
 
 ### System
 
 - Workers adaptiert
+- GSAP importieren
 
 ### Arbeiten
 
 - Arbeit als erledigt markieren
 - Workflow verbessern /2
+
+### UI-Design 2027
+
+- Studenten-Ansicht
 
 ## 3.54.9
 

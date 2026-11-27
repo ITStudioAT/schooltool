@@ -1,5 +1,8 @@
 import { defineStore } from 'pinia'
 import { useNotificationStore } from '@/stores/spa/NotificationStore'
+
+export const homepageStartupRequestTimeout = 15000
+
 export const useHomepageStore = defineStore('HomepageStore', {
     state: () => {
         return {
@@ -30,18 +33,11 @@ export const useHomepageStore = defineStore('HomepageStore', {
 
     actions: {
         async loadLoginSchools() {
-            const notification = useNotificationStore()
             this.is_loading++
             try {
-                const response = await axios.get('/api/homepage/login_schools')
+                const response = await axios.get('/api/homepage/login_schools', { timeout: homepageStartupRequestTimeout })
                 return response.data
-            } catch (error) {
-                notification.notify({
-                    status: error.response?.status || 500,
-                    message: error.response?.data?.message || 'Fehler passiert.',
-                    type: 'error',
-                    timeout: 3000,
-                })
+            } catch {
                 return false
             } finally {
                 this.is_loading--
@@ -108,13 +104,14 @@ export const useHomepageStore = defineStore('HomepageStore', {
             }
         },
 
-        async loadConfig(school = null, app = null) {
+        async loadConfig(school = null, app = null, { timeout } = {}) {
             const notification = useNotificationStore()
             this.is_loading++
 
             try {
                 this.response = await axios.get('/api/homepage/config', {
                     params: { school, app },
+                    timeout,
                 })
                 this.config = this.response.data
                 this.school = this.config?.school
@@ -123,8 +120,8 @@ export const useHomepageStore = defineStore('HomepageStore', {
                 this.selected_school_id ??= this.school?.id ?? null
             } catch (error) {
                 notification.notify({
-                    status: error.response.status,
-                    message: error.response.data.message || 'Fehler passiert.',
+                    status: error.response?.status ?? null,
+                    message: error.response?.data?.message || 'Die Homepage-Konfiguration konnte nicht geladen werden.',
                     type: 'error',
                     timeout: 3000,
                 })
@@ -188,7 +185,7 @@ export const useHomepageStore = defineStore('HomepageStore', {
             this.is_loading++
 
             try {
-                const response = await axios.get('/api/admin/impersonation/status')
+                const response = await axios.get('/api/admin/impersonation/status', { timeout: homepageStartupRequestTimeout })
                 this.impersonation = {
                     is_impersonating: !!response.data?.is_impersonating,
                     is_students_timetables_restricted: !!response.data?.is_students_timetables_restricted,

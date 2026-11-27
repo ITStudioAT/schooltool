@@ -181,6 +181,104 @@ test('portal upload uses the same Vienna deadline for different work dates witho
     expect(array_column($saved->status['portal_submissions'], 'name'))->toBe(['Rechtzeitig.txt', 'Rechtzeitig.txt']);
 });
 
+test('automatic portal completion waits for a personal extension and exposes the saved end without changing any files', function (): void {
+    $status = [...$this->work->status, 'submission_method' => ['channel' => 'portal', 'email' => null]];
+    $this->work->update(['status' => $status]);
+    $this->actingAs($this->teacher, 'web')->postJson($this->publishUrl, ($this->payload)())->assertOk();
+    $this->artisan('teaching:end-expired-portal-releases')->expectsOutput('0 Portal-Freigaben beendet.')->assertSuccessful();
+    $this->travelTo(CarbonImmutable::parse('2026-11-05 12:01', 'Europe/Vienna'));
+    $this->postJson(route('teaching.work-submissions.reopen', $this->work), [
+        'scope' => 'all', 'deadline_date' => '2026-11-05', 'deadline_time' => '12:15',
+    ])->assertOk()->assertJsonPath('reopened', 1);
+
+    $this->artisan('teaching:end-expired-portal-releases')->expectsOutput('0 Portal-Freigaben beendet.')->assertSuccessful();
+    Auth::forgetGuards();
+    $this->actingAs($this->student, 'web')->getJson($this->tasksUrl)->assertOk()
+        ->assertJsonPath('tasks.0.id', $this->work->id)->assertJsonPath('tasks.0.can_submit', true);
+    $uploadUrl = route('student.course-work.submissions.store', ['courseId' => $this->course->id, 'course_work' => $this->work]);
+    $this->postJson($uploadUrl, ['file' => UploadedFile::fake()->createWithContent('Nachfrist.txt', 'Antwort')])->assertOk();
+    $before = $this->work->fresh();
+    $this->travelTo(CarbonImmutable::parse('2026-11-05 12:16', 'Europe/Vienna'));
+
+    $this->artisan('teaching:end-expired-portal-releases')->expectsOutput('1 Portal-Freigaben beendet.')->assertSuccessful();
+    $this->artisan('teaching:end-expired-portal-releases')->expectsOutput('0 Portal-Freigaben beendet.')->assertSuccessful();
+    $after = $this->work->fresh();
+    $endedAt = now()->toIso8601String();
+    expect($after->status['student_distribution']['ended_at'])->toBe($endedAt)
+        ->and($after->status['portal_submissions'])->toBe($before->status['portal_submissions'])
+        ->and($after->status['portal_submission_reopenings'])->toBe($before->status['portal_submission_reopenings'])
+        ->and($after->groups)->toBe($before->groups);
+    Storage::disk('local')->assertExists($after->status['portal_submissions'][0]['file_path']);
+    $this->getJson($this->tasksUrl)->assertOk()->assertJsonPath('tasks.0.status', 'ended')->assertJsonPath('tasks.0.can_submit', false);
+
+    Auth::forgetGuards();
+    $this->actingAs($this->teacher, 'web')->getJson(route('teaching.course-works.ai-export', [
+        'course_work' => $this->work, 'purpose' => 'submission_collection', 'collection_mode' => 'collect',
+    ]))->assertOk()->assertJsonPath('data.files.0.name', 'Nachfrist.txt');
+    $this->getJson(route('teaching.course-works.exercise-run.show', ['course_work' => $this->work, 'progress_only' => 1, 'include_portal_completion' => 1]))
+        ->assertOk()->assertJsonPath('completed_portal_work.status.student_distribution.ended_at', $endedAt);
+});
+
+test('automatic portal completion skips email submissions and unreleased or paused portal preparations', function (): void {
+    $this->travelTo(CarbonImmutable::parse('2026-11-05 12:01', 'Europe/Vienna'));
+    $before = now()->subHours(2)->toIso8601String();
+    $works = collect([
+        ['portal', ['prepared_at' => $before, 'published_at' => null]],
+        ['portal', ['published_at' => $before, 'withdrawn_at' => $before]],
+        ['email', ['published_at' => $before]],
+    ])->map(fn (array $item) => TeachingCourseWork::factory()->create([
+        'teaching_course_id' => $this->course->id, 'finish_until_date' => '2026-11-05', 'finish_until_time' => '12:00',
+        'status' => ['submission_method' => ['channel' => $item[0], 'email' => 'synthetic@example.test'],
+            'student_distribution' => $item[1] + ['student_ids' => [$this->student->id]]],
+    ]));
+
+    $this->artisan('teaching:end-expired-portal-releases')->expectsOutput('0 Portal-Freigaben beendet.')->assertSuccessful();
+    expect($works->contains(fn ($work): bool => $work->fresh()->studentReleaseEnded()))->toBeFalse();
+});
+
+test('automatic portal completion recognizes confirmed mailed task access with portal upload', function (): void {
+    $this->travelTo(CarbonImmutable::parse('2026-11-05 12:01', 'Europe/Vienna'));
+    $batch = ['transport' => 'mailpit', 'recipients' => [
+        ['student_id' => $this->student->id, 'state' => 'accepted', 'accepted_at' => now()->subHours(2)->toIso8601String()],
+    ]];
+    $status = [...$this->work->status, 'submission_method' => ['channel' => 'portal'],
+        'assignment_mail' => ['batches' => ['all' => $batch]]];
+    $this->work->update(['status' => $status]);
+    $this->artisan('teaching:end-expired-portal-releases')->expectsOutput('0 Portal-Freigaben beendet.')->assertSuccessful();
+
+    $status['assignment_mail']['batches']['all']['transport'] = 'postmark';
+    $this->work->update(['status' => $status]);
+    $this->artisan('teaching:end-expired-portal-releases')->expectsOutput('1 Portal-Freigaben beendet.')->assertSuccessful();
+    expect($this->work->fresh()->status['student_distribution']['ended_email_student_ids'])->toBe([$this->student->id]);
+    Mail::assertNothingSent();
+    Http::assertNothingSent();
+});
+
+test('automatic portal completion preserves MC answers and uses the hard deadline for a paused started attempt', function (): void {
+    Queue::fake();
+    $test = studentTaskMcFixture($this->work, $this->teacher, [$this->student], 'published');
+    $this->work->update(['status' => [...$this->work->status, 'submission_method' => ['channel' => 'portal'],
+        'student_distribution' => ['published_at' => now()->toIso8601String(), 'student_ids' => [$this->student->id], 'instructions' => 'Test']]]);
+    $deadline = $this->work->finalDeadlineInstant();
+    $pause = $deadline->subMinute();
+    McTest::query()->whereKey($test->id)->update(['closes_at' => $deadline, 'paused_at' => $pause]);
+    $attempt = $test->attempts()->sole();
+    $answers = ['q' => ['a']];
+    $attempt->update(['started_at' => $pause->subMinute(), 'answers' => $answers]);
+    McAttempt::query()->whereKey($attempt->id)->update(['questions' => json_encode([
+        ['id' => 'q', 'prompt' => 'Frage', 'type' => 'single', 'options' => [['id' => 'a', 'text' => 'A']], 'correct_option_ids' => ['a']],
+    ], JSON_THROW_ON_ERROR)]);
+    $this->travelTo($deadline->subSecond());
+    $this->artisan('teaching:end-expired-portal-releases')->expectsOutput('0 Portal-Freigaben beendet.')->assertSuccessful();
+    expect($attempt->fresh()->completed_at)->toBeNull();
+
+    $this->travelTo($deadline->addMinute());
+    $this->artisan('teaching:end-expired-portal-releases')->expectsOutput('1 Portal-Freigaben beendet.')->assertSuccessful();
+    expect($attempt->fresh()->completed_at->equalTo($deadline))->toBeTrue()
+        ->and($attempt->fresh()->answers)->toBe($answers)
+        ->and($this->work->fresh()->studentReleaseEnded())->toBeTrue();
+});
+
 test('a teacher reopens only the selected portal submission scope until its own Vienna deadline', function (bool $endRelease): void {
     $otherDateStudent = User::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->year->id])->assignRole('student');
     $ambiguousStudent = User::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->year->id])->assignRole('student');

@@ -102,6 +102,12 @@ class McAttempt extends Model
         return $personal === null ? $closing : ($closing === null ? $personal : $personal->min($closing));
     }
 
+    public function timeoutDeadline(McTest $test): ?CarbonImmutable
+    {
+        return $test->paused_at !== null || $this->individualPausedAt() !== null
+            ? $this->fixedWorkDeadline($test) : $this->effectiveDeadline($test);
+    }
+
     public function test(): BelongsTo
     {
         return $this->belongsTo(McTest::class, 'test_id');

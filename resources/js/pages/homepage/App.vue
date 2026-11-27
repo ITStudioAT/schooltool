@@ -3,6 +3,11 @@
         <ImpersonationTransitionOverlay />
         <v-layout>
             <v-main>
+                <div
+                    v-if="isHomepageEntry && is_loading > 0"
+                    class="homepage-entry-progress"
+                    role="progressbar"
+                    aria-label="Schooltool wird geladen" />
                 <v-alert type="warning" variant="tonal" class="ma-2" v-if="isImpersonating">
                     <div class="d-flex flex-row flex-wrap align-center justify-space-between ga-2">
                         <div>
@@ -18,6 +23,7 @@
                 <router-view />
                 <ItsNotification />
                 <v-overlay
+                    v-if="!isHomepageEntry"
                     :model-value="globalLoadingOverlayVisible"
                     class="align-center justify-center"
                     contained
@@ -61,6 +67,9 @@ export default {
     },
     computed: {
         ...mapWritableState(useHomepageStore, ['config', 'error', 'school', 'licence', 'is_loading', 'impersonation']),
+        isHomepageEntry() {
+            return this.$route?.path === '/'
+        },
         globalLoadingOverlayVisible() {
             const routePath = String(this.$route?.path || '')
 
@@ -115,3 +124,16 @@ export default {
     },
 }
 </script>
+
+<style scoped>
+.homepage-entry-progress {
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 2;
+    width: min(24vw, 120px);
+    height: 3px;
+    background: #37474f;
+    pointer-events: none;
+}
+</style>

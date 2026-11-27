@@ -247,13 +247,30 @@ class TeachingWorkStudentDistribution
     }
 
     /** End a published release while holding the work row lock. */
-    public function endStudentRelease(TeachingCourseWork $work, int $actorId): void
+    public function endStudentRelease(TeachingCourseWork $work, int $actorId, bool $afterPortalDeadline = false): bool
     {
         if ($work->studentReleaseEnded()) {
-            return;
+            return false;
         }
         $status = $work->status ?? [];
         $emailed = TeachingWorkSubmissions::confirmedEmailRecipients($work);
+        if ($afterPortalDeadline) {
+            $release = $status['student_distribution'] ?? [];
+            if ((TeachingWorkSubmissions::method($work)['channel'] ?? null) !== 'portal'
+                || ! TeachingWorkSubmissions::expired($work) || isset($status['deletion_receipt']) || ! empty($release['deleted_at'])) {
+                return false;
+            }
+            $portalPublished = ! empty($release['published_at']) && empty($release['withdrawn_at']) && ! empty($release['student_ids']);
+            if (! $portalPublished && ($emailed === [] || ! User::query()->whereKey($emailed)->get(['id'])->contains(
+                fn (User $student): bool => $this->studentTaskStatus($work, $student) === 'email_delivery'
+            ))) {
+                return false;
+            }
+            app(TeachingAssessmentRuns::class)->assertNoActiveCreation($work);
+            if (app(TeachingWorkPortalReopening::class)->hasActiveDeadline($work)) {
+                return false;
+            }
+        }
         abort_unless(! empty($status['student_distribution']['published_at']) || $emailed !== [], 409, 'Nur eine bereits bereitgestellte Arbeit kann beendet werden.');
         $sending = collect($status['assignment_mail']['batches'] ?? [])->flatMap(fn (array $batch): array => $batch['recipients'] ?? [])
             ->contains(fn (array $recipient): bool => in_array($recipient['state'] ?? null, ['queued', 'sending'], true));
@@ -261,10 +278,28 @@ class TeachingWorkStudentDistribution
 
         $items = $this->mcTests($work, true, requireReady: false, endingActorId: $actorId);
         $endedAt = CarbonImmutable::now()->floorSecond();
+        if ($afterPortalDeadline) {
+            foreach ($items as $item) {
+                $test = $item['test'];
+                if (isset($test->snapshot['work_stopped_at'])) {
+                    continue;
+                }
+                if ($test->hasWorkDeadlineConflict() || $item['attempts']->contains(function (McAttempt $attempt) use ($test, $endedAt): bool {
+                    if ($attempt->completed_at !== null || ($attempt->started_at === null && empty($attempt->answers))) {
+                        return false;
+                    }
+                    $deadline = $attempt->timeoutDeadline($test);
+
+                    return $attempt->submitted_at !== null || $deadline === null || $deadline->isAfter($endedAt);
+                })) {
+                    return false;
+                }
+            }
+        }
         foreach ($items as $item) {
             $test = $item['test'];
             if (! isset($test->snapshot['work_stopped_at'])) {
-                app(McTestService::class)->stopWholeTest($test, $item['attempts'], $endedAt);
+                app(McTestService::class)->stopWholeTest($test, $item['attempts'], $endedAt, afterDeadline: $afterPortalDeadline);
             }
         }
         $status['student_distribution']['ended_at'] = $endedAt->toIso8601String();
@@ -273,6 +308,8 @@ class TeachingWorkStudentDistribution
         }
         $work->update(['status' => $status]);
         $this->signalDeadlineChangeAfterCommit($work);
+
+        return true;
     }
 
     /** @return list<array{test: McTest, attempts: Collection<int, McAttempt>, active_attempts: Collection<int, McAttempt>}> */
@@ -562,7 +599,8 @@ class TeachingWorkStudentDistribution
         }
         // Student progress cannot invalidate a teacher's open release or pause dialog.
         unset($attributes['updated_at'], $attributes['status']['portal_submissions'],
-            $attributes['status']['submission_started_at'], $attributes['status']['portal_started_student_ids']);
+            $attributes['status']['submission_started_at'], $attributes['status']['portal_started_student_ids'],
+            $attributes['status']['portal_submission_copy']);
 
         return SchooltoolAssessmentJson::digest($attributes);
     }

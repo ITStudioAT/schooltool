@@ -1069,6 +1069,28 @@ it('ends a confirmed email-only delivery without exposing portal pause or resume
     } finally { wrapper.unmount() }
 })
 
+it('switches the open management dialog to read-only when the portal release ends in the background', async () => {
+    const release = { published_at: '2026-11-20T10:00:00+01:00', student_ids: [12], instructions: 'Aufgabenstellung' }
+    const work = { id: 12, title: 'Arbeit', student_distribution_version: 'a'.repeat(64), status: {
+        student_distribution: release, submission_method: { channel: 'portal' },
+    } }
+    const get = vi.fn().mockResolvedValue({ data: { data: work } })
+    vi.stubGlobal('axios', { get })
+    const wrapper = mount(WorkStudentDistribution, { props: { work }, global: { stubs } })
+    try {
+        await wrapper.get('button').trigger('click')
+        await flushPromises()
+        expect(wrapper.text()).toContain('Freigabe pausieren')
+        await wrapper.setProps({ work: { ...work, student_distribution_version: 'b'.repeat(64), status: {
+            ...work.status, student_distribution: { ...release, ended_at: '2026-11-20T11:00:00+01:00' },
+        } } })
+        const dialog = wrapper.get('[role="dialog"]')
+        expect(dialog.text()).toContain('Freigabe beendet')
+        expect(dialog.text()).not.toContain('Freigabe pausieren').not.toContain('Freigabe beenden')
+        expect(dialog.text()).toContain('Aufgabenstellung')
+    } finally { wrapper.unmount() }
+})
+
 it.each([false, true])('ends an existing release only after its own confirmation and retains the overview (paused: %s)', async paused => {
     const release = { published_at: '2026-11-20T10:00:00+01:00', withdrawn_at: paused ? '2026-11-20T10:30:00+01:00' : null,
         instructions: 'Vorhandene Aufgabenstellung', student_ids: [12] }

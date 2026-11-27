@@ -593,7 +593,7 @@ class TeachingWorkAiExport
     }
 
     /** @return list<array<string, mixed>> */
-    private function participants(TeachingCourse $course): array
+    public function participants(TeachingCourse $course): array
     {
         $people = [];
         $rows = $course->teachingCourseStudents()->select(['id', 'teaching_course_id', 'user_id', 'import116_id', 'canceled_at'])

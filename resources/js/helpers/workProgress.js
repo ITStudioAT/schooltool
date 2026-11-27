@@ -170,7 +170,11 @@ function hasSavedGrade(group, id) {
         .some(value => value != null && !['', 'NA', 'VL', 'F'].includes(String(value).trim()))
 }
 
-export function workWorkflowProgress(work, date = '', now = Date.now(), dispatch = {}, students = []) {
+export const portalCopyLabel = 'Portalabgaben nach Dropbox kopieren'
+export const portalLinkLabel = 'Dropbox-Prüfungsordner verknüpfen'
+export const portalCheckLabel = 'Dropbox-Prüfungsordner prüfen'
+
+export function workWorkflowProgress(work, date = '', now = Date.now(), dispatch = {}, students = [], exercise = null) {
     const scoped = workForProgressDate(work, date)
     const groups = scoped.groups || []
     const ids = [...new Set(groups.flatMap(group => group.student_ids || []).map(String))]
@@ -227,15 +231,36 @@ export function workWorkflowProgress(work, date = '', now = Date.now(), dispatch
     const submissionComplete = !reopenedCount && (collection.complete || verifiedCollection || assessmentComplete)
     const legacyDelivery = scoped === work && ['sent', 'partial'].includes(dispatch?.status) && dispatch.transport !== 'mailpit'
         && Number(dispatch.confirmed_count) > 0
-    const provisionComplete = submissionComplete || assessmentComplete || workTaskDispatchCompleted(scoped)
+    const provisionComplete = (channel === 'portal' && portalReleaseEnded)
+        || submissionComplete || assessmentComplete || workTaskDispatchCompleted(scoped)
         || (legacyDelivery && dispatch.status === 'sent')
         || (ids.length > 0 && ids.every(id => covered.has(id)))
     const provisionStarted = provisionComplete || legacyDelivery || ids.some(id => covered.has(id))
         || (scoped === work && Boolean(release.ended_at) && !release.withdrawn_at)
     const collectionAvailable = Boolean(release.ended_at) && !collection.simulation
         && (portal ? portalFiles : channel === 'email' || workAutomationEnabled(work))
+    const copyDates = [...new Set(groups.map(group => group.date || work.date_for_all_groups))]
+    const copyDate = date || (copyDates.length === 1 ? copyDates[0] : !copyDates.length && work.date_for_all_groups)
+    const copy = copyDate ? work.portal_copy_progress?.[copyDate] : null
+    const checkedTarget = exercise?.status === 'found' && !exercise.deletion_pending && !exercise.deletionPending
+        && exercise.preparation?.status === 'ready' && exercise.preparation.portal_candidates_id !== null ? exercise.folder?.id : null
+    const useCheck = ['found', 'missing'].includes(exercise?.status)
+        && (!copy || (Date.parse(exercise.checked_at || exercise.checkedAt) || 0) >= (Date.parse(copy.observed_at) || 0))
+    const target = useCheck ? checkedTarget : (copy?.candidates_id !== null && copy?.folder_id) || checkedTarget
+    const sameCandidates = !useCheck || exercise.preparation?.portal_candidates_id === undefined
+        || copy?.candidates_id === exercise.preparation.portal_candidates_id
+    const portalCopyHasBinding = Boolean(target || copy?.linked)
+    // For automatic assessment, the copy remains the next step even if its destination still needs a binding.
+    const portalCopyNeeded = portalCopyHasBinding || (portalReleaseEnded && !manual)
+    const portalCopyPending = channel === 'portal' && portalSubmissionClosed && portalFiles && !collection.simulation
+        && !assessmentComplete && !exercise?.deletionPending && !exercise?.deletion_pending
+        && Boolean(copyDate && portalCopyNeeded) && !(target && copy?.complete && copy.folder_id === target && sameCandidates)
     let next = null
-    if (submissionComplete || portalSubmissionClosed) {
+    if (portalCopyPending) {
+        next = target || !portalReleaseEnded ? { phase: 'submission', label: portalCopyLabel, action: 'copy-portal' }
+            : portalCopyHasBinding ? { phase: 'submission', label: portalCheckLabel, compactLabel: 'Ordner prüfen', action: 'check-portal-target' }
+                : { phase: 'submission', label: portalLinkLabel, compactLabel: 'Ordner verknüpfen', action: 'link-portal-target' }
+    } else if (submissionComplete || portalSubmissionClosed) {
         next = { phase: 'assessment', label: 'Bewerten' }
         if (assessmentComplete) {
             const informedIds = new Set((status.grade_visibility?.student_notice?.student_ids || []).map(String))
@@ -275,6 +300,7 @@ export function workWorkflowProgress(work, date = '', now = Date.now(), dispatch
         next = { phase: null, label: 'Offen' }
     }
     return { stages, scoped, assessed, total: ids.length, provisionComplete, reopenedCount, portalCutoff, portalSubmissionClosed,
+        portalCopyPending: portalCopyPending && !completed, portalCopyTargetConfirmed: Boolean(target), portalCopyHasBinding, portalCopyDate: copyDate,
         preparationProven: provisionStarted || Boolean(collection.count) || assessmentComplete,
         submissionComplete, assessmentComplete, completed, next }
 }

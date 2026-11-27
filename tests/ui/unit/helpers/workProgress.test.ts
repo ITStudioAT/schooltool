@@ -305,6 +305,54 @@ it.each([
     expect(progress.stages[2].blocked).toBe(true)
 })
 
+it('completes provision for the affected portal group after the server saves its release end', () => {
+    const otherDate = '2026-11-23'
+    const work = { ...portalWork, groups: [
+        { date: portalDate, student_ids: [12, 14] }, { date: otherDate, student_ids: [13] },
+    ] }
+    expect(workWorkflowProgress(work, portalDate, portalNow)).toMatchObject({ portalSubmissionClosed: true, provisionComplete: false })
+    const ended = { ...work, status: { ...work.status, student_distribution: {
+        ...portalRelease, ended_at: new Date(portalNow).toISOString(),
+    } } }
+    expect(workWorkflowProgress(ended, portalDate, portalNow)).toMatchObject({ portalSubmissionClosed: true,
+        provisionComplete: true, next: { label: 'Bewerten' } })
+    expect(workWorkflowProgress(ended, otherDate, portalNow)).toMatchObject({ portalSubmissionClosed: false, provisionComplete: false })
+})
+
+it('uses only the checked target and relevant dated copy progress for the closed portal recommendation', () => {
+    const secondDate = '2026-11-23'
+    const closed = { ...portalWork, groups: [{ date: portalDate, student_ids: [12] }, { date: secondDate, student_ids: [13] }],
+        status: { ...portalWork.status, automation_enabled: false,
+            student_distribution: { ...portalRelease, student_ids: [12, 13], ended_at: new Date(portalNow).toISOString() },
+            portal_submissions: [{ id: 'a', student_id: 12 }, { id: 'b', student_id: 13 }],
+        }, portal_copy_progress: { [portalDate]: { folder_id: 'id:older', complete: true, observed_at: '2026-11-24T10:00:00Z' } },
+    }
+    const inspect = (work, date = portalDate, exercise = null) => workWorkflowProgress(work, date, portalNow, {}, [], exercise)
+    expect(inspect(closed).next?.label).toBe('Bewerten')
+    expect(inspect(closed, secondDate).next?.label).toBe('Bewerten')
+    const newer = { status: 'found', folder: { id: 'id:replacement' }, checked_at: '2026-11-24T11:00:00Z', preparation: { status: 'ready' } }
+    expect(inspect(closed, portalDate, newer).next?.action).toBe('copy-portal')
+    const replacedCandidates = { ...newer, folder: { id: 'id:older' }, preparation: { status: 'ready', portal_candidates_id: 'id:new-candidates' } }
+    expect(inspect(closed, portalDate, replacedCandidates).next?.action).toBe('copy-portal')
+    const withoutFiles = { ...closed, status: { ...closed.status, portal_submissions: [{ id: 'a', student_id: 12, withdrawn_at: '>0' }] } }
+    expect(inspect(withoutFiles, portalDate, newer).next?.label).toBe('Bewerten')
+    const graded = { ...closed, groups: [{ ...closed.groups[0], grade: '2' }, closed.groups[1]] }
+    expect(inspect(graded, portalDate, newer)).toMatchObject({ assessmentComplete: true, portalCopyPending: false })
+})
+
+it('keeps copying next after the deadline while waiting for the release to end and hides it during a personal extension', () => {
+    const work = { ...portalWork, portal_copy_progress: { [portalDate]: { linked: true, folder_id: null, complete: false } },
+        status: { ...portalWork.status, portal_submissions: [{ id: 'original', student_id: 12 }] },
+    }
+    expect(workWorkflowProgress(work, portalDate, portalNow)).toMatchObject({
+        portalSubmissionClosed: true, portalCopyPending: true, portalCopyTargetConfirmed: false, next: { action: 'copy-portal' },
+    })
+    const reopened = { ...work, status: { ...work.status, portal_submission_reopenings: [
+        { student_id: 12, date: portalDate, ends_at: new Date(portalNow + 3600000).toISOString() },
+    ] } }
+    expect(workWorkflowProgress(reopened, portalDate, portalNow)).toMatchObject({ reopenedCount: 1, portalCopyPending: false })
+})
+
 it.each([
     { case: 'open deadline', channel: 'portal', distribution: portalRelease, time: portalNow - 2000, next: 'Abgeben' },
     { case: 'paused release', channel: 'portal', distribution: { ...portalRelease, withdrawn_at: portalEnd }, time: portalNow, next: 'Bereitstellen' },

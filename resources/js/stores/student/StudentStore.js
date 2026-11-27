@@ -27,8 +27,8 @@ export const useStudentStore = defineStore('StudentStudentStore', {
                 return true
             } catch (error) {
                 notification.notify({
-                    status: error.response.status,
-                    message: error.response.data.message || 'Fehler passiert.',
+                    status: error.response?.status ?? null,
+                    message: error.response?.data?.message || 'Die Schulauswahl für den Unterricht konnte nicht geladen werden.',
                     type: 'error',
                     timeout: 3000,
                 })

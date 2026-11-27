@@ -18,6 +18,7 @@ use App\Services\Teaching\TeachingExplanationCatalog;
 use App\Services\TeachingCourseDateService;
 use App\Services\TeachingHolidaySyncService;
 use App\Services\TeachingService;
+use App\Support\TeachingCourseNotificationKey;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -416,7 +417,7 @@ class CourseController extends Controller
             ->where('kind', 'notification')->orderByDesc('date')->orderByDesc('id')->get()
             ->map(fn (TeachingCourseBehaviourEntry $notification): array => [
                 'id' => $notification->id,
-                'read_key' => hash('sha256', 'course-notification-'.$notification->id),
+                'read_key' => TeachingCourseNotificationKey::behaviour($notification->id),
                 'date' => $notification->date?->format('Y-m-d'),
                 'due_date' => $notification->due_date?->format('Y-m-d'),
                 'done_date' => $notification->done_date?->format('Y-m-d'),
@@ -436,7 +437,7 @@ class CourseController extends Controller
                 && $work->teachingCourseStudentEntries->contains(fn ($entry): bool => $work->hasResultForEntry($entry)))
             ->map(fn (TeachingCourseWork $work): array => [
                 'id' => 'work-result-'.$work->id,
-                'read_key' => hash('sha256', 'work-result-'.$work->id.'|'.$work->status['grade_visibility']['student_notice']['changed_at']),
+                'read_key' => TeachingCourseNotificationKey::workResult($work->id, $work->status['grade_visibility']['student_notice']['changed_at']),
                 'date' => CarbonImmutable::parse($work->status['grade_visibility']['student_notice']['changed_at'])->timezone('Europe/Vienna')->toDateString(),
                 'type' => 'Bewertung',
                 'description' => 'Deine Bewertung'.(filled($work->title) ? ' zu „'.$work->title.'“' : '').' ist unter „Leistungen“ verfügbar.',

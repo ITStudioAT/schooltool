@@ -505,6 +505,58 @@ class DropboxWorkImport
         return $data['rev'];
     }
 
+    /** @return 'copied'|'existing' */
+    public function copyPortalOriginal(DropboxConnection $connection, array $folder, string $name, string $contents): string
+    {
+        abort_unless($this->canWrite($connection), 409, 'Bitte Dropbox mit Schreibzugriff verbinden.');
+        abort_unless($name !== '' && mb_strlen($name) <= 220 && preg_match('~[/\\\\\x00-\x1f\x7f]~u', $name) === 0
+            && rtrim($name, ' .') === $name, 409, 'Der Originaldateiname ist für Dropbox ungültig.');
+        $path = $folder['id'].'/'.$name;
+        $expectedPath = $folder['path_lower'].'/'.mb_strtolower($name);
+        $blocks = '';
+        $size = strlen($contents);
+        $blockSize = 4 * 1024 * 1024;
+        for ($offset = 0; $offset < $size; $offset += $blockSize) {
+            $blocks .= hash('sha256', substr($contents, $offset, $blockSize), true);
+        }
+        $hash = hash('sha256', $blocks);
+        $matches = fn (mixed $file): bool => ($file['.tag'] ?? null) === 'file'
+            && ($file['path_lower'] ?? null) === $expectedPath && ($file['size'] ?? null) === $size
+            && ($file['content_hash'] ?? null) === $hash && is_string($file['rev'] ?? null) && $file['rev'] !== ''
+            && is_string($file['id'] ?? null) && preg_match('/\Aid:[A-Za-z0-9_-]+\z/', $file['id']) === 1
+            && empty($file['sharing_info']) && ($file['has_explicit_shared_members'] ?? false) !== true;
+        $metadata = fn () => $this->exerciseRequest($connection, 'document_metadata',
+            ['path' => $path, 'include_has_explicit_shared_members' => true], allowMissing: true);
+        $existing = $metadata();
+        if (! $this->exerciseNotFound($existing)) {
+            abort_unless($matches($existing->json()), 409, 'Im Abgabeordner gibt es einen Namenskonflikt. Die vorhandene Datei bleibt erhalten.');
+
+            return 'existing';
+        }
+
+        try {
+            $uploaded = $this->exerciseRequest($connection, 'document_upload',
+                ['path' => $path, 'mode' => 'add', 'autorename' => false, 'strict_conflict' => true], $contents)->json();
+        } catch (DropboxExerciseRequestFailed $failure) {
+            if (! in_array($failure->diagnostic()['category'], ['conflict', 'network', 'provider_unavailable'], true)) {
+                throw $failure;
+            }
+            $confirmed = $metadata();
+            if ($this->exerciseNotFound($confirmed)) {
+                throw $failure;
+            }
+            abort_unless($matches($confirmed->json()), 409, 'Im Abgabeordner gibt es einen Namenskonflikt. Die vorhandene Datei bleibt erhalten.');
+
+            return 'existing';
+        }
+        // Upload responses carry FileMetadata fields without the get_metadata union tag.
+        $confirmed = $metadata()->json();
+        abort_unless($matches($confirmed) && ($uploaded['id'] ?? null) === $confirmed['id']
+            && ($uploaded['rev'] ?? null) === $confirmed['rev'], 409, 'Dropbox hat die Kopie nicht vollständig bestätigt. Bitte erneut prüfen.');
+
+        return 'copied';
+    }
+
     private function writeBoundDocument(DropboxConnection $connection, string $folderId, string $path, string $contents, ?string $revision): string
     {
         if (! $this->canWrite($connection) || strlen($contents) > self::MAX_BYTES) {

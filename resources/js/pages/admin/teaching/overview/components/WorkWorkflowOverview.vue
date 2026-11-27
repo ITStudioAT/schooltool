@@ -12,9 +12,9 @@
             {{ assessmentActivityLabel(activity) }}
         </v-alert>
         <WorkQueueProgress v-if="active" ref="queueProgress" :work="work" :date="date" :user-id="admin.config?.user?.id"
-            @assessment-completed="assessmentCompleted" />
+            @assessment-completed="assessmentCompleted" @portal-completed="emit('saved', $event)" />
         <WorkDeliveryStatus :work="work" :date="date" :state="assessment" :exercise-ready="exerciseReady" :workflow-progress="workflowProgress"
-            :disabled="followUpDisabled" @import="forwardImport" @saved="emit('saved', $event)">
+            :disabled="followUpDisabled" @import="forwardImport" @saved="emit('saved', $event)" @portal-target="openPortalTarget">
             <template #workflow="{ stages, openStage, release, releasePrepared, releasePaused, releaseAvailable, openRelease, dispatch, legacyMail, openLegacyMail }">
                 <div v-if="openingStatusPending" class="work-workflow__phases work-workflow__loading text-body-2" role="status">
                     Arbeitsstatus wird geladen …
@@ -23,7 +23,8 @@
                     <article v-for="phase in phasesFor(stages, dispatch)"
                         :key="phase.key" class="work-phase"
                         :class="{ 'work-phase--current': phase.current && (phase.primary || phase.nextLabel === 'Abgeben'), 'work-phase--open': phaseOpen(phase),
-                            'work-phase--complete': phase.complete, 'work-phase--next-assessment': phase.nextLabel === 'Bewerten' }">
+                            'work-phase--complete': phase.complete, 'work-phase--next-assessment': phase.nextLabel === 'Bewerten',
+                            'work-phase--next-copy': phase.portalNext }">
                         <h4 class="work-phase__heading">
                             <button type="button" class="work-phase__toggle" :disabled="phaseLocked(phase)" :aria-expanded="phaseOpen(phase)"
                                 :aria-controls="phaseLocked(phase) ? undefined : panelId + phase.key" @click="togglePhase(phase)">
@@ -33,7 +34,7 @@
                                 <span class="work-phase__caption">
                                     <span class="work-phase__title" :class="{ 'text-success': phase.complete }">{{ phase.title }}</span>
                                     <span v-if="phase.complete" class="work-phase__status text-success font-weight-bold">Erledigt</span>
-                                    <span v-if="phase.nextLabel === 'Bewerten'" class="work-phase__status text-orange-darken-2 font-weight-bold">Nächster Schritt</span>
+                                    <span v-if="phase.nextLabel === 'Bewerten' || phase.portalNext" class="work-phase__status text-orange-darken-2 font-weight-bold">Nächster Schritt</span>
                                     <span class="work-phase__status">
                                         {{ phaseLocked(phase) ? followUpLockReason : phase.status }}
                                     </span>
@@ -105,6 +106,9 @@
                                         <strong>Abgabe</strong>
                                         <span>{{ submissionStatus }}</span>
                                         <span v-if="reopenedCount">Upload für {{ reopenedCount }} wieder geöffnet</span>
+                                        <span v-if="workflowProgress.portalCopyPending && !releaseEnded">Die Bereitstellung muss vor dem Kopieren endgültig beendet sein.</span>
+                                        <span v-else-if="phase.primary === 'link-portal-target'">Für diesen Termin fehlt der zugeordnete Dropbox-Prüfungsordner.</span>
+                                        <span v-else-if="phase.primary === 'check-portal-target'">Der gespeicherte Prüfungsordner ist für diesen Termin noch nicht bestätigt.</span>
                                         <span v-if="portalSubmissionCount">{{ portalSubmissionCount }} Schüler:innen mit Portalabgabe</span>
                                         <span v-else-if="stages[0]?.count || stages[0]?.complete">{{ stepStatus(stages[0]) }}</span>
                                         <span v-if="lastCollection" data-testid="work-dialog-last-collection">Zuletzt eingesammelt: {{ lastCollection }}</span>
@@ -122,6 +126,15 @@
                                             <v-btn v-if="stages[0] && !stages[0].blocked && (stages[0].complete || stages[0].count || lastCollection || stages[0].simulation)"
                                                 min-height="44" :disabled="mutationDisabled" variant="text" :prepend-icon="stages[0].icon"
                                                 @click.stop="openStage(stages[0])">Abgabestatus ansehen</v-btn>
+                                        </div>
+                                        <div v-if="releaseEnded && ['link-portal-target', 'check-portal-target'].includes(phase.primary)" class="workflow-command" data-primary="true">
+                                            <v-btn min-height="48" variant="tonal" prepend-icon="mdi-folder-link-outline"
+                                                :disabled="mutationDisabled" @click.stop="openPortalTarget">{{ phase.nextLabel }}</v-btn>
+                                        </div>
+                                        <div v-else-if="!stages[0]?.simulation" class="workflow-command" :data-primary="phase.primary === 'copy-portal'">
+                                            <WorkPortalSubmissionCopy :work="work" :date="date"
+                                                :closed="workflowProgress.portalSubmissionClosed" :recommended="phase.primary === 'copy-portal'" :disabled="mutationDisabled"
+                                                @started="selectedPhase = 'submission'" @saved="emit('saved', $event)" />
                                         </div>
                                     </div>
                                 </div>
@@ -230,6 +243,7 @@ import WorkProvisionMethod from './WorkProvisionMethod.vue'
 import WorkQueueProgress from './WorkQueueProgress.vue'
 import WorkSubmissionMethod from './WorkSubmissionMethod.vue'
 import WorkSubmissionCollection from './WorkSubmissionCollection.vue'
+import WorkPortalSubmissionCopy from './WorkPortalSubmissionCopy.vue'
 import WorkSubmissionReopening from './WorkSubmissionReopening.vue'
 
 const props = defineProps({ work: { type: Object, required: true }, course: Object, date: { type: String, default: '' },
@@ -249,6 +263,13 @@ let exercise = null
 
 function trackExercise(component) {
     exercise = component
+}
+
+function openPortalTarget() {
+    const date = workflowProgress.value.portalCopyDate
+    if (!date || mutationDisabled.value) return
+    selectedPhase.value = 'submission'
+    emit('link', props.work, { portalDate: date })
 }
 
 function assessmentCompleted(run) {
@@ -277,6 +298,7 @@ const checked = computed(() => workExerciseCheck(key.value, props.work, props.da
 const linked = computed(() => Boolean(binding.value?.module_link?.folder?.id || binding.value?.folder?.id))
 const automation = computed(() => workAutomationEnabled(props.work))
 const openingStatusPending = computed(() => {
+    if (workflowProgress.value.portalCopyPending) return false
     if (!props.active || !automation.value || !key.value
         || String(props.course?.id) !== String(props.work.teaching_course_id)) return false
     return props.assessment ? props.assessment.initialCheckPending === true : !checked.value
@@ -302,7 +324,8 @@ const releaseEnded = computed(() => Boolean(props.work.status?.student_distribut
 const provisionChannel = computed(() => props.work.status?.provision_method?.channel)
 const submissionChannel = computed(() => props.work.status?.submission_method?.channel)
 const workflowProgress = computed(() => workWorkflowProgress(props.work, props.date, props.now,
-    props.assessment?.emailDispatch || checked.value?.data?.exercise?.email_dispatch || {}, props.course?.students_info || []))
+    props.assessment?.emailDispatch || checked.value?.data?.exercise?.email_dispatch || {}, props.course?.students_info || [],
+    props.assessment || checked.value?.data?.exercise))
 const assessmentProgress = computed(() => {
     const progress = workflowProgress.value
     return progress.scoped === props.work ? props.assessmentCount : `${progress.assessed} von ${progress.total} beurteilt`
@@ -388,10 +411,11 @@ function phasesFor(stages, dispatch) {
         { key: 'provision', title: 'Bereitstellen', icon: 'mdi-send-outline', complete: progress.provisionComplete,
             status: provisionSummary.map(entry => entry.key === 'portal' && entry.state ? entry.state : entry.label).join(' · '), provisionSummary },
         { key: 'submission', title: 'Abgeben', icon: 'mdi-inbox-arrow-down-outline',
-            status: submissionStatus, complete: progress.submissionComplete || progress.portalSubmissionClosed },
+            status: submissionStatus, complete: !progress.portalCopyPending && (progress.submissionComplete || progress.portalSubmissionClosed) },
         { key: 'assessment', title: 'Bewerten', icon: 'mdi-clipboard-check-outline', complete: progress.assessmentComplete,
             status: assessmentProgress.value ?? stepStatus(stages[1]) },
     ].map(phase => ({ ...phase, current: phase.key === next?.phase, primary: phase.key === next?.phase ? primary : null,
+        portalNext: phase.key === 'submission' && phase.key === next?.phase && progress.portalCopyPending,
         nextLabel: phase.key === next?.phase ? next.label : null }))
 }
 
@@ -493,8 +517,11 @@ function stepStatus(stage) {
 }
 .work-phase--current .work-phase__icon { background: var(--flow-current-accent, var(--flow-accent)); color: var(--flow-current-on-accent, rgb(var(--v-theme-on-primary))); }
 .work-phase--complete .work-phase__icon { background: rgba(var(--v-theme-success), .12); }
-.work-phase--next-assessment .work-phase__toggle { background: rgba(var(--v-theme-warning), .11); }
-.work-phase--next-assessment { --flow-current-accent: rgb(var(--v-theme-warning)); --flow-current-on-accent: #201400; }
+.work-phase--next-assessment .work-phase__toggle,
+.work-phase--next-copy .work-phase__toggle { background: rgba(var(--v-theme-warning), .11); }
+.work-phase--next-assessment,
+.work-phase--next-copy { --flow-current-accent: rgb(var(--v-theme-warning)); --flow-current-on-accent: #201400; }
+.work-phase--next-copy .work-phase__title { font-size: 1.0625rem; }
 .work-phase__caption { display: grid; min-inline-size: 0; }
 .work-phase__title { font-size: .9375rem; font-weight: 700; line-height: 1.25; }
 .work-phase__status { color: var(--flow-muted); font-size: .773rem; font-weight: 500; line-height: 1.4; overflow-wrap: anywhere; }
@@ -551,6 +578,11 @@ function stepStatus(stage) {
     background: var(--flow-current-accent, var(--flow-accent)) !important;
     color: var(--flow-current-on-accent, rgb(var(--v-theme-on-primary))) !important;
 }
+.work-phase--next-copy .workflow-command[data-primary="true"] > :deep(.v-btn) {
+    min-block-size: 48px;
+    font-size: .9375rem;
+}
+.work-phase--next-copy .workflow-command[data-primary="true"] :deep(.v-btn__content) { white-space: normal; }
 .work-phase__details { color: var(--flow-muted); font-size: .8125rem; }
 .work-phase__details summary { display: list-item; align-content: center; min-block-size: 44px; cursor: pointer; }
 .work-phase__details--results { border-block-start: 1px solid var(--flow-divider); margin-block-start: .25rem; }

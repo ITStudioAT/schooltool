@@ -88,6 +88,8 @@ class TeachingCourseWorkEntrySyncService
         $payload['local_task_copy'] = app()->isLocal() && ($work->status['local_test_copy']['source_work_id'] ?? null) !== null;
         unset($payload['status']['communicated_deadline_at'], $payload['status']['communicated_deadline_date']);
         $payload['groups'] = $this->groupsForWork($work);
+        $payload['portal_copy_progress'] = app(TeachingWorkPortalSubmissionCopy::class)->progress($work, $payload['groups'], $payload['assessment_run']);
+        unset($payload['status']['portal_submission_copy'], $payload['assessment_run']['portal_copy_target']);
         $ids = $this->multipleChoiceTestIds($work);
         $details = $testDetails ?? ($ids === [] ? [] : $this->multipleChoiceTestDetails($ids, $work->teachingCourse));
         $details = array_intersect_key($details, array_flip($ids));

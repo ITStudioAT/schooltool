@@ -31,7 +31,6 @@ use App\Http\Controllers\Admin\MaterialsV2\MaterialV2ItemController;
 use App\Http\Controllers\Admin\MaterialsV2\MaterialV2LinkPreviewController;
 use App\Http\Controllers\Admin\MultipleChoiceController;
 use App\Http\Controllers\Admin\NavigationController;
-use App\Http\Controllers\Admin\NetworkDeviceAnswerKeyController;
 use App\Http\Controllers\Admin\NetworkTestQuestionController;
 use App\Http\Controllers\Admin\NumberSystemGameController;
 use App\Http\Controllers\Admin\NumberSystemLocalProbeController;
@@ -265,8 +264,10 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         'auth:sanctum', 'api-allowed:scope:teaching_access',
         'tool-licensed:Lehrertool,auth,scope:teaching_access',
     ])->name('admin.teaching-tools.network-device-questions.')->group(function (): void {
-        Route::get('/', [NetworkDeviceAnswerKeyController::class, 'show'])->name('show');
-        Route::put('/', [NetworkDeviceAnswerKeyController::class, 'update'])->name('update');
+        Route::get('/', [NetworkTestQuestionController::class, 'index'])->name('index');
+        Route::post('/', [NetworkTestQuestionController::class, 'store'])->name('store');
+        Route::put('/{question}', [NetworkTestQuestionController::class, 'update'])->whereNumber('question')->name('update');
+        Route::delete('/{question}', [NetworkTestQuestionController::class, 'destroy'])->whereNumber('question')->name('destroy');
     });
 
     Route::prefix('/admin/teaching-tools/tests/networks/additional-questions')->middleware([
@@ -852,6 +853,8 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::put('/admin/teaching/course_works/{course_work}/submission-method', [WorkSubmissionController::class, 'update'])->name('teaching.work-submission-method.update');
         Route::get('/admin/teaching/course_works/{course_work}/submission-reopening', [WorkSubmissionController::class, 'reopeningOptions'])->name('teaching.work-submissions.reopening-options');
         Route::post('/admin/teaching/course_works/{course_work}/submission-reopening', [WorkSubmissionController::class, 'reopen'])->middleware('throttle:20,1')->name('teaching.work-submissions.reopen');
+        Route::post('/admin/teaching/course_works/{course_work}/submissions/copy', [WorkSubmissionController::class, 'preparePortalCopy'])->name('teaching.work-submissions.copy.prepare');
+        Route::post('/admin/teaching/course_works/{course_work}/submissions/copy/file', [WorkSubmissionController::class, 'copyPortalFile'])->name('teaching.work-submissions.copy.file');
         Route::get('/admin/teaching/course_works/{course_work}/submissions/{fileId}', [WorkSubmissionController::class, 'download'])->whereUuid('fileId')->name('teaching.work-submissions.download');
         Route::post('/admin/teaching/course_works/{course_work}/student-distribution', [CourseWorkController::class, 'studentDistribution'])->name('teaching.work-student-distribution');
         Route::post('/admin/teaching/course_works/{course_work}/student-distribution/test-action', [CourseWorkController::class, 'studentDistributionTestAction'])->name('teaching.work-student-distribution.test-action');

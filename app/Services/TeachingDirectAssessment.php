@@ -565,7 +565,7 @@ class TeachingDirectAssessment
     }
 
     /** @param array<string, mixed> $person */
-    private function personName(array $person): string
+    public function personName(array $person): string
     {
         $name = trim(($person['last_name'] ?? '').' '.($person['first_name'] ?? ''));
         abort_unless(filled($person['last_name'] ?? null) && filled($person['first_name'] ?? null), 422, 'Ein Kandidatenname ist unvollständig.');

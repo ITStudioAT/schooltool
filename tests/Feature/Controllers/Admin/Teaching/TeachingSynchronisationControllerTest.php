@@ -14,6 +14,7 @@ use App\Models\School;
 use App\Models\Schoolyear;
 use App\Models\Teacher;
 use App\Models\TeachingCourse;
+use App\Models\TeachingCourseBehaviourEntry;
 use App\Models\TeachingCourseWork;
 use App\Models\TeachingExplanationShare;
 use App\Models\TeachingPersonalAppointment;
@@ -512,6 +513,128 @@ test('preview is read only and apply imports every year with private backup and 
     $this->get('/api/admin/teaching/synchronisation/backups/'.$backup)->assertSuccessful();
     $this->postJson('/api/admin/teaching/synchronisation/apply', teachingSyncApplyPayload($token))->assertUnprocessable();
 });
+
+test('synchronisation remaps course notification reads and keeps foreign data and local recovery', function (): void {
+    $student = User::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->year->id]);
+    $student->assignRole(Role::findOrCreate('student', 'web'));
+    $this->course->teachingCourseStudents()->create(['user_id' => $student->id]);
+    $notice = TeachingCourseBehaviourEntry::query()->create(['teaching_course_id' => $this->course->id, 'user_id' => $student->id,
+        'kind' => 'notification', 'type' => 'Info', 'description' => 'Kursnachricht', 'date' => '2026-04-01']);
+    $changedAt = '2026-04-02T08:00:00.000001Z';
+    $work = TeachingCourseWork::factory()->create(['teaching_course_id' => $this->course->id, 'title' => 'Bewertete Arbeit', 'type' => 'TW',
+        'status' => ['grade_visibility' => ['visible' => true, 'student_notice' => ['student_ids' => [$student->id], 'changed_at' => $changedAt]]]]);
+    $work->teachingCourseStudentEntries()->create(['teaching_course_id' => $this->course->id, 'user_id' => $student->id,
+        'type' => 'TW', 'grade' => '0', 'source' => 'course_work']);
+
+    $foreignSchool = School::factory()->create();
+    $foreignYear = Schoolyear::factory()->create(['school_id' => $foreignSchool->id]);
+    $foreignUser = User::factory()->create(['school_id' => $foreignSchool->id, 'schoolyear_id' => $foreignYear->id]);
+    $foreignCourse = TeachingCourse::factory()->forSchool($foreignSchool)->forSchoolyear($foreignYear)->forTeacher($foreignUser)->create();
+    $foreignNotice = TeachingCourseBehaviourEntry::query()->create(['teaching_course_id' => $foreignCourse->id, 'user_id' => $foreignUser->id,
+        'kind' => 'notification', 'type' => 'Info', 'description' => 'Fremdschule', 'date' => '2026-04-01']);
+    $foreignWork = TeachingCourseWork::factory()->create(['teaching_course_id' => $foreignCourse->id]);
+
+    $readTable = 'teaching_course_notification_reads';
+    $localRead = ['teaching_course_id' => $this->course->id, 'user_id' => $student->id,
+        'notification_key' => hash('sha256', 'course-notification-'.$notice->id), 'read_at' => '2026-04-02 08:10:00'];
+    $foreignRead = ['teaching_course_id' => $foreignCourse->id, 'user_id' => $foreignUser->id,
+        'notification_key' => hash('sha256', 'course-notification-'.$foreignNotice->id), 'read_at' => '2026-04-02 08:15:00'];
+    DB::table($readTable)->insert([$localRead, $foreignRead]);
+    $cache = Cache::store('teaching-assessment');
+    $cache->put('teaching-assessment-run:12345', 'local-fixture', 600);
+
+    $this->snapshot = array_replace($this->snapshot, app(TeachingSynchronisationGraph::class)->capture(DB::connection(), $this->school->id));
+    expect($this->snapshot['tables'][$readTable])->toBe([$localRead]);
+    expect($this->snapshot['tables'])->not->toHaveKey('teaching_assessment_cache');
+    $sourceStudentId = 90001;
+    foreach ($this->snapshot['users'] as &$user) {
+        if ($user['id'] === $student->id) {
+            $user['id'] = $sourceStudentId;
+        }
+    }
+    unset($user);
+    $this->snapshot['tables']['teaching_courses'][0]['id'] = $foreignCourse->id;
+    foreach (['teaching_course_students', 'teaching_course_behaviour_entries', 'teaching_course_student_entries', 'teaching_course_works'] as $table) {
+        $row = &$this->snapshot['tables'][$table][0];
+        $row['teaching_course_id'] = $foreignCourse->id;
+        if (isset($row['user_id'])) {
+            $row['user_id'] = $sourceStudentId;
+        }
+    }
+    unset($row);
+    $this->snapshot['tables']['teaching_course_behaviour_entries'][0]['id'] = $foreignNotice->id;
+    $sourceWork = &$this->snapshot['tables']['teaching_course_works'][0];
+    $sourceWork['id'] = $foreignWork->id;
+    $sourceWork['status'] = json_encode(['grade_visibility' => ['visible' => true,
+        'student_notice' => ['student_ids' => [$sourceStudentId], 'changed_at' => $changedAt]]], JSON_THROW_ON_ERROR);
+    unset($sourceWork);
+    $this->snapshot['tables']['teaching_course_student_entries'][0]['teaching_course_work_id'] = $foreignWork->id;
+    $sourceRead = ['teaching_course_id' => $foreignCourse->id, 'user_id' => $sourceStudentId, 'read_at' => '2026-04-02 08:25:00'];
+    $this->snapshot['tables'][$readTable] = [
+        [...$sourceRead, 'notification_key' => hash('sha256', 'course-notification-'.$foreignNotice->id)],
+        [...$sourceRead, 'notification_key' => hash('sha256', 'work-result-'.$foreignWork->id.'|'.$changedAt)],
+        [...$sourceRead, 'notification_key' => hash('sha256', 'work-result-'.$foreignWork->id.'|2026-04-01T08:00:00.000001Z')],
+    ];
+
+    $this->actingAs($this->actor, 'sanctum');
+    $preview = $this->postJson('/api/admin/teaching/synchronisation/preview')->assertSuccessful()
+        ->assertJsonPath('data.conflicts', [])->assertJsonPath('data.skipped_notification_reads', 1);
+    $this->assertDatabaseHas($readTable, $localRead);
+    $cache->put('teaching-assessment-run:12345', 'updated-local-fixture', 600);
+    $result = $this->postJson('/api/admin/teaching/synchronisation/apply', teachingSyncApplyPayload($preview->json('data.token')))
+        ->assertSuccessful();
+
+    $course = TeachingCourse::where('school_id', $this->school->id)->sole();
+    $targetNotice = TeachingCourseBehaviourEntry::where('teaching_course_id', $course->id)->sole();
+    $targetWork = $course->teachingCourseWorks()->sole();
+    expect($course->id)->not->toBe($foreignCourse->id);
+    expect($targetNotice->id)->not->toBe($foreignNotice->id);
+    expect($targetWork->id)->not->toBe($foreignWork->id);
+    $targetRead = ['teaching_course_id' => $course->id, 'user_id' => $student->id, 'read_at' => $sourceRead['read_at']];
+    $this->assertDatabaseHas($readTable, [...$targetRead, 'notification_key' => hash('sha256', 'course-notification-'.$targetNotice->id)]);
+    $this->assertDatabaseHas($readTable, [...$targetRead, 'notification_key' => hash('sha256', 'work-result-'.$targetWork->id.'|'.$changedAt)]);
+    $this->assertDatabaseHas($readTable, $foreignRead);
+    $this->assertDatabaseCount($readTable, 3);
+    expect($cache->get('teaching-assessment-run:12345'))->toBe('updated-local-fixture');
+    $backup = app(TeachingSynchronisationBackup::class)->read(
+        "teaching/synchronisation-backups/{$this->school->id}/{$result->json('backup')}.enc"
+    );
+    expect($backup['state']['tables'][$readTable])->toBe([$localRead]);
+
+    $this->actingAs($student, 'web')->getJson("/api/homepage/student/courses/{$course->id}")->assertSuccessful()
+        ->assertJsonCount(2, 'course.notifications')
+        ->assertJsonPath('course.notifications.0.read_at', '2026-04-02T08:25:00.000000Z')
+        ->assertJsonPath('course.notifications.1.read_at', '2026-04-02T08:25:00.000000Z');
+});
+
+test('invalid course notification reads block synchronisation before any replacement', function (string $problem, string $conflict): void {
+    $recipient = User::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->year->id]);
+    $notice = TeachingCourseBehaviourEntry::query()->create(['teaching_course_id' => $this->course->id, 'user_id' => $recipient->id,
+        'kind' => 'notification', 'type' => 'Info', 'description' => 'Kursnachricht', 'date' => '2026-04-01']);
+    $readTable = 'teaching_course_notification_reads';
+    $read = ['teaching_course_id' => $this->course->id, 'user_id' => $recipient->id,
+        'notification_key' => hash('sha256', 'course-notification-'.$notice->id), 'read_at' => '2026-04-02 08:25:00'];
+    DB::table($readTable)->insert($read);
+    $this->snapshot = array_replace($this->snapshot, app(TeachingSynchronisationGraph::class)->capture(DB::connection(), $this->school->id));
+    match ($problem) {
+        'recipient' => $this->snapshot['tables'][$readTable][0]['user_id'] = $this->actor->id,
+        'foreign' => $this->snapshot['tables'][$readTable][0]['user_id'] = 91001,
+        'malformed' => $this->snapshot['tables'][$readTable][0]['notification_key'] = 'bad-key',
+        'duplicate' => $this->snapshot['tables'][$readTable][] = $read,
+    };
+
+    $preview = $this->actingAs($this->actor, 'sanctum')->postJson('/api/admin/teaching/synchronisation/preview')
+        ->assertSuccessful()->assertJsonPath('data.token', null);
+
+    expect(implode(' ', $preview->json('data.conflicts')))->toContain($conflict);
+    $this->assertDatabaseHas($readTable, $read);
+    expect(Storage::disk('local')->allFiles('teaching/synchronisation-backups'))->toBe([]);
+})->with([
+    'wrong recipient in the same school' => ['recipient', 'Kurs oder Schülerkonto passt nicht'],
+    'foreign recipient' => ['foreign', 'außerhalb der Schule'],
+    'malformed key' => ['malformed', 'Fehlerhafter Schlüssel'],
+    'duplicate key' => ['duplicate', 'Doppelter Schlüssel'],
+]);
 
 test('personal appointments are scoped to the school and imported across years with remapped identities and a recovery copy', function () {
     $local = TeachingPersonalAppointment::factory()->create([

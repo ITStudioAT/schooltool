@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\User;
+use App\Support\TeachingCourseNotificationKey;
 use Egulias\EmailValidator\EmailValidator;
 use Egulias\EmailValidator\Validation\RFCValidation;
 use Illuminate\Database\Connection;
@@ -14,6 +15,10 @@ class TeachingSynchronisationGraph
 {
     /** OAuth choices and published access links belong to their installation, never to the transferred school graph. */
     private const array LOCAL_TABLES = ['teaching_work_dropbox_folders', 'teaching_work_module_links', 'teaching_explanation_shares'];
+
+    public const string NOTIFICATION_READS = 'teaching_course_notification_reads';
+
+    public const array NOTIFICATION_READ_KEY = ['teaching_course_id', 'user_id', 'notification_key'];
 
     // Dependency order; recovery archives/history are separate functions.
     public const array TABLES = [
@@ -39,6 +44,7 @@ class TeachingSynchronisationGraph
         'teaching_course_student_entries' => ['teaching_courses', 'teaching_course_id'],
         'teaching_course_student_entry_notifications' => ['teaching_course_student_entries', 'teaching_course_student_entry_id'],
         'teaching_course_behaviour_entries' => ['teaching_courses', 'teaching_course_id'],
+        self::NOTIFICATION_READS => ['teaching_courses', 'teaching_course_id'],
         'teaching_course_student_category_evaluations' => ['teaching_courses', 'teaching_course_id'],
         'import116_runs' => 'school_id',
         'import116_run_changes' => ['import116_runs', 'import116_run_id'],
@@ -122,23 +128,30 @@ class TeachingSynchronisationGraph
     {
         $schema = $connection->getSchemaBuilder();
         $state = ['tables' => [], 'columns' => [], 'foreign_keys' => [], 'max_ids' => []];
-        foreach (array_column($schema->getTables(), 'name') as $name) {
+        foreach (array_column($schema->getTables($connection->getDatabaseName()), 'name') as $name) {
             if ((str_starts_with($name, 'teaching_') || str_starts_with($name, 'mc_') || str_starts_with($name, 'number_system_game_')) && ! isset(self::TABLES[$name])
-                && ! in_array($name, [...self::LOCAL_TABLES, 'teaching_backups', 'teaching_backup_restore_runs'], true)) {
+                && ! in_array($name, [...self::LOCAL_TABLES, 'teaching_backups', 'teaching_backup_restore_runs', 'teaching_assessment_cache'], true)) {
                 throw new RuntimeException("Unbekannte Unterrichtstabelle {$name}; Umfang zuerst prüfen.");
             }
         }
         foreach (self::TABLES as $table => $scope) {
-            $query = self::query($connection, $table, $state['tables'], $schoolId)->orderBy('id');
+            $query = self::query($connection, $table, $state['tables'], $schoolId);
+            foreach ($table === self::NOTIFICATION_READS ? self::NOTIFICATION_READ_KEY : ['id'] as $column) {
+                $query->orderBy($column);
+            }
             if ($lock) {
                 $query->lockForUpdate();
             }
             $state['tables'][$table] = $query->get()->map(fn (object $row): array => (array) $row)->all();
             $state['columns'][$table] = $schema->getColumns($table);
             $state['foreign_keys'][$table] = $schema->getForeignKeys($table);
-            if (isset(self::TOOL_REFERENCES[$table])) {
+            if ($table === self::NOTIFICATION_READS || isset(self::TOOL_REFERENCES[$table])) {
+                $indexes = $schema->getIndexes($table);
                 $state['unique_indexes'][$table] = array_values(array_map(fn (array $index): array => $index['columns'],
-                    array_filter($schema->getIndexes($table), fn (array $index): bool => $index['unique'] && ! $index['primary'])));
+                    array_filter($indexes, fn (array $index): bool => $index['unique'] && ! $index['primary'])));
+                if ($table === self::NOTIFICATION_READS) {
+                    $state['primary_keys'][$table] = collect($indexes)->firstWhere('primary', true)['columns'] ?? [];
+                }
             }
         }
         foreach (['schoolyears', 'import116', 'users', 'school_tools', 'teachers'] as $table) {
@@ -155,6 +168,9 @@ class TeachingSynchronisationGraph
             $state['columns'][$table] = $schema->getColumns($table);
         }
         foreach ([...array_keys(self::TABLES), 'import116', 'users', 'schoolyears', 'teachers'] as $table) {
+            if ($table === self::NOTIFICATION_READS) {
+                continue;
+            }
             $maximum = $connection->table($table)->orderByDesc('id');
             if ($lock) {
                 $maximum->lockForUpdate();
@@ -364,6 +380,9 @@ class TeachingSynchronisationGraph
             }
         }
         foreach (self::TABLES as $table => $scope) {
+            if ($table === self::NOTIFICATION_READS) {
+                continue;
+            }
             $ids = array_column($source['tables'][$table] ?? [], 'id');
             if (count($ids) !== count(array_unique($ids)) || array_filter($ids, fn ($id): bool => (int) $id <= 0) !== []) {
                 $conflicts[] = "Ungültige oder doppelte Cloud-IDs in {$table}.";
@@ -379,7 +398,13 @@ class TeachingSynchronisationGraph
         }
         $maps['historical_users'] = $this->historicalStudentAliases($source, $maps, $schoolId);
         $mappedTables = [];
+        $skippedNotificationReads = 0;
         foreach (self::TABLES as $table => $scope) {
+            if ($table === self::NOTIFICATION_READS) {
+                $mappedTables[$table] = $this->mapNotificationReads($source['tables'], $maps, $conflicts, $skippedNotificationReads);
+
+                continue;
+            }
             $mappedTables[$table] = [];
             foreach ($source['tables'][$table] ?? [] as $row) {
                 try {
@@ -468,7 +493,83 @@ class TeachingSynchronisationGraph
             'updated_years' => $updatedYears,
             'new_teachers' => $newTeachers, 'updated_teachers' => $updatedTeachers,
             'changed_contacts' => $changedContacts, 'maps' => $maps,
+            'skipped_notification_reads' => $skippedNotificationReads,
             'conflicts' => array_values(array_unique($conflicts))];
+    }
+
+    private function mapNotificationReads(array $tables, array $maps, array &$conflicts, int &$skipped): array
+    {
+        $reads = $tables[self::NOTIFICATION_READS] ?? [];
+        if ($reads === []) {
+            return [];
+        }
+
+        $origins = [];
+        foreach ($tables['teaching_course_behaviour_entries'] as $entry) {
+            if (($entry['kind'] ?? null) === 'notification') {
+                $origins[TeachingCourseNotificationKey::behaviour($entry['id'])] = [
+                    'course' => $entry['teaching_course_id'], 'recipients' => [$entry['user_id'] => true],
+                    'target_id' => $maps['teaching_course_behaviour_entries'][$entry['id']], 'changed_at' => null,
+                ];
+            }
+        }
+        foreach ($tables['teaching_course_works'] as $work) {
+            $status = json_decode($work['status'] ?? 'null', true);
+            $notice = $status['grade_visibility']['student_notice'] ?? [];
+            if (is_string($notice['changed_at'] ?? null) && is_array($notice['student_ids'] ?? null)) {
+                $origins[TeachingCourseNotificationKey::workResult($work['id'], $notice['changed_at'])] = [
+                    'course' => $work['teaching_course_id'], 'recipients' => array_fill_keys(array_map('intval', $notice['student_ids']), true),
+                    'target_id' => $maps['teaching_course_works'][$work['id']], 'changed_at' => $notice['changed_at'],
+                ];
+            }
+        }
+
+        $seen = [];
+        $mapped = [];
+        foreach ($reads as $read) {
+            $key = $read['notification_key'] ?? null;
+            $courseId = $read['teaching_course_id'] ?? null;
+            $userId = $read['user_id'] ?? null;
+            if (! is_numeric($courseId) || ! is_numeric($userId) || ! is_string($key) || preg_match('/\A[a-f0-9]{64}\z/', $key) !== 1) {
+                $conflicts[] = 'Fehlerhafter Schlüssel einer Gelesen-Bestätigung.';
+
+                continue;
+            }
+            $identity = "{$courseId}:{$userId}:{$key}";
+            if (isset($seen[$identity])) {
+                $conflicts[] = 'Doppelter Schlüssel einer Gelesen-Bestätigung.';
+
+                continue;
+            }
+            $seen[$identity] = true;
+            try {
+                $targetCourseId = $this->mappedId($courseId, 'teaching_courses', $maps);
+                $targetUserId = $this->mappedId($userId, 'users', $maps);
+                $origin = $origins[$key] ?? null;
+                if ($origin === null) {
+                    // Removed entries and superseded notice versions cannot be reconstructed from a hash.
+                    $skipped++;
+
+                    continue;
+                }
+                if ((int) $origin['course'] !== (int) $courseId || ! isset($origin['recipients'][$userId])) {
+                    throw new RuntimeException('Kurs oder Schülerkonto passt nicht zur aktuellen Benachrichtigung.');
+                }
+                $targetKey = $origin['changed_at'] === null
+                    ? TeachingCourseNotificationKey::behaviour($origin['target_id'])
+                    : TeachingCourseNotificationKey::workResult($origin['target_id'], $origin['changed_at']);
+                $targetIdentity = "{$targetCourseId}:{$targetUserId}:{$targetKey}";
+                if (isset($mapped[$targetIdentity])) {
+                    throw new RuntimeException('Zwei Gelesen-Bestätigungen würden dieselbe Nachricht belegen.');
+                }
+                $mapped[$targetIdentity] = ['teaching_course_id' => $targetCourseId, 'user_id' => $targetUserId,
+                    'notification_key' => $targetKey, 'read_at' => $read['read_at'] ?? null];
+            } catch (RuntimeException $exception) {
+                $conflicts[] = 'Gelesen-Bestätigung: '.$exception->getMessage();
+            }
+        }
+
+        return array_values($mapped);
     }
 
     private function mappedId(mixed $id, string $table, array $maps): int

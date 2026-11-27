@@ -33,6 +33,7 @@ use App\Services\RestaurantSepaMandateService;
 use App\Services\RestaurantService;
 use App\Services\SchoolToolModuleStatusService;
 use Carbon\Carbon;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\Auth;
@@ -107,7 +108,7 @@ class HomepageController extends Controller
         return response()->json($data, 200);
     }
 
-    public function loginSchools(Request $request)
+    public function loginSchools(SchoolToolModuleStatusService $moduleStatuses): JsonResponse
     {
         $schools = School::selectables()
             ->whereHas('licences')
@@ -115,7 +116,7 @@ class HomepageController extends Controller
 
         return response()->json([
             'schools' => SchoolResource::collection($schools),
-            'homepage_design_enabled' => app(SchoolToolModuleStatusService::class)->canAccessVersionFourFeature($request->user(), 'homepage'),
+            'homepage_design_enabled' => $moduleStatuses->versionFourFeatures()['homepage'],
         ]);
     }
 
