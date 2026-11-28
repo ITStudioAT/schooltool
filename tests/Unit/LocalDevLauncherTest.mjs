@@ -356,26 +356,38 @@ async function waitForProject(project, main, output) {
 test('starts the local worker groups including the dedicated assessment queue', () => {
     const fixture = ownedFixture();
     try {
-        fs.writeFileSync(path.join(fixture.project, '.env'), 'QUEUE_CONNECTION=database\n');
         fs.writeFileSync(path.join(fixture.project, 'artisan'), `<?php
 $settings = parse_ini_file(__DIR__.'/.env');
 $connection = isset($argv[2]) && !str_starts_with($argv[2], '--') ? $argv[2] : $settings['QUEUE_CONNECTION'];
 $queue = current(array_filter($argv, fn ($value) => str_starts_with($value, '--queue=')));
 echo json_encode(['connection'=>$connection, 'queue'=>$queue]);`);
-        const workers = localQueueWorkerArguments().map(argumentsList => {
-            const result = spawnSync('php', argumentsList,
-                { cwd: fixture.project, encoding: 'utf8', windowsHide: true, timeout: 10000 });
-            assert.equal(result.status, 0, result.stdout + result.stderr);
-            return JSON.parse(result.stdout);
-        });
-        assert.equal(workers.length, 5);
-        assert.ok(workers.every(worker => worker.connection === 'database'));
-        assert.deepEqual([...new Set(workers.map(worker => worker.queue))].sort(), [
-            '--queue=critical,notifications', '--queue=default', '--queue=imports', '--queue=materials,maintenance', '--queue=teaching-assessments',
-        ]);
+        for (const defaultConnection of ['database', 'redis']) {
+            fs.writeFileSync(path.join(fixture.project, '.env'), `QUEUE_CONNECTION=${defaultConnection}\n`);
+            const workers = localQueueWorkerArguments(defaultConnection).map(argumentsList => {
+                const result = spawnSync('php', argumentsList,
+                    { cwd: fixture.project, encoding: 'utf8', windowsHide: true, timeout: 10000 });
+                assert.equal(result.status, 0, result.stdout + result.stderr);
+                return JSON.parse(result.stdout);
+            });
+            const assessmentWorkers = workers.filter(worker => worker.queue === '--queue=teaching-assessments');
+            assert.deepEqual(assessmentWorkers.map(worker => worker.connection).sort(),
+                defaultConnection === 'redis' ? ['database', 'redis'] : ['database']);
+            const otherWorkers = workers.filter(worker => worker.queue !== '--queue=teaching-assessments');
+            assert.ok(otherWorkers.every(worker => worker.connection === defaultConnection));
+            assert.deepEqual(otherWorkers.map(worker => worker.queue).sort(), [
+                '--queue=critical,notifications', '--queue=default', '--queue=imports', '--queue=materials,maintenance',
+            ]);
+        }
     } finally {
         fixture.cleanup();
     }
+});
+
+test('the standalone local queue command consumes assessments from the default connection and the database', () => {
+    const composer = JSON.parse(fs.readFileSync(path.join(root, 'composer.json'), 'utf8'));
+    const queueCommand = composer.scripts['queues:local'].join(' ');
+    assert.match(queueCommand, /"php artisan queue:work --queue=teaching-assessments --sleep=1 --tries=1 --timeout=1830"/);
+    assert.match(queueCommand, /"php artisan queue:work database --queue=teaching-assessments --sleep=1 --tries=1 --timeout=1830"/);
 });
 
 test('a persistent launcher follows gitmain and gitwork without jobs, duplicate controllers or foreign process cleanup', { timeout: 150000, skip: process.platform !== 'win32' }, async () => {

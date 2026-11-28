@@ -195,7 +195,6 @@
                                         class="course-table-work-list"
                                         :class="{
                                             'course-table-work-list--has-work': courseWorksForDate(courseDate).length > 0,
-                                            'course-table-work-list--has-import': courseWorksForDate(courseDate).some(assignment => workImportLabel(assignment.work)),
                                         }">
                                         <div
                                             v-if="courseWorkTimelinesForDate(courseDate).length"
@@ -241,10 +240,7 @@
                                             :class="{
                                                 'course-table-work-summary--initial': workIsInitial(work.work),
                                                 'course-table-work-summary--group': work.isGroupWork,
-                                                'course-table-work-summary--import': !work.completed && workImportLabel(work.work),
-                                                'course-table-work-summary--deadline': work.work.finish_until_date,
                                             }"
-                                            :title="work.title"
                                             role="button"
                                             tabindex="0"
                                             :aria-label="`${work.work.title || work.label}: Arbeit öffnen`"
@@ -265,11 +261,6 @@
                                                     </span>
                                                 </div>
                                                 <span class="course-table-work-summary-title text-primary">{{ work.work.title || work.label }}</span>
-                                                <span v-if="!work.completed && assessmentActivity(work.work)" class="text-caption text-info">{{ assessmentLabel(work.work) }}</span>
-                                                <span v-if="work.work.finish_until_date" class="course-table-work-summary-deadline" data-work-deadline="second" :class="`text-${workDeadlineColor(work.work, deadlineNow)}`">
-                                                    <v-icon icon="mdi-calendar-clock-outline" size="12" title="Abgabefrist" aria-label="Abgabefrist" role="img" :aria-hidden="false" />
-                                                    {{ formatDateShort(work.work.finish_until_date) }}<template v-if="work.work.finish_until_time"> {{ work.work.finish_until_time }}</template>
-                                                </span>
                                             </template>
                                             <template v-else>
                                             <div class="course-table-work-summary-meta">
@@ -289,45 +280,34 @@
                                             <span class="course-table-work-summary-title">
                                                 {{ work.work.title || work.label }}
                                             </span>
-                                            <span v-if="!work.completed && assessmentActivity(work.work)" class="text-caption text-info">{{ assessmentLabel(work.work) }}</span>
-                                            <span class="course-table-work-summary-deadline" data-work-deadline="second"
-                                                :class="work.deadlineExpired ? 'text-error' : 'text-primary'">
-                                                <span class="d-inline-flex align-center ga-1" role="img" aria-label="Endgültige Abgabefrist" title="Endgültige Abgabefrist"><v-icon icon="mdi-calendar-clock-outline" size="12" aria-hidden="true" /></span> <template v-if="work.work.finish_until_date">{{ formatDateShort(work.work.finish_until_date) }}<template v-if="work.work.finish_until_time"> {{ work.work.finish_until_time }}</template></template><template v-else>—</template>
-                                            </span>
-                                            <span v-if="!work.completed && work.submissionCheckComplete" class="course-table-work-summary-lifecycle course-table-work-summary-complete"
-                                                :title="`Prüfstand: ${formatImportDate(work.work.submission_check_status.checked_at)}`">Abgabeprüfung abgeschlossen</span>
-                                            <span v-if="!work.completed && workImportLabel(work.work)" class="course-table-work-summary-import"
-                                                :title="formatImportDate(work.work.status?.folder_imported_at) ? `Zuletzt importiert: ${formatImportDate(work.work.status.folder_imported_at)}` : 'Importdatum unbekannt'">
-                                                <v-icon size="16" class="mr-1">mdi-refresh</v-icon>
-                                                {{ workImportLabel(work.work) }}
-                                            </span>
                                             </template>
-                                            <span v-if="!work.completed && work.portalStatus" class="course-table-work-summary-portal"
-                                                :class="work.portalUploadClosed ? 'text-error' : work.portalStatus === 'freigegeben' ? 'text-success' : 'text-orange-darken-3'"
-                                                :aria-label="work.portalStatusLabel" :title="work.portalStatusLabel">
-                                                <v-icon :icon="work.portalUploadClosed ? 'mdi-lock-outline'
-                                                    : work.portalStatus === 'Upload wieder geöffnet' ? 'mdi-lock-open-outline'
-                                                    : work.portalStatus === 'freigegeben' ? 'mdi-check-circle-outline' : 'mdi-pause-circle-outline'" size="13" aria-hidden="true" />
-                                                <span><template v-if="!work.portalUploadClosed">Schülerbereich<br></template>{{ work.portalStatus }}</span>
+                                            <span v-if="work.assessmentStatus" class="course-table-work-summary-next-action text-info"
+                                                :aria-label="work.assessmentLabel">
+                                                <span>{{ work.assessmentStatus }}</span>
                                             </span>
-                                            <span v-if="!work.completed && workIsInitial(work.work) && work.submissionCheckComplete" class="course-table-work-summary-lifecycle course-table-work-summary-complete"
-                                                :title="`Prüfstand: ${formatImportDate(work.work.submission_check_status.checked_at)}`">Abgabeprüfung abgeschlossen</span>
-                                            <span v-if="!work.completed && !workAutomationEnabled(work.work)" class="course-table-work-summary-next-action text-caption font-weight-bold text-orange-darken-2"
-                                                aria-label="Manuelle Beurteilung: offen" :title="workCompletionLabel(work.work, false)">
+                                            <span v-else-if="work.nextAction" class="course-table-work-summary-next-action"
+                                                :class="work.nextActionPositive ? 'text-success' : 'text-orange-darken-2'"
+                                                :aria-label="`${work.nextActionIsStatus ? 'Status' : 'Nächste Aktion'}: ${work.nextAction}`">
+                                                <v-icon v-if="!work.nextActionIsStatus" icon="mdi-arrow-right-circle-outline" size="13" aria-hidden="true" />
+                                                <span>{{ work.nextAction }}</span>
+                                            </span>
+                                            <span v-else-if="!work.completed && !workAutomationEnabled(work.work)"
+                                                class="course-table-work-summary-next-action text-orange-darken-2"
+                                                aria-label="Manuelle Beurteilung: offen">
                                                 <span>OFFEN</span>
                                             </span>
-                                            <span v-if="work.nextAction" class="course-table-work-summary-next-action text-caption font-weight-bold"
-                                                :class="[work.nextActionPositive ? 'text-success' : 'text-orange-darken-2', { 'work-summary-completed': work.nextActionIsStatus }]"
-                                                :aria-label="`${work.nextActionIsStatus ? 'Status' : 'Nächste Aktion'}: ${work.nextAction}`">
-                                                <span class="d-flex align-center ga-1">
-                                                    <v-icon v-if="!work.nextActionIsStatus" icon="mdi-arrow-right-circle-outline" size="14" aria-hidden="true" />
-                                                    {{ work.nextAction }}
-                                                </span>
-                                                <span v-if="!work.completed && workLastCheck(work.work, courseDate.date)" class="work-check-time text-medium-emphasis">Stand: {{ workLastCheck(work.work, courseDate.date) }}</span>
-                                            </span>
+                                            <v-tooltip
+                                                activator="parent"
+                                                content-class="course-table-work-tooltip"
+                                                location="top"
+                                                :text="workSummaryTooltip(work, courseDate)"
+                                                :max-width="360"
+                                                :open-delay="250"
+                                                open-on-focus />
                                         </div>
                                     </div>
                                     <v-tooltip
+                                        v-if="!courseWorksForDate(courseDate).length"
                                         activator="parent"
                                         content-class="course-table-work-tooltip"
                                         location="top"
@@ -336,28 +316,7 @@
                                         <div class="font-weight-bold mb-2">
                                             {{ compactCourseDateTitle(courseDate) }}
                                         </div>
-                                        <div
-                                            v-for="assignment in courseWorksForDate(courseDate)"
-                                            :key="`tooltip-${assignment.key}`"
-                                            class="course-table-work-tooltip-item">
-                                            <div class="d-flex align-center flex-wrap ga-2">
-                                                <v-chip
-                                                    class="course-table-work-tooltip-type"
-                                                    size="x-small"
-                                                    color="grey-lighten-2"
-                                                    variant="outlined">
-                                                    {{ assignment.work.type || 'Arbeit' }}
-                                                </v-chip>
-                                                <strong>{{ assignment.work.title || 'Ohne Titel' }}</strong>
-                                                <v-chip size="x-small" color="secondary" variant="outlined">
-                                                    {{ assignment.scope }}
-                                                </v-chip>
-                                            </div>
-                                            <div v-if="assignment.work.description" class="mt-1 text-body-2">
-                                                {{ assignment.work.description }}
-                                            </div>
-                                        </div>
-                                        <div v-if="!courseWorksForDate(courseDate).length" class="text-body-2">
+                                        <div class="text-body-2">
                                             Keine Arbeit eingetragen. Klicken, um eine Arbeit anzulegen.
                                         </div>
                                     </v-tooltip>
@@ -3574,19 +3533,58 @@ export default {
                     checked?.data?.exercise?.email_dispatch, this.selected_course?.students_info || [], checked?.data?.exercise)
                 const nextAction = this.workNextAction(work, progress.next, checked, key)
                 const portalStatus = this.workStudentDistributionStatus(work, progress)
-                const portalUploadClosed = portalStatus === 'Abgabe geschlossen'
                 const completed = nextAction === workCompletedLabel
+                const assessment = completed ? null : this.assessmentActivity(work)
                 const { completed: graded, open } = assignment.completion
                 const participantCount = graded + open
                 const allGraded = graded > 0 && open === 0
-                return { ...assignment, completed, nextAction, portalStatus, portalUploadClosed, participantCount,
-                    portalStatusLabel: portalUploadClosed ? portalStatus : `Schülerbereich: ${portalStatus}`,
+                return { ...assignment, completed, nextAction, participantCount,
+                    assessmentLabel: assessmentActivityLabel(assessment),
+                    assessmentStatus: {
+                        starting: 'LF startet',
+                        unconfirmed: 'LF prüfen',
+                        queued: 'LF wartet',
+                        running: 'LF läuft',
+                    }[assessment?.state],
+                    portalStatusLabel: portalStatus && (portalStatus === 'Abgabe geschlossen' ? portalStatus : `Schülerbereich: ${portalStatus}`),
                     countText: completed || allGraded ? participantCount : `${graded}/${participantCount}`,
                     countColor: completed ? '' : allGraded ? 'text-success' : 'text-error',
                     countLabel: completed ? `${participantCount} Schüler:innen` : `${graded} von ${participantCount} Leistungen erledigt; ${open} offen.`,
                     nextActionIsStatus: completed || nextAction === 'Offen',
                     nextActionPositive: completed || ['Versandbereit', 'Ordner verbunden'].includes(nextAction) }
             })
+        },
+        workSummaryTooltip(summary, courseDate) {
+            const { work, completed } = summary
+            const details = [
+                `${work.type || 'Arbeit'} · ${work.title || 'Ohne Titel'}`,
+                `${this.compactCourseDateTitle(courseDate)} · ${summary.scope}`,
+                summary.countLabel,
+                workAutomationEnabled(work) ? 'Automatische Beurteilung' : 'Manuelle Beurteilung',
+                this.workCompletionLabel(work, completed),
+                summary.assessmentLabel,
+                summary.nextAction && !summary.nextActionIsStatus ? `Nächste Aktion: ${summary.nextAction}` : '',
+            ]
+            if (work.finish_until_date) {
+                const deadline = [this.formatDateShort(work.finish_until_date), work.finish_until_time].filter(Boolean).join(' ')
+                details.push(`Abgabefrist: ${deadline}${summary.deadlineExpired ? ' (abgelaufen)' : ''}`)
+            }
+            if (!completed) {
+                details.push(summary.portalStatusLabel)
+                if (summary.submissionCheckComplete) {
+                    const checkedAt = this.formatImportDate(work.submission_check_status.checked_at)
+                    details.push(checkedAt ? `Abgabeprüfung abgeschlossen · ${checkedAt}` : 'Abgabeprüfung abgeschlossen')
+                }
+                const importLabel = this.workImportLabel(work)
+                if (importLabel) {
+                    const importedAt = this.formatImportDate(work.status?.folder_imported_at)
+                    details.push(importedAt ? `Zuletzt importiert: ${importedAt}` : importLabel)
+                }
+                const checkedAt = this.workLastCheck(work, courseDate.date)
+                if (checkedAt) details.push(`Stand: ${checkedAt}`)
+            }
+            details.push(work.description)
+            return details.filter(Boolean).join('\n')
         },
         workLastCheck(work, date = '') {
             const checked = workExerciseCheck(workDropboxKey(useAdminStore().config?.user?.id, work), work, date)
@@ -7303,7 +7301,7 @@ export default {
 
 .course-table-work-label,
 .course-table-work-cell {
-    --course-table-work-card-height: 88px;
+    --course-table-work-card-height: 54px;
 
     background: linear-gradient(180deg, #eff6ff 0%, #e8f1ff 100%);
     border-bottom: 2px solid rgba(37, 99, 235, 0.38) !important;
@@ -7761,16 +7759,7 @@ export default {
 :deep(.course-table-work-tooltip) {
     line-height: 1.35;
     padding: 12px 14px;
-}
-
-:deep(.course-table-work-tooltip-item) {
-    padding: 4px 0;
-}
-
-:deep(.course-table-work-tooltip-item + .course-table-work-tooltip-item) {
-    border-top: 1px solid rgba(255, 255, 255, 0.24);
-    margin-top: 6px;
-    padding-top: 10px;
+    white-space: pre-line;
 }
 
 .course-table-group-member-chip {
@@ -7935,7 +7924,7 @@ export default {
     max-width: 112px;
     min-width: 112px;
     overflow: hidden;
-    padding: 5px 6px;
+    padding: 4px 6px;
     position: relative;
     text-align: left;
     z-index: 2;
@@ -7977,30 +7966,20 @@ export default {
     font-weight: 800;
     gap: 3px;
     line-height: 1;
-    margin-bottom: 4px;
+    margin-bottom: 3px;
     text-transform: uppercase;
 }
 
 .course-table-work-summary-next-action {
-    align-items: flex-start;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    margin-top: auto;
-    padding-top: 4px;
-}
-.course-table-work-summary-portal {
-    display: flex;
     align-items: center;
-    gap: 3px;
-    margin-top: 4px;
-    font-size: 0.62rem;
+    display: flex;
+    font-size: 11px;
     font-weight: 700;
+    gap: 3px;
     line-height: 1.25;
+    margin-top: auto;
+    padding-top: 2px;
 }
-.course-table-work-summary-next-action > span:first-child { font-size: 11px; letter-spacing: 0; overflow-wrap: anywhere; }
-.work-summary-completed > span:first-child { overflow-wrap: normal; white-space: nowrap; }
-.work-check-time { font-size: 10px; font-weight: normal; }
 
 .course-table-work-summary-count {
     align-items: center;
@@ -8009,74 +7988,18 @@ export default {
     margin-left: auto;
 }
 
-.course-table-work-summary-title {
-    display: -webkit-box;
-    font-size: 0.7rem;
-    font-weight: 400;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
-    line-height: 1.25;
+.course-table-work-summary-title,
+.course-table-work-summary-next-action > span {
+    min-width: 0;
     overflow: hidden;
-    overflow-wrap: anywhere;
-}
-
-.course-table-work-list--has-import {
-    --course-table-work-card-height: 96px;
-}
-
-.course-table-work-summary-import {
-    align-items: center;
-    display: flex;
-    font-size: 0.62rem;
-    line-height: 1.25;
-    margin-top: 4px;
+    text-overflow: ellipsis;
     white-space: nowrap;
 }
 
-.course-table-work-summary-deadline {
-    display: block;
-    font-size: 0.6rem;
+.course-table-work-summary-title {
+    font-size: 0.7rem;
+    font-weight: 400;
     line-height: 1.25;
-    margin-top: 4px;
-}
-
-.course-table-work-summary-lifecycle {
-    display: flex;
-    flex-direction: column;
-    font-size: 0.6rem;
-    line-height: 1.25;
-    margin-top: 4px;
-}
-
-.course-table-work-summary-expired {
-    font-weight: 700;
-}
-
-.course-table-work-summary-deadline + .course-table-work-summary-lifecycle {
-    margin-top: 0;
-}
-
-.course-table-work-summary-complete {
-    color: #166534;
-    font-weight: 700;
-}
-
-.course-table-work-summary-progress {
-    align-items: center;
-    display: flex;
-    font-size: 0.58rem;
-    gap: 2px;
-    line-height: 1.25;
-    margin-top: 3px;
-}
-
-.course-table-work-summary--import .course-table-work-summary-title {
-    -webkit-line-clamp: 2;
-}
-
-.course-table-work-summary--import,
-.course-table-work-summary--deadline {
-    height: auto;
 }
 
 .course-table-cell-entry-main-grade {

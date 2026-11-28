@@ -16,6 +16,7 @@ import { VDialog } from 'vuetify/components/VDialog'
 import { VAutocomplete } from 'vuetify/components/VAutocomplete'
 import { VChip } from 'vuetify/components/VChip'
 import { VTextField } from 'vuetify/components/VTextField'
+import { VTooltip } from 'vuetify/components/VTooltip'
 import { VList, VListItem } from 'vuetify/components/VList'
 import axios from 'axios'
 import CourseTable from '@/pages/admin/teaching/overview/components/CourseTable.vue'
@@ -44,6 +45,10 @@ vi.mock('@/pages/admin/teaching/overview/components/WorkSubmissionMethod.vue', (
 vi.mock('@/pages/admin/teaching/overview/components/WorkQueueProgress.vue', () => ({ default: { template: '<span />' } }))
 vi.mock('@/pages/admin/teaching/overview/components/WorkGradeVisibility.vue', () => ({ default: { template: '<span />' } }))
 vi.mock('@/pages/admin/teaching/overview/components/WorkAssignmentMail.vue', () => ({ default: { template: '<span />' } }))
+
+function workCardTooltip(card: DOMWrapper<Element>) {
+    return card.get('v-tooltip').attributes('text')
+}
 
 describe('CourseTable manual work completion', () => {
     it('hides curriculum assignments and content when curricula are disabled', () => {
@@ -91,7 +96,8 @@ describe('CourseTable manual work completion', () => {
             finish({ data: checked })
             await flushPromises()
             expect(card.get('[aria-label="Nächste Aktion: E-Mails vorbereiten"]').text()).toContain('E-Mails vorbereiten')
-            expect(card.text()).toContain('Stand:')
+            expect(card.text()).not.toContain('Stand:')
+            expect(workCardTooltip(card)).toContain('Stand:')
             status.mockResolvedValueOnce({ data: { ...checked, exercise: { ...checked.exercise, email_preparation: { status: 'ready' } } } })
             await loadWorkExercise('7:18:65', first, first.date_for_all_groups, true)
             await flushPromises()
@@ -172,7 +178,7 @@ describe('CourseTable manual work completion', () => {
         } finally { wrapper.unmount(); vi.useRealTimers() }
     })
 
-    function mountCompletionTable(attachToBody = false, renderActionButtons = false) {
+    function mountCompletionTable(attachToBody = false, renderActionButtons = false, renderTooltips = false) {
         const pinia = createTestingPinia({ createSpy: vi.fn, stubActions: action => action !== 'setCompletion' })
         const date = { id: 1, date: '2026-10-12' }
         const courses = useCourseStore(pinia)
@@ -184,13 +190,18 @@ describe('CourseTable manual work completion', () => {
         const second = { ...first, id: 66, title: 'Zweite Arbeit', status: { custom: 'zweite' } }
         works.courseWorks = [first, second] as never
         const wrapper = mount(CourseTable, { ...(attachToBody ? { attachTo: document.body } : {}), props: { view: 'entries' }, global: {
-            plugins: [pinia, createVuetify({ components: { VBtn, VBtnToggle, VTextField } })],
-            components: { 'v-btn': VBtn, 'v-btn-toggle': VBtnToggle, ...(renderActionButtons ? { 'v-text-field': VTextField } : {}) }, stubs: {
+            plugins: [pinia, createVuetify({ components: { VBtn, VBtnToggle, VTextField, ...(renderTooltips ? { VTooltip } : {}) } })],
+            components: {
+                'v-btn': VBtn, 'v-btn-toggle': VBtnToggle,
+                ...(renderActionButtons ? { 'v-text-field': VTextField } : {}),
+                ...(renderTooltips ? { 'v-tooltip': VTooltip } : {}),
+            }, stubs: {
                 ItsGridBox: { template: '<div><slot /></div>' }, WorkEvaluationImport: true,
                 WorkImportActions: true, WorkAiExport: true, WorkEvaluationPdf: true, WorkDropboxSource: true,
                 CourseStudentNotes: true, CourseStudentIndicators: true, CurriculumPdfPreview: true, ItsRichTextEditor: true,
                 'v-btn': renderActionButtons ? { template: '<button><slot /></button>' } : false, VBtn: false,
                 ...(renderActionButtons ? { 'v-text-field': false, VTextField: false } : {}),
+                ...(renderTooltips ? { 'v-tooltip': false, VTooltip: false } : {}),
                 'v-btn-toggle': false, VBtnToggle: false, 'v-tab': true, 'v-textarea': true,
                 'v-tabs': { name: 'DateWorkTabs', emits: ['update:modelValue'], template: '<div />' },
                 'v-date-input': renderActionButtons ? { name: 'DeadlineDateInput', template: '<div />' } : true,
@@ -204,6 +215,36 @@ describe('CourseTable manual work completion', () => {
     function gradingGear(workflow: DOMWrapper<Element>) {
         return workflow.get<HTMLButtonElement>('button[aria-label="Bewertung verwalten"], button[aria-label="Bewertung ansehen"]')
     }
+
+    it('keeps work details out of the compact card and opens its own tooltip on hover and keyboard focus', async () => {
+        vi.stubGlobal('visualViewport', Object.assign(new EventTarget(), {
+            width: 1024, height: 768, offsetLeft: 0, offsetTop: 0, scale: 1,
+        }))
+        const { wrapper, works, first } = mountCompletionTable(true, false, true)
+        try {
+            works.courseWorks = [{ ...first, description: 'Hinweise zur Arbeit',
+                finish_until_date: '2026-10-20', finish_until_time: '16:00',
+                status: { student_distribution: { prepared_at: '2026-10-12T10:00:00Z' } } }] as never
+            await flushPromises()
+            const card = wrapper.get('.course-table-work-summary')
+            expect(card.text()).toContain(first.title).not.toContain('Abgabefrist').not.toContain('Schülerbereich')
+            expect(card.attributes('aria-describedby')).toMatch(/^v-tooltip-/)
+            await card.trigger('mouseenter')
+            await vi.waitFor(() => {
+                const tooltip = document.getElementById(card.attributes('aria-describedby'))
+                expect(tooltip?.classList.contains('v-overlay--active')).toBe(true)
+                expect(tooltip?.textContent).toContain('Abgabefrist: 20.10. 16:00')
+                expect(tooltip?.textContent).toContain('Schülerbereich: vorbereitet')
+                expect(tooltip?.textContent).toContain('Hinweise zur Arbeit')
+            })
+            await card.trigger('mouseleave')
+            await vi.waitFor(() => expect(document.getElementById(card.attributes('aria-describedby'))
+                ?.classList.contains('v-overlay--active')).toBe(false))
+            ;(card.element as HTMLElement).focus()
+            await vi.waitFor(() => expect(document.getElementById(card.attributes('aria-describedby'))
+                ?.classList.contains('v-overlay--active')).toBe(true))
+        } finally { wrapper.unmount(); vi.unstubAllGlobals() }
+    })
 
     async function startManualGrading(wrapper: ReturnType<typeof mountCompletionTable>['wrapper'], tab = 'students') {
         wrapper.getComponent({ name: 'DateWorkTabs' }).vm.$emit('update:modelValue', tab)
@@ -408,22 +449,17 @@ describe('CourseTable manual work completion', () => {
         { state: 'paused after publication', distribution: { published_at: '2026-10-31T11:00:00Z', withdrawn_at: '2026-10-31T12:00:00Z' }, label: 'pausiert', automatic: true },
         { state: 'not prepared', distribution: undefined, label: '', automatic: true },
         { state: 'empty preparation date', distribution: { prepared_at: null, published_at: null }, label: '', automatic: true },
-    ])('shows the saved student-area status in the work overview: $state', async ({ distribution, label, automatic }) => {
+    ])('shows the saved student-area status in the work tooltip: $state', async ({ distribution, label, automatic }) => {
         const { wrapper, works, first } = mountCompletionTable()
         try {
             works.courseWorks = [{ ...first, status: { automation_enabled: automatic, student_distribution: distribution,
                 multiple_choice_tests: { all: { test_id: 4, paused_at: '2026-10-31T10:00:00Z' } } } }] as never
             await flushPromises()
             const card = wrapper.get('.course-table-work-summary')
-            const marker = card.find('[aria-label^="Schülerbereich:"]')
-            expect(marker.exists()).toBe(Boolean(label))
             expect(card.text()).toContain(first.title)
-            if (label) {
-                expect(marker.attributes('aria-label')).toBe(`Schülerbereich: ${label}`)
-                expect(marker.text()).toContain(label)
-                await marker.trigger('click')
-                expect((wrapper.vm as any).workDialogForm.id).toBe(first.id)
-            }
+            expect(card.text()).not.toContain('Schülerbereich')
+            const portalDetails = workCardTooltip(card).split('\n').filter(line => line.startsWith('Schülerbereich:'))
+            expect(portalDetails).toEqual(label ? [`Schülerbereich: ${label}`] : [])
         } finally { wrapper.unmount() }
     })
 
@@ -432,18 +468,18 @@ describe('CourseTable manual work completion', () => {
         try {
             works.courseWorks = [{ ...first, status: { student_distribution: { prepared_at: '2026-10-31T10:00:00Z', published_at: null } } }] as never
             await flushPromises()
-            const marker = () => wrapper.get('.course-table-work-summary [aria-label^="Schülerbereich:"]')
-            expect(marker().attributes('aria-label')).toBe('Schülerbereich: vorbereitet')
+            const tooltip = () => workCardTooltip(wrapper.get('.course-table-work-summary'))
+            expect(tooltip()).toContain('Schülerbereich: vorbereitet')
             const distribution = (works.courseWorks[0] as any).status.student_distribution
             distribution.published_at = '2026-10-31T11:00:00Z'
             await flushPromises()
-            expect(marker().attributes('aria-label')).toBe('Schülerbereich: freigegeben')
+            expect(tooltip()).toContain('Schülerbereich: freigegeben')
             distribution.withdrawn_at = '2026-10-31T12:00:00Z'
             await flushPromises()
-            expect(marker().attributes('aria-label')).toBe('Schülerbereich: pausiert')
+            expect(tooltip()).toContain('Schülerbereich: pausiert')
             distribution.withdrawn_at = null
             await flushPromises()
-            expect(marker().attributes('aria-label')).toBe('Schülerbereich: freigegeben')
+            expect(tooltip()).toContain('Schülerbereich: freigegeben')
         } finally { wrapper.unmount() }
     })
 
@@ -466,13 +502,11 @@ describe('CourseTable manual work completion', () => {
             works.courseWorks = [portalWork] as never
             await wrapper.setData({ deadlineNow: beforeDeadline })
             const card = () => wrapper.get('.course-table-work-summary')
-            expect(card().get('[aria-label^="Schülerbereich:"]').text()).toContain('freigegeben')
+            expect(workCardTooltip(card())).toContain('Schülerbereich: freigegeben')
             expect(card().get('[aria-label^="Nächste Aktion:"]').text()).toBe('Abgeben')
 
             await wrapper.setData({ deadlineNow: afterDeadline })
-            const closedStatus = card().get('[aria-label="Abgabe geschlossen"]')
-            expect(closedStatus.text()).toBe('Abgabe geschlossen')
-            expect(closedStatus.attributes('title')).toBe('Abgabe geschlossen')
+            expect(workCardTooltip(card())).toContain('Abgabe geschlossen')
             expect(card().get('[aria-label^="Nächste Aktion:"]').text()).toBe('Bewerten')
 
             vi.setSystemTime(afterDeadline)
@@ -732,14 +766,14 @@ describe('CourseTable manual work completion', () => {
             works.courseWorks = [ended] as never
             await wrapper.setData({ deadlineNow: Date.parse('2026-10-12T10:30:00Z') })
             const card = () => wrapper.get('.course-table-work-summary')
-            expect(card().find('[aria-label="Abgabe geschlossen"]').exists()).toBe(true)
+            expect(workCardTooltip(card())).toContain('Abgabe geschlossen')
             expect(card().get('[aria-label^="Nächste Aktion:"]').text()).toBe('Bewerten')
 
             works.courseWorks = [{ ...ended, status: { ...ended.status, portal_submission_reopenings: [
                 { student_id: 12, date: date.date, release_ended_at: endedAt, ends_at: '2026-10-12T11:00:00+00:00' },
             ] } }] as never
             await flushPromises()
-            expect(card().find('[aria-label="Schülerbereich: Upload wieder geöffnet"]').exists()).toBe(true)
+            expect(workCardTooltip(card())).toContain('Schülerbereich: Upload wieder geöffnet')
             expect(card().get('[aria-label^="Nächste Aktion:"]').text()).toBe('Abgeben')
         } finally { wrapper.unmount() }
     })
@@ -899,7 +933,6 @@ describe('CourseTable manual work completion', () => {
     it.each([
         ['card', '.course-table-work-summary', 'click'],
         ['title', '.course-table-work-summary-title', 'click'],
-        ['check time', '.course-table-work-summary .work-check-time', 'click'],
         ['LF status label', '[aria-label="Nächste Aktion: LF erstellen"]', 'click'],
         ['keyboard', '.course-table-work-summary', 'keydown'],
         ['LF status keyboard', '[aria-label="Nächste Aktion: LF erstellen"]', 'keydown'],
@@ -1227,11 +1260,11 @@ describe('CourseTable manual work completion', () => {
                 groups: [{ student_ids: [12], use_individual_grades: true, points: [{ student_id: 12, points: completed ? '' : 3 }] }] }] as never
             await flushPromises()
             const card = wrapper.get('.course-table-work-summary')
-            const status = card.get(completed ? '[aria-label="Status: ABGESCHLOSSEN"]' : '[aria-label="Manuelle Beurteilung: offen"]')
-            expect(status.text()).toBe(completed ? 'ABGESCHLOSSEN' : 'OFFEN')
+            const status = card.get('.course-table-work-summary-next-action')
+            expect(status.text()).toBe(completed ? 'ABGESCHLOSSEN' : 'Schüler:innen informieren')
             expect(card.get('.course-table-work-summary-meta v-icon').attributes('title'))
                 .toBe(completed ? 'Manuell als abgeschlossen markiert.' : 'Manuell als offen markiert.')
-            expect(card.find('[aria-label="Schülerbereich: vorbereitet"]').exists()).toBe(!completed)
+            expect(workCardTooltip(card).includes('Schülerbereich: vorbereitet')).toBe(!completed)
             expect(card.find('[aria-label="Nächste Aktion: Schüler:innen informieren"]').exists()).toBe(!completed)
         } finally { wrapper.unmount() }
     })
@@ -1645,23 +1678,23 @@ describe('CourseTable evaluation PDF links', () => {
             vi.advanceTimersByTime(15000)
             await wrapper.vm.$nextTick()
             const card = wrapper.get('.course-table-work-summary')
-            expect(card.text()).not.toContain('abgelaufen').not.toContain('Beurteilung abgeschlossen')
-            expect(card.get('[data-work-deadline="second"]').classes()).toContain('text-error')
+            expect(card.text()).not.toContain('Abgabefrist').not.toContain('Beurteilung abgeschlossen')
+            expect(workCardTooltip(card)).toContain('Abgabefrist: 07.10. 12:00 (abgelaufen)')
             expect(card.text()).not.toContain('Arbeit abgeschlossen')
-            expect(card.text()).not.toContain('Abgabeprüfung nicht bestätigt').not.toContain('Abgabeprüfung abgeschlossen')
+            expect(workCardTooltip(card)).not.toContain('Abgabeprüfung nicht bestätigt').not.toContain('Abgabeprüfung abgeschlossen')
             useCourseWorkStore(pinia).courseWorks = [{ ...work, submission_check_status: { complete: true, checked_at: '2026-10-07T10:00:01Z', student_ids: [12], deadline_date: '2026-10-07', deadline_time: '12:00' } }] as never
             await flushPromises()
-            expect(wrapper.get('.course-table-work-summary').text()).toContain('Abgabeprüfung abgeschlossen').not.toContain('Arbeit abgeschlossen')
+            expect(workCardTooltip(card)).toContain('Abgabeprüfung abgeschlossen').not.toContain('Arbeit abgeschlossen')
             useCourseWorkStore(pinia).courseWorks = [{ ...work, submission_check_status: { complete: true, student_ids: [12], deadline_date: '2026-10-07', deadline_time: '12:01' } }] as never
             await flushPromises()
-            expect(wrapper.get('.course-table-work-summary').text()).not.toContain('Abgabeprüfung abgeschlossen')
+            expect(workCardTooltip(card)).not.toContain('Abgabeprüfung abgeschlossen')
             useCourseWorkStore(pinia).courseWorks = [{ ...work, submission_check_status: { complete: true, student_ids: [12, 99], deadline_date: '2026-10-07', deadline_time: '12:00' } }] as never
             await flushPromises()
-            expect(wrapper.get('.course-table-work-summary').text()).not.toContain('Abgabeprüfung abgeschlossen')
+            expect(workCardTooltip(card)).not.toContain('Abgabeprüfung abgeschlossen')
             useCourseWorkStore(pinia).courseWorks = [{ ...work, submission_check_status: { complete: true, checked_at: '2026-10-07T10:00:01Z', student_ids: [12], deadline_date: '2026-10-07', deadline_time: '12:00' }, status: { assessment_json_imports: [{ student_id: 12, record: { evaluation_state: 'open' } }] } }] as never
             await flushPromises()
-            expect(wrapper.get('.course-table-work-summary').text()).not.toContain('Beurteilung abgeschlossen')
-            expect(wrapper.get('.course-table-work-summary').text()).toContain('Abgabeprüfung abgeschlossen').not.toContain('Arbeit abgeschlossen')
+            expect(workCardTooltip(card)).not.toContain('Beurteilung abgeschlossen')
+            expect(workCardTooltip(card)).toContain('Abgabeprüfung abgeschlossen').not.toContain('Arbeit abgeschlossen')
         } finally { wrapper.unmount(); vi.useRealTimers() }
     })
 
@@ -1770,7 +1803,7 @@ describe('CourseTable evaluation PDF links', () => {
         } finally { get.mockRestore(); vi.doUnmock('pdfjs-dist'); vi.unstubAllGlobals() }
     })
 
-    it('shows the last successful import directly in work summary cards and distinguishes older imports from no import', async () => {
+    it('shows the last successful import in work tooltips and distinguishes older imports from no import', async () => {
         const pinia = createTestingPinia({ createSpy: vi.fn })
         const date = { id: 1, date: '2026-10-06' }
         useCourseStore(pinia).selected_course = { id: 18, students_info: [{ id: 999, user_id: 12, first_name: 'Ada', last_name: 'Alpha' }], course_dates: [date] } as never
@@ -1790,10 +1823,10 @@ describe('CourseTable evaluation PDF links', () => {
             await flushPromises()
             const cards = wrapper.findAll('.course-table-work-summary')
             expect(cards).toHaveLength(3)
-            expect(cards[0].text()).toContain('6.10. 08:30 Uhr')
-            expect(cards[0].get('.course-table-work-summary-import').attributes('title')).toBe('Zuletzt importiert: 06.10.2026 um 08:30 Uhr')
-            expect(cards[1].text()).toContain('Datum unbekannt')
-            expect(cards[2].find('.course-table-work-summary-import').exists()).toBe(false)
+            expect(cards[0].text()).not.toContain('08:30')
+            expect(workCardTooltip(cards[0])).toContain('Zuletzt importiert: 06.10.2026 um 08:30 Uhr')
+            expect(workCardTooltip(cards[1])).toContain('Datum unbekannt')
+            expect(workCardTooltip(cards[2])).not.toContain('importiert')
             expect(cards[0].get('.course-table-work-summary-count span').text()).toBe('0/1')
             useCourseWorkStore(pinia).courseWorks = [{ ...works[0], groups: [{ student_ids: [12], points: [{ student_id: 12, points: 0 }] }] }] as never
             await flushPromises()
@@ -6989,11 +7022,7 @@ describe('CourseTable', () => {
         expect(source).toContain('<v-tooltip')
         expect(source).toContain('activator="parent"')
         expect(source).toContain('content-class="course-table-work-tooltip"')
-        expect(source).toContain('v-for="assignment in courseWorksForDate(courseDate)"')
         expect(source).toContain('class="course-table-work-summary-count"')
-        expect(source).toContain('class="course-table-work-tooltip-type"')
-        expect(source).toContain('color="grey-lighten-2"')
-        expect(source).toContain('{{ assignment.scope }}')
         expect(source).toContain('Keine Arbeit eingetragen. Klicken, um eine Arbeit anzulegen.')
         expect(source).toContain('@click="activateStudentCell(student, courseDate)"')
         expect(source).toContain('@keydown.enter.self.prevent="activateStudentCell(student, courseDate)"')

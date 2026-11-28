@@ -109,7 +109,7 @@
         "queues:local": [
             "Composer\\Config::disableProcessTimeout",
             "@dev:prepare",
-            "npx concurrently -c \"#f87171,#60a5fa,#fbbf24,#a78bfa\" \"php artisan queue:work --queue=critical,notifications --sleep=1 --tries=3 --timeout=60\" \"php artisan queue:work --queue=default --sleep=1 --tries=2 --timeout=1830\" \"php artisan queue:listen --queue=imports --sleep=1 --tries=1 --timeout=1830\" \"php artisan queue:work --queue=materials,maintenance --sleep=1 --tries=1 --timeout=1830\" --names='critical,default,imports,long-running'"
+            "npx concurrently -c \"#f87171,#60a5fa,#fbbf24,#a78bfa,#14b8a6,#64748b\" \"php artisan queue:work --queue=critical,notifications --sleep=1 --tries=3 --timeout=60\" \"php artisan queue:work --queue=default --sleep=1 --tries=2 --timeout=1830\" \"php artisan queue:listen --queue=imports --sleep=1 --tries=1 --timeout=1830\" \"php artisan queue:work --queue=materials,maintenance --sleep=1 --tries=1 --timeout=1830\" \"php artisan queue:work --queue=teaching-assessments --sleep=1 --tries=1 --timeout=1830\" \"php artisan queue:work database --queue=teaching-assessments --sleep=1 --tries=1 --timeout=1830\" --names='critical,default,imports,long-running,assessments,assessments-database'"
         ],
         "test": [
             "@php artisan config:clear --ansi",
