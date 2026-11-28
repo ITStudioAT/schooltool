@@ -11,10 +11,12 @@ use App\Models\User;
 use App\Services\DropboxModuleLinks;
 use App\Services\DropboxWorkImport;
 use App\Services\TeachingCourseWorkEntrySyncService;
+use App\Services\TeachingWorkActionLog;
 use App\Services\TeachingWorkStudentDistribution;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -85,7 +87,7 @@ function portalCopyReceipt(object $test, User $student, string $name, string $by
     return $file;
 }
 
-function fakePortalCopyDropbox(object $test, bool $confirm = true, bool $wrongWork = false, bool $destinationExists = true, ?Closure $existing = null): void
+function fakePortalCopyDropbox(object $test, bool $confirm = true, bool $wrongWork = false, bool $destinationExists = true, ?Closure $existing = null, array $documents = []): void
 {
     $folder = fn (string $id, string $path): array => ['.tag' => 'folder', 'id' => 'id:'.$id, 'path_lower' => $path, 'name' => basename($path)];
     $root = $test->modulePath.'/leistungsfeststellungen';
@@ -108,7 +110,14 @@ function fakePortalCopyDropbox(object $test, bool $confirm = true, bool $wrongWo
         'id:candidates/Test Ada' => $folder('candidate', $exam.'/kandidaten/test ada'),
         ...($destinationExists ? ['id:candidate/Abgaben' => $folder('destination', $destination)] : []),
     ];
-    Http::fake(function (Request $request) use ($status, $metadata, $destination, $confirm, $existing, &$stored) {
+    $pdfs = [];
+    $documentEntries = [];
+    foreach ($documents as $id => [$name, $bytes]) {
+        $documentEntries[] = $metadata['id:'.$id] = ['.tag' => 'file', 'id' => 'id:'.$id, 'name' => $name,
+            'path_lower' => $exam.'/'.mb_strtolower($name), 'rev' => $id, 'size' => strlen($bytes)];
+        $pdfs['rev:'.$id] = $bytes;
+    }
+    Http::fake(function (Request $request) use ($status, $metadata, $destination, $confirm, $existing, $documentEntries, $pdfs, &$stored) {
         if (str_ends_with($request->url(), '/oauth2/token')) {
             return Http::response(['access_token' => 'synthetic-access']);
         }
@@ -128,10 +137,13 @@ function fakePortalCopyDropbox(object $test, bool $confirm = true, bool $wrongWo
                 : Http::response(['error_summary' => 'path/not_found/'], 409);
         }
         if (str_ends_with($request->url(), '/files/list_folder')) {
-            return Http::response(['entries' => [], 'has_more' => false]);
+            return Http::response(['entries' => $request['path'] === 'id:exam' ? $documentEntries : [], 'has_more' => false]);
         }
         $arg = json_decode($request->header('Dropbox-API-Arg')[0], true, flags: JSON_THROW_ON_ERROR);
         if (str_ends_with($request->url(), '/files/download')) {
+            if (isset($pdfs[$arg['path']])) {
+                return Http::response($pdfs[$arg['path']]);
+            }
             expect($arg['path'])->toBe('rev:status-rev');
 
             return Http::response($status);
@@ -152,11 +164,126 @@ function fakePortalCopyDropbox(object $test, bool $confirm = true, bool $wrongWo
     });
 }
 
-function overallPortalStatusRequest(object $test, ?string $date = null): TestResponse
+function overallPortalStatusRequest(object $test, ?string $date = null, bool $stream = false): TestResponse
 {
     return $test->postJson(route('teaching.work-dropbox.refresh', $test->work), ['overall' => true, 'date' => $date ?? $test->date,
+        'stream_progress' => $stream,
         'finish_until_date' => null, 'finish_until_time' => null, 'expected' => ['date' => null, 'time' => null]]);
 }
+
+it('records the outcome of an interactive streamed check once and ignores polling and forbidden actions', function (): void {
+    fakePortalCopyDropbox($this);
+
+    overallPortalStatusRequest($this, stream: true)->assertOk()->streamedContent();
+    $this->getJson(route('teaching.work-dropbox.refresh-progress', [$this->work, Str::uuid()->toString()]))
+        ->assertNotFound();
+    $this->actingAs($this->otherTeacher, 'sanctum');
+    $this->postJson($this->url, ['date' => $this->date])->assertForbidden();
+
+    $row = DB::table('teaching_work_action_events')->sole();
+    expect((int) $row->work_id)->toBe($this->work->id)
+        ->and($row->scheduled_date)->toBe($this->date)
+        ->and(json_decode($row->event, true, flags: JSON_THROW_ON_ERROR))->toMatchArray([
+            'action' => 'work.check_overall_status', 'actor' => 'staff', 'result' => 'completed', 'source' => 'local',
+        ]);
+});
+
+it('keeps work actions until there is a verified folder and merges a concurrent Dropbox update', function (): void {
+    $link = TeachingWorkModuleLink::query()->where('teaching_course_work_id', $this->work->id)->sole();
+    $link->delete();
+    $log = app(TeachingWorkActionLog::class);
+    $log->record($this->work, 'release.end', 'completed', 'staff', $this->date);
+    $log->record($this->work, 'release.end', 'completed', 'staff', $this->otherDate);
+    $log->publish($this->work->id);
+    $this->assertDatabaseCount('teaching_work_action_events', 2);
+    $this->assertDatabaseHas('teaching_work_action_events', ['scheduled_date' => $this->date, 'published_at' => null]);
+
+    TeachingWorkDropboxFolder::query()->create(['teaching_course_work_id' => $this->work->id,
+        'dropbox_connection_id' => $link->dropbox_connection_id, 'folder_id' => 'id:exam', 'folder_name' => 'Dokument']);
+    $folder = ['.tag' => 'folder', 'id' => 'id:exam', 'name' => 'Dokument', 'path_lower' => '/schule2020_2027/materialien/leistungsfeststellungen/dokument'];
+    $status = ['schema_version' => 1, 'kind' => 'leistungsfeststellung.status', 'schooltool' => [
+        'work_id' => $this->work->id, 'course_id' => $this->course->id,
+    ], 'folder_group' => '3B_Gruppe-1', 'scheduled_date' => $this->date, 'prepared' => true, 'total_points' => 20,
+        'components' => ['aufgabenblatt' => ['included' => true, 'points' => 20], 'multiple_choice' => ['included' => false, 'points' => null]]];
+    $otherEvent = ['id' => Str::uuid()->toString(), 'at' => '2026-11-27T17:00:00.000000Z',
+        'action' => 'work.save', 'actor' => 'staff', 'source' => 'online', 'result' => 'completed'];
+    $remote = $status;
+    $revision = 'first';
+    $uploadRevisions = [];
+    Http::fake(function (Request $request) use ($folder, $otherEvent, &$remote, &$revision, &$uploadRevisions) {
+        $contents = json_encode($remote, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+        if (str_ends_with($request->url(), '/oauth2/token')) {
+            return Http::response(['access_token' => 'synthetic-access']);
+        }
+        if (str_ends_with($request->url(), '/files/get_metadata')) {
+            return match ($request['path']) {
+                'id:exam' => Http::response($folder),
+                'id:exam/status.json' => Http::response(['.tag' => 'file', 'size' => strlen($contents), 'rev' => $revision]),
+                default => Http::response(['error_summary' => 'path/not_found/'], 409),
+            };
+        }
+
+        $parameters = json_decode($request->header('Dropbox-API-Arg')[0], true, flags: JSON_THROW_ON_ERROR);
+        if (str_ends_with($request->url(), '/files/download')) {
+            expect($parameters['path'])->toBe('rev:'.$revision);
+
+            return Http::response($contents);
+        }
+        expect($request->url())->toEndWith('/files/upload');
+        expect($parameters)->toMatchArray(['path' => 'id:exam/status.json',
+            'mode' => ['.tag' => 'update', 'update' => $revision], 'strict_conflict' => true, 'autorename' => false]);
+        $uploadRevisions[] = $revision;
+        if ($revision === 'first') {
+            $remote['action_history'][] = $otherEvent;
+            $revision = 'concurrent';
+
+            return Http::response(['error_summary' => 'path/conflict/file/',
+                'error' => ['.tag' => 'path', 'path' => ['.tag' => 'conflict', 'conflict' => ['.tag' => 'file']]]], 409);
+        }
+        $remote = json_decode($request->body(), true, flags: JSON_THROW_ON_ERROR);
+        $revision = 'saved';
+
+        return Http::response(['rev' => $revision, 'size' => strlen($request->body())]);
+    });
+
+    $log->publish($this->work->id);
+    expect($uploadRevisions)->toBe(['first', 'concurrent'])
+        ->and(array_diff_key($remote, ['action_history' => true]))->toBe($status)
+        ->and(array_column($remote['action_history'], 'action'))->toBe(['work.save', 'release.end']);
+    $saved = DB::table('teaching_work_action_events')->where('scheduled_date', $this->date)->sole();
+    $pending = DB::table('teaching_work_action_events')->where('scheduled_date', $this->otherDate)->sole();
+    expect($saved->published_at)->not->toBeNull()
+        ->and($pending->published_at)->toBeNull();
+
+    // Repeat after a successful upload interrupted before its database acknowledgement.
+    DB::table('teaching_work_action_events')->where('id', $saved->id)
+        ->update(['published_at' => null, 'available_at' => now()]);
+    $log->publish($this->work->id);
+    expect($uploadRevisions)->toHaveCount(2)->and($remote['action_history'])->toHaveCount(2);
+    $this->assertDatabaseMissing('teaching_work_action_events', ['id' => $saved->id, 'published_at' => null]);
+});
+
+it('streams the actual Dropbox checks in order and completes the check even when a file is missing', function (): void {
+    portalCopyReceipt($this, $this->student, 'Da.bin', 'original');
+    portalCopyReceipt($this, $this->student, 'Offen.bin', 'missing');
+    fakePortalCopyDropbox($this, existing: fn (string $file): ?string => $file === 'Da.bin' ? 'original' : null);
+
+    $response = overallPortalStatusRequest($this, stream: true)->assertOk()->assertHeader('Content-Type', 'application/x-ndjson');
+    $events = array_map(fn (string $line): array => json_decode($line, true, flags: JSON_THROW_ON_ERROR),
+        explode("\n", trim($response->streamedContent())));
+    $steps = collect($events)->where('type', 'progress')->pluck('data')->all();
+
+    expect(array_column($steps, 'active'))->toBe(['connection', 'verification', 'portal', null])
+        ->and(array_column($steps, 'completed'))->toBe([[], ['connection'], ['connection', 'verification'], ['connection', 'verification', 'portal']])
+        ->and(end($steps))->toMatchArray(['state' => 'done', 'failed_steps' => []]);
+    expect(end($events))->toMatchArray(['type' => 'result']);
+    $result = end($events)['data'];
+    expect($result['portal_reconciliation'])->toMatchArray(['confirmed' => 1, 'missing' => 1])
+        ->and($result['saved_work']['portal_copy_progress'][$this->date]['complete'])->toBeFalse();
+
+    overallPortalStatusRequest($this, $this->otherDate)->assertOk()->assertJsonPath('progress.skipped', ['portal'])
+        ->assertJsonPath('portal_reconciliation', null);
+});
 
 it('reconciles only the selected active portal originals by content without Dropbox write permission', function (): void {
     $first = portalCopyReceipt($this, $this->student, 'Erste.bin', 'eins');
@@ -209,6 +336,7 @@ it('leaves ambiguous Dropbox destinations and revisions changed during the overa
     });
 
     overallPortalStatusRequest($this)->assertOk()->assertJsonPath('portal_reconciliation.unverifiable', 3)
+        ->assertJsonPath('progress.state', 'failed')->assertJsonPath('progress.failed_steps', ['portal'])
         ->assertJsonPath("saved_work.portal_copy_progress.{$this->date}.complete", false);
     expect($seen)->toBe(['Revision.bin', 'Revision.bin'])
         ->and($this->work->fresh()->status['portal_submission_copy'][$this->date]['files'])->toBe([]);
@@ -243,7 +371,7 @@ it('copies original bytes for the selected date, preserves every receipt and det
     $before = $this->work->fresh()->status;
     fakePortalCopyDropbox($this);
     $run = $this->postJson($this->url, ['date' => $this->date])->assertOk()->assertJsonCount(2, 'data.files')
-        ->assertJsonPath('data.candidates', [['id' => $this->student->id, 'name' => $this->student->full_name]])
+        ->assertJsonPath('data.candidates', [['id' => $this->student->id, 'name' => 'Test, Ada']])
         ->assertJsonPath('data.files.0.candidate_id', $this->student->id)->json('data.run_id');
     $this->postJson($this->fileUrl, ['run_id' => $run, 'item' => 0])->assertOk()->assertJsonPath('data.status', 'copied')
         ->assertJsonPath("data.portal_copy_progress.{$this->date}.complete", false);
@@ -407,6 +535,32 @@ it('links a dated portal target without import checksums and advances from targe
 
     $run = $this->postJson($this->url, ['date' => $this->date])->assertOk()->json('data.run_id');
     $this->postJson($this->fileUrl, ['run_id' => $run, 'item' => 0])->assertOk()->assertJsonPath("data.{$path}.complete", true);
+});
+
+it('serves both root PDFs from a directly bound dated examination and rejects a different date', function (): void {
+    $connectionId = TeachingWorkModuleLink::query()->where('teaching_course_work_id', $this->work->id)->sole()->dropbox_connection_id;
+    TeachingWorkModuleLink::query()->where('teaching_course_work_id', $this->work->id)->delete();
+    TeachingWorkDropboxFolder::query()->create(['teaching_course_work_id' => $this->work->id, 'dropbox_connection_id' => $connectionId,
+        'folder_id' => 'id:exam', 'folder_name' => 'Dokument']);
+    $documents = ['assignmentpdf' => ['LF_Dokument.pdf', '%PDF-1.4 assignment'], 'criteriapdf' => ['Beurteilung.pdf', '%PDF-1.4 criteria']];
+    fakePortalCopyDropbox($this, documents: $documents);
+
+    $url = "/api/admin/teaching/course_works/{$this->work->id}/dropbox/folders";
+    foreach (['Angaben' => 'assignmentpdf', 'Bewertungskriterien' => 'criteriapdf'] as $section => $id) {
+        $query = ['contents' => 1, 'exercise' => 1, 'section' => $section, 'date' => $this->date];
+        $this->getJson($url.'?'.http_build_query($query))->assertOk()->assertJsonCount(1, 'entries')
+            ->assertJsonPath('entries.0.id', 'id:'.$id);
+        $response = $this->get($url.'?'.http_build_query($query + ['pdf' => 1, 'file_id' => 'id:'.$id]))
+            ->assertOk()->assertHeader('Content-Type', 'application/pdf');
+        expect($response->getContent())->toBe($documents[$id][1]);
+        $prepared = $this->get($url.'?'.http_build_query($query + ['download_prepared' => 1]))
+            ->assertOk()->assertHeader('Content-Type', 'application/pdf');
+        expect($prepared->headers->get('Content-Disposition'))->toStartWith('attachment')->toContain($documents[$id][0]);
+        expect($prepared->getContent())->toBe($documents[$id][1]);
+    }
+    $query = ['contents' => 1, 'exercise' => 1, 'section' => 'Angaben', 'date' => $this->otherDate, 'download_prepared' => 1];
+    $this->getJson($url.'?'.http_build_query($query))->assertConflict();
+    Http::assertNotSent(fn (Request $request) => str_ends_with($request->url(), '/files/upload'));
 });
 
 it('still requires original proofs when a portal target is selected for a previously imported work', function (): void {

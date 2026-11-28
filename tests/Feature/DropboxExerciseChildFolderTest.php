@@ -46,6 +46,7 @@ test('exercise folder confirmation accepts Dropbox lower case Unicode paths', fu
 });
 
 test('exercise folder creation reports safe Dropbox conflict type without leaking details', function (string $tag, string $expected): void {
+    Sleep::fake();
     fakeExerciseFolderTransport(['error_summary' => 'secret/path/data', 'error' => ['.tag' => 'path',
         'path' => ['.tag' => $tag, 'malformed_path' => 'secret/path/data']]], 409);
     try {
@@ -66,9 +67,9 @@ test('exercise folder creation reports safe Dropbox conflict type without leakin
     ['unexpected', 'nicht näher bestimmten Konflikt'],
 ]);
 
-test('exercise folder creation does not repeat a write without a bounded provider wait', function (array $headers): void {
+test('exercise folder creation does not retry beyond the rate-limit wait budget', function (): void {
     Sleep::fake();
-    fakeExerciseFolderTransport(['error_summary' => 'sensitive'], 429, $headers);
+    fakeExerciseFolderTransport(['error_summary' => 'sensitive'], 429, ['Retry-After' => '300']);
     try {
         app(DropboxWorkImport::class)->createExerciseChildFolder($this->connection, 'id:parent', 'Kandidaten', '/übungsbereich/beispiel');
         $this->fail('Expected a validation error');
@@ -78,7 +79,42 @@ test('exercise folder creation does not repeat a write without a bounded provide
     }
     Http::assertSentCount(3); // Token, parent metadata and a single create attempt.
     Sleep::assertNeverSlept();
-})->with([[[]], [['Retry-After' => '60']]]);
+});
+
+test('rate-limited folder creation backs off and retries the exact destination', function (): void {
+    Sleep::fake();
+    $writes = [];
+    Http::fake(function (Request $request) use (&$writes) {
+        if (str_ends_with($request->url(), '/oauth2/token')) {
+            return Http::response(['access_token' => 'test']);
+        }
+        if (str_ends_with($request->url(), '/files/create_folder_v2')) {
+            $writes[] = $request->data();
+
+            return match (count($writes)) {
+                1 => Http::response([], 429),
+                2 => Http::response([], 429, ['Retry-After' => '0']),
+                3 => Http::response([], 429, ['Retry-After' => '25']),
+                default => Http::response(['metadata' => ['id' => 'id:child']]),
+            };
+        }
+        $child = $request['path'] === 'id:child';
+
+        return Http::response(['.tag' => 'folder', 'id' => $child ? 'id:child' : 'id:parent',
+            'name' => $child ? 'Kandidaten' : 'Prüfung',
+            'path_lower' => '/prüfung'.($child ? '/kandidaten' : ''),
+            'path_display' => '/Prüfung'.($child ? '/Kandidaten' : '')]);
+    });
+
+    $folder = app(DropboxWorkImport::class)->createExerciseChildFolder($this->connection, 'id:parent', 'Kandidaten', '/prüfung');
+
+    expect($folder['id'])->toBe('id:child')
+        ->and($writes)->toBe(array_fill(0, 4, ['path' => '/Prüfung/Kandidaten', 'autorename' => false]));
+    Sleep::assertSleptTimes(3);
+    foreach ([1, 2, 25] as $expectedDelay) {
+        Sleep::assertSlept(fn (CarbonInterval $delay): bool => (float) $delay->totalSeconds === (float) $expectedDelay);
+    }
+});
 
 test('exercise folder creation hides malformed request details while retaining authentication errors', function (int $status, string $expected): void {
     fakeExerciseFolderTransport(['error_summary' => 'secret/path/token', 'error' => ['.tag' => 'secret/path/token']], $status);

@@ -77,7 +77,9 @@ class TeachingWorkPortalReopening
                 $record = $records->get($student->id);
                 $deadline = ($record['date'] ?? '') === $slot ? $this->recordDeadline($work, $record) : null;
 
-                return ['id' => (int) $student->id, 'name' => $student->full_name,
+                $name = implode(', ', array_filter([trim((string) $student->last_name), trim((string) $student->first_name)]));
+
+                return ['id' => (int) $student->id, 'name' => $name,
                     'open_until' => $deadline && ! $deadline->isPast() ? $deadline->toIso8601String() : null];
             })->values()->all();
 

@@ -14,7 +14,8 @@ it('lets the teacher change the return channel independently of task release and
         'v-btn': { template: '<button><slot /></button>' },
         'v-text-field': { props: ['modelValue'], emits: ['update:modelValue'], template: '<input type="email" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />' },
     } } })
-    const click = (name: string) => wrapper.findAll('button').find(button => button.text() === name)!.trigger('click')
+    const click = (name: string) => wrapper.findAll('button')
+        .find(button => button.attributes('aria-label') === name || button.text() === name)!.trigger('click')
     await click('Abgabeweg verwalten')
     await wrapper.get('input[value=email]').setValue(true)
     await wrapper.get('input[type=email]').setValue(method.email)

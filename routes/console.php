@@ -4,6 +4,7 @@ use App\Jobs\HealthJob;
 use App\Models\QueueTest;
 use App\Models\StudentTimetableV3Timetable;
 use App\Services\TeachingAssessmentQueue;
+use App\Services\TeachingWorkActionLog;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
@@ -57,6 +58,12 @@ Schedule::call(fn () => app(TeachingAssessmentQueue::class)->publishPending())
     ->name('teaching-assessments:publish-pending')
     ->everyMinute()
     ->when(fn (): bool => app(TeachingAssessmentQueue::class)->usesRedis())
+    ->onOneServer()
+    ->withoutOverlapping(2);
+
+Schedule::call(fn () => app(TeachingWorkActionLog::class)->queuePending())
+    ->name('teaching:publish-work-actions')
+    ->everyMinute()
     ->onOneServer()
     ->withoutOverlapping(2);
 

@@ -10,6 +10,7 @@ use App\Models\TeachingWorkDropboxFolder;
 use App\Models\TeachingWorkModuleLink;
 use App\Models\User;
 use App\Support\TeachingAssessmentProgress;
+use App\Support\TeachingWorkActionHistory;
 use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Cache;
@@ -193,6 +194,25 @@ class DropboxModuleLinks
     /** @return array<string, mixed> */
     public function portalSubmissionTarget(DropboxConnection $connection, TeachingCourseWork $work, TeachingWorkModuleLink|TeachingWorkDropboxFolder $link, string $date): array
     {
+        return $this->portalSubmissionExercise($connection, $work, $link, $date)['folder'];
+    }
+
+    /** @return array{folder: array, preparation: array, scheduled_date: string} */
+    public function portalSubmissionExercise(DropboxConnection $connection, TeachingCourseWork $work, TeachingWorkModuleLink|TeachingWorkDropboxFolder $link, string $date): array
+    {
+        ['folder' => $folder, 'record' => $record] = $this->verifiedExerciseStatus($connection, $work, $link, $date);
+        abort_unless($record['prepared'], 409, 'Die Leistungsfeststellung ist noch nicht vollständig angelegt.');
+
+        return [
+            'folder' => $folder,
+            'preparation' => ['status' => 'ready', 'components' => $record['components']],
+            'scheduled_date' => $date,
+        ];
+    }
+
+    /** @return array{folder: array, document: array{contents: string, rev: string}, record: array} */
+    public function verifiedExerciseStatus(DropboxConnection $connection, TeachingCourseWork $work, TeachingWorkModuleLink|TeachingWorkDropboxFolder $link, string $date): array
+    {
         abort_unless($link->dropbox_connection_id === $connection->id
             && (! ($link instanceof TeachingWorkModuleLink) || $link->account_id === $connection->account_id),
             409, 'Die Dropbox-Verbindung gehört nicht zur gespeicherten Zuordnung.');
@@ -217,9 +237,8 @@ class DropboxModuleLinks
         } catch (JsonException) {
             abort(409, 'Die Statusdatei des Prüfungsordners ist ungültig.');
         }
-        abort_unless($record['prepared'], 409, 'Die Leistungsfeststellung ist noch nicht vollständig angelegt.');
 
-        return $folder;
+        return ['folder' => $folder, 'document' => $status, 'record' => $record];
     }
 
     /** Find the dated child of a known module; the caller still verifies its work identity. */
@@ -496,7 +515,7 @@ class DropboxModuleLinks
             abort_if(count($otherFolders) > 20, 409, 'Die Prüfungsordner konnten nicht vollständig geprüft werden.');
             $requests = [];
             foreach ($this->exerciseCandidateChildren($connection, $otherFolders) as $folderId => $entries) {
-                $requests[$folderId] = ['entries' => $entries, 'name' => 'status.json', 'max_size' => 128 * 1024];
+                $requests[$folderId] = ['entries' => $entries, 'name' => 'status.json', 'max_size' => DropboxWorkImport::MAX_EXERCISE_STATUS_BYTES];
             }
             foreach ($this->exerciseFilesBatch($connection, $requests) as $raw) {
                 if ($raw === null) {
@@ -526,7 +545,7 @@ class DropboxModuleLinks
             if (! empty($confirmed['sharing_info'])) {
                 throw new TeachingWorkDeletionConflict('Der Prüfungsordner ist geteilt.');
             }
-            $raw = $this->exerciseFile($connection, $children, 'status.json');
+            $raw = $this->exerciseFile($connection, $children, 'status.json', DropboxWorkImport::MAX_EXERCISE_STATUS_BYTES);
             if ($raw === null && $children === [] && empty($confirmed['sharing_info'])) {
                 $matches[] = ['date' => substr($folder['name'], 0, 10), 'reusable' => 'empty',
                     'folder' => ['id' => $confirmed['id'], 'name' => $confirmed['name'], 'path' => $confirmed['path_display'] ?? $confirmed['path_lower']]];
@@ -607,6 +626,11 @@ class DropboxModuleLinks
                 && TeachingAssessmentProgress::valid($record['progress'], $record['prepared']),
                 409, 'Der gespeicherte Fortschritt der Leistungsfeststellung ist ungültig.');
             unset($record['progress']);
+        }
+        if (array_key_exists(TeachingWorkActionHistory::KEY, $record)) {
+            abort_unless(TeachingWorkActionHistory::valid($record[TeachingWorkActionHistory::KEY]), 409,
+                'Das Aktionsprotokoll der Leistungsfeststellung ist ungültig.');
+            unset($record[TeachingWorkActionHistory::KEY]);
         }
         $keys = fn (mixed $value, array $expected): bool => is_array($value)
             && count($value) === count($expected) && array_diff(array_keys($value), $expected) === [];
@@ -882,7 +906,7 @@ class DropboxModuleLinks
             $children = $this->exerciseCandidateChildren($connection, $folders);
             $requests = [];
             foreach ($children as $folderId => $entries) {
-                $requests[$folderId] = ['entries' => $entries, 'name' => 'status.json', 'max_size' => 128 * 1024];
+                $requests[$folderId] = ['entries' => $entries, 'name' => 'status.json', 'max_size' => DropboxWorkImport::MAX_EXERCISE_STATUS_BYTES];
             }
             $statuses = $this->exerciseFilesBatch($connection, $requests);
             $legacy = $this->exerciseCandidateRecords($connection, $children);
@@ -1110,7 +1134,8 @@ class DropboxModuleLinks
                 if (! $onlyStatus) {
                     return null;
                 }
-                abort_unless(is_int($file['size'] ?? null) && $file['size'] <= 128 * 1024, 422, 'Die Statusdatei ist ungültig oder zu groß.');
+                abort_unless(is_int($file['size'] ?? null) && $file['size'] <= DropboxWorkImport::MAX_EXERCISE_STATUS_BYTES,
+                    422, 'Die Statusdatei ist ungültig oder zu groß.');
                 $raw = $this->dropbox->readModuleApi($connection, 'files/download', ['path' => 'rev:'.$file['rev']])->body();
                 abort_unless(strlen($raw) === $file['size'], 422, 'Die Statusdatei wurde nicht vollständig gelesen.');
                 if (! $this->isInitializedExerciseStatus($this->parsePreparedExerciseStatus($raw, $work, $group, $dates[0]))) {
@@ -1829,7 +1854,7 @@ class DropboxModuleLinks
                 if (in_array(basename($bound['path_lower']), ['leistungsfeststellung', 'leistungsfeststellungen'], true) && $children !== []) {
                     return $unknown;
                 }
-                if (($isExam && $children !== []) || $this->exerciseFile($connection, $children, 'status.json') !== null
+                if (($isExam && $children !== []) || $this->exerciseFile($connection, $children, 'status.json', DropboxWorkImport::MAX_EXERCISE_STATUS_BYTES) !== null
                     || $this->exerciseCandidateRecords($connection, [$bound['id'] => $children]) !== []) {
                     return $blocked;
                 }

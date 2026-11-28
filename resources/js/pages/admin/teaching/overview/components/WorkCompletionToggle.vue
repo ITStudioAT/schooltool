@@ -11,8 +11,8 @@
                 :aria-label="iconOnly ? `${work.title || 'Arbeit'}: ${label}` : undefined"
                 :aria-pressed="iconOnly ? completed : undefined"
                 :title="iconOnly ? label : undefined"
-                :color="iconOnly ? (completed ? 'success' : 'error') : (completed ? undefined : 'primary')"
-                :variant="iconOnly || completed ? 'text' : 'tonal'" size="small" class="work-completion-action text-none"
+                :color="iconOnly ? (completed ? 'success' : 'error') : (completed || quiet ? undefined : 'primary')"
+                :variant="iconOnly || completed || quiet ? 'text' : 'tonal'" size="small" class="work-completion-action text-none"
                 :disabled="disabled || Boolean(works.completionSavingId)"
                 :loading="works.completionSavingId === work.id" @click.stop="toggle" />
         </div>
@@ -29,7 +29,7 @@ import { workCompletedLabel, workWorkflowProgress } from '@/helpers/workProgress
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
 import { useCourseWorkStore } from '@/stores/admin/teaching/CourseWorkStore'
 
-const props = defineProps({ work: { type: Object, required: true }, date: String, now: Number, iconOnly: Boolean, disabled: Boolean })
+const props = defineProps({ work: { type: Object, required: true }, date: String, now: Number, iconOnly: Boolean, disabled: Boolean, quiet: Boolean })
 const courses = useCourseStore()
 const works = useCourseWorkStore()
 const error = ref('')

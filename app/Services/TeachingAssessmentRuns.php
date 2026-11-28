@@ -280,6 +280,7 @@ class TeachingAssessmentRuns
         }
         $run['finished_at'] = now()->toIso8601String();
         $this->save($workId, $run);
+        $this->recordCreationResult($work ?? null, $run);
     }
 
     public function interrupt(int $workId, string $runId): void
@@ -293,6 +294,21 @@ class TeachingAssessmentRuns
             $run['message'] = 'Der Hintergrundauftrag endete ohne bestätigtes Ergebnis. Erneut starten, um den vorhandenen Prüfungsordner zu prüfen und fortzusetzen.';
             $run['finished_at'] = now()->toIso8601String();
             $this->save($workId, $run);
+            $this->recordCreationResult(TeachingCourseWork::query()->find($workId), $run);
+        }
+    }
+
+    private function recordCreationResult(?TeachingCourseWork $work, array $run): void
+    {
+        if (! $work) {
+            return;
+        }
+
+        try {
+            app(TeachingWorkActionLog::class)->record($work, 'assessment.create',
+                $run['state'] === 'completed' ? 'completed' : 'failed', 'staff', $run['date'] ?? null);
+        } catch (Throwable $exception) {
+            logger()->error('Teaching work creation result could not be recorded.', ['exception_class' => $exception::class]);
         }
     }
 

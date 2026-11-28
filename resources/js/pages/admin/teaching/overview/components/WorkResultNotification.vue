@@ -48,7 +48,7 @@
                 <v-spacer />
                 <v-btn v-if="result?.simulation" color="primary" :disabled="busy || dirty || (!teacherPreview && !selected.length)" @click="send">{{ teacherPreview ? 'Testvorschau an mich senden' : 'Testbenachrichtigungen senden' }}</v-btn>
                 <v-btn v-else-if="result" color="primary" :disabled="busy || dirty || !selected.length" @click="copyOffice">Office-Auftrag kopieren</v-btn>
-                <v-btn :disabled="busy" @click="opened = false">Schließen</v-btn>
+                <v-btn variant="text" min-height="44" :disabled="busy" @click="opened = false">Schließen</v-btn>
             </v-card-actions>
         </v-card>
     </v-dialog>

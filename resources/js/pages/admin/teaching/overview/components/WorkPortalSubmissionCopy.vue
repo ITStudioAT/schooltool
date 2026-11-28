@@ -1,9 +1,10 @@
 <template>
-    <v-btn v-if="available" :min-height="recommended ? 48 : 44" size="small" variant="tonal" prepend-icon="mdi-folder-download-outline"
-        :color="recommended ? 'primary' : undefined" :disabled="disabled || running" @click.stop="copyOriginals">{{ portalCopyLabel }}</v-btn>
+    <v-btn v-if="available" :min-height="recommended ? 48 : 44" size="small" variant="tonal" prepend-icon="mdi-dropbox"
+        :color="recommended ? 'primary' : undefined" :disabled="disabled || running"
+        :aria-label="portalCopyLabel" :title="portalCopyLabel" aria-haspopup="dialog" @click.stop="copyOriginals">{{ portalCopyLabel }}</v-btn>
     <v-dialog v-if="opened" v-model="opened" max-width="640" scrollable :persistent="running">
         <v-card>
-            <v-card-title class="text-wrap">Portalabgaben nach Dropbox kopieren · {{ work.title }}</v-card-title>
+            <v-card-title class="text-wrap">{{ portalCopyLabel }} · {{ work.title }}</v-card-title>
             <v-card-text>
                 <p v-if="running && !files.length" role="status">Termingruppe und Prüfungsordner werden geprüft …</p>
                 <p v-if="files.length" role="status" aria-live="polite">
@@ -32,7 +33,7 @@
             <v-card-actions class="portal-copy-actions">
                 <v-btn v-if="!running && counts.open && available" min-height="44" :disabled="disabled"
                     @click="copyOriginals">Erneut prüfen und kopieren</v-btn>
-                <v-btn min-height="44" :disabled="running" @click="opened = false">Schließen</v-btn>
+                <v-btn variant="text" min-height="44" :disabled="running" @click="opened = false">Schließen</v-btn>
             </v-card-actions>
         </v-card>
     </v-dialog>

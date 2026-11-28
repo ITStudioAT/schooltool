@@ -206,7 +206,7 @@ onBeforeUnmount(() => {
 .release-students__tests { flex: 1 1 17rem; min-width: 0; max-width: 100%; padding: 0; margin: 0; list-style: none; }
 .release-students__test { justify-content: flex-start; min-height: 38px; }
 .release-students__test-name { flex: 0 1 12rem; overflow-wrap: anywhere; font-size: .8125rem; }
-.release-students__name { flex: 0 1 6.25rem; padding-block: .4rem; overflow-wrap: anywhere; font-weight: 550; }
+.release-students__name { flex: 0 0 100%; min-width: 0; padding-block: .4rem; overflow-wrap: anywhere; font-weight: 550; }
 .release-students__actions { display: flex; align-items: center; flex-wrap: wrap; gap: .25rem; }
 .release-students__test > .release-students__actions { margin-inline-start: auto; }
 .release-students__details { display: flex; flex: 1 1 10rem; align-items: baseline; flex-wrap: wrap; gap: .125rem .5rem; }

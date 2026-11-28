@@ -857,6 +857,8 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/admin/teaching/course_works/{course_work}/submissions/copy/file', [WorkSubmissionController::class, 'copyPortalFile'])->name('teaching.work-submissions.copy.file');
         Route::get('/admin/teaching/course_works/{course_work}/submissions/{fileId}', [WorkSubmissionController::class, 'download'])->whereUuid('fileId')->name('teaching.work-submissions.download');
         Route::post('/admin/teaching/course_works/{course_work}/student-distribution', [CourseWorkController::class, 'studentDistribution'])->name('teaching.work-student-distribution');
+        Route::get('/admin/teaching/course_works/{course_work}/student-distribution/files/{fileId}', [CourseWorkController::class, 'downloadStudentTaskFile'])
+            ->name('teaching.work-student-distribution.files.download');
         Route::post('/admin/teaching/course_works/{course_work}/student-distribution/test-action', [CourseWorkController::class, 'studentDistributionTestAction'])->name('teaching.work-student-distribution.test-action');
         Route::delete('/admin/teaching/course_works/{course_work}/student-distribution/preparation', [CourseWorkController::class, 'deleteStudentDistributionPreparation'])->name('teaching.work-student-distribution-preparation.delete');
         Route::patch('/admin/teaching/course_works/{course_work}/grade-visibility', [WorkGradeVisibilityController::class, 'update'])->name('teaching.work-results.visibility');

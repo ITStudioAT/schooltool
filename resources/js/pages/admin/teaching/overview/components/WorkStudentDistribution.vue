@@ -55,7 +55,13 @@
                                 <h3>Aufgabenmaterial</h3>
                                 <p v-if="existingFiles.length">{{ existingFiles.length }} {{ existingFiles.length === 1 ? 'Aufgaben-PDF' : 'Aufgaben-PDFs' }}</p>
                                 <ul v-if="existingFiles.length">
-                                    <li v-for="file in existingFiles" :key="file.id">{{ file.name }}</li>
+                                    <li v-for="file in existingFiles" :key="file.id">
+                                        <a class="release-material-download" :href="downloadStudentTaskFile.url({ course_work: currentWork.id, fileId: file.id })"
+                                            :download="file.name" :aria-label="`${file.name} herunterladen`">
+                                            <v-icon icon="mdi-download-outline" aria-hidden="true" />
+                                            <span>{{ file.name }}</span>
+                                        </a>
+                                    </li>
                                 </ul>
                                 <details v-if="distribution?.instructions?.trim()" class="release-instructions">
                                     <summary>Aufgabentext ansehen</summary>
@@ -188,7 +194,7 @@
                         @click="confirmWithdrawal = true">Freigabe pausieren</v-btn>
                     <v-btn v-if="dialogPaused" color="success" variant="flat" prepend-icon="mdi-play" :loading="saving && activeTestAction === null && !repairingPause && !pausingRelease"
                         :disabled="managementBusy || mcLoading || !!mcError || stale" @click="save(true)">{{ dialogWithdrawn ? 'Freigabe fortsetzen' : 'Jetzt freigeben' }}</v-btn>
-                    <v-btn variant="text" :disabled="managementBusy" @click="dialog = false">Schließen</v-btn>
+                    <v-btn class="release-dialog-close" variant="text" min-height="44" :disabled="managementBusy" @click="dialog = false">Schließen</v-btn>
                 </template>
                 <template v-else>
                     <v-btn v-if="ready && editing" :disabled="saving" @click="returnToManagement">Zurück zur Verwaltung</v-btn>
@@ -207,14 +213,14 @@
             <v-card-text>
                 <CurriculumPdfPreview v-if="previewUrl" :src="previewUrl" :document-id="assignmentFileId" class="assignment-pdf-preview" />
             </v-card-text>
-            <v-card-actions><v-spacer /><v-btn min-height="44" @click="previewOpen = false">Schließen</v-btn></v-card-actions>
+            <v-card-actions><v-spacer /><v-btn variant="text" min-height="44" @click="previewOpen = false">Schließen</v-btn></v-card-actions>
         </v-card>
     </v-dialog>
 </template>
 
 <script setup>
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import { deleteStudentDistributionPreparation, show, studentDistribution, studentDistributionPreview, studentDistributionTestAction } from '@/actions/App/Http/Controllers/Admin/Teaching/CourseWorkController'
+import { deleteStudentDistributionPreparation, downloadStudentTaskFile, show, studentDistribution, studentDistributionPreview, studentDistributionTestAction } from '@/actions/App/Http/Controllers/Admin/Teaching/CourseWorkController'
 import { folders } from '@/actions/App/Http/Controllers/Admin/Teaching/WorkDropboxController'
 import { workPdfFilename } from '@/helpers/workDropbox'
 import { workProvisionEvidence } from '@/helpers/workDispatch'
@@ -778,7 +784,16 @@ async function deletePreparation() {
 .release-overview h3, .release-tests h3, .release-test h4 { font-size: .9375rem; font-weight: 650; }
 .release-overview__facts p, .release-overview__materials ul, .release-test p { font-size: .875rem; color: rgba(var(--v-theme-on-surface), .75); }
 .release-overview__materials { grid-column: 1 / -1; border-block-start: 1px solid rgba(var(--v-border-color), .15); padding-block-start: .625rem; }
-.release-overview__materials ul { padding-inline-start: 1.1rem; }
+.release-overview__materials ul { list-style: none; padding: 0; }
+.release-material-download {
+    display: inline-flex;
+    align-items: center;
+    gap: .5rem;
+    max-inline-size: 100%;
+    min-block-size: 44px;
+    color: rgb(var(--v-theme-primary));
+}
+.release-material-download :deep(.v-icon) { flex-shrink: 0; }
 .release-instructions summary { display: list-item; align-content: center; cursor: pointer; min-height: 44px; color: rgb(var(--v-theme-primary)); font-size: .8125rem; }
 .release-instructions summary:focus-visible { outline: 2px solid rgb(var(--v-theme-primary)); outline-offset: -2px; }
 .release-instructions p { white-space: pre-wrap; }
@@ -788,7 +803,7 @@ async function deletePreparation() {
 .release-test__times { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: .125rem .45rem; margin-block-start: .3rem; font-size: .8125rem; }
 .release-test__times dt { font-weight: 600; }
 .release-test__actions { display: flex; flex-wrap: wrap; gap: .25rem; }
-.release-test__actions :deep(.v-btn), .release-footer :deep(.v-btn) { text-transform: none; letter-spacing: normal; }
+.release-test__actions :deep(.v-btn), .release-footer :deep(.v-btn:not(.release-dialog-close)) { text-transform: none; letter-spacing: normal; }
 .release-footer :deep(.v-btn) { min-height: 44px; }
 @media (max-width: 540px) {
     .release-overview__facts, .release-test { grid-template-columns: minmax(0, 1fr); }

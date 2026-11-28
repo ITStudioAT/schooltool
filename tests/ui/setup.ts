@@ -24,6 +24,8 @@ const unresolvedVuetifyComponentNames = [
     'v-menu',
     'v-progress-circular',
     'v-progress-linear',
+    'v-radio',
+    'v-radio-group',
     'v-row',
     'v-select',
     'v-skeleton-loader',

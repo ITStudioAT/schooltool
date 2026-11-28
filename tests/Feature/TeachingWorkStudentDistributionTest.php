@@ -648,6 +648,48 @@ test('new task preparation defaults to locked access until an explicit release',
     Notification::assertNothingSent();
 });
 
+test('portal reopening lists participants alphabetically by last name and displays the last name first', function (): void {
+    $this->student->update(['first_name' => 'Anna Maria', 'last_name' => 'Winter']);
+    $this->peer->update(['first_name' => 'Zoe', 'last_name' => 'Berger']);
+    $this->work->update([
+        'groups' => [['student_ids' => [$this->student->id, $this->peer->id]]],
+        'status' => [...$this->work->status, 'submission_method' => ['channel' => 'portal', 'email' => null]],
+    ]);
+    $this->actingAs($this->teacher, 'web')->postJson($this->publishUrl, ($this->payload)())->assertOk();
+    $this->travelTo(CarbonImmutable::parse('2026-11-05 13:00', 'Europe/Vienna'));
+
+    $this->getJson(route('teaching.work-submissions.reopening-options', $this->work))
+        ->assertOk()
+        ->assertJsonPath('data.students.0.name', 'Berger, Zoe')
+        ->assertJsonPath('data.students.1.name', 'Winter, Anna Maria');
+});
+
+test('the course teacher can download retained task material after the release ends', function (): void {
+    $pdf = '%PDF-1.4 Aufgabe';
+    $status = $this->actingAs($this->teacher, 'web')->postJson($this->publishUrl, ($this->payload)([
+        'files' => [UploadedFile::fake()->createWithContent('Aufgabe.pdf', $pdf)],
+    ]))->assertOk()->json('data.status');
+    $file = $status['student_task_files'][0];
+    $status['student_distribution']['ended_at'] = now()->toIso8601String();
+    $this->work->update(['status' => $status]);
+    $beforeDownload = $this->work->fresh()->getRawOriginal('status');
+    $download = route('teaching.work-student-distribution.files.download', ['course_work' => $this->work, 'fileId' => $file['id']]);
+    $response = $this->get($download)->assertOk()->assertDownload('Aufgabe.pdf')->assertHeader('Content-Type', 'application/pdf');
+    expect($response->streamedContent())->toBe($pdf);
+    expect($this->work->fresh()->getRawOriginal('status'))->toBe($beforeDownload);
+
+    $otherTeacher = User::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => $this->year->id])->assignRole('teacher');
+    Auth::guard('sanctum')->forgetUser();
+    $this->actingAs($otherTeacher, 'web')->getJson($download)->assertForbidden();
+    Auth::guard('sanctum')->forgetUser();
+    $this->actingAs($this->student, 'web')->getJson($download)->assertForbidden();
+
+    $status['student_distribution']['file_ids'] = [];
+    $this->work->update(['status' => $status]);
+    Auth::guard('sanctum')->forgetUser();
+    $this->actingAs($this->teacher, 'web')->getJson($download)->assertNotFound();
+});
+
 test('the task list shows only the personal released result and removes it again after withdrawal', function (string $mode, string $grade): void {
     $this->year->update(['concerns' => '2026/27']);
     $scope = ['school_id' => $this->school->id, 'schoolyear_id' => $this->year->id, 'user_id' => $this->teacher->id];

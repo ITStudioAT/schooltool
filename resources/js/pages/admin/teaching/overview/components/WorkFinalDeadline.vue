@@ -1,7 +1,7 @@
 <template>
     <div class="d-flex align-center ga-2">
         <div>
-            <div class="text-caption">Endgültige Abgabefrist</div>
+            <div class="work-final-deadline__label text-caption">Endgültige Abgabefrist</div>
             <strong :class="`text-${color}`">{{ dateLabel }}<template v-if="date && time"> · {{ time }} Uhr</template></strong>
             <div v-if="pending" class="text-caption text-medium-emphasis">Zum Speichern vorgemerkt</div>
         </div>
@@ -17,8 +17,8 @@
                 </v-card-text>
                 <v-card-actions>
                     <v-spacer />
-                    <v-btn variant="text" @click="editing = false">Abbrechen</v-btn>
-                    <v-btn color="primary" variant="flat" :disabled="invalidTime || disabled" @click="apply">Übernehmen</v-btn>
+                    <v-btn variant="text" min-height="44" @click="editing = false">Abbrechen</v-btn>
+                    <v-btn color="primary" variant="flat" min-height="44" :disabled="invalidTime || disabled" @click="apply">Übernehmen</v-btn>
                 </v-card-actions>
             </v-card>
         </v-dialog>

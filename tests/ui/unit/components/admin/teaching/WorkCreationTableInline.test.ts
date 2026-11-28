@@ -80,8 +80,9 @@ it.each([false, true])('creates once and continues or retries a partial folder i
         expect(post.mock.calls.filter(([url]) => url === '/api/admin/teaching/course_works')).toHaveLength(1)
         finishCreate({ data: { data: saved } })
         await flushPromises()
-        expect(form.getComponent(WorkTitleEditor).props('canEdit')).toBe(true)
-        expect(form.getComponent(WorkTitleEditor).find('input').exists()).toBe(false)
+        const titleEditor = wrapper.get('.course-table-work-header').getComponent(WorkTitleEditor)
+        expect(titleEditor.props('canEdit')).toBe(true)
+        expect(titleEditor.find('input').exists()).toBe(false)
         expect(post.mock.calls.filter(([url]) => url === '/api/admin/teaching/course_works')).toHaveLength(1)
         const checks = post.mock.calls.filter(([url]) => url.endsWith('/dropbox/folder'))
         expect(checks.map(([, body]) => body)).toEqual([

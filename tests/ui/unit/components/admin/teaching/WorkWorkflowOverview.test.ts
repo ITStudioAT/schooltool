@@ -27,8 +27,9 @@ function render(currentWork = work, active = true, onSaved = (_work: typeof work
             'v-radio-group': true, 'v-radio': true,
         },
     } })
-    const action = (label: string) => wrapper.findAll('button').find(button => button.text() === label)
-    return { wrapper, action, openRelease, openMail }
+    const action = (label: string) => wrapper.findAll('button').find(button => button.attributes('aria-label') === label || button.text() === label)
+    const phase = (label: string) => wrapper.findAll('.work-phase').find(item => item.get('.work-phase__title').text() === label)!
+    return { wrapper, action, phase, openRelease, openMail }
 }
 
 afterEach(() => { clearWorkDropboxStates(); vi.unstubAllGlobals() })
@@ -124,18 +125,65 @@ it('loads only an existing proof when opening, with no invented check time, and 
             expect.objectContaining({ params: { include_exercise: 1, stored_only: 1, date } }))
         const saved = wrapper.emitted('exercise-status')?.at(-1)?.[0]
         expect(saved).toMatchObject({ status: 'unchecked', checkedAt: null })
-        expect(action('Abgabeweg festlegen')).toBeDefined()
-        expect(action('Bereitstellungsweg vorbereiten')).toBeDefined()
+        expect(action('Abgabeweg festlegen')).toBeUndefined()
+        expect(action('Bereitstellungsweg vorbereiten')).toBeUndefined()
         expect(action('Aufgaben bereitstellen')).toBeUndefined()
         expect(post).not.toHaveBeenCalled()
         await action('Gesamtstatus prüfen')!.trigger('click')
         await flushPromises()
-        expect(post).toHaveBeenCalledWith(expect.stringContaining('/dropbox/refresh'), expect.objectContaining({ status_only: true, overall: true, date }), expect.any(Object))
+        expect(post).toHaveBeenCalledWith(expect.stringContaining('/dropbox/refresh'),
+            expect.objectContaining({ status_only: true, overall: true, stream_progress: true, date }), expect.any(Object))
         expect(wrapper.emitted('exercise-status')?.at(-1)?.[0]).toMatchObject({ status: 'missing', checkedAt: `${date}T10:00:00Z` })
     } finally { wrapper.unmount() }
 })
 
-it('checks the selected date with the phases collapsed and advances only after every portal original is confirmed', async () => {
+it('shows each streamed check, clears a replaced run and identifies a failed active check without a check mark', async () => {
+    const requests: { push: (event: object) => void, finish: () => void, signal: AbortSignal }[] = []
+    const post = vi.fn((_url, _data, options) => new Promise(resolve => {
+        let ndjson = ''
+        requests.push({ signal: options.signal, push(event) {
+            ndjson += JSON.stringify(event) + '\n'
+            options.onDownloadProgress({ event: { target: { responseText: ndjson } } })
+        }, finish: () => resolve({ data: ndjson }) })
+    }))
+    vi.stubGlobal('axios', { get: vi.fn().mockResolvedValue({ data: connection }), post })
+    const { wrapper, action } = render()
+    const panel = () => wrapper.get('[aria-label="Fortschritt der Prüfung"]')
+    const report = (request: typeof requests[number], active: string, completed: string[] = []) => request.push({ type: 'progress',
+        data: { state: 'running', steps: ['connection', 'verification', 'portal'], active, completed } })
+    try {
+        await flushPromises()
+        await action('Gesamtstatus prüfen')!.trigger('click')
+        expect(panel().text()).toContain('Prüfung wird gestartet')
+        report(requests[0], 'verification', ['connection'])
+        await flushPromises()
+        expect(panel().get('[aria-current="step"]').text()).toContain('Dropbox-Prüfungsordner prüfen')
+        expect(panel().findAll('li').at(0)!.text()).toContain('✓')
+        await wrapper.setProps({ date: '2026-11-21' })
+        expect(requests[0].signal.aborted).toBe(true)
+        expect(wrapper.find('[aria-label="Fortschritt der Prüfung"]').exists()).toBe(false)
+
+        await action('Gesamtstatus prüfen')!.trigger('click')
+        report(requests[0], 'portal', ['connection', 'verification'])
+        requests[0].finish()
+        await flushPromises()
+        expect(panel().text()).toContain('Prüfung wird gestartet')
+        report(requests[1], 'portal', ['connection', 'verification'])
+        await flushPromises()
+        expect(panel().get('[aria-current="step"]').text()).toContain('Portalabgaben mit Dropbox abgleichen')
+        expect(panel().findAll('.check-progress-done')).toHaveLength(2)
+        requests[1].push({ type: 'error', data: { status: 503, body: { message: 'Dropbox ist vorübergehend nicht erreichbar.' } } })
+        requests[1].finish()
+        await flushPromises()
+        expect(panel().text()).toContain('Prüfung unterbrochen')
+        expect(panel().findAll('.check-progress-done')).toHaveLength(2)
+        expect(panel().get('.check-progress-failed').text()).toContain('Nicht abgeschlossen')
+        expect(wrapper.get('[role="alert"]').text()).toContain('Dropbox ist vorübergehend nicht erreichbar.')
+        expect(wrapper.emitted('saved')).toBeUndefined()
+    } finally { wrapper.unmount() }
+})
+
+it('checks the selected date and advances only after every portal original is confirmed', async () => {
     const folder = { id: 'id:exam', name: 'Fiktive Prüfung' }
     const confirmed = { status: 'found', folder, checked_at: `${date}T13:00:00Z`, preparation: { status: 'ready', portal_candidates_id: 'id:candidates' } }
     const current = { ...work, groups: [{ date, student_ids: [12] }], status: {
@@ -155,8 +203,6 @@ it('checks the selected date with the phases collapsed and advances only after e
     try {
         await wrapper.setProps({ assessment: confirmed })
         await flushPromises()
-        await wrapper.get('.work-phase--next .work-phase__toggle').trigger('click')
-        expect(wrapper.findAll('.work-phase__toggle[aria-expanded="true"]')).toHaveLength(0)
         expect(action('Gesamtstatus prüfen')!.isVisible()).toBe(true)
         expect(completed()).toEqual(['Vorbereiten', 'Bereitstellen'])
         await action('Gesamtstatus prüfen')!.trigger('click')
@@ -175,6 +221,93 @@ it('checks the selected date with the phases collapsed and advances only after e
     } finally { wrapper.unmount() }
 })
 
+it.each(['direct', 'changed link on path lookup', 'different folder', 'different date', 'missing link', 'module'] as const)(
+    'shows the dated Dropbox folder using the current binding: %s', async kind => {
+        const folder = { id: 'id:exam', name: date + ' – Kurs-2 – Fiktive Arbeit', path: '/Materialien/Leistungsfeststellungen/' + date + ' – Kurs-2 – Fiktive Arbeit' }
+        const proof = { linked: true, folder_id: folder.id, candidates_id: 'id:candidates', observed_at: date + 'T13:00:00Z', complete: true }
+        const currentWork = { ...work, groups: [{ date, student_ids: [12] }],
+            portal_copy_progress: { [kind === 'different date' ? '2026-11-21' : date]: proof },
+            status: { submission_method: { channel: 'portal' }, student_distribution: {
+                published_at: date + 'T10:00:00Z', ended_at: date + 'T12:00:00Z', student_ids: [12],
+            }, portal_submissions: [{ id: 'original', student_id: 12 }] },
+        }
+        const linkedState = { ...connection, module_link: kind === 'module' ? connection.module_link : null,
+            folder: kind === 'missing link' || kind === 'module' ? null : { name: folder.name, id: kind === 'different folder' ? 'id:old' : folder.id } }
+        const get = vi.fn((_url, options) => Promise.resolve({ data: options?.params?.include_folder_path
+            ? { ...linkedState, folder, link_version: kind === 'changed link on path lookup' ? 'b'.repeat(64) : linkedState.link_version }
+            : linkedState }))
+        vi.stubGlobal('axios', { get })
+        workDropboxStates.set('7:2:65', linkedState)
+        const { wrapper, action } = render(currentWork)
+        try {
+            await wrapper.setProps({ assessment: { status: 'missing' } })
+            await flushPromises()
+            const phase = wrapper.findAll('.work-phase').find(item => item.find('.work-phase__title').text() === 'Vorbereiten')!
+            expect(phase.get('h4').find('button').exists()).toBe(false)
+            expect(action('Prüfungsordner ansehen')).toBeUndefined()
+            if (kind === 'direct' || kind === 'changed link on path lookup') {
+                const folderName = phase.get('.work-phase__folder-name')
+                expect(folderName.text()).toBe(folder.name)
+                expect(folderName.attributes('tabindex')).toBe('0')
+                expect(phase.text()).not.toContain('Prüfungsordner bestätigt')
+                expect(phase.text()).not.toContain('Erledigt')
+                expect(phase.text()).not.toContain('Noch nicht erstellt')
+                expect(action('Verbindung verwalten')).toBeUndefined()
+                expect(get.mock.calls.some(([, options]) => options?.params?.include_folder_path)).toBe(false)
+                await folderName.trigger('focus')
+                await flushPromises()
+                expect(folderName.get('v-tooltip').attributes('text')).toBe(kind === 'direct'
+                    ? folder.path : 'Dropbox-Pfad konnte nicht geladen werden.')
+                expect(phase.get('.work-phase__body').isVisible()).toBe(true)
+            } else {
+                expect(phase.find('.work-phase__folder-name').exists()).toBe(false)
+                if (kind === 'module') {
+                    await action('Verbindung verwalten')!.trigger('click')
+                    expect(wrapper.get('[role="dialog"]').text()).toContain('/Module/Fiktiv')
+                    expect(get.mock.calls.some(([url]) => url.endsWith('/folders'))).toBe(false)
+                } else {
+                    expect(phase.text()).not.toContain('Aufgabenstellung bestätigt')
+                }
+            }
+        } finally { wrapper.unmount() }
+    },
+)
+
+it('shows a confirmed preparation in the header and opens the saved connection from its icon', async () => {
+    const folder = { id: 'id:exam', name: date + ' – Kurs-2 – Fiktive Arbeit', path: '/Module/Fiktiv/Leistungsfeststellungen/Prüfung' }
+    const exercise = { status: 'found', folder, preparation: { status: 'ready' } }
+    const linked = { ...connection, exercise }
+    const get = vi.fn().mockResolvedValue({ data: linked })
+    vi.stubGlobal('axios', { get })
+    workDropboxStates.set('7:2:65', linked)
+    const { wrapper, phase } = render()
+    try {
+        const assessment = { ...exercise, userId: 7, workId: work.id, courseId: course.id, date }
+        await wrapper.setProps({ assessment, exerciseReady: true })
+        await flushPromises()
+
+        const preparation = phase('Vorbereiten')
+        const folderName = preparation.get('.work-phase__folder-name')
+        expect(folderName.text()).toBe(folder.name)
+        expect(folderName.get('v-tooltip').attributes('text')).toBe(folder.path)
+        expect(preparation.text()).not.toContain('Aufgabenstellung bestätigt')
+        expect(preparation.find('.work-phase__body button').exists()).toBe(false)
+        const controls = preparation.get('.work-phase__heading-action')
+        expect(controls.findAll('button').map(button => button.attributes('aria-label')))
+            .toEqual(['Verbindung verwalten', 'Leistungsfeststellung verwalten'])
+        expect(controls.text()).not.toContain('Verbindung verwalten')
+
+        await wrapper.setProps({ assessment: { ...assessment, folder: null } })
+        expect(preparation.find('.work-phase__folder-name').exists()).toBe(false)
+        expect(preparation.text()).not.toContain('Aufgabenstellung bestätigt')
+
+        const previousRequests = get.mock.calls.length
+        await controls.get('button[aria-label="Verbindung verwalten"]').trigger('click')
+        expect(wrapper.get('[role="dialog"]').text()).toContain('/Module/Fiktiv')
+        expect(get).toHaveBeenCalledTimes(previousRequests)
+    } finally { wrapper.unmount() }
+})
+
 it('keeps an older paused release reachable and identifies a local mail receipt', async () => {
     const old = { ...work, status: { provision_method: { channel: 'portal' }, student_distribution: { published_at: `${date}T08:00:00Z`, withdrawn_at: `${date}T09:00:00Z` },
         submission_method: { channel: 'email', email: 'abgabe@example.test' }, grade_visibility: { visible: false },
@@ -189,51 +322,67 @@ it('keeps an older paused release reachable and identifies a local mail receipt'
         await flushPromises()
         expect(wrapper.text()).toContain('Freigabe pausiert')
         expect(wrapper.text()).toContain('Abgabe per E-Mail an abgabe@example.test')
-        expect(wrapper.text()).toContain('Bewertungen nur für die Lehrkraft sichtbar')
         expect(wrapper.text()).toContain('Lokaler Mailpit-Test')
         expect(wrapper.text()).not.toContain('vom Versanddienst angenommen')
-        const visibleRow = wrapper.get('[aria-label="Sichtbarkeit"]')
-        const resultsRow = wrapper.get('[aria-label="Verständigung"]')
         const releaseRow = wrapper.get('[aria-label="Bereitstellung"]')
-        expect(visibleRow.text()).toContain('Bewertungen freigeben')
-        expect(resultsRow.text()).toContain('Keine Mitteilung im Kurs')
-        expect(resultsRow.text()).not.toContain('Mailpit')
         expect(releaseRow.findComponent({ name: 'WorkProvisionMethod' }).props('hideActivator')).toBe(true)
         expect(wrapper.getComponent({ name: 'WorkAssignmentMail' }).props('hideActivator')).toBe(true)
-        expect(resultsRow.findComponent({ name: 'WorkAssignmentMail' }).exists()).toBe(false)
         const editRelease = wrapper.get('[data-primary="true"] button')
         expect(editRelease.text()).toBe('Freigabe bearbeiten')
         expect(editRelease.attributes('prepend-icon')).toBe('mdi-pencil-outline')
-        await action('Bewertung eintragen')!.trigger('click')
-        expect(wrapper.emitted('edit-grades')).toHaveLength(1)
-        await action('Importieren')!.trigger('click')
-        expect(wrapper.emitted('import')).toEqual([[old, false, { date, automatic: true }]])
+        expect(action('Bewertung verwalten')).toBeUndefined()
         await editRelease.trigger('click')
         await flushPromises()
         expect(put).not.toHaveBeenCalled()
         expect(openRelease).toHaveBeenCalledExactlyOnceWith({ channel: 'portal' })
         expect(post).not.toHaveBeenCalled()
         expect(wrapper.emitted('saved')).toBeUndefined()
-        await wrapper.setProps({ work: { ...old, status: { ...old.status, grade_visibility: { visible: true, student_notice: { student_ids: [12] } } } } })
+        const collected = { ...old, status: { ...old.status, submission_collection_completed: true } }
+        await wrapper.setProps({ work: collected })
+        const visibleRow = wrapper.get('[aria-label="Sichtbarkeit"]')
+        const resultsRow = wrapper.get('[aria-label="Verständigung"]')
+        expect(wrapper.text()).toContain('Bewertungen nur für die Lehrkraft sichtbar')
+        expect(visibleRow.text()).toContain('Bewertungen freigeben')
+        expect(resultsRow.text()).toContain('Keine Mitteilung im Kurs')
+        expect(resultsRow.text()).not.toContain('Mailpit')
+        expect(resultsRow.findComponent({ name: 'WorkAssignmentMail' }).exists()).toBe(false)
+        expect(action('Bewertung eintragen')).toBeUndefined()
+        await action('Bewertung verwalten')!.trigger('click')
+        const assessmentDialog = wrapper.get('[role="dialog"]')
+        expect(assessmentDialog.get('[aria-label="Dialogaktionen"]').findAll('button').map(button => button.text())).toEqual(['Schließen'])
+        await action('Schließen')!.trigger('click')
+        await action('Importieren')!.trigger('click')
+        expect(wrapper.emitted('import')).toEqual([[collected, false, { date, automatic: true }]])
+        await wrapper.setProps({ work: { ...collected, status: { ...collected.status, grade_visibility: { visible: true, student_notice: { student_ids: [12] } } } } })
         expect(resultsRow.text()).toContain('Mitteilung im Kurs für 1 Person')
         await wrapper.setProps({ active: false })
         expect(wrapper.findComponent({ name: 'WorkQueueProgress' }).exists()).toBe(false)
     } finally { wrapper.unmount() }
 })
 
-it('opens the applicable phase and highlights one real action as the saved work progresses', async () => {
+it('keeps all phases open and highlights one real action as the saved work progresses', async () => {
     vi.stubGlobal('axios', { get: vi.fn().mockResolvedValue({ data: { ...connection, exercise: { status: 'unknown' } } }) })
     workDropboxStates.set('7:2:65', connection)
-    const { wrapper, openRelease } = render()
+    const { wrapper, action, openRelease, phase } = render()
     const primary = () => wrapper.get('[data-primary="true"] button').text()
     try {
         await flushPromises()
         expect(primary()).toBe('Gesamtstatus prüfen')
-        expect(wrapper.findAll('.work-phase__title').map(item => item.text())).toEqual(['Vorbereiten', 'Bereitstellen', 'Abgeben', 'Bewerten'])
-        expect(wrapper.findAll('.work-phase__toggle[disabled]')).toHaveLength(0)
+        const labels = ['Vorbereiten', 'Bereitstellen', 'Abgeben', 'Bewerten']
+        expect(wrapper.findAll('.work-phase__title').map(item => item.text())).toEqual(labels)
+        for (const label of labels) {
+            const heading = phase(label).get('h4')
+            expect(heading.find('button, [aria-expanded], [aria-controls]').exists()).toBe(false)
+        }
+        for (const label of labels.slice(1)) {
+            expect(phase(label).get('h4 v-icon').attributes('icon')).toBe('mdi-lock-outline')
+            expect(phase(label).text()).toContain('Zuerst „Vorbereiten“ abschließen')
+        }
         await wrapper.setProps({ exerciseReady: true })
         expect(primary()).toBe('Bereitstellungsweg vorbereiten')
-        expect(wrapper.findAll('[aria-expanded="true"]')).toHaveLength(1)
+        expect(phase('Bereitstellen').get('.work-phase__body').isVisible()).toBe(true)
+        expect(phase('Abgeben').text()).toContain('Zuerst „Bereitstellen“ abschließen')
+        expect(action('Bewertung verwalten')).toBeUndefined()
         const announced = { ...work, status: { provision_method: { channel: 'portal' }, submission_method: { channel: 'portal' }, student_distribution: { prepared_at: `${date}T08:00:00Z` } } }
         await wrapper.setProps({ work: announced })
         expect(wrapper.text()).toContain('Schülerbereich vorbereitet')
@@ -256,29 +405,29 @@ it('opens the applicable phase and highlights one real action as the saved work 
 it('shows the portal cutoff independently of the selected date and the end of the release', async () => {
     vi.stubGlobal('axios', { get: vi.fn().mockResolvedValue({ data: connection }) })
     const releasedWork = { ...work, finish_until_date: '2026-11-24', finish_until_time: '12:30', status: {
-        submission_method: { channel: 'portal' }, student_distribution: { published_at: `${date}T09:00:00Z` },
+        submission_method: { channel: 'portal' }, student_distribution: { published_at: `${date}T09:00:00Z`, student_ids: [12] },
     } }
-    const { wrapper, action } = render(releasedWork, false)
-    const submission = () => wrapper.findAll('.work-phase__toggle').find(button => button.text().includes('Abgeben'))!
+    const { wrapper, action, phase } = render(releasedWork, false)
+    const submission = () => phase('Abgeben').get('h4')
     try {
         await wrapper.setProps({ now: Date.parse('2026-11-24T11:29:59Z') })
-        expect(submission().text()).not.toContain('Abgabe geschlossen')
+        expect(submission().text()).not.toContain('Portalabgabe geschlossen')
         expect(submission().text()).not.toContain('Erledigt')
-        await submission().trigger('click')
+        expect(phase('Abgeben').get('.work-phase__heading-action button').attributes('aria-label')).toBe('Abgabeweg verwalten')
         await action('Abgabeweg verwalten')!.trigger('click')
 
         await wrapper.setProps({ now: Date.parse('2026-11-24T11:30:01Z') })
-        expect(submission().text()).toContain('Portalabgabe · Abgabe geschlossen')
-        expect(submission().text()).toContain('Erledigt')
+        expect(submission().text()).toContain('Portalabgabe geschlossen · 0 Abgaben')
+        expect(submission().text()).not.toContain('Erledigt')
         const notice = wrapper.get('[role="dialog"] label:has(> input[value="portal"]) + [role="status"]')
         expect(notice.text()).toBe('Abgabefrist abgelaufen. Datei-Upload gesperrt.')
         expect(action('Schülerabgaben einsehen')).toBeUndefined()
 
         await wrapper.setProps({ date: '2026-11-25' })
-        expect(submission().text()).toContain('Abgabe geschlossen')
+        expect(submission().text()).toContain('Portalabgabe geschlossen · 0 Abgaben')
 
         await wrapper.setProps({ work: { ...releasedWork, finish_until_time: '13:30' } })
-        expect(submission().text()).not.toContain('Abgabe geschlossen')
+        expect(submission().text()).not.toContain('Portalabgabe geschlossen')
         expect(submission().text()).not.toContain('Erledigt')
         expect(wrapper.get('[role="dialog"]').text()).not.toContain('Datei-Upload gesperrt')
     } finally { wrapper.unmount() }
@@ -298,11 +447,11 @@ it.each(['selected', 'all'])('opens expired portal submissions from Abgeben for 
         ? { data: { date, students, ambiguous: true } } : connection }))
     const post = vi.fn().mockResolvedValue({ data: { data: saved } })
     vi.stubGlobal('axios', { get, post })
-    const { wrapper, action } = render(released, false)
+    const { wrapper, action, phase } = render(released, false)
     try {
         await wrapper.setProps({ now: Date.parse('2026-11-24T11:30:01Z') })
-        const phase = wrapper.findAll('.work-phase__toggle').find(button => button.text().includes('Abgeben'))!
-        await phase.trigger('click')
+        const headingActions = phase('Abgeben').findAll('.work-phase__heading-action button[aria-haspopup="dialog"]')
+        expect(headingActions.map(button => button.attributes('aria-label'))).toEqual(['Portalabgabe wieder öffnen', 'Abgabeweg verwalten'])
         await action('Portalabgabe wieder öffnen')!.trigger('click')
         await flushPromises()
         expect(get).toHaveBeenCalledWith('/api/admin/teaching/course_works/65/submission-reopening', { params: { date } })
@@ -322,8 +471,8 @@ it.each(['selected', 'all'])('opens expired portal submissions from Abgeben for 
         })
         expect(wrapper.emitted('saved')?.[0]).toEqual([saved])
         await wrapper.setProps({ work: saved })
-        expect(phase.text()).toContain('Persönliche Frist aktiv')
-        expect(phase.text()).not.toContain('Erledigt')
+        expect(phase('Abgeben').get('h4').text()).toContain('Persönliche Frist aktiv')
+        expect(phase('Abgeben').get('h4').text()).not.toContain('Erledigt')
         expect(wrapper.text()).toContain('Upload für 1 wieder geöffnet')
     } finally { wrapper.unmount(); vi.useRealTimers() }
 })
@@ -340,8 +489,6 @@ it('suggests the next Vienna half hour on each opening and keeps a manually edit
     vi.stubGlobal('axios', { get, post })
     const { wrapper, action } = render(released, false)
     try {
-        const phase = wrapper.findAll('.work-phase__toggle').find(button => button.text().includes('Abgeben'))!
-        if (phase.attributes('aria-expanded') !== 'true') await phase.trigger('click')
         await action('Portalabgabe wieder öffnen')!.trigger('click')
         await flushPromises()
         const dialog = wrapper.get('[role="dialog"]')
@@ -376,7 +523,7 @@ it('moves a closed portal to Bewerten and shows submission evidence for the sele
         sha256: 'a'.repeat(64), submitted_at: '2026-11-23T11:00:00Z' })
     const withFiles = (ids: number[]) => ({ ...released, status: { ...released.status, portal_submissions: ids.map(file) } })
     vi.stubGlobal('axios', { get: vi.fn().mockResolvedValue({ data: connection }) })
-    const { wrapper, action } = render(withFiles([12, 13]), false)
+    const { wrapper, action, phase } = render(withFiles([12, 13]), false)
     const completed = () => wrapper.findAll('.work-phase--complete').map(phase => phase.get('.work-phase__title').text())
     const next = () => wrapper.get('.work-phase--current .work-phase__title').text()
     try {
@@ -384,14 +531,16 @@ it('moves a closed portal to Bewerten and shows submission evidence for the sele
         expect(completed()).toEqual(['Vorbereiten', 'Bereitstellen', 'Abgeben'])
         expect(next()).toBe('Bewerten')
         expect(wrapper.get('.work-phase--next-assessment').text()).toContain('Nächster Schritt')
-        expect(wrapper.findAll('.work-phase--complete').every(phase => phase.text().includes('Erledigt'))).toBe(true)
+        expect(phase('Vorbereiten').text()).not.toContain('Erledigt')
+        expect(phase('Bereitstellen').text()).not.toContain('Erledigt')
+        expect(phase('Abgeben').text()).not.toContain('Erledigt')
         expect(action('Schülerabgaben einsehen')).toBeUndefined()
-        expect(action('Abgabestatus ansehen')).toBeDefined()
+        expect(action('Abgabestatus ansehen')).toBeUndefined()
 
         await wrapper.setProps({ date: otherDate })
         expect(completed()).toEqual(['Vorbereiten', 'Bereitstellen', 'Abgeben'])
         expect(next()).toBe('Bewerten')
-        expect(action('Schülerabgaben einsehen')).toBeDefined()
+        expect(action('Schülerabgaben einsehen')).toBeUndefined()
 
         await wrapper.setProps({ work: withFiles([12]) })
         expect(next()).toBe('Bewerten')
@@ -464,22 +613,22 @@ it('copies the grading order for a confirmed assessment once the empty portal cl
     vi.stubGlobal('axios', { get })
     vi.stubGlobal('navigator', { userAgent: 'Test', clipboard: { writeText } })
     workDropboxStates.set('7:2:65', connection)
-    const { wrapper, action } = render(released, false)
+    const { wrapper, action, phase } = render(released, false)
     const copy = () => action('Bewertungskontext kopieren')!
-    const submission = () => wrapper.findAll('.work-phase__toggle').find(button => button.text().startsWith('Abgeben'))!
+    const submission = () => phase('Abgeben').get('h4')
     try {
         await wrapper.setProps({ assessment, exerciseReady: true, now: Date.parse(deadline) - 1000 })
-        expect(copy().element.disabled).toBe(true)
+        expect(action('Bewertungskontext kopieren')).toBeUndefined()
 
         const afterDeadline = Date.parse(deadline) + 1000
         const reopening = { student_id: 12, date, ends_at: '2026-11-24T13:45:00Z', release_ended_at: null }
         await wrapper.setProps({ now: afterDeadline, work: { ...released, status: { ...released.status,
             portal_submission_reopenings: [reopening] } } })
         expect(submission().text()).toContain('Persönliche Frist aktiv')
-        expect(copy().element.disabled).toBe(true)
+        expect(action('Bewertungskontext kopieren')).toBeUndefined()
 
         await wrapper.setProps({ work: released, exerciseReady: false, assessment: { ...assessment, status: 'missing' } })
-        expect(submission().text()).toContain('Portalabgabe · Abgabe geschlossen')
+        expect(submission().text()).toContain('Portalabgabe geschlossen · 0 Abgaben')
         expect(copy().element.disabled).toBe(true)
 
         await wrapper.setProps({ assessment, exerciseReady: true, disabled: true })
@@ -488,7 +637,7 @@ it('copies the grading order for a confirmed assessment once the empty portal cl
         expect(writeText).not.toHaveBeenCalled()
 
         await wrapper.setProps({ disabled: false })
-        expect(wrapper.get('.work-phase--next-assessment .work-phase__toggle').attributes('aria-expanded')).toBe('true')
+        expect(wrapper.get('.work-phase--next-assessment .work-phase__title').text()).toBe('Bewerten')
         expect(copy().isVisible()).toBe(true)
         expect(copy().element.disabled).toBe(false)
         await copy().trigger('click')
@@ -502,32 +651,23 @@ it('copies the grading order for a confirmed assessment once the empty portal cl
     } finally { wrapper.unmount() }
 })
 
-it('keeps a saved portal upload accessible after the release is ended', async () => {
+it('keeps a saved portal upload accessible via the submission gear after the release is ended', async () => {
     const released = { ...work, date_for_all_groups: date, status: {
         submission_method: { channel: 'portal' },
         student_distribution: { published_at: `${date}T08:00:00Z`, student_ids: [12], ended_at: `${date}T12:00:00Z` },
-        portal_submissions: [{ id: 'test-file', student_id: 12, submitted_at: `${date}T10:00:00Z` }],
+        portal_submissions: [{ id: 'test-file', student_id: 12, student_name: 'Ada Test', name: 'abgabe.txt', submitted_at: `${date}T10:00:00Z` }],
     } }
-    const get = vi.fn((url: string) => Promise.resolve({ data: url.endsWith('/ai-export') ? { data: {
-        work_id: 65, course_id: 2, channel: 'portal', files: [
-            { id: 'test-file', student_name: 'Ada Test', name: 'abgabe.txt', download_url: '/synthetic-download' },
-        ],
-    } } : connection }))
+    const get = vi.fn().mockResolvedValue({ data: connection })
     vi.stubGlobal('axios', { get })
-    const { wrapper, action } = render(released, false)
+    const { wrapper, action, phase } = render(released, false)
     try {
         expect(wrapper.get('.work-phase--next-copy .work-phase__title').text()).toBe('Abgeben')
-        const submission = wrapper.findAll('.work-phase__toggle').find(button => button.text().includes('Abgeben'))!
-        expect(submission.text()).toContain('Abgabe geschlossen')
-        const collect = action('Schülerabgaben einsehen')!
-        expect(collect.isVisible()).toBe(true)
-        expect(collect.element.hasAttribute('disabled')).toBe(false)
-        await collect.trigger('click')
+        expect(phase('Abgeben').get('h4').text()).toContain('Portalabgabe geschlossen · 1 Abgabe')
+        expect(action('Schülerabgaben einsehen')).toBeUndefined()
+        await action('Abgabeweg verwalten')!.trigger('click')
         await flushPromises()
-        expect(get).toHaveBeenCalledWith('/api/admin/teaching/course_works/65/ai-export', expect.objectContaining({
-            params: { purpose: 'submission_collection', collection_mode: 'collect', date },
-        }))
         expect(wrapper.get('[role="dialog"]').text()).toContain('abgabe.txt')
+        expect(wrapper.get('[role="dialog"] [aria-label="abgabe.txt herunterladen"]').attributes('download')).toBe('abgabe.txt')
     } finally { wrapper.unmount() }
 })
 
@@ -555,11 +695,13 @@ it('opens the mail editor only after a successful provision choice without chang
     const saved = { ...original, status: { ...original.status, provision_method: { channel: 'email' } } }
     const put = vi.fn().mockRejectedValueOnce({ response: { data: { message: 'Die Auswahl ist nicht mehr aktuell.' } } })
         .mockResolvedValueOnce({ data: { data: saved } })
-    const get = vi.fn().mockResolvedValue({ data: { connected: false } })
+    const get = vi.fn().mockResolvedValue({ data: connection })
     const post = vi.fn()
     vi.stubGlobal('axios', { get, put, post })
-    const { wrapper, action, openMail } = render(original, true, updated => { void wrapper.setProps({ work: updated }) })
+    workDropboxStates.set('7:2:65', connection)
+    const { wrapper, action, phase, openMail } = render(original, true, updated => { void wrapper.setProps({ work: updated }) })
     try {
+        await wrapper.setProps({ assessment: { status: 'found' } })
         await flushPromises()
         expect(wrapper.getComponent({ name: 'WorkProvisionMethod' }).props('portalAvailable')).toBe(false)
         expect(wrapper.findAll('button').filter(button => button.text() === 'Bereitstellungsweg vorbereiten')).toHaveLength(1)
@@ -573,18 +715,20 @@ it('opens the mail editor only after a successful provision choice without chang
         await flushPromises()
         expect(openMail).toHaveBeenCalledExactlyOnceWith({ channel: 'email' })
         expect(wrapper.props('work').status.submission_method).toEqual({ channel: 'portal' })
-        expect(wrapper.text()).toContain('E-Mail gewählt')
+        expect(phase('Bereitstellen').get('h4 .work-phase__status').text()).toBe('Per E-Mail')
         expect(post).not.toHaveBeenCalled()
     } finally { wrapper.unmount() }
 })
 
-it('allows planning a portal provision before its preparation is available', async () => {
+it('allows planning a portal provision once the folder is found, even if the release is unavailable', async () => {
     const submission = { channel: 'portal', email: null }
     const saved = { ...work, status: { provision_method: { channel: 'portal' }, submission_method: submission } }
     const put = vi.fn().mockResolvedValue({ data: { data: saved } })
-    vi.stubGlobal('axios', { get: vi.fn().mockResolvedValue({ data: { connected: false } }), put })
-    const { wrapper, action, openRelease, openMail } = render(work, true, updated => { void wrapper.setProps({ work: updated }) })
+    vi.stubGlobal('axios', { get: vi.fn().mockResolvedValue({ data: connection }), put })
+    workDropboxStates.set('7:2:65', connection)
+    const { wrapper, action, phase, openRelease, openMail } = render(work, true, updated => { void wrapper.setProps({ work: updated }) })
     try {
+        await wrapper.setProps({ assessment: { status: 'found' } })
         await flushPromises()
         await action('Bereitstellungsweg vorbereiten')!.trigger('click')
         await wrapper.get('.provision-choices input[value="portal"]').setValue()
@@ -592,7 +736,7 @@ it('allows planning a portal provision before its preparation is available', asy
         await action('Auswahl speichern')!.trigger('click')
         await flushPromises()
         expect(put).toHaveBeenCalledExactlyOnceWith(expect.stringContaining('/provision-method'), { channel: 'portal', expected: null, submission, expected_submission: null })
-        expect(wrapper.text()).toContain('Schülerbereich gewählt')
+        expect(phase('Bereitstellen').get('h4 .work-phase__status').text()).toBe('Im Schülerbereich')
         expect(openRelease).not.toHaveBeenCalled()
         expect(openMail).not.toHaveBeenCalled()
     } finally { wrapper.unmount() }
@@ -618,30 +762,26 @@ it('routes an existing preparation with a missing submission method through the 
 })
 
 
-it('closes an open follow-up phase and its dialog until the required assessment is confirmed', async () => {
+it('keeps follow-up statuses visible and closes their actions until the required assessment is confirmed', async () => {
     vi.stubGlobal('axios', { get: vi.fn().mockResolvedValue({ data: connection }) })
     workDropboxStates.set('7:2:65', connection)
-    const { wrapper, action } = render()
-    const phase = (label: string) => wrapper.findAll('.work-phase__toggle').find(button => button.text().startsWith(label))!
+    const { wrapper, action, phase } = render()
     const assessment = { status: 'missing', userId: 7, workId: work.id, courseId: course.id, date }
     try {
         await flushPromises()
-        await phase('Abgeben').trigger('click')
-        await action('Abgabeweg festlegen')!.trigger('click')
-        expect(wrapper.get('[role="dialog"]').text()).toContain('Abgabeweg festlegen')
+        await wrapper.setProps({ exerciseReady: true })
+        await action('Bereitstellungsweg vorbereiten')!.trigger('click')
+        expect(wrapper.get('[role="dialog"]').text()).toContain('Bereitstellungsweg')
 
-        await wrapper.setProps({ assessment })
+        await wrapper.setProps({ assessment, exerciseReady: false })
 
         expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
-        expect(phase('Vorbereiten').attributes('disabled')).toBeUndefined()
-        expect(phase('Vorbereiten').attributes('aria-expanded')).toBe('true')
+        expect(phase('Vorbereiten').get('.work-phase__body').isVisible()).toBe(true)
         expect(wrapper.get('[data-primary="true"] button').text()).toBe('Leistungsfeststellung erstellen')
         for (const label of ['Bereitstellen', 'Abgeben', 'Bewerten']) {
-            const toggle = phase(label)
-            expect(toggle.attributes('disabled')).toBeDefined()
-            expect(toggle.text()).toContain('Zuerst Leistungsfeststellung erstellen')
-            await toggle.trigger('click')
-            expect(toggle.attributes('aria-expanded')).toBe('false')
+            expect(phase(label).get('h4').text()).toContain('Zuerst Leistungsfeststellung erstellen')
+            if (label !== 'Bereitstellen') expect(phase(label).get('.work-phase__body').isVisible()).toBe(true)
+            expect(phase(label).find('button').exists()).toBe(false)
         }
         await action('Leistungsfeststellung erstellen')!.trigger('click')
         expect(wrapper.get('[role="dialog"]').text()).toContain('Leistungsfeststellung erstellen')
@@ -649,27 +789,23 @@ it('closes an open follow-up phase and its dialog until the required assessment 
 
         await wrapper.setProps({ assessment: { ...assessment, status: 'found', folder: { id: 'id:exercise', name: 'Fiktive Prüfung' } } })
 
-        expect(wrapper.findAll('.work-phase__toggle[disabled]')).toHaveLength(0)
-        expect(phase('Bereitstellen').attributes('aria-expanded')).toBe('true')
-        expect(phase('Abgeben').attributes('aria-expanded')).toBe('false')
+        expect(action('Bereitstellungsweg vorbereiten')!.isVisible()).toBe(true)
+        expect(action('Abgabeweg festlegen')).toBeUndefined()
+        expect(action('Bewertung verwalten')).toBeUndefined()
     } finally { wrapper.unmount() }
 })
 
-it('keeps the follow-up phases reachable for manual work or a previously prepared release', async () => {
+it('allows grading manual work and preparing a previously configured release as the next step', async () => {
     vi.stubGlobal('axios', { get: vi.fn().mockResolvedValue({ data: connection }) })
     workDropboxStates.set('7:2:65', connection)
-    const { wrapper } = render({ ...work, status: { automation_enabled: false } })
-    const phase = (label: string) => wrapper.findAll('.work-phase__toggle').find(button => button.text().startsWith(label))!
+    const { wrapper, action } = render({ ...work, status: { automation_enabled: false } })
     try {
         await wrapper.setProps({ assessment: { status: 'missing', userId: 7, workId: work.id, courseId: course.id, date } })
-        expect(wrapper.findAll('.work-phase__toggle[disabled]')).toHaveLength(0)
-        await phase('Bewerten').trigger('click')
-        expect(phase('Bewerten').attributes('aria-expanded')).toBe('true')
+        expect(action('Bewertung verwalten')!.isVisible()).toBe(true)
 
         await wrapper.setProps({ work: { ...work, status: { student_distribution: { prepared_at: `${date}T08:00:00Z` } } } })
-        expect(wrapper.findAll('.work-phase__toggle[disabled]')).toHaveLength(0)
-        await phase('Abgeben').trigger('click')
-        expect(phase('Abgeben').attributes('aria-expanded')).toBe('true')
+        expect(action('Bereitstellungsweg vorbereiten')!.isVisible()).toBe(true)
+        expect(action('Bewertung verwalten')).toBeUndefined()
     } finally { wrapper.unmount() }
 })
 
@@ -678,8 +814,7 @@ it('shows an active background job and leaves status and read-only module access
     vi.stubGlobal('axios', { get: vi.fn().mockResolvedValue({ data: status }), post: vi.fn() })
     workDropboxStates.set('7:2:65', connection)
     const run = { id: 'run-workflow', date, state: 'queued', queued_at: `${date}T10:00:00Z` }
-    const { wrapper, action } = render()
-    const phase = (label: string) => wrapper.findAll('.work-phase__toggle').find(button => button.text().startsWith(label))!
+    const { wrapper, action, phase } = render()
     try {
         await wrapper.setProps({ assessment: { status: 'missing', userId: 7, workId: work.id, courseId: course.id, date },
             lastCheck: 'vor dem Auftrag' })
@@ -688,20 +823,18 @@ it('shows an active background job and leaves status and read-only module access
         await wrapper.setProps({ work: { ...work, assessment_run: run } as typeof work })
         expect(wrapper.get('[data-testid="assessment-background-status"]').text()).toContain('wartet auf den Start')
         expect(wrapper.find('[data-testid="work-dialog-last-check"]').exists()).toBe(false)
-        expect(phase('Vorbereiten').attributes('aria-expanded')).toBe('true')
+        const preparation = wrapper.findAll('.work-phase').find(item => item.get('.work-phase__title').text() === 'Vorbereiten')!
+        expect(preparation.get('.work-phase__body').isVisible()).toBe(true)
         for (const label of ['Bereitstellen', 'Abgeben', 'Bewerten']) {
-            const toggle = phase(label)
-            expect(toggle.attributes('disabled')).toBeDefined()
-            expect(toggle.text()).toContain('Während der Erstellung gesperrt')
-            await toggle.trigger('click')
-            await toggle.trigger('keydown', { key: 'Enter' })
-            expect(toggle.attributes('aria-expanded')).toBe('false')
+            expect(phase(label).get('h4').text()).toContain('Während der Erstellung gesperrt')
+            if (label !== 'Bereitstellen') expect(phase(label).get('.work-phase__body').isVisible()).toBe(true)
+            expect(phase(label).find('button').exists()).toBe(false)
         }
         expect(action('Leistungsfeststellung erstellen')).toBeUndefined()
         expect(action('Gesamtstatus prüfen')!.attributes('disabled')).toBeUndefined()
         expect(action('Erstellungsauftrag anzeigen')!.attributes('disabled')).toBeUndefined()
         expect(action('Lernmodul ansehen')!.attributes('disabled')).toBeUndefined()
-        expect(action('Bewertung eintragen')).toBeUndefined()
+        expect(action('Bewertung verwalten')).toBeUndefined()
         await action('Gesamtstatus prüfen')!.trigger('click')
         expect(axios.post).not.toHaveBeenCalled()
         observeAssessmentRun('7:2:65', { ...run, state: 'running' })
@@ -711,8 +844,8 @@ it('shows an active background job and leaves status and read-only module access
         await flushPromises()
         expect(wrapper.find('[data-testid="assessment-background-status"]').exists()).toBe(false)
         for (const label of ['Bereitstellen', 'Abgeben', 'Bewerten']) {
-            expect(phase(label).attributes('disabled')).toBeDefined()
-            expect(phase(label).text()).toContain('Zuerst Leistungsfeststellung erstellen')
+            expect(phase(label).get('h4').text()).toContain('Zuerst Leistungsfeststellung erstellen')
+            expect(phase(label).find('button').exists()).toBe(false)
         }
         expect(action('Leistungsfeststellung erstellen')!.attributes('disabled')).toBeUndefined()
     } finally { wrapper.unmount(); forgetAssessmentRun('7:2:65') }
@@ -737,19 +870,29 @@ it('keeps the chosen mail preparation reachable beside an existing portal releas
 })
 
 
-it('offers a read-only entry for an ended release without reopening provisioning or mail', async () => {
-    const { wrapper, action, openRelease, openMail } = render({ ...work, status: {
+it('shows the portal method and one read-only gear for an ended release', async () => {
+    const { wrapper, action, phase, openRelease, openMail } = render({ ...work, status: {
         student_distribution: { published_at: date + 'T09:00:00Z', withdrawn_at: date + 'T10:00:00Z', ended_at: date + 'T11:00:00Z' },
         provision_method: { channel: 'email' }, submission_method: { channel: 'portal', email: null },
     } })
     try {
-        expect(wrapper.text()).toContain('Freigabe beendet')
-        const phase = wrapper.findAll('summary').find(item => item.text().includes('Bereitstellen'))
-        if (phase) await phase.trigger('click')
+        const provision = phase('Bereitstellen')
+        expect(provision.get('h4 .work-phase__status').text()).toBe('Im Schülerbereich')
+        expect(provision.text()).not.toMatch(/Erledigt|Freigabe beendet|Bereitstellung|Im Schülerbereich bereitgestellt/)
+        const gear = provision.get('.work-phase__heading-row button[aria-label="Freigabe ansehen"]')
+        expect(gear.get('v-icon').attributes('icon')).toBe('mdi-cog-outline')
+        expect(gear.get('v-tooltip').attributes('text')).toBe('Freigabe ansehen')
+        expect(provision.findAll('button').some(button => button.text() === 'Freigabe ansehen')).toBe(false)
         expect(action('Freigabe bearbeiten')).toBeUndefined()
         expect(action('Bereitstellungsweg vorbereiten')).toBeUndefined()
         expect(action('Aufgabenmail verwalten')).toBeUndefined()
-        await action('Freigabe ansehen')!.trigger('click')
+        await wrapper.setProps({ disabled: true })
+        expect(gear.element.hasAttribute('disabled')).toBe(true)
+        await gear.trigger('click')
+        expect(openRelease).not.toHaveBeenCalled()
+        await wrapper.setProps({ disabled: false })
+        await gear.trigger('click')
+        await flushPromises()
         expect(openRelease).toHaveBeenCalledOnce()
         expect(openMail).not.toHaveBeenCalled()
     } finally { wrapper.unmount() }
@@ -775,15 +918,22 @@ it.each([false, true])('recommends copying from Abgeben until the server confirm
     const status = { student_distribution: distribution, submission_method: { channel: 'portal' },
         portal_submissions: [{ student_id: 12, id: 'an-original' }] }
     const current = { ...work, groups: [{ date, student_ids: [12] }], status }
-    const { wrapper, action } = render(current)
-    const label = 'Portalabgaben nach Dropbox kopieren'
+    const { wrapper, action, phase } = render(current)
+    const label = 'Abgaben in Dropbox kopieren'
     try {
         await wrapper.setProps({ now: Date.parse(date + 'T12:00:00Z'), assessment: openedTarget })
         const next = () => wrapper.get('.work-phase--current .work-phase__title').text()
         expect(next()).toBe('Abgeben')
+        expect(phase('Bewerten').text()).toContain('Zuerst „Abgeben“ abschließen')
+        expect(action('Bewertung verwalten')).toBeUndefined()
+        expect(action('Importieren')).toBeUndefined()
         expect(action(label)?.isVisible()).toBe(true)
         expect(action(label)?.element.closest('[data-primary="true"]')).toBeTruthy()
-        expect(action('Schülerabgaben einsehen')).toBeDefined()
+        const headingActions = wrapper.get('.work-phase--next-copy .work-phase__heading-action')
+        expect(headingActions.findAll('button[aria-haspopup="dialog"]').map(button => button.attributes('aria-label')))
+            .toEqual([label, 'Portalabgabe wieder öffnen', 'Abgabeweg verwalten'])
+        expect(action(label)?.attributes('prepend-icon')).toBe('mdi-dropbox')
+        expect(action('Schülerabgaben einsehen')).toBeUndefined()
         expect(post).not.toHaveBeenCalled()
         await action(label)!.trigger('click')
         await flushPromises()
@@ -797,11 +947,20 @@ it.each([false, true])('recommends copying from Abgeben until the server confirm
         await wrapper.setProps({ work: { ...current, portal_copy_progress: progress } })
         expect(next()).toBe(complete ? 'Bewerten' : 'Abgeben')
         expect(wrapper.get('[role="dialog"]').isVisible()).toBe(true)
+        await action('Schließen')!.trigger('click')
+        if (complete) {
+            await action('Bewertung verwalten')!.trigger('click')
+            expect(wrapper.get('[role="dialog"]').text()).toContain('Bewerten')
+        } else {
+            expect(action('Bewertung verwalten')).toBeUndefined()
+        }
 
         await wrapper.setProps({ work: { ...current, status: { ...status, portal_submission_reopenings: [
             { student_id: 12, date, release_ended_at: distribution.ended_at, ends_at: date + 'T13:00:00Z' },
         ] } } })
         expect(action(label)).toBeUndefined()
+        expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+        expect(action('Bewertung verwalten')).toBeUndefined()
         await wrapper.setProps({ work: { ...current, status: { ...status, submission_method: { channel: 'email' } } } })
         expect(action(label)).toBeUndefined()
         await wrapper.setProps({ work: { ...current, status: { ...status,
@@ -834,7 +993,7 @@ it('shows the candidate of the in-flight request and confirms a row only after a
     const row = (name: string) => wrapper.findAll('[aria-label="Kandidat:innen und Kopierstatus"] > li').find(row => row.text().includes(name))!
     try {
         await wrapper.setProps({ assessment: target, now: Date.parse(date + 'T12:00:00Z') })
-        await action('Portalabgaben nach Dropbox kopieren')!.trigger('click')
+        await action('Abgaben in Dropbox kopieren')!.trigger('click')
         await flushPromises()
         expect(row('Ada Test').attributes('aria-current')).toBe('true')
         expect(row('Ada Test').text()).toContain('Wird bearbeitet · 0/2 Dateien')
@@ -861,7 +1020,7 @@ it('shows documented delivery methods for the current group independently of the
     const time = date + 'T10:00:00Z'
     const otherDate = '2026-11-21'
     const log = { origin: 'dispatch_import', purpose: 'tasks', sha256: 'd'.repeat(64) }
-    const { wrapper, action } = render({ ...work, groups: [{ date, student_ids: [12] }, { date: otherDate, student_ids: [13] }], status: {
+    const { wrapper, action, phase } = render({ ...work, groups: [{ date, student_ids: [12] }, { date: otherDate, student_ids: [13] }], status: {
         student_distribution: { published_at: time, student_ids: [12] },
         provision_method: { channel: 'portal' }, submission_method: { channel: 'portal' },
         dispatch_logs: [log], dispatch_notifications: [{ student_id: 13, sent_at: time, purpose: 'tasks', origin: 'dispatch_import', log_sha256: log.sha256 }],
@@ -871,11 +1030,26 @@ it('shows documented delivery methods for the current group independently of the
         } },
     } })
     try {
-        await wrapper.findAll('button').find(button => button.text().includes('Bereitstellen'))!.trigger('click')
         const provision = wrapper.get('[aria-label="Bereitstellung"]')
-        expect(provision.text()).toContain('Im Schülerbereich bereitgestellt')
+        expect(provision.isVisible()).toBe(true)
+        expect(phase('Bereitstellen').get('h4 .work-phase__status').text()).toBe('Im Schülerbereich')
+        expect(provision.text()).not.toContain('Im Schülerbereich bereitgestellt')
         expect(provision.text()).toContain('Lokaler Mailpit-Test')
         expect(provision.text()).not.toContain('Per E-Mail versandt')
         expect(action('Freigabe verwalten')).toBeDefined()
+    } finally { wrapper.unmount() }
+})
+
+it('shows the selected email method and keeps its unconfirmed dispatch visible', () => {
+    const { wrapper, phase } = render({ ...work, status: {
+        provision_method: { channel: 'email' }, submission_method: { channel: 'portal' },
+        assignment_mail: { batches: { [date]: { transport: 'postmark', state: 'failed',
+            recipients: [{ student_id: 12, state: 'rejected' }] } } },
+    } }, false)
+    try {
+        const provision = phase('Bereitstellen')
+        expect(provision.get('h4 .work-phase__status').text()).toBe('Per E-Mail')
+        expect(provision.text()).toContain('E-Mail-Versand nicht bestätigt')
+        expect(provision.find('button[aria-label="Freigabe ansehen"]').exists()).toBe(false)
     } finally { wrapper.unmount() }
 })

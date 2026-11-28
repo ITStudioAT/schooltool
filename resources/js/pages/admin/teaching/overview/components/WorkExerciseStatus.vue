@@ -1,9 +1,14 @@
 <template>
-    <v-btn v-if="labelled && (historical || status === 'found' || (canCreate && status === 'missing'))" size="small" min-height="44"
-        variant="tonal" prepend-icon="mdi-clipboard-text-outline" :disabled="!accessible" :aria-label="!historical && status === 'missing' ? 'Leistungsfeststellung erstellen' : 'Leistungsfeststellung verwalten'" @click.stop="openDialog">
-        {{ !historical && status === 'missing' ? 'Leistungsfeststellung erstellen' : 'Leistungsfeststellung verwalten' }}
+    <v-btn v-if="action === 'manage' && offerManagement" icon width="40" height="40" variant="text"
+        :disabled="!accessible" aria-label="Leistungsfeststellung verwalten" aria-haspopup="dialog" @click.stop="openDialog">
+        <v-icon icon="mdi-cog-outline" size="20" aria-hidden="true" />
+        <v-tooltip activator="parent" location="top" open-on-focus text="Leistungsfeststellung verwalten" />
     </v-btn>
-    <span v-else-if="!labelled && work?.id && (needsPreparation || historical || status === 'found')" class="d-inline-flex" :class="{ 'cursor-pointer': accessible }"
+    <v-btn v-else-if="action === 'create' && offerCreation" size="small" min-height="44"
+        variant="tonal" prepend-icon="mdi-clipboard-text-outline" :disabled="!accessible" aria-label="Leistungsfeststellung erstellen" @click.stop="openDialog">
+        Leistungsfeststellung erstellen
+    </v-btn>
+    <span v-else-if="action === 'status' && work?.id && (needsPreparation || historical || status === 'found')" class="d-inline-flex" :class="{ 'cursor-pointer': accessible }"
         :tabindex="accessible ? 0 : undefined" :role="accessible ? 'button' : undefined" :aria-disabled="disabled"
         :aria-label="tooltip" :title="tooltip" @click.stop="openDialog"
         @keydown.enter.stop.prevent="openDialog" @keydown.space.stop.prevent="openDialog">
@@ -69,7 +74,8 @@
                     <p class="exercise-info-description text-body-2">{{ work.description }}</p>
                 </template>
                 <div v-if="folder?.id && !pendingDeletion" class="d-flex flex-wrap ga-2 mt-4" aria-label="Prüfungsunterlagen">
-                    <WorkExercisePdf v-for="section in documentSections" :key="section" :work="work" :date="date" :section="section" :verify-exercise="prepared" />
+                    <WorkExercisePdf v-for="section in documentSections" :key="section" :work="work" :date="date" :section="section"
+                        :verify-exercise="prepared || directPortalFolder" />
                     <WorkEvaluationPdf :work="work" />
                 </div>
                 <v-alert v-if="confirmDelete" type="warning" variant="tonal" class="mt-4">Prüfungsunterlagen und Kandidatenordner samt Inhalt löschen? Prüfungsordner, Verknüpfung und Arbeit bleiben erhalten.</v-alert>
@@ -82,7 +88,7 @@
                     @click="confirmDelete ? deleteExercise() : confirmDelete = true">{{ deletionProgress ? 'Löschen erneut versuchen' : confirmDelete ? 'Löschen bestätigen' : 'Leistungsfeststellung löschen' }}</v-btn>
                 <v-btn v-if="confirmDelete && !deletionProgress" @click="confirmDelete = false">Abbrechen</v-btn>
                 <v-spacer />
-                <v-btn :disabled="deleting" @click="closeDialog">Schließen</v-btn>
+                <v-btn variant="text" min-height="44" :disabled="deleting" @click="closeDialog">Schließen</v-btn>
             </v-card-actions>
         </v-card>
     </v-dialog>
@@ -104,7 +110,9 @@ import WorkCheckProgress from './WorkCheckProgress.vue'
 import WorkPointScale from './WorkPointScale.vue'
 import { createWorkCheckStream, useWorkCheckProgress } from './workCheckProgress'
 
-const props = defineProps({ work: Object, course: Object, date: { type: String, default: '' }, state: Object, size: { type: [Number, String], default: 30 }, disabled: Boolean, canCreate: Boolean, recheck: Function, labelled: Boolean })
+const props = defineProps({ work: Object, course: Object, date: { type: String, default: '' }, state: Object,
+    size: { type: [Number, String], default: 30 }, disabled: Boolean, canCreate: Boolean, recheck: Function,
+    action: { type: String, default: 'status' }, directPortalFolder: Boolean })
 const emit = defineEmits(['create', 'deleted'])
 const admin = useAdminStore()
 const key = computed(() => workDropboxKey(admin.config?.user?.id, props.work))
@@ -120,7 +128,9 @@ const folder = computed(() => {
     const checkedFolder = cached?.status === 'found' ? cached.folder : null
     return currentFolder || checkedFolder || (historical.value ? binding.value?.legacy_folders?.exercise || binding.value?.folder : null)
 })
-const accessible = computed(() => !props.disabled && (historical.value || status.value === 'found' || (props.canCreate && status.value === 'missing')))
+const offerManagement = computed(() => historical.value || status.value === 'found')
+const offerCreation = computed(() => !historical.value && props.canCreate && status.value === 'missing')
+const accessible = computed(() => !props.disabled && (offerManagement.value || offerCreation.value))
 const opened = ref(false)
 const checkTime = computed(() => props.state?.checkedAt ? new Intl.DateTimeFormat('de-AT', {
     timeZone: 'Europe/Vienna', dateStyle: 'short', timeStyle: 'short',
@@ -250,7 +260,7 @@ function deadline(date, time, empty = 'Nicht festgelegt') {
 
 async function openDialog() {
     if (!accessible.value) return
-    if (!historical.value && status.value === 'missing' && props.canCreate) {
+    if (offerCreation.value) {
         emit('create')
         return
     }
@@ -258,7 +268,7 @@ async function openDialog() {
         await props.recheck()
         await nextTick()
     }
-    if (accessible.value && !historical.value && status.value === 'missing' && props.canCreate) {
+    if (accessible.value && offerCreation.value) {
         emit('create')
         return
     }

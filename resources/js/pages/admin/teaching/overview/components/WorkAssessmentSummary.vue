@@ -3,7 +3,9 @@
         <h3>Leistungsfeststellung</h3>
         <dl class="work-assessment-ways">
             <div><dt>Bereitstellung</dt>
-                <dd v-for="item in provision" :key="item.key">{{ item.label }}<template v-if="item.state"> · {{ item.state }}</template></dd>
+                <dd v-for="item in provision" :key="item.key">
+                    {{ compact && item.label === 'Im Schülerbereich bereitgestellt' ? 'Im Schülerbereich' : item.label }}<template v-if="item.state"> · {{ item.state }}</template>
+                </dd>
             </div>
             <div><dt>Abgabeweg</dt><dd>{{ submission }}</dd></div>
         </dl>
@@ -39,6 +41,7 @@ const props = defineProps({
     assessmentRun: Object,
     canAddTest: Boolean,
     disabled: Boolean,
+    compact: Boolean,
 })
 defineEmits(['add-test'])
 const numberFormat = new Intl.NumberFormat('de-AT', { maximumFractionDigits: 2 })
@@ -49,7 +52,7 @@ const provision = computed(() => {
 })
 const submission = computed(() => {
     const method = props.work.status?.submission_method
-    if (method?.channel === 'portal') return 'Datei-Upload unter „Meine Aufgaben“'
+    if (method?.channel === 'portal') return props.compact ? 'Datei-Upload' : 'Datei-Upload unter „Meine Aufgaben“'
     if (method?.channel === 'email') return method.email ? `Datei per E-Mail an ${method.email}` : 'Datei per E-Mail · Adresse fehlt'
     return 'Noch nicht festgelegt'
 })
@@ -109,7 +112,7 @@ const rows = computed(() => {
     )?.maximum_points)
     const total = (noAssignment || assignmentPoints !== null) && (!hasMc || mcPoints !== null)
         ? (assignmentPoints ?? 0) + (mcPoints ?? 0) : null
-    const missing = hasAssignment && assignmentPoints === null ? 'Punkte des Aufgabenblatts fehlen.'
+    const missing = hasAssignment && assignmentPoints === null ? (props.compact ? null : 'Punkte des Aufgabenblatts fehlen.')
         : hasMc && mcPoints === null ? 'Punkte des MC-Tests fehlen.'
             : !hasAssignment && !noAssignment ? 'Ein Aufgabenblatt ist nicht bestätigt.' : null
     facts.push({ label: 'Gesamtpunkte', value: total === null ? 'Noch offen' : pointsLabel(total), details: total === null && missing ? [missing] : [] })

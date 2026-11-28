@@ -60,7 +60,7 @@
             </v-card-text>
             <v-card-actions v-if="!inline || !busy">
                 <v-spacer />
-                <v-btn v-if="!inline" :disabled="busy || folderBusy" @click="opened = false">{{ state?.module_link?.folder?.id ? 'Schließen' : 'Abbrechen' }}</v-btn>
+                <v-btn v-if="!inline" variant="text" min-height="44" :disabled="busy || folderBusy" @click="opened = false">{{ state?.module_link?.folder?.id ? 'Schließen' : 'Abbrechen' }}</v-btn>
                 <v-btn v-else :disabled="busy" variant="text" @click="defer">Später</v-btn>
                 <v-btn v-if="!legacyLink && !progress?.completed.includes('save')" color="primary" variant="flat" :disabled="busy || !resolved?.can_link || !resolved?.proof || resolved?.conflict" @click="link">Verknüpfen und Prüfungsordner anlegen</v-btn>
             </v-card-actions>

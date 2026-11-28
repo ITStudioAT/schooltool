@@ -170,7 +170,7 @@ function hasSavedGrade(group, id) {
         .some(value => value != null && !['', 'NA', 'VL', 'F'].includes(String(value).trim()))
 }
 
-export const portalCopyLabel = 'Portalabgaben nach Dropbox kopieren'
+export const portalCopyLabel = 'Abgaben in Dropbox kopieren'
 export const portalLinkLabel = 'Dropbox-Prüfungsordner verknüpfen'
 export const portalCheckLabel = 'Dropbox-Prüfungsordner prüfen'
 

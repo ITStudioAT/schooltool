@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { clearWorkDropboxStates, loadWorkDropbox, loadWorkExercise, workDropboxStates, workExerciseCheck } from '@/helpers/workDropbox'
+import { clearWorkDropboxStates, loadWorkDropbox, loadWorkExercise, loadWorkFolderOverview, workDropboxStates, workExerciseCheck } from '@/helpers/workDropbox'
 
 const key = '7:2:65'
 const work = { id: 65, teaching_course_id: 2, date_for_all_groups: '2026-10-23', groups: [] }
@@ -36,6 +36,25 @@ it('shares one first check between overview, folder status and details', async (
     expect(workExerciseCheck(key, work, work.date_for_all_groups)).toMatchObject({ status: 'found', folder: found.exercise.folder })
     await loadWorkExercise(key, work, work.date_for_all_groups)
     expect(get).toHaveBeenCalledTimes(1)
+})
+
+it('does not reload a saved status when another work updates the overview', async () => {
+    const otherWork = { ...work, id: 66 }
+    const get = vi.fn().mockResolvedValue({ data: found })
+    vi.stubGlobal('axios', { get })
+    const loadOverview = () => Promise.all([
+        loadWorkFolderOverview(key, work, work.date_for_all_groups),
+        loadWorkFolderOverview('7:2:66', otherWork, otherWork.date_for_all_groups),
+    ])
+
+    await loadOverview()
+    await loadOverview()
+    expect(get).toHaveBeenCalledTimes(2)
+
+    clearWorkDropboxStates(false)
+    await loadOverview()
+    await loadOverview()
+    expect(get).toHaveBeenCalledTimes(4)
 })
 
 it('restores the timestamped last check after reload and contacts Dropbox only on explicit refresh', async () => {

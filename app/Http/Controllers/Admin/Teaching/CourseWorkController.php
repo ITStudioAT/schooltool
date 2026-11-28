@@ -63,6 +63,22 @@ class CourseWorkController extends Controller
             'server_now' => now()->toIso8601String()]])->header('Cache-Control', 'private, no-store');
     }
 
+    public function downloadStudentTaskFile(TeachingCourseWork $course_work, string $fileId): StreamedResponse
+    {
+        $actor = $this->userHasRole(['admin', 'teaching_admin', 'teacher']);
+        abort_unless($actor && $course_work->teachingCourse, 403);
+        $this->authorizeTeachingCourseAccess($course_work->teachingCourse, $actor);
+
+        abort_unless(in_array($fileId, $course_work->status['student_distribution']['file_ids'] ?? [], true), 404);
+        $file = collect($course_work->status['student_task_files'] ?? [])->firstWhere('id', $fileId);
+        $disk = Storage::disk('local');
+        abort_unless(($file['storage_disk'] ?? null) === 'local' && $disk->exists($file['file_path']), 404);
+
+        return $disk->download($file['file_path'], $file['name'], [
+            'Content-Type' => 'application/pdf', 'Cache-Control' => 'private, no-store', 'X-Content-Type-Options' => 'nosniff',
+        ]);
+    }
+
     public function studentDistributionTestAction(Request $request, TeachingCourseWork $course_work, TeachingWorkStudentDistribution $distribution, TeachingCourseWorkEntrySyncService $entries): JsonResponse
     {
         $actor = $this->userHasRole(['admin', 'teaching_admin', 'teacher']);
@@ -1307,6 +1323,12 @@ class CourseWorkController extends Controller
 
         $this->authorizeTeachingCourseAccess($course, $auth_user);
 
+        if ($request->hasAny(['expected_type', 'expected_is_group_work'])) {
+            $saved = $this->updateWorkMetadata($request, $course_work, $auth_user, $workService, $entryService, $entrySyncService);
+
+            return response()->json(['data' => $entrySyncService->serializeWork($saved->fresh('teachingCourseWorkGroupStudents'))]);
+        }
+
         if (count($request->all()) === 1 && $request->exists('completion_override')) {
             $completionOverride = $request->validate(['completion_override' => 'required|boolean'])['completion_override'];
             $course_work = DB::transaction(function () use ($course_work, $completionOverride): TeachingCourseWork {
@@ -1464,6 +1486,86 @@ class CourseWorkController extends Controller
         }
 
         return response()->json(['data' => $entrySyncService->serializeWork($course_work->fresh('teachingCourseWorkGroupStudents'))] + $response);
+    }
+
+    private function updateWorkMetadata(
+        Request $request,
+        TeachingCourseWork $work,
+        User $actor,
+        TeachingCourseWorkService $workService,
+        TeachingCourseStudentEntryService $entries,
+        TeachingCourseWorkEntrySyncService $entrySync
+    ): TeachingCourseWork {
+        $editingType = $request->exists('expected_type');
+        $allowedFields = $editingType ? ['type', 'expected_type', 'maximum_plus'] : ['is_group_work', 'expected_is_group_work'];
+        abort_if(array_diff(array_keys($request->all()), $allowedFields) !== [], 422, 'Bitte jeweils nur eine Eigenschaft ändern.');
+
+        return DB::transaction(function () use ($request, $work, $actor, $workService, $entries, $entrySync, $editingType): TeachingCourseWork {
+            $locked = TeachingCourseWork::query()->with('teachingCourse')->lockForUpdate()->findOrFail($work->id);
+            $course = $locked->teachingCourse;
+            $this->authorizeTeachingCourseAccess($course, $actor);
+            app(TeachingAssessmentRuns::class)->assertNoActiveCreation($locked);
+            abort_if(isset($locked->status['deletion_receipt']), 409, 'Die Löschung dieser Arbeit ist noch nicht abgeschlossen.');
+
+            if ($editingType) {
+                $courseActor = $this->teachingCourseActor($actor, $course);
+                $data = $request->validate([
+                    'type' => ['required', 'string', 'max:255', Rule::in($entries->allowedGradingTypesForCourse($courseActor, $course))],
+                    'expected_type' => ['present', 'nullable', 'string', 'max:255'],
+                ]);
+                abort_unless($data['expected_type'] === ($locked->type ?: null), 409, 'Der Typ wurde inzwischen geändert. Bitte die Arbeit erneut öffnen.');
+                $maximum = $this->validatedMaximumPlus($request, $course, $courseActor, $entries, $locked);
+                $gradeRules = $entries->gradeRulesForCourse($courseActor, $course, $data['type']);
+                $this->appendMaximumPlusGradeRule($gradeRules, $maximum);
+                Validator::make(['groups' => $locked->groups ?? []], [
+                    'groups.*.grade' => $gradeRules,
+                    'groups.*.grades.*.grade' => $gradeRules,
+                ], ['groups.*.grade' => 'Eine vorhandene Beurteilung passt nicht zum gewählten Typ.',
+                    'groups.*.grades.*.grade' => 'Eine vorhandene Beurteilung passt nicht zum gewählten Typ.'])->validate();
+
+                $locked->update(['type' => $data['type'], 'maximum_plus' => $maximum]);
+                $locked->teachingCourseStudentEntries()->where('source', TeachingCourseWorkEntrySyncService::SOURCE_COURSE_WORK)
+                    ->update(['type' => $locked->type]);
+
+                return $locked;
+            }
+
+            $data = $request->validate(['is_group_work' => 'required|boolean', 'expected_is_group_work' => 'required|boolean']);
+            abort_unless((bool) $data['expected_is_group_work'] === $locked->is_group_work,
+                409, 'Die Arbeitsform wurde inzwischen geändert. Bitte die Arbeit erneut öffnen.');
+            $isGroupWork = (bool) $data['is_group_work'];
+            if ($isGroupWork === $locked->is_group_work) {
+                return $locked;
+            }
+
+            $status = $locked->status ?? [];
+            abort_if(! empty($status['student_distribution']['prepared_at']) || ! empty($status['student_distribution']['published_at'])
+                || ! empty($status['multiple_choice_tests']) || ! empty($status['assessment_json_imports']) || ! empty($status['evaluation_pdfs'])
+                || TeachingWorkSubmissions::lockReason($locked, lock: true) !== null
+                || TeachingWorkDropboxFolder::query()->where('teaching_course_work_id', $locked->id)->exists(),
+                409, 'Die Arbeitsform ist geschützt, weil die Arbeit bereits vorbereitet, bereitgestellt oder bearbeitet wurde.');
+
+            $groups = $locked->groups ?: $entrySync->groupsForWork($locked);
+            $workDate = $locked->date_for_all_groups?->format('Y-m-d');
+            $studentIds = [];
+            foreach ($groups as $group) {
+                $ids = $group['student_ids'] ?? [];
+                $studentId = $ids[0] ?? null;
+                $hasData = filled($group['name'] ?? null) || filled($group['grade'] ?? null) || filled($group['comment'] ?? null)
+                    || (filled($group['date'] ?? null) && $group['date'] !== $workDate)
+                    || collect($group['grades'] ?? [])->contains(fn ($row): bool => filled($row['grade'] ?? null))
+                    || collect($group['comments'] ?? [])->contains(fn ($row): bool => filled($row['comment'] ?? null))
+                    || collect($group['points'] ?? [])->contains(fn ($row): bool => filled($row['points'] ?? null));
+                abort_if(! $isGroupWork || count($ids) !== 1 || ! $studentId || isset($studentIds[$studentId]) || $hasData,
+                    409, 'Die Arbeitsform kann mit vorhandenen Gruppenzuordnungen, eigenen Terminen oder Beurteilungen nicht geändert werden.');
+                $studentIds[$studentId] = true;
+            }
+
+            $locked->update($workService->prepareWorkData(['is_group_work' => $isGroupWork, 'groups' => []], $course, (int) $actor->school_id));
+            $entrySync->syncWork($locked);
+
+            return $locked;
+        });
     }
 
     private function mergeWorkCompletionOverride(TeachingCourseWork $work, array $attributes, ?bool $override): array

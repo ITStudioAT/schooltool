@@ -1,11 +1,12 @@
 <template>
-    <v-btn variant="tonal" size="small" min-height="44" prepend-icon="mdi-inbox-arrow-down-outline"
-        :disabled="disabled || !work?.id" @click="open">
-        {{ method || releaseEnded ? 'Abgabeweg verwalten' : 'Abgabeweg festlegen' }}
+    <v-btn icon width="40" height="40" variant="text" :aria-label="actionLabel" aria-haspopup="dialog"
+        :disabled="disabled || !work?.id" @click.stop="open">
+        <v-icon icon="mdi-cog-outline" size="20" aria-hidden="true" />
+        <v-tooltip activator="parent" location="top" open-on-focus :text="actionLabel" />
     </v-btn>
     <v-dialog v-model="dialog" max-width="590" scrollable :persistent="saving">
         <v-card v-if="dialog">
-            <v-card-title class="text-wrap">Abgabeweg {{ method || releaseEnded ? 'verwalten' : 'festlegen' }} · {{ work.title }}</v-card-title>
+            <v-card-title class="text-wrap">{{ actionLabel }} · {{ work.title }}</v-card-title>
             <v-card-text>
                 <WorkSubmissionFields v-model:channel="channel" v-model:email="email"
                     :disabled="saving || disabled" :lock-reason="lockReason" :portal-closure-notice="portalClosureNotice" />
@@ -40,14 +41,16 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { download, update } from '@/actions/App/Http/Controllers/Admin/Teaching/WorkSubmissionController'
+import { workForProgressDate } from '@/helpers/workProgress'
 
 import WorkSubmissionFields from './WorkSubmissionFields.vue'
 
-const props = defineProps({ work: { type: Object, required: true }, disabled: Boolean, portalClosureNotice: String })
+const props = defineProps({ work: { type: Object, required: true }, date: String, disabled: Boolean, portalClosureNotice: String })
 const emit = defineEmits(['saved'])
 const releaseEnded = computed(() => Boolean(props.work.status?.student_distribution?.ended_at))
 const method = computed(() => props.work.status?.submission_method || null)
-const submissions = computed(() => [...(props.work.status?.portal_submissions || [])].reverse())
+const actionLabel = computed(() => method.value || releaseEnded.value ? 'Abgabeweg verwalten' : 'Abgabeweg festlegen')
+const submissions = computed(() => [...(workForProgressDate(props.work, props.date).status?.portal_submissions || [])].reverse())
 const dialog = ref(false)
 const channel = ref(null)
 const email = ref('')

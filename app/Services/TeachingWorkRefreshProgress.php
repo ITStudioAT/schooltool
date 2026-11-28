@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Listeners\RecordTeachingWorkAction;
 use App\Models\TeachingCourseWork;
 use App\Models\User;
 use Closure;
@@ -47,11 +48,13 @@ class TeachingWorkRefreshProgress
             $request->attributes->set('teaching_work_progress_reporter', $emit);
             try {
                 $result = $operation();
+                app(RecordTeachingWorkAction::class)->record($request, $result);
                 $emit('result', $result->getData(true));
             } catch (Throwable $exception) {
                 $handler = app(ExceptionHandler::class);
                 $handler->report($exception);
                 $response = $handler->render($request, $exception);
+                app(RecordTeachingWorkAction::class)->record($request, $response);
                 $body = $response instanceof JsonResponse ? $response->getData(true) : [];
                 $emit('error', ['status' => $response->getStatusCode(), 'body' => is_array($body)
                     ? array_intersect_key($body, array_flip(['message', 'errors'])) : ['message' => 'Die Prüfung konnte nicht abgeschlossen werden.']]);

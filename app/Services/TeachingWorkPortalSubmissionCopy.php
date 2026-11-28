@@ -101,7 +101,7 @@ class TeachingWorkPortalSubmissionCopy
         $student = (int) ($file['student_id'] ?? 0);
         if ($current->count() !== 1 || ! in_array($student, array_column($group['students'], 'id'), true)
             || SchooltoolAssessmentJson::digest($file) !== $selection['receipt_digest']) {
-            return ['status' => 'open', 'message' => 'Die Abgabe oder ihre Zuordnung wurde seit Beginn geändert.'];
+            return ['status' => 'open', 'date' => $plan['date'], 'message' => 'Die Abgabe oder ihre Zuordnung wurde seit Beginn geändert.'];
         }
         try {
             $name = $this->candidateNames($work)[$student] ?? null;
@@ -117,21 +117,21 @@ class TeachingWorkPortalSubmissionCopy
             $status = $this->dropbox->copyPortalOriginal($connection, $destination, (string) ($file['name'] ?? ''), $bytes);
             $this->recordTarget($work, $plan, $selection, $destination['id']);
 
-            return ['status' => $status];
+            return ['status' => $status, 'date' => $plan['date']];
         } catch (UnableToReadFile|UnableToRetrieveMetadata) {
             $this->recordTarget($work, $plan, $selection);
 
-            return ['status' => 'open', 'message' => 'Das gespeicherte Portaloriginal konnte nicht gelesen werden.'];
+            return ['status' => 'open', 'date' => $plan['date'], 'message' => 'Das gespeicherte Portaloriginal konnte nicht gelesen werden.'];
         } catch (DropboxExerciseRequestFailed|HttpExceptionInterface $failure) {
             $this->recordTarget($work, $plan, $selection);
 
-            return ['status' => 'open', 'message' => $failure instanceof DropboxExerciseRequestFailed
+            return ['status' => 'open', 'date' => $plan['date'], 'message' => $failure instanceof DropboxExerciseRequestFailed
                 ? $failure->safePublicMessage : $failure->getMessage()];
         }
     }
 
     /** Check existing Dropbox files and replace the proof for this date using a fresh, locked work record. */
-    public function reconcile(TeachingCourseWork $work, User $actor, ?string $date, Closure $authorize): ?array
+    public function reconcile(TeachingCourseWork $work, User $actor, ?string $date, Closure $authorize, ?Closure $onChecking = null): ?array
     {
         if ((TeachingWorkSubmissions::method($work)['channel'] ?? null) !== 'portal' || ! $work->studentReleaseEnded()
             || empty($work->status['portal_submissions'])) {
@@ -143,6 +143,7 @@ class TeachingWorkPortalSubmissionCopy
         if ($files === []) {
             return null;
         }
+        $onChecking?->__invoke();
 
         $counts = ['total' => count($files), 'confirmed' => 0, 'missing' => 0, 'different' => 0, 'unverifiable' => 0];
         $link = $snapshot['link'];

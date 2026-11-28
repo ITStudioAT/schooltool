@@ -997,35 +997,46 @@
         <WorkEvaluationImport ref="evaluationImport" @imported="evaluationImported" />
         <WorkDropboxLink ref="moduleLink" :course-id="selected_course?.id" @linked="dateHandshakeLinked" @portal-target-saved="applySavedCourseWork({ data: $event })" />
         <v-dialog v-model="workDialog.open" persistent max-width="720">
-            <v-card>
-                <v-card-title class="text-subtitle-1 font-weight-bold d-flex flex-wrap align-center ga-2 text-wrap">
-                    <v-icon size="20">mdi-calendar-outline</v-icon>
-                    Arbeiten
-                    <v-date-input
-                        v-if="workDialogFormOpen && workDialogDateEditing"
-                        v-model="workDialogForm.date_for_all_groups"
-                        class="course-table-date-work-date-input"
-                        data-testid="course-table-date-work-date-input"
-                        density="compact"
-                        hide-details
-                        label="Datum"
-                        variant="outlined" :disabled="assessmentLocked"
-                        @update:model-value="applyWorkDialogDate">
-                        <template #day="{ item, props }">
-                            <v-btn
-                                v-bind="props"
-                                :color="workDialogCourseDateKeys.includes(item.isoDate) ? 'primary' : props.color"
-                                :variant="workDialogCourseDateKeys.includes(item.isoDate) && !item.isSelected ? 'tonal' : props.variant">
-                                {{ item.localized }}
-                            </v-btn>
-                        </template>
-                    </v-date-input>
-                    <template v-else>
+            <v-card :class="{ 'course-table-work-card--saved': workDialogFormOpen && workDialogForm.id }">
+                <v-card-title class="course-table-work-header text-subtitle-1 font-weight-bold text-wrap">
+                    <div class="course-table-work-title">
+                        <div v-if="!workDialogFormOpen || !workDialogForm.id || workDialogTab !== 'work'" class="d-flex align-center ga-2">
+                            <v-icon size="20">mdi-calendar-outline</v-icon>
+                            Arbeiten
+                        </div>
+                        <WorkTitleEditor v-if="workDialogFormOpen && workDialogForm.id" v-show="workDialogTab === 'work'"
+                            class="course-table-work-title-editor" :work-id="workDialogForm.id" :title="savedWorkDialogWork?.title ?? workDialogForm.title"
+                            :can-edit="canEditWorkTitle(config, selected_course, savedWorkDialogWork)"
+                            :disabled="assessmentLocked || workSaving || workDialogTypeEditing || workDialogModeEditing"
+                            @saved="dateWorkTitleSaved" />
+                    </div>
+                    <div class="course-table-work-context">
+                        <v-date-input
+                            v-if="workDialogFormOpen && workDialogDateEditing"
+                            v-model="workDialogForm.date_for_all_groups"
+                            class="course-table-date-work-date-input"
+                            data-testid="course-table-date-work-date-input"
+                            density="compact"
+                            hide-details
+                            label="Datum"
+                            variant="outlined" :disabled="assessmentLocked"
+                            @update:model-value="applyWorkDialogDate">
+                            <template #day="{ item, props }">
+                                <v-btn
+                                    v-bind="props"
+                                    :color="workDialogCourseDateKeys.includes(item.isoDate) ? 'primary' : props.color"
+                                    :variant="workDialogCourseDateKeys.includes(item.isoDate) && !item.isSelected ? 'tonal' : props.variant">
+                                    {{ item.localized }}
+                                </v-btn>
+                            </template>
+                        </v-date-input>
                         <v-chip
+                            v-else
                             data-testid="course-table-date-edit-work-date"
-                            color="primary"
+                            class="course-table-work-date"
+                            :color="workDialogForm.id ? undefined : 'primary'"
                             size="x-small"
-                            variant="tonal"
+                            :variant="workDialogForm.id ? 'text' : 'tonal'"
                             :class="{ 'cursor-pointer': workDialogFormOpen && !workSaving && !assessmentLocked }"
                             :role="workDialogFormOpen ? 'button' : undefined"
                             :aria-disabled="assessmentLocked" :tabindex="workDialogFormOpen && !workSaving && !assessmentLocked ? 0 : undefined"
@@ -1034,31 +1045,35 @@
                             @keydown.space.prevent="beginWorkDialogDateEditing">
                             {{ workDialogDateTitle }}
                         </v-chip>
-                    </template>
-                    <v-chip
-                        v-if="workDialogDurationLabel && !workDialogDateEditing"
-                        color="secondary"
-                        data-testid="course-table-date-work-duration"
-                        prepend-icon="mdi-timer-sand"
-                        size="x-small"
-                        variant="outlined">
-                        {{ workDialogDurationLabel }}
-                    </v-chip>
-                    <div v-if="workDialogFormOpen && savedWorkDialogWork" class="d-flex w-100 flex-wrap align-center justify-space-between ga-2">
+                        <template v-if="workDialogDurationLabel && !workDialogDateEditing">
+                            <span v-if="workDialogForm.id" class="course-table-work-duration" data-testid="course-table-date-work-duration">
+                                <span aria-hidden="true">· </span>{{ workDialogDurationLabel }}
+                            </span>
+                            <v-chip v-else
+                                color="secondary"
+                                data-testid="course-table-date-work-duration"
+                                prepend-icon="mdi-timer-sand"
+                                size="x-small"
+                                variant="outlined">
+                                {{ workDialogDurationLabel }}
+                            </v-chip>
+                        </template>
+                        <WorkFinalDeadline v-if="workDialogFormOpen" :key="workDialogForm.id || 'new'"
+                            class="course-table-final-deadline" :date="workDialogForm.finish_until_date" :time="workDialogForm.finish_until_time"
+                            :color="workDeadlineColor(workDialogForm, deadlineNow)" :disabled="assessmentLocked || workSaving || workDeleting"
+                            :pending="finalDeadlinePending"
+                            @change="applyWorkDialogFinalDeadline" />
+                    </div>
+                    <div v-if="workDialogFormOpen && savedWorkDialogWork" class="course-table-work-actions">
                         <WorkCompletionToggle :work="savedWorkDialogWork" :date="workDialog.courseDate?.date || ''" :now="deadlineNow"
-                            :disabled="assessmentLocked || workSaving || workDeleting || workExerciseBusy" />
-                        <v-btn data-testid="work-dialog-delete" color="error" prepend-icon="mdi-delete" variant="text" size="small" :min-height="44"
+                            :disabled="assessmentLocked || workSaving || workDeleting || workExerciseBusy" quiet />
+                        <v-btn data-testid="work-dialog-delete" class="course-table-work-delete" prepend-icon="mdi-delete-outline" variant="text" size="small" :min-height="44"
                             :disabled="assessmentLocked || workSaving || workDeleting || workExerciseBusy || Boolean(completionSavingId)"
                             @click.stop="openDeleteWorkDialog(savedWorkDialogWork)">Arbeit löschen</v-btn>
                     </div>
-                    <WorkFinalDeadline v-if="workDialogFormOpen" :key="workDialogForm.id || 'new'"
-                        class="course-table-final-deadline mt-3" :date="workDialogForm.finish_until_date" :time="workDialogForm.finish_until_time"
-                        :color="workDeadlineColor(workDialogForm, deadlineNow)" :disabled="assessmentLocked || workSaving || workDeleting"
-                        :pending="finalDeadlinePending"
-                        @change="applyWorkDialogFinalDeadline" />
                 </v-card-title>
-                <v-divider />
-                <v-card-text class="d-flex flex-column ga-4">
+                <v-divider v-if="!workDialogFormOpen || !workDialogForm.id" />
+                <v-card-text class="course-table-work-body d-flex flex-column ga-4">
                     <section v-if="!workDialogFormOpen">
                         <div class="d-flex align-center ga-2 mb-2">
                             <div class="text-caption font-weight-bold text-medium-emphasis">Arbeiten an diesem Termin</div>
@@ -1172,6 +1187,7 @@
                                 color="primary"
                                 density="compact"
                                 class="mb-3"
+                                @update:model-value="startDateWorkGrading"
                                 :disabled="workDialogTypeEditing || workDialogModeEditing">
                                 <v-tab value="work">Arbeit</v-tab>
                                 <v-tab v-if="!workDialogForm.is_group_work" value="students">Schüler:innen</v-tab>
@@ -1179,48 +1195,89 @@
                             </v-tabs>
                             <div class="course-table-work-tab-panels">
                                 <div v-show="workDialogTab === 'work'">
-                                    <div
-                                        class="course-table-work-meta-row mb-3"
-                                        :class="{
-                                            'course-table-work-meta-row--single':
-                                                workDialogTypeEditing || workDialogModeEditing,
-                                        }">
-                                        <div v-if="!workDialogModeEditing">
+                                    <div class="course-table-work-meta-row mb-3"
+                                        :class="{ 'course-table-work-meta-row--summary': workDialogForm.id }">
+                                        <div>
                                             <div class="text-caption text-medium-emphasis mb-1">Typ</div>
-                                            <div v-if="workDialogForm.id && !workDialogTypeEditing" class="d-flex align-center ga-1">
-                                                <v-chip
-                                                    data-testid="course-table-date-edit-work-type"
-                                                    title="Arbeitstyp bearbeiten"
-                                                    color="primary"
-                                                    variant="tonal"
-                                                    :disabled="assessmentLocked || workSaving || workDialogModeEditing"
-                                                    @click="beginDateWorkTypeEditing">
-                                                    {{ selectedDateWorkTypeTitle }}
-                                                </v-chip>
-                                            </div>
+                                            <v-dialog v-if="workDialogForm.id" v-model="workDialogTypeEditing"
+                                                max-width="480" :persistent="workMetadataSaving" aria-labelledby="work-type-dialog-title">
+                                                <template #activator="{ props }">
+                                                    <v-btn v-bind="props" data-testid="course-table-date-edit-work-type"
+                                                        class="course-table-work-metadata-action" variant="text" append-icon="mdi-pencil-outline"
+                                                        min-height="44" title="Typ ändern" :aria-label="'Typ ändern, aktuell ' + selectedDateWorkTypeTitle"
+                                                        :disabled="!canEditDateWorkMetadata || workDialogModeEditing" @click="beginDateWorkTypeEditing">
+                                                        {{ selectedDateWorkTypeTitle }}
+                                                    </v-btn>
+                                                </template>
+                                                <v-card class="course-table-work-metadata-dialog">
+                                                    <v-card-title id="work-type-dialog-title">Typ ändern</v-card-title>
+                                                    <v-card-text>
+                                                        <v-radio-group v-model="workDialogTypeDraft" aria-label="Arbeitstyp" hide-details
+                                                            :disabled="workMetadataSaving">
+                                                            <v-radio v-if="!availableWorkTypes.some(item => item.value === workMetadataInitialValue)"
+                                                                :label="selectedDateWorkTypeTitle + ' (aktuell)'" :value="workMetadataInitialValue" disabled />
+                                                            <v-radio v-for="item in availableWorkTypes" :key="item.value" :label="item.title" :value="item.value" />
+                                                        </v-radio-group>
+                                                        <v-text-field v-if="dateWorkTypeRequiresMaximumPlus" v-model="workDialogTypeMaximumPlusDraft"
+                                                            class="mt-3" label="Maximale Plusanzahl" inputmode="numeric"
+                                                            :disabled="workMetadataSaving" :error-messages="dateWorkTypeMaximumPlusError" />
+                                                        <v-alert v-if="workMetadataError" class="mt-3" type="error" variant="tonal" role="alert">{{ workMetadataError }}</v-alert>
+                                                    </v-card-text>
+                                                    <v-card-actions class="flex-wrap justify-end">
+                                                        <v-btn variant="text" min-height="44" :disabled="workMetadataSaving" @click="cancelDateWorkTypeEditing">Abbrechen</v-btn>
+                                                        <v-btn color="primary" variant="flat" min-height="44" :loading="workMetadataSaving"
+                                                            :disabled="!canConfirmDateWorkType" @click="confirmDateWorkTypeEditing">Speichern</v-btn>
+                                                    </v-card-actions>
+                                                </v-card>
+                                            </v-dialog>
                                             <div v-else class="d-flex flex-wrap ga-1">
-                                                <v-btn
-                                                    v-for="item in availableWorkTypes"
-                                                    :key="item.value"
-                                                    size="small"
-                                                    :variant="selectedDateWorkTypeValue === item.value ? 'flat' : 'tonal'"
-                                                    :color="selectedDateWorkTypeValue === item.value ? 'primary' : 'default'"
+                                                <v-btn v-for="item in availableWorkTypes" :key="item.value" size="small"
+                                                    :variant="workDialogForm.type === item.value ? 'flat' : 'tonal'"
+                                                    :color="workDialogForm.type === item.value ? 'primary' : 'default'"
                                                     @click="selectDateWorkType(item.value)">
                                                     {{ item.title }}
                                                 </v-btn>
-                                            </div>
-                                            <div v-if="workDialogForm.id && workDialogTypeEditing" class="d-flex justify-end ga-2 mt-2">
-                                                <v-btn variant="text" :disabled="workSaving" @click="cancelDateWorkTypeEditing">Abbrechen</v-btn>
-                                                <v-btn color="primary" variant="flat" :disabled="!canConfirmDateWorkType" @click="confirmDateWorkTypeEditing">OK</v-btn>
                                             </div>
                                             <v-alert v-if="!availableWorkTypes.length" type="warning" variant="tonal" density="compact" class="mt-2">
                                                 Für diesen Kurs sind keine Arbeitstypen konfiguriert.
                                             </v-alert>
                                         </div>
-                                        <div v-if="!workDialogTypeEditing">
+                                        <div>
                                             <div class="text-caption text-medium-emphasis mb-1">Arbeitsform</div>
-                                            <v-btn-toggle
-                                                v-if="!workDialogForm.id"
+                                            <v-dialog v-if="workDialogForm.id" v-model="workDialogModeEditing"
+                                                max-width="480" :persistent="workMetadataSaving" aria-labelledby="work-mode-dialog-title">
+                                                <template #activator="{ props }">
+                                                    <v-btn v-bind="props" data-testid="course-table-date-edit-work-mode"
+                                                        class="course-table-work-metadata-action" variant="text" append-icon="mdi-pencil-outline"
+                                                        min-height="44" title="Arbeitsform ändern" :aria-label="'Arbeitsform ändern, aktuell ' + selectedDateWorkModeTitle"
+                                                        :disabled="!canEditDateWorkMetadata || workDialogTypeEditing" @click="beginDateWorkModeEditing">
+                                                        {{ selectedDateWorkModeTitle }}
+                                                    </v-btn>
+                                                </template>
+                                                <v-card class="course-table-work-metadata-dialog">
+                                                    <v-card-title id="work-mode-dialog-title">Arbeitsform ändern</v-card-title>
+                                                    <v-card-text>
+                                                        <v-radio-group v-model="workDialogModeDraft" aria-label="Arbeitsform" hide-details
+                                                            :disabled="workMetadataSaving">
+                                                            <v-radio :value="false" label="Einzelarbeit" />
+                                                            <v-radio :value="true" label="Gruppenarbeit" />
+                                                        </v-radio-group>
+                                                        <p v-if="workModeHasUnsavedGroups" class="text-body-2 mt-2">
+                                                            Bitte speichere oder verwirf zuerst deine Änderungen an Gruppen oder Beurteilungen.
+                                                        </p>
+                                                        <p v-else-if="workDialogModeDraft && !workMetadataInitialValue" class="text-body-2 mt-2">
+                                                            Nach dem Speichern kannst du die Gruppen im Reiter „Gruppen“ zuordnen.
+                                                        </p>
+                                                        <v-alert v-if="workMetadataError" class="mt-3" type="error" variant="tonal" role="alert">{{ workMetadataError }}</v-alert>
+                                                    </v-card-text>
+                                                    <v-card-actions class="flex-wrap justify-end">
+                                                        <v-btn variant="text" min-height="44" :disabled="workMetadataSaving" @click="cancelDateWorkModeEditing">Abbrechen</v-btn>
+                                                        <v-btn color="primary" variant="flat" min-height="44" :loading="workMetadataSaving"
+                                                            :disabled="!canConfirmDateWorkMode" @click="confirmDateWorkModeEditing">Speichern</v-btn>
+                                                    </v-card-actions>
+                                                </v-card>
+                                            </v-dialog>
+                                            <v-btn-toggle v-else
                                                 v-model="workDialogForm.is_group_work"
                                                 data-testid="course-table-date-create-work-mode"
                                                 color="primary"
@@ -1231,68 +1288,39 @@
                                                 <v-btn :value="false">Einzelarbeit</v-btn>
                                                 <v-btn :value="true">Gruppenarbeit</v-btn>
                                             </v-btn-toggle>
-                                            <div v-else-if="!workDialogModeEditing" class="d-flex align-center ga-1">
-                                                <v-chip
-                                                    data-testid="course-table-date-edit-work-mode"
-                                                    title="Arbeitsform bearbeiten"
-                                                    color="primary"
-                                                    variant="tonal"
-                                                    :disabled="assessmentLocked || workSaving || workDialogTypeEditing"
-                                                    @click="beginDateWorkModeEditing">
-                                                    {{ selectedDateWorkModeTitle }}
-                                                </v-chip>
-                                            </div>
-                                            <div v-else>
-                                                <v-btn-toggle
-                                                    v-model="workDialogModeDraft"
-                                                    color="primary"
-                                                    density="compact"
-                                                    mandatory
-                                                    variant="outlined"
-                                                    :disabled="workSaving">
-                                                    <v-btn :value="false">Einzelarbeit</v-btn>
-                                                    <v-btn :value="true">Gruppenarbeit</v-btn>
-                                                </v-btn-toggle>
-                                                <div class="d-flex justify-end ga-2 mt-2">
-                                                    <v-btn variant="text" :disabled="workSaving" @click="cancelDateWorkModeEditing">Abbrechen</v-btn>
-                                                    <v-btn color="primary" variant="flat" :disabled="!canConfirmDateWorkMode" @click="confirmDateWorkModeEditing">OK</v-btn>
-                                                </div>
-                                            </div>
                                         </div>
                                     </div>
+                                    <p v-if="workMetadataNotice" class="text-body-2 text-success mb-2" role="status">{{ workMetadataNotice }}</p>
+                                    <div class="course-table-work-assessment-mode">
                                         <div class="text-caption text-medium-emphasis mb-2" id="date-work-assessment-mode-label">Beurteilung</div>
                                         <v-btn-toggle v-model="workDialogForm.automation_enabled" mandatory color="primary" variant="outlined"
                                             :disabled="workSaving || assessmentLocked" aria-labelledby="date-work-assessment-mode-label" class="work-assessment-mode">
                                             <v-btn :value="false" prepend-icon="mdi-account-check-outline">Manuelle Beurteilung</v-btn>
                                             <v-btn :value="true" prepend-icon="mdi-brain">Automatische Beurteilung</v-btn>
                                         </v-btn-toggle>
-                                        <div class="text-caption text-medium-emphasis mt-2 mb-3">
-                                            {{ workDialogForm.automation_enabled
-                                                ? savedWorkDialogWork && !workAutomationEnabled(savedWorkDialogWork)
-                                                    ? 'Bitte speichern. Danach ist die Dropbox-Ordnerverknüpfung verfügbar.'
-                                                    : 'Beurteilungen importieren; Ordner, Abgaben und Versand verfolgen.'
-                                                : 'Beurteilungen direkt in Schooltool eintragen. Für eine Dropbox-Ordnerverknüpfung „Automatische Beurteilung“ wählen und speichern.' }}
+                                        <div v-if="!workDialogForm.automation_enabled" class="text-caption text-medium-emphasis mt-2 mb-3">
+                                            Beurteilungen direkt in Schooltool eintragen. Für eine Dropbox-Ordnerverknüpfung „Automatische Beurteilung“ wählen und speichern.
                                         </div>
-                                        <div v-if="workDialogForm.id" class="mb-3">
-                                            <div class="text-caption text-medium-emphasis">Titel</div>
-                                            <WorkTitleEditor :work-id="workDialogForm.id" :title="savedWorkDialogWork?.title ?? workDialogForm.title"
-                                                :can-edit="canEditWorkTitle(config, selected_course, savedWorkDialogWork)" :disabled="assessmentLocked || workSaving || workDialogTypeEditing || workDialogModeEditing" @saved="dateWorkTitleSaved" />
+                                        <div v-else-if="savedWorkDialogWork && !workAutomationEnabled(savedWorkDialogWork)"
+                                            class="text-caption text-medium-emphasis mt-2 mb-3">
+                                            Bitte speichern. Danach ist die Dropbox-Ordnerverknüpfung verfügbar.
                                         </div>
-                                        <v-text-field v-else
-                                            v-model="workDialogForm.title"
+                                    </div>
+                                    <v-text-field v-if="!workDialogForm.id"
+                                        v-model="workDialogForm.title"
                                         label="Titel"
                                         maxlength="255"
                                         :disabled="workSaving" />
                                     <WorkWorkflowOverview v-if="savedWorkDialogWork && !dateWorkCreating && !dateHandshakeAwaitingLink"
-                                        ref="dateWorkWorkflow" class="mb-4" :work="savedWorkDialogWork" :course="selected_course"
+                                        class="mb-4" :work="savedWorkDialogWork" :course="selected_course"
                                         :date="workDialog.courseDate?.date || ''" :now="deadlineNow" :active="workDialog.open && workDialogTab === 'work'"
                                         :disabled="workSaving || workDeleting || workDialogTypeEditing || workDialogModeEditing"
                                         :link-error="work_folder_errors[workDropboxKey(config?.user?.id, savedWorkDialogWork)]"
                                         :assessment="workDialogAssessment" :exercise-ready="workDialogExerciseReady" :check-progress="workHasProgress(savedWorkDialogWork)"
+                                        compact-assessment
                                         :assessment-count="`${savedWorkDialogCompletion.completed} von ${savedWorkDialogCompletion.completed + savedWorkDialogCompletion.open} beurteilt`"
                                         :last-collection="workDialogLastCollection" :last-evaluation="workDialogLastEvaluation" :last-check="workDialogLastCheck"
                                         @link="openLink" @import="openImport" @saved="applySavedCourseWork({ data: $event })"
-                                        @edit-grades="startDateWorkGrading"
                                         @exercise-status="workDialogExerciseStatus = $event" @progress-checked="rememberWorkDialogCheck"
                                         @deadline-saved="applyExerciseDeadline" @check-busy="workSaving = $event" @busy="workExerciseBusy = $event">
                                     <template #secondary-actions>
@@ -1804,8 +1832,8 @@
                     <WorkCheckProgress v-if="workDeleteProgress" :state="workDeleteProgress" deletion />
                 </v-card-text>
                 <v-card-actions class="flex-wrap justify-end ga-2">
-                    <v-btn data-testid="work-delete-cancel" :disabled="workDeleting" variant="text" @click="closeDeleteWorkDialog">Abbrechen</v-btn>
-                    <v-btn data-testid="work-delete-confirm" color="error" :loading="workDeleting" :disabled="workDeleting || Boolean(assessmentActivity(deleteWorkDialog.work))" variant="flat" @click="confirmDeleteDateWork">
+                    <v-btn data-testid="work-delete-cancel" :disabled="workDeleting" variant="text" min-height="44" @click="closeDeleteWorkDialog">Abbrechen</v-btn>
+                    <v-btn data-testid="work-delete-confirm" color="error" :loading="workDeleting" :disabled="workDeleting || Boolean(assessmentActivity(deleteWorkDialog.work))" variant="flat" min-height="44" @click="confirmDeleteDateWork">
                         Endgültig löschen
                     </v-btn>
                 </v-card-actions>
@@ -2597,7 +2625,7 @@
 import { comparePersonNames } from '@/helpers/personNames'
 import { defineAsyncComponent } from 'vue'
 import { assessmentDeductionComment, assessmentWrongQuestions } from '@/helpers/assessmentDeductions'
-import { downloadEvaluation } from '@/actions/App/Http/Controllers/Admin/Teaching/CourseWorkController'
+import { downloadEvaluation, update as updateCourseWork } from '@/actions/App/Http/Controllers/Admin/Teaching/CourseWorkController'
 import CourseStudentNotes from './CourseStudentNotes.vue'
 import CourseGamesRow from './CourseGamesRow.vue'
 import CourseStudentIndicators from './CourseStudentIndicators.vue'
@@ -2644,7 +2672,7 @@ import WorkFinalDeadline from './WorkFinalDeadline.vue'
 import { workCellPendingStatuses, workMarkedComplete } from '@/helpers/workCellStatus'
 import { attendanceChecked, attendancePercentage, attendanceState } from '@/helpers/courseAttendance'
 import { workAutomationEnabled } from '@/helpers/workAutomation'
-import { loadWorkDropbox, loadWorkExercise, workDropboxKey, workDropboxStates, workExerciseCheck } from '@/helpers/workDropbox'
+import { loadWorkFolderOverview, workDropboxKey, workDropboxStates, workExerciseCheck } from '@/helpers/workDropbox'
 import { isInitialWork, workConnectionLabel, workNeedsPreparation, workPreparationLabel } from '@/helpers/workOverview'
 import { dispatchNotificationText, workDispatchRecord } from '@/helpers/workDispatch'
 
@@ -2827,6 +2855,11 @@ export default {
             workDialogTab: 'work',
             workDialogTypeDraft: '',
             workDialogTypeEditing: false,
+            workDialogTypeMaximumPlusDraft: '',
+            workMetadataInitialValue: null,
+            workMetadataSaving: false,
+            workMetadataError: '',
+            workMetadataNotice: '',
             workSaving: false,
             workExerciseBusy: false,
         }
@@ -2878,9 +2911,7 @@ export default {
             handler(requests) {
                 for (const { key, work, date } of requests) {
                     if (!key) continue
-                    const request = date === null ? loadWorkDropbox(key, work.id)
-                        : loadWorkExercise(key, work, date, false, null, false, null, null, false, true)
-                    request.then(() => {
+                    loadWorkFolderOverview(key, work, date).then(() => {
                         delete this.work_folder_errors[key]
                     }).catch(() => {
                         this.work_folder_errors[key] = true
@@ -3386,14 +3417,35 @@ export default {
                 && !this.workDialogModeEditing
             )
         },
+        canEditDateWorkMetadata() {
+            return !this.assessmentLocked && !this.workSaving && !this.workDeleting && !this.workExerciseBusy
+                && !this.completionSavingId && !this.dateHandshakeAwaitingLink
+                && canEditWorkTitle(this.config, this.selected_course, this.savedWorkDialogWork)
+        },
+        workModeHasUnsavedGroups() {
+            const saved = this.savedWorkDialogWork
+            if (!saved) return false
+            const groups = this.cloneDateWorkGroups(saved.groups)
+            const initialGroups = saved.is_group_work && this.isGeneratedEmptyIndividualWorkGroups(groups) ? [] : groups
+
+            return JSON.stringify(this.cloneDateWorkGroups(this.workDialogForm.groups)) !== JSON.stringify(initialGroups)
+                || this.workDialogForm.group_size !== (saved.group_size ?? null)
+                || Boolean(this.workDialogForm.is_random_groups) !== Boolean(saved.is_random_groups)
+        },
         canConfirmDateWorkMode() {
-            return Boolean(!this.workSaving && typeof this.workDialogModeDraft === 'boolean')
+            return this.canEditDateWorkMetadata && !this.workMetadataSaving && !this.workModeHasUnsavedGroups
+                && this.workDialogModeDraft !== this.workMetadataInitialValue
+        },
+        dateWorkTypeRequiresMaximumPlus() {
+            return requiresWorkMaximumPlus(this.selected_course, this.workDialogTypeDraft)
+        },
+        dateWorkTypeMaximumPlusError() {
+            return this.dateWorkTypeRequiresMaximumPlus ? workMaximumPlusError(this.workDialogTypeMaximumPlusDraft) : ''
         },
         canConfirmDateWorkType() {
-            return Boolean(
-                !this.workSaving
+            return this.canEditDateWorkMetadata && !this.workMetadataSaving && !this.dateWorkTypeMaximumPlusError
+                && this.workDialogTypeDraft !== this.workMetadataInitialValue
                 && this.availableWorkTypes.some((item) => item.value === this.workDialogTypeDraft)
-            )
         },
         canConfirmRandomGroupSize() {
             const groupSize = Number(this.randomGroupsDialog.groupSize)
@@ -3449,13 +3501,6 @@ export default {
                 this.maxRandomGroupSize,
                 Number(this.randomGroupsDialog.groupSize)
             ).join(' | ')
-        },
-        selectedDateWorkTypeValue() {
-            if (this.workDialogForm.id && this.workDialogTypeEditing) {
-                return this.workDialogTypeDraft
-            }
-
-            return this.workDialogForm.type
         },
         selectedDateWorkTypeTitle() {
             const selectedType = this.availableWorkTypes.find((item) => item.value === this.workDialogForm.type)
@@ -4573,6 +4618,7 @@ export default {
         startEditingDateWork(work) {
             if (!work?.id) return
             this.workDialogGradingSnapshot = null
+            this.workMetadataNotice = ''
             this.workDialogExpectedFinalDeadline = { date: this.normalizeDateKey(work.finish_until_date) || null, time: work.finish_until_time || null }
 
             const groups = this.cloneDateWorkGroups(work.groups)
@@ -4599,18 +4645,17 @@ export default {
             this.workDialogTypeEditing = false
             this.workDialogFormOpen = true
         },
-        startDateWorkGrading() {
+        startDateWorkGrading(tab) {
+            if (!this.workDialogForm.id || this.workDialogGradingSnapshot || !['students', 'groups'].includes(tab)) return
             const { groups, group_size, is_random_groups, is_group_work } = this.workDialogForm
             this.workDialogGradingSnapshot = {
                 groups: this.cloneDateWorkGroups(groups),
                 group_size,
                 is_random_groups,
             }
-            this.workDialogTab = is_group_work ? 'groups' : 'students'
         },
         returnToDateWorkAfterGrading() {
             this.workDialogTab = 'work'
-            this.$nextTick(() => this.$refs.dateWorkWorkflow?.showAssessmentPhase())
         },
         cloneDateWorkGroups(groups) {
             const cloneStudentValues = (values) => {
@@ -4638,45 +4683,77 @@ export default {
             }))
         },
         beginDateWorkTypeEditing() {
-            if (this.assessmentLocked) return
-            this.workDialogTypeDraft = this.workDialogForm.type
-            this.workDialogTypeEditing = true
+            this.workMetadataInitialValue = this.savedWorkDialogWork?.type || null
+            this.workDialogTypeDraft = this.workMetadataInitialValue
+            this.workDialogTypeMaximumPlusDraft = this.workDialogForm.maximum_plus ?? ''
+            this.workMetadataError = ''
+            this.workMetadataNotice = ''
         },
         selectDateWorkType(type) {
-            if (this.workDialogForm.id && this.workDialogTypeEditing) {
-                this.workDialogTypeDraft = type
-
-                return
-            }
-
             this.workDialogForm.type = type
         },
         cancelDateWorkTypeEditing() {
             this.workDialogTypeDraft = ''
             this.workDialogTypeEditing = false
         },
-        confirmDateWorkTypeEditing() {
+        async confirmDateWorkTypeEditing() {
             if (!this.canConfirmDateWorkType) return
 
-            this.workDialogForm.type = this.workDialogTypeDraft
-            this.workDialogTypeDraft = ''
-            this.workDialogTypeEditing = false
+            const payload = { type: this.workDialogTypeDraft, expected_type: this.workMetadataInitialValue }
+            if (this.dateWorkTypeRequiresMaximumPlus) payload.maximum_plus = Number(this.workDialogTypeMaximumPlusDraft)
+            if (await this.saveDateWorkMetadata(payload, 'type', 'Typ gespeichert.')) this.cancelDateWorkTypeEditing()
         },
         beginDateWorkModeEditing() {
-            if (this.assessmentLocked) return
-            this.workDialogModeDraft = !!this.workDialogForm.is_group_work
-            this.workDialogModeEditing = true
+            this.workMetadataInitialValue = Boolean(this.savedWorkDialogWork?.is_group_work)
+            this.workDialogModeDraft = this.workMetadataInitialValue
+            this.workMetadataError = ''
+            this.workMetadataNotice = ''
         },
         cancelDateWorkModeEditing() {
             this.workDialogModeDraft = false
             this.workDialogModeEditing = false
         },
-        confirmDateWorkModeEditing() {
+        async confirmDateWorkModeEditing() {
             if (!this.canConfirmDateWorkMode) return
 
-            this.workDialogForm.is_group_work = this.workDialogModeDraft
-            this.workDialogModeDraft = false
-            this.workDialogModeEditing = false
+            const payload = { is_group_work: this.workDialogModeDraft, expected_is_group_work: this.workMetadataInitialValue }
+            if (await this.saveDateWorkMetadata(payload, 'is_group_work', 'Arbeitsform gespeichert.')) this.cancelDateWorkModeEditing()
+        },
+        async saveDateWorkMetadata(payload, field, successMessage) {
+            const workId = this.workDialogForm.id
+            const courseId = this.selected_course?.id
+            this.workMetadataSaving = true
+            this.workMetadataError = ''
+            try {
+                const { data } = await axios.put(updateCourseWork.url(workId), payload)
+                const saved = data?.data
+                if (String(saved?.id) !== String(workId) || saved[field] !== payload[field]) {
+                    throw new Error('Die Änderung konnte nicht bestätigt werden.')
+                }
+                if (String(this.selected_course?.id) !== String(courseId)) return true
+
+                this.applySavedCourseWork({ data: saved })
+                if (String(this.workDialogForm.id) === String(workId)) {
+                    if (field === 'type') {
+                        this.workDialogForm.type = saved.type
+                        this.workDialogForm.maximum_plus = saved.maximum_plus ?? null
+                    } else {
+                        this.workDialogForm.is_group_work = saved.is_group_work
+                        this.workDialogForm.group_size = saved.group_size ?? null
+                        this.workDialogForm.is_random_groups = Boolean(saved.is_random_groups)
+                        this.workDialogForm.groups = this.cloneDateWorkGroups(saved.groups)
+                    }
+                    this.workMetadataNotice = successMessage
+                }
+                void this.loadCourseTableData(courseId, true)
+                return true
+            } catch (error) {
+                this.workMetadataError = Object.values(error.response?.data?.errors || {}).flat()[0]
+                    || error.response?.data?.message || 'Die Änderung konnte nicht bestätigt werden. Bitte erneut versuchen.'
+                return false
+            } finally {
+                this.workMetadataSaving = false
+            }
         },
         beginWorkDialogDateEditing() {
             if (this.assessmentLocked) return
@@ -4821,6 +4898,7 @@ export default {
             this.resetDateHandshake?.()
             this.closeRandomGroupsDialog()
             this.workDialogGradingSnapshot = null
+            this.workMetadataNotice = ''
             this.workDialogForm = this.emptyDateWorkForm()
             this.workDialogDateEditing = false
             this.workDialogGroupDetails = {
@@ -8042,8 +8120,335 @@ export default {
     min-width: 180px;
 }
 
+.course-table-work-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.course-table-work-context {
+    display: contents;
+}
+
 .course-table-final-deadline {
     flex-basis: 100%;
+    margin-top: 12px;
+}
+
+.course-table-work-card--saved > .course-table-work-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "title actions" "context context";
+    gap: 0 12px;
+    padding-block: 10px 4px;
+}
+
+.course-table-work-title {
+    grid-area: title;
+    min-width: 0;
+}
+
+.course-table-work-title-editor {
+    font-size: 1.5rem;
+    font-weight: 700;
+    line-height: 1.2;
+    letter-spacing: normal;
+    overflow-wrap: anywhere;
+}
+
+.course-table-work-title-editor :deep(.d-flex.align-center) {
+    align-items: flex-start !important;
+}
+
+.course-table-work-title-editor :deep(.v-btn--icon) {
+    flex-shrink: 0;
+    margin-block-start: 2px;
+}
+
+.course-table-work-title-editor :deep(.v-input + .d-flex) {
+    flex-wrap: wrap;
+}
+
+.course-table-work-title-editor :deep(.v-btn:not(.v-btn--icon)) {
+    min-height: 44px;
+}
+
+.course-table-work-card--saved .course-table-work-context {
+    grid-area: context;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0 6px;
+    min-width: 0;
+    color: rgba(var(--v-theme-on-surface), .72);
+    font-size: .8125rem;
+    font-weight: 400;
+    line-height: 1.35;
+    letter-spacing: normal;
+}
+
+.course-table-work-card--saved .course-table-work-date {
+    height: 28px;
+    padding-inline: 0;
+    font-size: inherit;
+}
+
+.course-table-work-card--saved .course-table-work-date.cursor-pointer {
+    text-decoration: underline dotted;
+    text-underline-offset: .2em;
+}
+
+.course-table-work-duration {
+    white-space: nowrap;
+}
+
+.course-table-work-card--saved .course-table-final-deadline {
+    flex-basis: auto;
+    margin-block-start: 0;
+    margin-inline-start: 6px;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.course-table-work-card--saved .course-table-final-deadline :deep(.work-final-deadline__label) {
+    display: inline;
+    margin-inline-end: 6px;
+    line-height: inherit;
+}
+
+.course-table-work-card--saved .course-table-final-deadline :deep(strong) {
+    display: inline-block;
+    max-width: 100%;
+    font-weight: 600;
+}
+
+.course-table-work-card--saved .course-table-final-deadline :deep(.v-btn--icon) {
+    flex: none;
+    width: 30px;
+    height: 30px;
+}
+
+.course-table-work-actions {
+    grid-area: actions;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0 4px;
+}
+
+.course-table-work-actions :deep(.v-btn) {
+    padding-inline: 6px;
+    letter-spacing: normal;
+    text-transform: none;
+}
+
+.course-table-work-delete {
+    color: rgb(var(--v-theme-error));
+}
+
+.course-table-work-delete:is(:hover, :focus-visible) {
+    color: rgb(var(--v-theme-error-darken-1));
+}
+
+.course-table-work-card--saved > .course-table-work-body.v-card-text {
+    padding-top: 0;
+    padding-inline: 16px;
+}
+
+.course-table-work-card--saved .course-table-date-work-form {
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+}
+
+.course-table-work-card--saved .course-table-date-work-form > .v-tabs {
+    border-bottom: 1px solid rgba(var(--v-border-color), .12);
+    margin-bottom: 8px !important;
+}
+
+.course-table-work-card--saved .course-table-date-work-form :deep(.v-tab) {
+    letter-spacing: normal;
+    text-transform: none;
+}
+
+.course-table-work-meta-row.course-table-work-meta-row--summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px 18px;
+    margin-bottom: 8px !important;
+}
+
+.course-table-work-meta-row--summary > div {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 2px 8px;
+    min-width: 0;
+}
+
+.course-table-work-meta-row--summary > div > .text-caption {
+    margin-bottom: 0 !important;
+}
+
+.course-table-work-meta-row--summary > div > .v-alert {
+    flex-basis: 100%;
+}
+
+.course-table-work-metadata-action {
+    min-width: 0;
+    max-width: 100%;
+    height: auto;
+    padding-inline: 0 4px;
+    letter-spacing: normal;
+    text-align: start;
+    text-transform: none;
+}
+
+.course-table-work-metadata-action :deep(.v-btn__content),
+.course-table-work-metadata-dialog :deep(.v-label) {
+    min-width: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    line-height: 1.25;
+}
+
+.course-table-work-metadata-action :deep(.v-btn__append) {
+    margin-inline: 6px 0;
+    opacity: .7;
+}
+
+.course-table-work-metadata-dialog :deep(.v-card-actions .v-btn) {
+    letter-spacing: normal;
+    text-transform: none;
+}
+
+.course-table-work-card--saved .course-table-work-assessment-mode > .text-caption:first-child {
+    margin-bottom: 2px !important;
+}
+
+.course-table-work-card--saved .course-table-work-assessment-mode > .text-caption:last-child {
+    margin-block: 4px 10px !important;
+    line-height: 1.4;
+}
+
+.course-table-work-assessment-mode > .work-assessment-mode:last-child {
+    margin-block-end: 8px;
+}
+
+.course-table-work-card--saved .work-assessment-mode {
+    --v-activated-opacity: .07;
+    max-width: 100%;
+    flex-wrap: nowrap;
+}
+
+.course-table-work-card--saved .work-assessment-mode :deep(.v-btn) {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding-inline: 10px;
+    line-height: 1.25;
+    white-space: normal;
+}
+
+.course-table-work-card--saved .work-assessment-mode :deep(.v-btn__content) {
+    min-width: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+.course-table-work-card--saved .work-assessment-mode :deep(.v-btn__prepend) {
+    display: none;
+}
+
+.course-table-work-card--saved :deep(.work-assessment-facts) {
+    padding: 9px 0 0;
+    margin-block-end: 12px;
+    background: transparent;
+    border: 0;
+    border-block-start: 1px solid rgba(var(--v-border-color), .15);
+    border-radius: 0;
+    font-size: .875rem;
+    line-height: 1.35;
+}
+
+.course-table-work-card--saved :deep(.work-assessment-facts dl) {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 7rem), 1fr));
+    gap: 6px 10px;
+    margin-block-start: 4px;
+}
+
+.course-table-work-card--saved :deep(.work-assessment-facts .work-assessment-ways) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 0;
+    margin-block-end: 6px;
+    border: 0;
+}
+
+.course-table-work-card--saved :deep(.work-assessment-facts dt),
+.course-table-work-card--saved :deep(.work-assessment-facts .text-caption) {
+    font-size: .75rem;
+    line-height: 1.35;
+}
+
+.course-table-work-card--saved :deep(.work-assessment-facts .v-btn) {
+    max-width: 100%;
+    padding-inline: 6px;
+    white-space: normal;
+}
+
+.course-table-work-card--saved :deep(.work-assessment-facts .v-btn__content) {
+    white-space: normal;
+}
+
+@media (min-width: 601px) {
+    .course-table-work-card--saved :deep(.work-assessment-facts .work-assessment-ways) {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .course-table-work-card--saved :deep(.work-assessment-ways > :first-child) {
+        grid-column: span 2;
+    }
+}
+
+@media (max-width: 600px) {
+    .course-table-work-card--saved > .course-table-work-header,
+    .course-table-work-card--saved > .course-table-work-body.v-card-text {
+        padding-inline: 12px;
+    }
+
+    .course-table-work-card--saved > .course-table-work-header {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-areas: "title" "context" "actions";
+    }
+
+    .course-table-work-card--saved .course-table-final-deadline {
+        flex-basis: 100%;
+        margin-inline-start: 0;
+    }
+
+    .course-table-work-actions {
+        justify-content: flex-start;
+    }
+}
+
+@media (max-width: 380px) {
+    .course-table-work-actions :deep(.v-btn) {
+        padding-inline: 3px;
+    }
+
+    .course-table-work-actions :deep(.v-btn__prepend) {
+        margin-inline-end: 4px;
+    }
+
+    .course-table-work-card--saved :deep(.work-assessment-facts dl) {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .course-table-work-card--saved :deep(.work-assessment-facts .work-assessment-ways) {
+        grid-template-columns: minmax(0, 1fr);
+    }
 }
 
 .course-table-date-work-item {
@@ -8073,10 +8478,6 @@ export default {
     display: grid;
     gap: 16px;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.course-table-work-meta-row--single {
-    grid-template-columns: minmax(0, 1fr);
 }
 
 .course-table-work-group-card {

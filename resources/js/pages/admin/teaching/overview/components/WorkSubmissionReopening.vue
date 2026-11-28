@@ -1,6 +1,9 @@
 <template>
-    <v-btn min-height="44" size="small" variant="tonal" prepend-icon="mdi-lock-open-outline"
-        :disabled="disabled" @click="open">Portalabgabe wieder öffnen</v-btn>
+    <v-btn icon width="40" height="40" variant="text" aria-label="Portalabgabe wieder öffnen" aria-haspopup="dialog"
+        :disabled="disabled" @click.stop="open">
+        <v-icon icon="mdi-lock-open-outline" size="20" aria-hidden="true" />
+        <v-tooltip activator="parent" location="top" open-on-focus text="Portalabgabe wieder öffnen" />
+    </v-btn>
     <v-dialog v-model="opened" max-width="560" scrollable :persistent="saving">
         <v-card v-if="opened">
             <v-card-title class="text-wrap">Portalabgabe wieder öffnen</v-card-title>
@@ -41,7 +44,7 @@
             </v-card-text>
             <v-card-actions class="flex-wrap">
                 <v-spacer />
-                <v-btn min-height="44" :disabled="saving" @click="opened = false">Schließen</v-btn>
+                <v-btn variant="text" min-height="44" :disabled="saving" @click="opened = false">Schließen</v-btn>
                 <v-btn v-if="eligible.length" min-height="44" color="primary" variant="flat"
                     type="submit" :form="formId" :disabled="!canSave" :loading="saving">Wieder öffnen</v-btn>
             </v-card-actions>

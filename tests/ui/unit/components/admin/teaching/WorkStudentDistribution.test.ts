@@ -532,6 +532,23 @@ it('shows portal and confirmed mail under Bereitstellung and the student upload 
     } finally { wrapper.unmount() }
 })
 
+it('offers a download for each retained task file after the release ends', async () => {
+    const work = { id: 12, title: 'Dateien', student_distribution_version: 'a'.repeat(64), status: {
+        student_distribution: { ended_at: '2026-11-05T10:00:00Z', file_ids: ['retained'] },
+        student_task_files: [{ id: 'retained', name: 'Aufgabe.pdf' }, { id: 'old', name: 'Entwurf.pdf' }],
+    } }
+    vi.stubGlobal('axios', { get: vi.fn().mockResolvedValue({ data: { data: work } }) })
+    const wrapper = mount(WorkStudentDistribution, { props: { work }, global: { stubs } })
+    try {
+        await wrapper.get('button').trigger('click')
+        await flushPromises()
+        const link = wrapper.get('a[aria-label="Aufgabe.pdf herunterladen"]')
+        expect(link.attributes('href')).toBe('/api/admin/teaching/course_works/12/student-distribution/files/retained')
+        expect(link.attributes('download')).toBe('Aufgabe.pdf')
+        expect(wrapper.text()).not.toContain('Entwurf.pdf')
+    } finally { wrapper.unmount() }
+})
+
 it('keeps a rejected release open and shows the server error without emitting saved', async () => {
     const get = vi.fn().mockResolvedValue({ data: { data: { id: 12, description: 'Aufgabe', student_distribution_version: 'a'.repeat(64) } } })
     vi.stubGlobal('axios', { get, post: vi.fn().mockRejectedValue({ response: { status: 409, data: { message: 'Der MC-Test wurde inzwischen geändert.' } } }) })

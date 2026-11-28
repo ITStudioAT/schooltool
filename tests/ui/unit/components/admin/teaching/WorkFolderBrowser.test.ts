@@ -48,6 +48,25 @@ it('opens a persistent read-only listing, navigates folders and exposes only unl
     wrapper.unmount()
 })
 
+it.each(['root', 'version', 'new connection'])('does not show content for a changed direct exam %s', async change => {
+    const changedVersion = 'b'.repeat(64)
+    const get = vi.fn()
+        .mockResolvedValueOnce({ data: change === 'new connection' ? { ...saved, link_version: changedVersion } : saved })
+        .mockResolvedValueOnce({ data: change === 'root' ? { ...listing, root: { ...folder, id: 'id:other' } }
+            : { ...listing, link_version: changedVersion } })
+    const post = vi.fn()
+    const wrapper = mountBrowser(get, post, { directExerciseId: folder.id, date: '2026-10-23' })
+    try {
+        await (wrapper.vm as any).open()
+        expect(wrapper.get('[role="dialog"]').text()).toContain('Prüfungsordner · E-Mails')
+        expect(wrapper.text()).toContain('Die Verbindung hat sich geändert.')
+        expect(wrapper.text()).not.toContain('Aufgabe.pdf')
+        expect(wrapper.text()).not.toContain('Verbindung trennen')
+        expect(get).toHaveBeenCalledTimes(change === 'new connection' ? 1 : 2)
+        expect(post).not.toHaveBeenCalled()
+    } finally { wrapper.unmount() }
+})
+
 it('sends a version-bound unlink and closes after the server confirms it', async () => {
     const post = vi.fn().mockResolvedValue({ data: { connected: true, folder: null, module_link: null, link_version: 'b'.repeat(64) } })
     const wrapper = mountBrowser(undefined, post)

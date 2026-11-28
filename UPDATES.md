@@ -5,6 +5,7 @@
 ### Arbeiten
 
 - Verbessern des Workflows
+- Dropbox-Zugriffe stzabilisieren
 
 ### UI-Design 2027
 

@@ -2894,6 +2894,65 @@ function enableCourseWorkMaximumPlus(object $context): TeachingEntryDefinition
     ]);
 }
 
+test('work metadata type validates grades without rewriting assignments, receipts or entry identities', function (): void {
+    $this->course->update(['user_id' => $this->admin->id]);
+    $definition = enableCourseWorkMaximumPlus($this);
+    $definition->replicate()->fill(['short_name' => 'MB'])->save();
+    $this->course->teachingCourseStudents()->create(['user_id' => $this->student->id]);
+    $created = $this->postJson('/api/admin/teaching/course_works', [
+        'teaching_course_id' => $this->course->id, 'type' => 'MA', 'maximum_plus' => 5,
+        'title' => 'Fiktive Arbeit', 'finish_until_date' => '2026-11-30', 'finish_until_time' => '16:00',
+        'groups' => [['student_ids' => [$this->student->id], 'grade' => '+++']],
+    ])->assertCreated();
+    $work = TeachingCourseWork::findOrFail($created->json('data.id'));
+    $work->update(['status' => ['portal_submissions' => [['student_id' => $this->student->id, 'name' => 'Fiktiv.pdf']]]]);
+    $url = "/api/admin/teaching/course_works/{$work->id}";
+    $portalSubmissions = $work->fresh()->status['portal_submissions'];
+    $groups = $work->fresh()->groups;
+    $entry = $work->teachingCourseStudentEntries()->firstOrFail();
+    $groupRows = $work->teachingCourseWorkGroupStudents()->pluck('id')->all();
+
+    $this->putJson($url, ['type' => 'MB', 'expected_type' => 'MA', 'maximum_plus' => 2])->assertUnprocessable();
+    $this->putJson($url, ['type' => 'MB', 'expected_type' => 'veraltet', 'maximum_plus' => 5])->assertConflict();
+    $this->putJson($url, ['type' => 'MB', 'expected_type' => 'MA', 'maximum_plus' => 5])->assertOk()
+        ->assertJsonPath('data.type', 'MB')->assertJsonPath('data.title', 'Fiktive Arbeit')
+        ->assertJsonPath('data.finish_until_time', '16:00')->assertJsonPath('data.status.portal_submissions', $portalSubmissions);
+
+    expect($work->fresh()->groups)->toBe($groups)
+        ->and($work->teachingCourseWorkGroupStudents()->pluck('id')->all())->toBe($groupRows)
+        ->and($entry->fresh()->type)->toBe('MB')->and($entry->fresh()->grade)->toBe('+++');
+});
+
+test('work metadata mode uses the usual group setup and protects releases and real assignments', function (): void {
+    $this->actingAs($this->admin, 'sanctum');
+    $this->course->teachingCourseStudents()->create(['user_id' => $this->student->id]);
+    $work = TeachingCourseWork::factory()->create([
+        'teaching_course_id' => $this->course->id, 'is_group_work' => false, 'status' => [],
+        'groups' => [['student_ids' => [$this->student->id], 'grade' => null]],
+    ]);
+    $url = "/api/admin/teaching/course_works/{$work->id}";
+    $toGroups = ['expected_is_group_work' => false, 'is_group_work' => true];
+    $toIndividual = ['expected_is_group_work' => true, 'is_group_work' => false];
+
+    $work->update(['status' => ['portal_submissions' => [['student_id' => $this->student->id]]]]);
+    $groups = $work->fresh()->groups;
+    $this->putJson($url, $toGroups)->assertConflict();
+    expect($work->fresh()->groups)->toBe($groups);
+    $work->update(['status' => []]);
+
+    $this->putJson($url, $toGroups)->assertOk()->assertJsonPath('data.is_group_work', true)->assertJsonPath('data.groups', []);
+    $this->putJson($url, $toGroups)->assertConflict();
+    $assigned = [['name' => 'Gruppe 1', 'student_ids' => [$this->student->id]]];
+    $work->update(['groups' => $assigned]);
+    $this->putJson($url, $toIndividual)->assertConflict();
+    expect($work->fresh()->groups)->toEqual($assigned);
+
+    $work->update(['groups' => [], 'is_random_groups' => true, 'group_size' => 2]);
+    $this->putJson($url, $toIndividual)->assertOk()
+        ->assertJsonPath('data.is_group_work', false)->assertJsonPath('data.is_random_groups', false)
+        ->assertJsonPath('data.group_size', null)->assertJsonPath('data.groups.0.student_ids', [$this->student->id]);
+});
+
 test('requires a strict positive maximum plus for eligible course works', function (mixed $maximum) {
     enableCourseWorkMaximumPlus($this);
     $this->postJson('/api/admin/teaching/course_works', [

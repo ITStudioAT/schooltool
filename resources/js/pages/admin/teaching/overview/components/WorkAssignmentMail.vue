@@ -54,7 +54,7 @@
             <v-card-actions class="flex-wrap">
                 <slot name="secondary-actions" :close="close" />
                 <v-spacer />
-                <v-btn variant="text" @click="close">Schließen</v-btn>
+                <v-btn variant="text" min-height="44" @click="close">Schließen</v-btn>
             </v-card-actions>
         </v-card>
     </v-dialog>

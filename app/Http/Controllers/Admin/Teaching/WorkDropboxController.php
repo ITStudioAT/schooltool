@@ -143,20 +143,29 @@ class WorkDropboxController extends Controller
         TeachingWorkRefreshProgress $tracker, ?string $key): JsonResponse
     {
         $overall = $request->boolean('overall');
-        $collect = $request->boolean('refresh_collection') && (! $overall || (TeachingWorkSubmissions::method($work)['channel'] ?? null) !== 'portal');
-        $steps = ['connection', 'folder', 'verification'];
+        $portal = (TeachingWorkSubmissions::method($work)['channel'] ?? null) === 'portal';
+        $collect = $request->boolean('refresh_collection') && (! $overall || ! $portal);
+        $steps = $overall ? ['connection', 'verification'] : ['connection', 'folder', 'verification'];
         if ($collect) {
             $steps[] = 'collection';
         }
+        if ($overall && $portal) {
+            $steps[] = 'portal';
+        }
         $progress = ['state' => 'running', 'active' => 'connection', 'completed' => [], 'skipped' => [], 'steps' => $steps];
+        if ($overall) {
+            $progress['failed_steps'] = [];
+        }
         $tracker->save($key, $progress);
         $request->merge(['include_exercise' => true, 'refresh' => true, 'stored_only' => false]);
         $binding = null;
         try {
-            $response = $this->folderStatus($work, $dropbox, $actor, function (bool $connected, $module) use (&$progress, &$binding, $key, $tracker): void {
+            $response = $this->folderStatus($work, $dropbox, $actor, function (bool $connected, $module) use (&$progress, &$binding, $key, $tracker, $overall): void {
                 $progress['completed'][] = 'connection';
                 $binding = $module?->getAttributes();
-                $progress[$connected && $module ? 'completed' : 'skipped'][] = 'folder';
+                if (! $overall) {
+                    $progress[$connected && $module ? 'completed' : 'skipped'][] = 'folder';
+                }
                 $progress['active'] = $binding ? 'verification' : null;
                 $tracker->save($key, $progress);
             });
@@ -164,38 +173,39 @@ class WorkDropboxController extends Controller
             if (! $binding) {
                 $progress['skipped'][] = 'verification';
             } elseif (($body['exercise']['status'] ?? 'unknown') === 'unknown') {
-                $progress['state'] = 'failed';
+                if ($overall) {
+                    $progress['failed_steps'][] = 'verification';
+                } else {
+                    $progress['state'] = 'failed';
+                }
             } else {
                 $progress['completed'][] = 'verification';
             }
-            if ($collect && $progress['state'] !== 'failed') {
-                $progress['active'] = 'collection';
-                $tracker->save($key, $progress);
-                $this->checkCollection($request, $work, $actor, $binding, $body, $progress);
+            if ($overall) {
+                $progress['active'] = null;
+            }
+            if ($collect) {
+                if ($progress['state'] !== 'failed' && empty($progress['failed_steps'])) {
+                    $progress['active'] = 'collection';
+                    $tracker->save($key, $progress);
+                    $this->checkCollection($request, $work, $actor, $binding, $body, $progress);
+                } elseif ($overall) {
+                    $progress['skipped'][] = 'collection';
+                }
             }
             if ($overall) {
                 $work->refresh();
                 $this->authorizeTeachingCourseAccess($work->teachingCourse, $actor);
-                try {
-                    $body['portal_reconciliation'] = app(TeachingWorkPortalSubmissionCopy::class)->reconcile($work, $actor,
-                        $request->input('date'), fn (TeachingCourseWork $current) => $this->authorizeTeachingCourseAccess($current->teachingCourse, $actor));
-                } catch (ValidationException $failure) {
-                    $body['portal_reconciliation'] = ['message' => collect($failure->errors())->flatten()->first()];
-                } catch (HttpExceptionInterface $failure) {
-                    if ($failure->getStatusCode() !== 409) {
-                        throw $failure;
-                    }
-                    $body['portal_reconciliation'] = ['message' => $failure->getMessage()];
-                }
+                $body['portal_reconciliation'] = $this->checkPortalOriginals($request, $work, $actor, $tracker, $key, $progress);
                 $body['workflow_checked_at'] = now()->toIso8601String();
             }
+            $body['saved_work'] = app(TeachingCourseWorkEntrySyncService::class)->serializeWork($work->refresh()->load('teachingCourseWorkGroupStudents'));
             if ($progress['state'] !== 'failed') {
-                $progress['state'] = 'done';
+                $progress['state'] = empty($progress['failed_steps']) ? 'done' : 'failed';
                 $progress['active'] = null;
             }
             $tracker->save($key, $progress);
             $body['progress'] = $progress;
-            $body['saved_work'] = app(TeachingCourseWorkEntrySyncService::class)->serializeWork($work->refresh()->load('teachingCourseWorkGroupStudents'));
             $response->setData($body);
 
             return $response;
@@ -204,6 +214,46 @@ class WorkDropboxController extends Controller
             $tracker->save($key, $progress);
             throw $exception;
         }
+    }
+
+    private function checkPortalOriginals(Request $request, TeachingCourseWork $work, User $actor,
+        TeachingWorkRefreshProgress $tracker, ?string $key, array &$progress): ?array
+    {
+        if ((TeachingWorkSubmissions::method($work)['channel'] ?? null) !== 'portal') {
+            if (in_array('portal', $progress['steps'], true)) {
+                $progress['skipped'][] = 'portal';
+            }
+
+            return null;
+        }
+        if (! in_array('portal', $progress['steps'], true)) {
+            $progress['steps'][] = 'portal';
+        }
+        try {
+            $result = app(TeachingWorkPortalSubmissionCopy::class)->reconcile($work, $actor, $request->input('date'),
+                fn (TeachingCourseWork $current) => $this->authorizeTeachingCourseAccess($current->teachingCourse, $actor),
+                function () use (&$progress, $key, $tracker): void {
+                    $progress['active'] = 'portal';
+                    $tracker->save($key, $progress);
+                });
+        } catch (ValidationException $failure) {
+            $result = ['message' => collect($failure->errors())->flatten()->first()];
+        } catch (HttpExceptionInterface $failure) {
+            if ($failure->getStatusCode() !== 409) {
+                throw $failure;
+            }
+            $result = ['message' => $failure->getMessage()];
+        }
+
+        if ($result === null) {
+            $progress['skipped'][] = 'portal';
+        } elseif (array_key_exists('message', $result) || ! empty($result['unverifiable'])) {
+            $progress['failed_steps'][] = 'portal';
+        } else {
+            $progress['completed'][] = 'portal';
+        }
+
+        return $result;
     }
 
     private function checkCollection(Request $request, TeachingCourseWork $work, User $actor, ?array $binding, array &$body, array &$progress): void
@@ -450,14 +500,27 @@ class WorkDropboxController extends Controller
                     $excludedFolders = ['Leistungsfeststellung'];
                 }
             } else {
-                abort_if($downloadPrepared, 409, 'Die Modulverbindung muss zuerst bestätigt werden.');
                 abort_unless($linked, 409, 'Kein Arbeitsordner verknüpft.');
                 $rootId = $linked->folder_id;
                 if ($request->boolean('module') || $request->boolean('exercise')) {
                     $legacyFolders = $dropbox->legacyFolderContext($connection, $linked->folder_id);
-                    abort_unless(! $request->boolean('exercise') || $legacyFolders['exercise'], 409,
-                        'Der Leistungsfeststellungsordner ist noch nicht eindeutig zugeordnet. Bitte den konkreten Gruppenordner verknüpfen.');
-                    $rootId = $legacyFolders[$request->boolean('exercise') ? 'exercise' : 'module']['id'];
+                    if (! $module && $request->boolean('exercise') && ! $legacyFolders['exercise']
+                        && in_array($data['section'] ?? null, ['Angaben', 'Bewertungskriterien'], true)
+                        && basename(dirname(mb_strtolower($legacyFolders['module']['path']))) === 'leistungsfeststellungen') {
+                        $dates = app(TeachingAssessmentTargetGuard::class)->dates($course_work);
+                        $date = $data['date'] ?? (count($dates) === 1 ? $dates[0] : null);
+                        abort_unless(in_array($date, $dates, true), 409, 'Bitte den Durchführungstermin dieses Prüfungsordners auswählen.');
+                        $exercise = $modules->portalSubmissionExercise($connection, $course_work, $linked, $date);
+                        $directExercisePath = $exercise['folder']['path_lower'];
+                        $exercise['folder']['path'] = $directExercisePath;
+                        abort_unless($directExercisePath === mb_strtolower($legacyFolders['module']['path']),
+                            409, 'Der Prüfungsordner wurde während des Lesens verschoben. Bitte erneut öffnen.');
+                    } else {
+                        abort_if($downloadPrepared, 409, 'Die Modulverbindung muss zuerst bestätigt werden.');
+                        abort_unless(! $request->boolean('exercise') || $legacyFolders['exercise'], 409,
+                            'Der Leistungsfeststellungsordner ist noch nicht eindeutig zugeordnet. Bitte den konkreten Gruppenordner verknüpfen.');
+                        $rootId = $legacyFolders[$request->boolean('exercise') ? 'exercise' : 'module']['id'];
+                    }
                     if ($request->boolean('module')) {
                         $excludedFolders = ['Leistungsfeststellung'];
                     }
@@ -469,7 +532,7 @@ class WorkDropboxController extends Controller
             } elseif (filled($data['section'] ?? null)) {
                 abort_unless($request->boolean('exercise'), 422, 'Prüfungsunterlagen erfordern eine bestätigte Leistungsfeststellung.');
                 if (($exercise['preparation']['status'] ?? null) === 'ready' && in_array($data['section'], ['Angaben', 'Bewertungskriterien'], true)) {
-                    abort_unless($request->boolean('verify_exercise') && ! filled($data['folder_id'] ?? null)
+                    abort_unless(($request->boolean('verify_exercise') || isset($directExercisePath)) && ! filled($data['folder_id'] ?? null)
                         && ! filled($data['cursor'] ?? null), 409, 'Die Prüfungsunterlagen müssen aus dem bestätigten Prüfungsordner gelesen werden.');
                     $preparedContents = app(DropboxFolderContents::class)->read($connection, $rootId);
                     abort_unless($preparedContents['cursor'] === null, 409, 'Die Prüfungsunterlagen konnten nicht vollständig gelesen werden.');
@@ -531,6 +594,10 @@ class WorkDropboxController extends Controller
                 $after = $dropbox->metadata($connection, $linked->folder_id);
                 abort_unless(($after['path_display'] ?? $after['path_lower']) === $legacyFolders['exercise']['path'],
                     409, 'Der Leistungsfeststellungsordner wurde während des Lesens verschoben. Bitte erneut öffnen.');
+            }
+            if (isset($directExercisePath)) {
+                abort_unless($dropbox->metadata($connection, $linked->folder_id)['path_lower'] === $directExercisePath,
+                    409, 'Der Prüfungsordner wurde während des Lesens verschoben. Bitte erneut öffnen.');
             }
             $currentLinked = TeachingWorkDropboxFolder::query()->where('dropbox_connection_id', $connection->id)
                 ->where('teaching_course_work_id', $course_work->id)->first();

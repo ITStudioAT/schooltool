@@ -375,8 +375,17 @@ test('the evaluation export starts with the literal chat name of the selected wo
 
     expect($data['text'])->toStartWith('Öffnen Sie für diese Leistungsfeststellung einen neuen Chat mit dem exakten Namen '.$chatName
         ." und führen Sie die Bewertung in diesem Chat durch.\n\n# Auftrag: ")
-        ->toContain('Verwenden Sie den Skill grade-exercise');
+        ->toContain('Verwenden Sie den Skill grade-exercise', '`Beurteilung.md` direkt im Prüfungsordner',
+            '`Kandidaten/<Name>/Abgaben`', '`Kandidaten/<Name>/Auswertung`',
+            'überschreiben Sie deren Bewertungsdateien an ihren bestehenden Pfaden', 'mit passender SHA-256-Prüfsumme',
+            'Keine E-Mails versenden und keine Ergebnisse in Schooltool importieren.');
     expect($data['context'])->toMatchArray(['purpose' => 'grade-exercise', 'mode' => $mode]);
+    expect($data['context']['evaluation_policy'])->toMatchArray([
+        'criteria_document' => 'Beurteilung.md',
+        'candidate_submissions_directory' => 'Kandidaten/<Name>/Abgaben',
+        'candidate_evaluation_directory' => 'Kandidaten/<Name>/Auswertung',
+        'existing_candidate_evaluation' => 'replace_matching_files',
+    ]);
     expect($this->work->fresh()->getAttributes())->toBe($before);
     Http::assertNothingSent();
 })->with([['Word-Test', 'grade'], ['Übung "Formatierung"', 'repeat']]);

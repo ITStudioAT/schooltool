@@ -14,7 +14,9 @@ use App\Models\User;
 use App\Services\MultipleChoice\McTemplateWriteRejected;
 use Closure;
 use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Pool;
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\Client\Response;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Cache;
@@ -25,12 +27,18 @@ use Illuminate\Support\Sleep;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use JsonException;
+use Throwable;
 
 class DropboxWorkImport
 {
     public const SCOPES = ['files.metadata.read', 'files.content.read'];
 
     private const MAX_BYTES = 6 * 1024 * 1024;
+
+    public const MAX_EXERCISE_STATUS_BYTES = self::MAX_BYTES;
+
+    private const ModuleReadEndpoints = ['files/search_v2', 'files/search/continue_v2', 'files/get_metadata',
+        'files/download', 'files/list_folder', 'files/list_folder/continue'];
 
     /** @var array<int, string> */
     private array $accessTokens = [];
@@ -115,9 +123,8 @@ class DropboxWorkImport
     {
         abort_unless(preg_match('/\Aid:[A-Za-z0-9_-]+\z/', $folderId) === 1, 409, 'Die Ordnerkennung ist ungültig.');
         try {
-            $response = Http::withToken($this->accessToken($connection))->connectTimeout(5)->timeout(20)
-                ->withOptions(['allow_redirects' => false])->post('https://api.dropboxapi.com/2/files/get_metadata',
-                    ['path' => $folderId, 'include_has_explicit_shared_members' => true]);
+            $response = $this->retryReads($this->dropboxClient()->withToken($this->accessToken($connection)))
+                ->post('https://api.dropboxapi.com/2/files/get_metadata', ['path' => $folderId, 'include_has_explicit_shared_members' => true]);
         } catch (ConnectionException) {
             $this->fail('Dropbox ist momentan nicht erreichbar. Bitte später erneut versuchen.');
         }
@@ -272,7 +279,7 @@ class DropboxWorkImport
         try {
             $this->api($connection, 'files/move_v2', ['from_path' => $folderId, 'to_path' => $targetPath,
                 'autorename' => false, 'allow_shared_folder' => false, 'allow_ownership_transfer' => false], moveErrors: true);
-        } catch (\Throwable $exception) {
+        } catch (Throwable $exception) {
             // A lost response can follow a successful move; the stable folder ID resolves the actual outcome.
             $moveException = $exception;
         }
@@ -409,8 +416,8 @@ class DropboxWorkImport
     {
         $this->metadata($connection, $folderId);
         try {
-            $metadata = Http::withToken($this->accessToken($connection))->connectTimeout(5)->timeout(20)
-                ->withOptions(['allow_redirects' => false])->post('https://api.dropboxapi.com/2/files/get_metadata', ['path' => $path]);
+            $metadata = $this->retryReads($this->dropboxClient()->withToken($this->accessToken($connection)))
+                ->post('https://api.dropboxapi.com/2/files/get_metadata', ['path' => $path]);
         } catch (ConnectionException) {
             $this->fail('Die Dropbox-Datei konnte nicht gelesen werden.');
         }
@@ -649,8 +656,8 @@ class DropboxWorkImport
     {
         abort_unless(str_starts_with($path, '/') && strlen($path) <= 4096 && ! str_contains($path, "\0"), 422);
         try {
-            $response = Http::withToken($this->accessToken($connection))->connectTimeout(5)->timeout(20)
-                ->withOptions(['allow_redirects' => false])->post('https://api.dropboxapi.com/2/files/get_metadata', ['path' => $path]);
+            $response = $this->retryReads($this->dropboxClient()->withToken($this->accessToken($connection)))
+                ->post('https://api.dropboxapi.com/2/files/get_metadata', ['path' => $path]);
         } catch (ConnectionException) {
             $this->fail('Dropbox ist momentan nicht erreichbar. Bitte später erneut prüfen.');
         }
@@ -768,11 +775,15 @@ class DropboxWorkImport
     private function token(array $parameters, ?DropboxConnection $connection = null): array
     {
         try {
-            $response = Http::asForm()->connectTimeout(5)->timeout(20)->withOptions(['allow_redirects' => false])
-                ->post('https://api.dropboxapi.com/oauth2/token', $parameters + [
-                    'client_id' => config('services.dropbox.client_id'), 'client_secret' => config('services.dropbox.client_secret'),
-                ]);
-        } catch (ConnectionException) {
+            $client = $this->dropboxClient()->asForm();
+            if (($parameters['grant_type'] ?? null) === 'refresh_token') {
+                $client = $this->retryReads($client);
+            }
+            $response = $client->post('https://api.dropboxapi.com/oauth2/token', $parameters + [
+                'client_id' => config('services.dropbox.client_id'), 'client_secret' => config('services.dropbox.client_secret'),
+            ]);
+        } catch (ConnectionException $exception) {
+            $this->logConnectionFailure('oauth2/token', $exception);
             $this->fail('Dropbox ist momentan nicht erreichbar. Bitte später erneut versuchen oder einen Ordner hochladen.');
         }
         if ($connection && ($response->status() === 401 || $response->json('error') === 'invalid_grant')) {
@@ -1190,8 +1201,7 @@ class DropboxWorkImport
     /** @param array<string, mixed> $parameters */
     public function readModuleApi(DropboxConnection $connection, string $endpoint, array $parameters): Response
     {
-        abort_unless(in_array($endpoint, ['files/search_v2', 'files/search/continue_v2', 'files/get_metadata',
-            'files/download', 'files/list_folder', 'files/list_folder/continue'], true), 422);
+        abort_unless(in_array($endpoint, self::ModuleReadEndpoints, true), 422);
 
         return $this->api($connection, $endpoint, $parameters, $endpoint === 'files/download');
     }
@@ -1221,8 +1231,7 @@ class DropboxWorkImport
         $token = $this->accessToken($connection);
         $responses = Http::pool(function (Pool $pool) use ($requests, $token): void {
             foreach ($requests as $key => $request) {
-                $client = $pool->as($key)->withToken($token)->connectTimeout(5)->timeout(20)
-                    ->withOptions(['allow_redirects' => false]);
+                $client = $this->retryReads($this->dropboxClient($pool->as($key))->withToken($token));
                 if ($request['endpoint'] === 'files/download') {
                     $client->withHeaders(['Dropbox-API-Arg' => json_encode($request['parameters'], JSON_THROW_ON_ERROR), 'Content-Type' => ''])
                         ->withBody('', '')->post('https://content.dropboxapi.com/2/files/download');
@@ -1234,6 +1243,7 @@ class DropboxWorkImport
         foreach ($requests as $key => $request) {
             $response = $responses[$key] ?? null;
             if (! $response instanceof Response) {
+                $this->logConnectionFailure($request['endpoint'], $response);
                 $this->fail('Dropbox ist momentan nicht erreichbar. Bitte später erneut versuchen.');
             }
             $this->checkResponse($connection, $response);
@@ -1245,13 +1255,16 @@ class DropboxWorkImport
     private function api(DropboxConnection $connection, string $endpoint, array $parameters, bool $download = false, bool $moveErrors = false): Response
     {
         try {
-            $client = Http::withToken($this->accessToken($connection))->connectTimeout(5)->timeout(20)
-                ->withOptions(['allow_redirects' => false]);
+            $client = $this->dropboxClient()->withToken($this->accessToken($connection));
+            if (in_array($endpoint, self::ModuleReadEndpoints, true)) {
+                $client = $this->retryReads($client);
+            }
             $response = $download
                 ? $client->withHeaders(['Dropbox-API-Arg' => json_encode($parameters, JSON_THROW_ON_ERROR), 'Content-Type' => ''])
                     ->withBody('', '')->post('https://content.dropboxapi.com/2/'.$endpoint)
                 : $client->post('https://api.dropboxapi.com/2/'.$endpoint, $parameters);
-        } catch (ConnectionException) {
+        } catch (ConnectionException $exception) {
+            $this->logConnectionFailure($endpoint, $exception);
             $this->fail('Dropbox ist momentan nicht erreichbar. Bitte später erneut versuchen oder einen Ordner hochladen.');
         }
 
@@ -1265,6 +1278,27 @@ class DropboxWorkImport
         return $this->checkResponse($connection, $response);
     }
 
+    private function dropboxClient(?PendingRequest $request = null): PendingRequest
+    {
+        return ($request ?? Http::connectTimeout(5))->connectTimeout(5)->timeout(20)->withOptions(['allow_redirects' => false]);
+    }
+
+    private function retryReads(PendingRequest $client): PendingRequest
+    {
+        return $client->retry([500, 1500], when: static fn (Throwable $exception): bool => $exception instanceof ConnectionException
+            || ($exception instanceof RequestException && in_array($exception->response->status(), [500, 502, 503, 504], true)), throw: false);
+    }
+
+    private function logConnectionFailure(string $endpoint, mixed $exception): void
+    {
+        $errorNumber = $exception instanceof Throwable && preg_match('/\bcURL error (\d+)\b/i', $exception->getMessage(), $parts)
+            ? (int) $parts[1] : null;
+        logger()->warning('Dropbox transport failed.', [
+            'endpoint' => $endpoint,
+            'curl_errno' => $errorNumber,
+        ]);
+    }
+
     /** @param array<string, mixed> $parameters */
     private function exerciseRequest(DropboxConnection $connection, string $operation, array $parameters, ?string $contents = null, bool $allowMissing = false): Response
     {
@@ -1276,7 +1310,7 @@ class DropboxWorkImport
             throw new DropboxExerciseRequestFailed('authorization', 'authorization_unconfirmed');
         }
 
-        $remainingWait = 20;
+        $waited = 0;
         for ($attempt = 1; ; $attempt++) {
             try {
                 $client = Http::withToken($token)->connectTimeout(5)->timeout(20)->withOptions(['allow_redirects' => false]);
@@ -1288,11 +1322,11 @@ class DropboxWorkImport
                     default => $client->post('https://api.dropboxapi.com/2/'.$endpoint, $parameters),
                 };
             } catch (ConnectionException) {
-                if ($writes || $attempt >= 3 || $remainingWait < $attempt) {
+                if ($writes || $attempt >= 3 || $waited + $attempt > 20) {
                     $this->failExerciseRequest($operation, 'network');
                 }
                 Sleep::sleep($attempt);
-                $remainingWait -= $attempt;
+                $waited += $attempt;
 
                 continue;
             }
@@ -1301,19 +1335,20 @@ class DropboxWorkImport
                 return $response;
             }
             $status = $response->status();
-            $transientRead = ! $writes && (in_array($status, [429, 500, 502, 503, 504], true)
+            $transientRead = ! $writes && (in_array($status, [500, 502, 503, 504], true)
                 || ($operation === 'folder_child_metadata' && $this->exerciseNotFound($response)));
-            $retryAfter = $response->header('Retry-After');
-            $providerDelay = preg_match('/\A[0-9]{1,4}\z/', $retryAfter) === 1 ? (int) $retryAfter : null;
-            // A 429 rejects the request. Keep the exact same add-only or revision-bound write.
-            $rejectedWrite = $writes && $status === 429 && $providerDelay !== null;
-            $delay = $providerDelay ?? $attempt;
-            if ($attempt < 3 && ($transientRead || $rejectedWrite) && ($retryAfter === '' || $providerDelay !== null)
-                && $delay <= $remainingWait) {
+            $rateLimited = $status === 429 || ($status === 409 && $this->exerciseErrorTag($response) === 'too_many_write_operations');
+            $retryAfter = trim($response->header('Retry-After'));
+            $providerDelay = preg_match('/\A[0-9]+\z/', $retryAfter) === 1 ? (int) $retryAfter : null;
+            // Rate-limited writes were rejected. Reuse the exact add-only or revision-bound request.
+            $delay = $rateLimited ? max($providerDelay ?? 0, 2 ** min($attempt - 1, 4)) : ($providerDelay ?? $attempt);
+            if ($attempt < ($rateLimited ? 6 : 3)
+                && ($rateLimited || ($transientRead && ($retryAfter === '' || $providerDelay !== null)))
+                && $waited + $delay <= ($rateLimited ? 120 : 20)) {
                 if ($delay > 0) {
                     Sleep::sleep($delay);
                 }
-                $remainingWait -= $delay;
+                $waited += $delay;
 
                 continue;
             }
@@ -1401,8 +1436,7 @@ class DropboxWorkImport
         $token = $this->accessToken($connection);
         $responses = Http::pool(function (Pool $pool) use ($files, $token): void {
             foreach ($files as $key => $file) {
-                $pool->as($key)->withToken($token)->connectTimeout(5)->timeout(20)
-                    ->withOptions(['allow_redirects' => false])
+                $this->retryReads($this->dropboxClient($pool->as($key))->withToken($token))
                     ->withHeaders(['Dropbox-API-Arg' => json_encode(['path' => 'rev:'.$file['entry']['rev']], JSON_THROW_ON_ERROR), 'Content-Type' => ''])
                     ->withBody('', '')->post('https://content.dropboxapi.com/2/files/download');
             }
@@ -1410,6 +1444,7 @@ class DropboxWorkImport
         foreach ($files as $key => $file) {
             $response = $responses[$key] ?? null;
             if (! $response instanceof Response) {
+                $this->logConnectionFailure('files/download', $response);
                 $this->fail('Dropbox ist momentan nicht erreichbar. Bitte später erneut versuchen oder einen Ordner hochladen.');
             }
             $this->checkResponse($connection, $response);

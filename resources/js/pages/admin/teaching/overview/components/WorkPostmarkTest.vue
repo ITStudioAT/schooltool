@@ -21,7 +21,7 @@
                 </v-card-text>
                 <v-card-actions class="flex-wrap">
                     <v-spacer />
-                    <v-btn variant="text" :disabled="busy" @click="opened = false">Schließen</v-btn>
+                    <v-btn variant="text" min-height="44" :disabled="busy" @click="opened = false">Schließen</v-btn>
                     <v-btn v-if="draft?.draft_id" color="primary" variant="tonal" :loading="busy" :disabled="busy" @click="sendTest">
                         Testmail über Postmark senden
                     </v-btn>

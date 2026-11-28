@@ -1,5 +1,5 @@
 <template>
-    <v-btn v-if="work?.id && (!portal || hasPortalFiles)" min-height="44" size="small" variant="tonal" prepend-icon="mdi-inbox-arrow-down-outline"
+    <v-btn v-if="work?.id && (!portal || (!hidePortalAction && hasPortalFiles))" min-height="44" size="small" variant="tonal" prepend-icon="mdi-inbox-arrow-down-outline"
         :disabled="disabled || !available" @click.stop="openAction">{{ portal ? 'Schülerabgaben einsehen' : repeat ? 'Erneut einsammeln' : 'Abgaben einsammeln' }}</v-btn>
     <v-dialog v-if="opened" v-model="opened" max-width="720" scrollable :persistent="loading">
         <v-card>
@@ -27,7 +27,7 @@
             <v-card-actions>
                 <v-spacer />
                 <v-btn v-if="!portal" min-height="44" :disabled="!result || loading || copying || disabled || !available" :color="copied ? 'success' : 'primary'" :prepend-icon="copied ? 'mdi-check' : 'mdi-content-copy'" @click="copyOrder">{{ copied ? 'Kopiert' : 'Auftrag kopieren' }}</v-btn>
-                <v-btn min-height="44" :disabled="loading" @click="opened = false">Schließen</v-btn>
+                <v-btn variant="text" min-height="44" :disabled="loading" @click="opened = false">Schließen</v-btn>
             </v-card-actions>
         </v-card>
     </v-dialog>
@@ -38,7 +38,7 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { aiExport } from '@/actions/App/Http/Controllers/Admin/Teaching/CourseWorkController'
 import { workAutomationEnabled } from '@/helpers/workAutomation'
 import { workHasPortalFiles } from '@/helpers/workProgress'
-const props = defineProps({ work: { type: Object, required: true }, date: { type: String, default: '' }, repeat: Boolean, disabled: Boolean })
+const props = defineProps({ work: { type: Object, required: true }, date: { type: String, default: '' }, repeat: Boolean, disabled: Boolean, hidePortalAction: Boolean })
 const channel = computed(() => props.work.status?.submission_method?.channel)
 const portal = computed(() => channel.value === 'portal' || (!channel.value && !!props.work.status?.portal_submissions?.length))
 const hasPortalFiles = computed(() => workHasPortalFiles(props.work, props.date))

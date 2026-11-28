@@ -165,7 +165,7 @@
                         :link-error="work_folder_errors[workDropboxKey(config?.user?.id, savedWorkForTitle)]" :check-progress="workHasProgress(savedWorkForTitle)"
                         :assessment-count="`${workAssessedCount(savedWorkForTitle)} von ${totalCourseStudentsCount} beurteilt`"
                         :last-check="workflowLastCheck"
-                        @link="openLink" @import="openImport" @saved="workflowWorkSaved" @edit-grades="focusWorkSection('workGrading')"
+                        @link="openLink" @import="openImport" @saved="workflowWorkSaved"
                         @exercise-status="workExerciseStatus = $event" @progress-checked="rememberWorkflowCheck"
                         @check-busy="workChecking = $event" @busy="workExerciseBusy = $event" @deadline-saved="refreshWorks">
                         <template #secondary-actions>
@@ -930,7 +930,7 @@ import WorkCreationProgress from './WorkCreationProgress.vue'
 import WorkSimulationBadge from './WorkSimulationBadge.vue'
 import { workCompletedLabel, workHasProgress, workManualCompletionFields, workWorkflowProgress } from '@/helpers/workProgress'
 import { workAutomationEnabled } from '@/helpers/workAutomation'
-import { loadWorkDropbox, loadWorkExercise, workDropboxKey, workDropboxStates, workExerciseCheck } from '@/helpers/workDropbox'
+import { loadWorkFolderOverview, workDropboxKey, workDropboxStates, workExerciseCheck } from '@/helpers/workDropbox'
 import { isInitialWork, workConnectionLabel, workNeedsPreparation, workPreparationLabel } from '@/helpers/workOverview'
 
 export default {
@@ -1304,10 +1304,8 @@ export default {
             handler(requests) {
                 for (const { key, work } of requests) {
                     if (!key) continue
-                    const request = workNeedsPreparation(work, workDropboxStates.get(key))
-                        ? loadWorkExercise(key, work, work.date_for_all_groups || '', false, null, false, null, null, false, true)
-                        : loadWorkDropbox(key, work.id)
-                    request.then(() => {
+                    const date = workNeedsPreparation(work, workDropboxStates.get(key)) ? work.date_for_all_groups || '' : null
+                    loadWorkFolderOverview(key, work, date).then(() => {
                         delete this.work_folder_errors[key]
                     }).catch(() => {
                         this.work_folder_errors[key] = true

@@ -145,7 +145,7 @@
                 <v-btn v-if="results_options?.automatic" :disabled="import_busy" @click="openImport(import_work)">Andere Quelle wählen</v-btn>
                 <v-spacer />
                 <v-btn v-if="json_preview" color="primary" :disabled="import_busy || !json_preview.can_import" @click="applyJson">{{ results_options ? (results_simulation ? 'Testbewertungen übernehmen' : 'Ergebnisse übernehmen') : 'Angezeigte Änderungen übernehmen' }}</v-btn>
-                <v-btn :disabled="import_busy" @click="import_open = false">Schließen</v-btn>
+                <v-btn variant="text" min-height="44" :disabled="import_busy" @click="import_open = false">Schließen</v-btn>
             </v-card-actions>
         </v-card>
     </v-dialog>

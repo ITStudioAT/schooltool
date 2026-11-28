@@ -1,14 +1,15 @@
 <template>
-    <section v-if="state" class="check-progress mt-2" :aria-label="creation ? 'Fortschritt der Erstellung' : deletion ? 'Fortschritt der Löschung' : 'Fortschritt der Prüfung'" aria-live="polite">
+    <section v-if="state" class="check-progress" :class="overall ? 'check-progress--overall' : 'mt-2'"
+        :aria-label="creation ? 'Fortschritt der Erstellung' : deletion ? 'Fortschritt der Löschung' : 'Fortschritt der Prüfung'" aria-live="polite">
         <strong class="check-progress-title">{{ progressTitle }}</strong>
         <p v-if="creation && candidateSteps.length" class="text-caption mt-1">
             {{ candidateSteps.filter(step => state.completed?.includes(step)).length }} von {{ candidateSteps.length }} Kandidatenordnern bestätigt
         </p>
-        <span v-if="state.state === 'running' && !state.active && !state.completed?.length" class="check-progress-start text-caption">{{ creation ? 'Erstellung wird gestartet …' : deletion ? 'Löschung wird gestartet …' : 'Prüfung wird gestartet …' }}</span>
+        <span v-if="!overall && state.state === 'running' && !state.active && !state.completed?.length" class="check-progress-start text-caption">{{ creation ? 'Erstellung wird gestartet …' : deletion ? 'Löschung wird gestartet …' : 'Prüfung wird gestartet …' }}</span>
         <ul v-if="state.steps?.length" class="check-progress-list">
-            <li v-for="step in state.steps" :key="step" :class="stepClass(step)">
+            <li v-for="step in state.steps" :key="step" :class="stepClass(step)" :aria-current="state.state === 'running' && state.active === step ? 'step' : undefined">
                 <span aria-hidden="true" class="check-progress-icon">{{ stepSymbol(step) }}</span>
-                <span>{{ state.labels?.[step] || labels[step] || step }}</span>
+                <span class="check-progress-label">{{ state.labels?.[step] || (overall ? overallLabels[step] : null) || labels[step] || step }}</span>
                 <span class="check-progress-caption">{{ stepText(step) }}</span>
             </li>
         </ul>
@@ -20,16 +21,22 @@
 <script setup>
 import { computed } from 'vue'
 
-const props = defineProps({ state: { type: Object, default: null }, unavailable: Boolean, deletion: Boolean, creation: Boolean })
+const props = defineProps({ state: { type: Object, default: null }, unavailable: Boolean, deletion: Boolean, creation: Boolean, overall: Boolean })
 const candidateSteps = computed(() => (props.state?.steps ?? []).filter(step => step.startsWith('assessment_candidate_')))
 const progressTitle = computed(() => {
     if (props.state?.state === 'starting') return 'Erstellungsauftrag wird vorbereitet'
     if (props.state?.state === 'unconfirmed') return 'Aktueller Stand nicht bestätigt'
     if (props.state?.state === 'interrupted') return 'Erstellung unterbrochen'
+    if (props.overall && props.state?.state === 'running' && !props.state.steps?.length) return 'Prüfung wird gestartet …'
     const operation = props.creation ? 'Erstellung' : props.deletion ? 'Löschung' : 'Prüfung'
     const status = props.state?.state === 'done' ? 'abgeschlossen' : props.state?.state === 'failed' ? 'unterbrochen' : 'läuft'
     return `${operation} ${status}`
 })
+const overallLabels = {
+    verification: 'Dropbox-Prüfungsordner prüfen',
+    collection: 'Abgabebelege prüfen',
+    portal: 'Portalabgaben mit Dropbox abgleichen',
+}
 const labels = {
     connection: 'Dropbox-Zuordnung prüfen',
     folder: 'Arbeitsordner ermitteln',
@@ -60,6 +67,7 @@ const labels = {
 }
 function stepClass(step) {
     if (props.state?.completed?.includes(step)) return 'check-progress-done'
+    if (props.state?.failed_steps?.includes(step)) return 'check-progress-failed'
     if (props.state?.skipped?.includes(step)) return 'check-progress-pending'
     if (props.state?.active === step) {
         if (['unconfirmed', 'interrupted'].includes(props.state?.state)) return 'check-progress-unconfirmed'
@@ -68,17 +76,19 @@ function stepClass(step) {
     return 'check-progress-pending'
 }
 function stepText(step) {
-    if (props.state?.completed?.includes(step)) return 'Erledigt'
+    if (props.state?.completed?.includes(step)) return props.overall ? 'Geprüft' : 'Erledigt'
+    if (props.state?.failed_steps?.includes(step)) return 'Nicht abgeschlossen'
     if (props.state?.skipped?.includes(step)) return 'Nicht ausgeführt'
     if (props.state?.active === step) {
         if (['unconfirmed', 'interrupted'].includes(props.state?.state)) return 'Stand offen'
         if (props.state?.state === 'failed') return 'Nicht abgeschlossen'
         return props.deletion || props.creation ? 'Wird ausgeführt' : 'Wird geprüft'
     }
-    return 'Ausstehend'
+    return props.overall && props.state?.state !== 'running' ? 'Nicht ausgeführt' : 'Ausstehend'
 }
 function stepSymbol(step) {
     if (props.state?.completed?.includes(step)) return '✓'
+    if (props.state?.failed_steps?.includes(step)) return '!'
     if (props.state?.active === step && props.state?.state === 'failed') return '!'
     if (props.state?.active === step && ['unconfirmed', 'interrupted'].includes(props.state?.state)) return '?'
     return '•'
@@ -99,4 +109,9 @@ function stepSymbol(step) {
 .check-progress-caption { margin-left: auto; color: #536d83; font-size: 0.72rem; }
 .check-progress-done .check-progress-caption { color: #08783e; }
 .check-progress-failed .check-progress-caption { color: #b42318; }
+.check-progress--overall { width: 100%; margin-block-end: .625rem; padding: 6px 10px; }
+.check-progress--overall .check-progress-title { margin: 0; font-size: .8rem; }
+.check-progress--overall .check-progress-list { margin-block-start: 3px; }
+.check-progress--overall .check-progress-list li { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; padding: 2px 0; }
+.check-progress--overall .check-progress-label { overflow-wrap: anywhere; }
 </style>

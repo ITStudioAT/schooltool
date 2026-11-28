@@ -113,7 +113,7 @@
                 <v-btn v-if="opened === 'send' && !modernPrepared && (!sent || manuallyCompleted)" variant="tonal" :prepend-icon="manuallyCompleted ? 'mdi-undo' : 'mdi-check'" :loading="savingCompletion" :disabled="savingCompletion" @click="saveCompletion('task_dispatch_completed', !manuallyCompleted)">
                     {{ manuallyCompleted ? 'Markierung aufheben' : 'Als erledigt markieren' }}
                 </v-btn>
-                <v-btn v-if="selectedStage?.completionField && !(opened === 'preparation' && portalPending)" variant="tonal" :prepend-icon="selectedStage?.manuallyCompleted ? 'mdi-undo' : 'mdi-check'" :loading="savingCompletion" :disabled="savingCompletion || selectedStage.blocked" @click="saveCompletion(selectedStage.completionField, !selectedStage.manuallyCompleted)">
+                <v-btn v-if="!readOnlyAssessment && selectedStage?.completionField && !(opened === 'preparation' && portalPending)" variant="tonal" :prepend-icon="selectedStage?.manuallyCompleted ? 'mdi-undo' : 'mdi-check'" :loading="savingCompletion" :disabled="savingCompletion || selectedStage.blocked" @click="saveCompletion(selectedStage.completionField, !selectedStage.manuallyCompleted)">
                     {{ selectedStage?.manuallyCompleted ? 'Markierung aufheben' : 'Als erledigt markieren' }}
                 </v-btn>
                 <WorkSubmissionCollection v-if="opened === 'collection' && portalEnded && !selectedStage?.simulation && !workflowProgress?.submissionComplete" :work="work" :date="date" :repeat="(!selectedStage?.manuallyCompleted && selectedStage?.complete) || Boolean(lastCollectionAt)" :disabled="savingCompletion" />
@@ -124,14 +124,14 @@
                     :closed="workflowProgress?.portalSubmissionClosed" :recommended="workflowProgress?.portalCopyPending" :disabled="savingCompletion || disabled"
                     @saved="emit('saved', $event)" />
                 <v-btn v-if="opened === 'collection' && selectedStage?.simulation" variant="tonal" prepend-icon="mdi-flask-outline" to="/admin/teaching-tools/simulator">Simulator öffnen</v-btn>
-                <WorkGradingAction v-if="opened === 'evaluation'" :work="work" :date="date" :repeat="selectedStage?.complete && !selectedStage?.manuallyCompleted"
+                <WorkGradingAction v-if="opened === 'evaluation' && !readOnlyAssessment" :work="work" :date="date" :repeat="selectedStage?.complete && !selectedStage?.manuallyCompleted"
                     :disabled="selectedStage?.blocked || savingCompletion || (!stages[0]?.complete && !lastCollectionAt && !hasPortalSubmissions)" />
                 <v-btn v-if="opened === 'publication'" variant="tonal" prepend-icon="mdi-account-check-outline" :disabled="selectedStage?.blocked || savingCompletion" @click="emit('import', work, false, { date }); opened = null">
                     {{ selectedStage?.complete ? 'Ergebnisse erneut übernehmen' : 'Ergebnisse übernehmen' }}
                 </v-btn>
                 <WorkResultNotification v-if="opened === 'notification' && !selectedStage?.blocked && !savingCompletion" :work="work" :date="date" @saved="emit('saved', $event)" />
                 <v-spacer />
-                <v-btn :disabled="savingCompletion" @click="opened = null">Schließen</v-btn>
+                <v-btn variant="text" min-height="44" :disabled="savingCompletion" @click="opened = null">Schließen</v-btn>
             </v-card-actions>
         </v-card>
     </v-dialog>
@@ -153,14 +153,15 @@ import { workDispatchNotifications, workTaskDispatchCompleted, workStudentDistri
 import { personalWorkAssessment, workCollectionStudentStatus } from '@/helpers/workSubmission'
 import { workCompletedLabel, workHasProgress, workProgressStages, workProgressNextAction, workLastCollectionAt, workLastCollectionRunAt, workSimulationEvaluation, workManualCompletionFields } from '@/helpers/workProgress'
 import WorkEvaluationPdf from './WorkEvaluationPdf.vue'
+import WorkGradingAction from './WorkGradingAction.vue'
 import WorkSubmissionCollection from './WorkSubmissionCollection.vue'
 import WorkPortalSubmissionCopy from './WorkPortalSubmissionCopy.vue'
-import WorkGradingAction from './WorkGradingAction.vue'
 import WorkResultNotification from './WorkResultNotification.vue'
 import WorkEmailPreparation from './WorkEmailPreparation.vue'
 import WorkStudentDistribution from './WorkStudentDistribution.vue'
 
-const props = defineProps({ work: { type: Object, required: true }, date: { type: String, default: '' }, state: { type: Object, default: null }, size: { type: [Number, String], default: 18 }, disabled: Boolean, exerciseReady: Boolean, workflowProgress: Object })
+const props = defineProps({ work: { type: Object, required: true }, date: { type: String, default: '' }, state: { type: Object, default: null },
+    size: { type: [Number, String], default: 18 }, disabled: Boolean, exerciseReady: Boolean, workflowProgress: Object, workflowAssessmentLocked: Boolean })
 const admin = useAdminStore()
 const courseStore = useCourseStore()
 const slots = useSlots()
@@ -264,7 +265,10 @@ const stages = computed(() => (props.workflowProgress?.stages || workProgressSta
 }))
 const stageLabel = stage => stage.blocked ? `${stage.label} · zuerst „${stage.blockedBy}“ abschließen`
     : stage.completedAt ? `${stage.label} · ${assessmentTimeText(stage.completedAt)}` : stage.label
-const openStage = stage => { if (!props.disabled && !stage.blocked) opened.value = stage.key }
+const assessmentStages = ['evaluation', 'publication', 'notification']
+const canOpenStage = stage => !(props.workflowAssessmentLocked && assessmentStages.includes(stage.key))
+    && (!stage.blocked || (stage.key === 'evaluation' && Boolean(slots.workflow)))
+const openStage = stage => { if (!props.disabled && canOpenStage(stage)) opened.value = stage.key }
 const progressWork = computed(() => props.workflowProgress?.scoped || props.work)
 const lastCollectionAt = computed(() => workLastCollectionAt(progressWork.value))
 const lastCollectionRunAt = computed(() => workLastCollectionRunAt(progressWork.value))
@@ -302,6 +306,7 @@ const nextActionText = computed(() => [workCompletedLabel, 'Abgeschlossen'].incl
     : nextAction.value === 'Abgaben einsammeln' && !portalEnded.value ? 'Abgaben können erst nach „Freigabe beenden“ eingesammelt werden.'
         : `Nächster Schritt: ${nextAction.value}.`)
 const opened = ref(null)
+const readOnlyAssessment = computed(() => opened.value === 'evaluation' && Boolean(slots.workflow))
 const savingCompletion = ref(false)
 const completionError = ref('')
 const dialog = computed({ get: () => Boolean(opened.value), set: value => { if (!value) opened.value = null } })
@@ -329,7 +334,10 @@ const assignmentMailSent = computed(() => {
     return ['partial', 'sent'].includes(batch?.state) && batch.transport === 'postmark'
 })
 const hasSentTasks = computed(() => portalEnded.value || Boolean(portalRelease.value) || (!modernPrepared.value && (manuallyCompleted.value || (['sent', 'partial'].includes(dispatch.value.status) && Number(dispatch.value.confirmed_count) > 0))))
-watch(stages, value => { if (value.find(stage => stage.key === opened.value)?.blocked) opened.value = null })
+watch([stages, () => props.workflowAssessmentLocked], ([value]) => {
+    const current = value.find(stage => stage.key === opened.value)
+    if (current && !canOpenStage(current)) opened.value = null
+})
 watch(sendBlocked, blocked => { if (blocked && opened.value === 'send') opened.value = null })
 const sendLabel = computed(() => modernPrepared.value ? 'E-Mail-Versand für diesen Prüfungsaufbau nicht eingerichtet'
     : sent.value ? `E-Mails versandt${dispatch.value.transport === 'mailpit' ? ' · Testversand über Mailpit' : ''}`
@@ -352,7 +360,6 @@ watch(() => [props.work.id, props.work.teaching_course_id, props.date, linkedTes
     else clearStudentStatuses()
 })
 watch(() => props.disabled, disabled => { if (disabled) opened.value = null })
-
 async function saveCompletion(field, completed) {
     if (savingCompletion.value) return
     savingCompletion.value = true

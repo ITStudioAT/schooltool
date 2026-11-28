@@ -191,13 +191,23 @@ describe('CourseTable manual work completion', () => {
                 CourseStudentNotes: true, CourseStudentIndicators: true, CurriculumPdfPreview: true, ItsRichTextEditor: true,
                 'v-btn': renderActionButtons ? { template: '<button><slot /></button>' } : false, VBtn: false,
                 ...(renderActionButtons ? { 'v-text-field': false, VTextField: false } : {}),
-                'v-btn-toggle': false, VBtnToggle: false, 'v-tab': true, 'v-tabs': true, 'v-textarea': true,
+                'v-btn-toggle': false, VBtnToggle: false, 'v-tab': true, 'v-textarea': true,
+                'v-tabs': { name: 'DateWorkTabs', emits: ['update:modelValue'], template: '<div />' },
                 'v-date-input': renderActionButtons ? { name: 'DeadlineDateInput', template: '<div />' } : true,
                 'v-list-subheader': true, 'v-divider': true, 'v-checkbox': true, 'v-switch': true,
                 'v-dialog': { props: ['modelValue'], template: '<div v-if="modelValue"><slot /></div>' },
             },
         } })
         return { wrapper, works, courses, date, first, second }
+    }
+
+    function gradingGear(workflow: DOMWrapper<Element>) {
+        return workflow.get<HTMLButtonElement>('button[aria-label="Bewertung verwalten"], button[aria-label="Bewertung ansehen"]')
+    }
+
+    async function startManualGrading(wrapper: ReturnType<typeof mountCompletionTable>['wrapper'], tab = 'students') {
+        wrapper.getComponent({ name: 'DateWorkTabs' }).vm.$emit('update:modelValue', tab)
+        await flushPromises()
     }
 
     describe('horizontal mouse navigation', () => {
@@ -471,9 +481,9 @@ describe('CourseTable manual work completion', () => {
             const workflow = wrapper.get('[aria-label="Ablauf der Arbeit"]')
             expect(workflow.get('[data-testid="work-detail-progress"]').text()).toBe('0 von 1 beurteilt')
             const grading = workflow.get<HTMLButtonElement>('[data-primary="true"] button')
-            expect(grading.text()).toBe('Bewertung eintragen')
+            expect(grading.attributes('aria-label')).toBe('Bewertung verwalten')
             expect(grading.element.disabled).toBe(false)
-            await grading.trigger('click')
+            await startManualGrading(wrapper)
             expect((wrapper.vm as any).workDialogTab).toBe('students')
         } finally { wrapper.unmount(); vi.unstubAllGlobals(); vi.useRealTimers() }
     })
@@ -512,8 +522,8 @@ describe('CourseTable manual work completion', () => {
             const confirmed = { ...work, portal_copy_progress: { [date.date]: { linked: true, folder_id: 'id:exam', complete: false } } }
             wrapper.getComponent({ name: 'WorkDropboxLink' }).vm.$emit('portal-target-saved', confirmed)
             await flushPromises()
-            expect(card.text()).toContain('Portalabgaben nach Dropbox kopieren')
-            expect(phase.get('[data-primary="true"] button').text()).toBe('Portalabgaben nach Dropbox kopieren')
+            expect(card.text()).toContain('Abgaben in Dropbox kopieren')
+            expect(phase.get('[data-primary="true"] button').text()).toBe('Abgaben in Dropbox kopieren')
             works.courseWorks = [{ ...confirmed, portal_copy_progress: { [date.date]: { linked: true, folder_id: 'id:exam', complete: true } } }] as never
             await flushPromises()
             expect(card.get('[aria-label^="Nächste Aktion:"]').text()).toBe('Bewerten')
@@ -532,7 +542,7 @@ describe('CourseTable manual work completion', () => {
         vi.stubGlobal('axios', { get })
         const workflow = () => wrapper.get('[aria-label="Ablauf der Arbeit"]')
         const loading = () => workflow().findAll('[role="status"]').find(element => element.text() === 'Arbeitsstatus wird geladen …')
-        const manual = () => workflow().findAll('button').find(button => button.text() === 'Bewertung eintragen')!
+        const manual = () => gradingGear(workflow())
         const primary = () => workflow().get('[data-primary="true"] button')
         try {
             useAdminStore().config = { user: { id: 7 } } as never
@@ -555,7 +565,7 @@ describe('CourseTable manual work completion', () => {
             expect(workflow().get('summary').text()).toBe('Ergebnisse freigeben und mitteilen')
             expect(workflow().findAll('button').find(button => button.text() === 'Importieren')?.isVisible()).toBe(true)
 
-            await manual().trigger('click')
+            await startManualGrading(wrapper)
             await wrapper.findAll('button').find(button => button.text() === 'Abbrechen')!.trigger('click')
             await flushPromises()
             expect(checks).toHaveLength(2)
@@ -617,7 +627,7 @@ describe('CourseTable manual work completion', () => {
                 : { ...connection, exercise: { status: 'unknown', checked_at: null } } })
             await flushPromises()
             expect(loading()).toBeUndefined()
-            expect(workflow().findAll('button').find(button => button.text() === 'Bewertung eintragen')?.isVisible()).toBe(true)
+            expect(gradingGear(workflow()).isVisible()).toBe(true)
             expect(workflow().text()).not.toContain('Erster Termin')
             expect((wrapper.vm as any).workDialogAssessment).toMatchObject({
                 date: otherDate.date, status: outcome === 'failed' ? 'unknown' : outcome,
@@ -643,16 +653,14 @@ describe('CourseTable manual work completion', () => {
     it.each(['students', 'groups'])('returns from %s grading without saving and keeps other work edits', async (gradingTab) => {
         const { wrapper, works, date, work } = mountManualGradingWork(gradingTab === 'groups')
         const workflow = () => wrapper.get('[aria-label="Ablauf der Arbeit"]')
-        const assessment = () => workflow().findAll('.work-phase__toggle').find(button => button.text().includes('Bewerten'))!
-        const editGrades = () => workflow().findAll('button').find(button => button.text() === 'Bewertung eintragen')!
+        const editGrades = () => gradingGear(workflow())
         const gradeInput = () => wrapper.get<HTMLInputElement>('input[inputmode="decimal"]')
         try {
             await flushPromises()
             await wrapper.get(`.course-table-work-summary[aria-label="${work.title}: Arbeit öffnen"]`).trigger('click')
             const vm = wrapper.vm as any
-            if (assessment().attributes('aria-expanded') === 'false') await assessment().trigger('click')
             vm.applyWorkDialogFinalDeadline({ date: date.date, time: '15:30' })
-            await editGrades().trigger('click')
+            await startManualGrading(wrapper, gradingTab)
 
             expect(wrapper.get(`[data-testid="course-table-work-${gradingTab}-panel"]`).isVisible()).toBe(true)
             if (gradingTab === 'groups') await wrapper.get('[data-testid="course-table-work-group-card-0"]').trigger('click')
@@ -663,8 +671,7 @@ describe('CourseTable manual work completion', () => {
             }
             await wrapper.findAll('button').find(button => button.text() === 'Abbrechen')!.trigger('click')
 
-            expect(assessment().isVisible()).toBe(true)
-            expect(assessment().attributes('aria-expanded')).toBe('true')
+            expect(editGrades().isVisible()).toBe(true)
             expect(vm.workDialog.courseDate.id).toBe(date.id)
             expect(vm.savedWorkDialogWork.id).toBe(work.id)
             expect(vm.workDialogForm.finish_until_time).toBe('15:30')
@@ -681,16 +688,14 @@ describe('CourseTable manual work completion', () => {
         const savedWork = { ...work, groups: [savedGroup] }
         vi.mocked(works.update).mockResolvedValueOnce(false).mockResolvedValueOnce({ data: savedWork })
         const workflow = () => wrapper.get('[aria-label="Ablauf der Arbeit"]')
-        const assessment = () => workflow().findAll('.work-phase__toggle').find(button => button.text().includes('Bewerten'))!
         const gradeInput = () => wrapper.get<HTMLInputElement>('input[inputmode="decimal"]')
         const save = () => wrapper.findAll('button').find(button => button.text() === 'Speichern')!
         try {
             await flushPromises()
             await wrapper.get(`.course-table-work-summary[aria-label="${work.title}: Arbeit öffnen"]`).trigger('click')
-            if (assessment().attributes('aria-expanded') === 'false') await assessment().trigger('click')
             const vm = wrapper.vm as any
             vi.mocked(vm.entryStore.indexTableData).mockResolvedValueOnce({ data: [], course_works: [savedWork, second] })
-            await workflow().findAll('button').find(button => button.text() === 'Bewertung eintragen')!.trigger('click')
+            await startManualGrading(wrapper)
             await gradeInput().setValue('4.5')
             await save().trigger('click')
             await flushPromises()
@@ -706,13 +711,12 @@ describe('CourseTable manual work completion', () => {
             expect(works.update).toHaveBeenLastCalledWith(expect.objectContaining({
                 id: work.id, teaching_course_id: work.teaching_course_id, groups: [expect.objectContaining(savedGroup)],
             }))
-            expect(assessment().isVisible()).toBe(true)
-            expect(assessment().attributes('aria-expanded')).toBe('true')
+            expect(workflow().get('[aria-label="Bewertung"]').isVisible()).toBe(true)
             expect(workflow().get('[data-testid="work-detail-progress"]').text()).toBe('1 von 1 beurteilt')
             expect(vm.workDialog.courseDate.id).toBe(date.id)
             expect(vm.savedWorkDialogWork.id).toBe(work.id)
             expect(works.courseWorks.find(item => item.id === second.id)).toEqual(second)
-            await workflow().findAll('button').find(button => button.text() === 'Bewertung eintragen')!.trigger('click')
+            await startManualGrading(wrapper)
             expect(gradeInput().element.value).toBe('4.5')
         } finally { wrapper.unmount() }
     })
@@ -740,7 +744,7 @@ describe('CourseTable manual work completion', () => {
         } finally { wrapper.unmount() }
     })
 
-    it('keeps the provision choice available and only enables portal management with a verified assignment', async () => {
+    it('unlocks the provision choice when the folder is found and only enables portal management with a verified assignment', async () => {
         clearWorkDropboxStates()
         const { wrapper, works, first } = mountCompletionTable(false, true)
         try {
@@ -751,14 +755,15 @@ describe('CourseTable manual work completion', () => {
             await wrapper.get('.course-table-work-summary-title').trigger('click')
 
             const statuses = wrapper.get('[aria-label="Ablauf der Arbeit"]')
-            const portalAvailable = () => statuses.getComponent({ name: 'WorkProvisionMethod' }).props('portalAvailable')
+            const provisionChoice = () => statuses.findComponent({ name: 'WorkProvisionMethod' })
+            const portalAvailable = () => provisionChoice().props('portalAvailable')
             expect(statuses.getComponent({ name: 'WorkExerciseStatus' }).props('disabled')).toBe(true)
-            expect(portalAvailable()).toBe(false)
+            expect(provisionChoice().exists()).toBe(false)
 
             workDropboxStates.set('7:18:65', { connected: true, module_link: { folder: { id: 'id:module' } } })
             await flushPromises()
             expect(statuses.getComponent({ name: 'WorkExerciseStatus' }).props('disabled')).toBe(false)
-            expect(portalAvailable()).toBe(false)
+            expect(provisionChoice().exists()).toBe(false)
 
             ;(wrapper.vm as any).workDialogExerciseStatus = { status: 'found', userId: 7, workId: 65, courseId: 18,
                 date: '2026-10-12', assignmentStatus: 'missing', folder: { id: 'id:exercise', name: 'Leistungsfeststellung' } }
@@ -776,12 +781,12 @@ describe('CourseTable manual work completion', () => {
             expect(statuses.getComponent({ name: 'WorkDeliveryStatus' }).props('exerciseReady')).toBe(true)
             ;(wrapper.vm as any).workDialogExerciseStatus.status = 'unknown'
             await flushPromises()
-            expect(portalAvailable()).toBe(false)
+            expect(provisionChoice().exists()).toBe(false)
             expect(statuses.getComponent({ name: 'WorkDeliveryStatus' }).props('exerciseReady')).toBe(false)
         } finally { wrapper.unmount(); clearWorkDropboxStates() }
     })
 
-    it('opens the connection and saved LF in button order without rechecking Dropbox', async () => {
+    it('opens the saved LF from the preparation header and the connection separately without rechecking Dropbox', async () => {
         clearWorkDropboxStates()
         const preparation = { status: 'ready', components: { aufgabenblatt: { points: 35 },
             multiple_choice: { included: false, points: null } }, total_points: 35 }
@@ -800,16 +805,16 @@ describe('CourseTable manual work completion', () => {
             const form = wrapper.get('.course-table-date-work-form')
             expect(form.find('[aria-label="Leistungsfeststellungsordner öffnen"]').exists()).toBe(false)
             expect(form.text()).not.toContain('Erstellungsauftrag anzeigen')
-            const actions = form.findAll('button').filter(button => [
-                'Verbindung verwalten', 'Leistungsfeststellung verwalten',
-            ].includes(button.text()))
-            expect(actions.map(button => button.text())).toEqual(['Verbindung verwalten', 'Leistungsfeststellung verwalten'])
-            await actions[0].trigger('click')
+            const manageSelector = 'button[aria-label="Leistungsfeststellung verwalten"]'
+            expect(form.findAll(manageSelector)).toHaveLength(1)
+            const manage = form.get('.work-phase__heading-row').get(manageSelector)
+            const openConnection = form.get('button[aria-label="Verbindung verwalten"]')
+            await openConnection.trigger('click')
             const connection = form.get('.folder-browser-card')
             expect(connection.text()).toContain('Lernmodulordner · Erste Arbeit')
             expect(connection.get('[aria-label="Dropbox-Ordnerpfad"]').text()).toBe('/Fiktiv/Modul')
             await connection.findAll('button').find(button => button.text() === 'Schließen')!.trigger('click')
-            await actions[1].trigger('click')
+            await manage.trigger('click')
             await flushPromises()
             expect(form.text()).toContain('Leistungsfeststellung vorbereitet · Erste Arbeit')
             expect(post).not.toHaveBeenCalled()
@@ -850,7 +855,7 @@ describe('CourseTable manual work completion', () => {
                 multiple_choice: { included: false, points: null } }, total_points: 35 }
             confirmCreatedWorkExercise(key, work, date.date, workDropboxBinding(missing), folder, preparation)
             await flushPromises()
-            expect(form.get('[aria-label="Ablauf der Arbeit"]').text()).toContain('Aufgabenstellung bestätigt')
+            expect(form.get('.work-phase__folder-name').text()).toBe(folder.name)
             const fact = (label: string) => facts.findAll('dl > div').find(item => item.find('dt').text() === label)!
             expect(fact('Aufgabenblatt').text()).toContain('35 Punkte')
             expect(fact('Multiple-Choice-Test').findAll('dd').map(detail => detail.text())).toEqual(['5 Punkte', '10 Fr./8 min.'])
@@ -886,8 +891,8 @@ describe('CourseTable manual work completion', () => {
             await flushPromises()
             const summary = wrapper.get('.course-table-date-work-form [aria-label="Prüfungsdetails"]')
             expect(summary.text()).toContain('Gesamtpunkte40 Punkte')
-            expect(summary.get('.work-assessment-ways').text()).toContain('Im Schülerbereich bereitgestellt')
-            expect(summary.get('.work-assessment-ways').text()).toContain('Datei-Upload')
+            expect(summary.get('.work-assessment-ways').findAll('dd').map(value => value.text()))
+                .toEqual(['Im Schülerbereich', 'Datei-Upload'])
         } finally { wrapper.unmount(); clearWorkDropboxStates(); vi.unstubAllGlobals() }
     })
 
@@ -4276,26 +4281,38 @@ describe('CourseTable', () => {
         expect(loadCourseTableData).toHaveBeenCalledWith(20, true)
     })
 
-    it('stages a new type until the type edit is confirmed', () => {
+    it('persists only the chosen type and keeps the draft open after a failed save', async () => {
         const methods = (CourseTable as any).methods
+        const update = vi.spyOn(axios, 'put')
+            .mockRejectedValueOnce({ response: { data: { message: 'Typ nicht verfügbar.' } } })
+            .mockResolvedValueOnce({ data: { data: { id: 12, type: 'P' } } })
         const ctx = {
-            workDialogForm: { id: 12, type: 'A' },
-            workDialogTypeDraft: 'A',
+            selected_course: { id: 18 },
+            workDialogForm: { id: 12, type: 'A', description: 'Ungespeicherter Entwurf' },
+            workMetadataInitialValue: 'A',
+            workMetadataError: '',
+            workDialogTypeDraft: 'P',
             workDialogTypeEditing: true,
             canConfirmDateWorkType: true,
+            applySavedCourseWork: vi.fn(),
+            loadCourseTableData: vi.fn(),
+            saveDateWorkMetadata: methods.saveDateWorkMetadata,
+            cancelDateWorkTypeEditing: methods.cancelDateWorkTypeEditing,
         }
 
-        methods.selectDateWorkType.call(ctx, 'P')
+        try {
+            await methods.confirmDateWorkTypeEditing.call(ctx)
+            expect(ctx.workDialogForm.type).toBe('A')
+            expect(ctx.workMetadataError).toBe('Typ nicht verfügbar.')
+            expect(ctx.workDialogTypeEditing).toBe(true)
 
-        expect(ctx.workDialogForm.type).toBe('A')
-        expect(ctx.workDialogTypeDraft).toBe('P')
-        expect(ctx.workDialogTypeEditing).toBe(true)
-
-        methods.confirmDateWorkTypeEditing.call(ctx)
-
-        expect(ctx.workDialogForm.type).toBe('P')
-        expect(ctx.workDialogTypeDraft).toBe('')
-        expect(ctx.workDialogTypeEditing).toBe(false)
+            await methods.confirmDateWorkTypeEditing.call(ctx)
+            expect(update).toHaveBeenLastCalledWith('/api/admin/teaching/course_works/12', { type: 'P', expected_type: 'A' })
+            expect(ctx.workDialogForm).toMatchObject({ type: 'P', description: 'Ungespeicherter Entwurf' })
+            expect(ctx.workDialogTypeEditing).toBe(false)
+        } finally {
+            update.mockRestore()
+        }
     })
 
     it('discards the staged type when type editing is cancelled', () => {
@@ -4313,26 +4330,35 @@ describe('CourseTable', () => {
         expect(ctx.workDialogTypeEditing).toBe(false)
     })
 
-    it('stages an Arbeitsform change until editing is confirmed', () => {
+    it('uses the returned groups and settings when the Arbeitsform is saved', async () => {
         const methods = (CourseTable as any).methods
+        const groups = [{ student_ids: [31] }]
+        const update = vi.spyOn(axios, 'put').mockResolvedValue({
+            data: { data: { id: 12, is_group_work: false, groups, is_random_groups: false, group_size: null } },
+        })
         const ctx = {
+            selected_course: { id: 18 },
             canConfirmDateWorkMode: true,
-            workDialogForm: { is_group_work: false },
+            workDialogForm: { id: 12, is_group_work: true, group_size: 3, is_random_groups: true },
+            workMetadataInitialValue: true,
             workDialogModeDraft: false,
-            workDialogModeEditing: false,
+            workDialogModeEditing: true,
+            applySavedCourseWork: vi.fn(),
+            loadCourseTableData: vi.fn(),
+            cloneDateWorkGroups: methods.cloneDateWorkGroups,
+            saveDateWorkMetadata: methods.saveDateWorkMetadata,
+            cancelDateWorkModeEditing: methods.cancelDateWorkModeEditing,
         }
 
-        methods.beginDateWorkModeEditing.call(ctx)
-        ctx.workDialogModeDraft = true
-
-        expect(ctx.workDialogForm.is_group_work).toBe(false)
-        expect(ctx.workDialogModeEditing).toBe(true)
-
-        methods.confirmDateWorkModeEditing.call(ctx)
-
-        expect(ctx.workDialogForm.is_group_work).toBe(true)
-        expect(ctx.workDialogModeDraft).toBe(false)
-        expect(ctx.workDialogModeEditing).toBe(false)
+        try {
+            await methods.confirmDateWorkModeEditing.call(ctx)
+            expect(update).toHaveBeenCalledExactlyOnceWith('/api/admin/teaching/course_works/12',
+                { is_group_work: false, expected_is_group_work: true })
+            expect(ctx.workDialogForm).toMatchObject({ is_group_work: false, group_size: null, is_random_groups: false, groups })
+            expect(ctx.workDialogModeEditing).toBe(false)
+        } finally {
+            update.mockRestore()
+        }
     })
 
     it('discards the staged Arbeitsform when editing is cancelled', () => {
@@ -6866,33 +6892,12 @@ describe('CourseTable', () => {
         expect(source).toContain('Neue Gruppe')
         expect(source).toContain('Für diese Gruppenarbeit sind noch keine Gruppen definiert.')
         expect(source).not.toContain("{{ workDialogForm.id ? 'Arbeit bearbeiten' : 'Neue Arbeit erstellen' }}")
-        expect(source).toContain('v-if="workDialogForm.id && !workDialogTypeEditing"')
-        expect(source).toContain('data-testid="course-table-date-edit-work-type"')
-        expect(source).toMatch(/<v-chip\s+data-testid="course-table-date-edit-work-type"/)
-        expect(source).not.toMatch(/<v-btn\s+data-testid="course-table-date-edit-work-type"/)
-        expect(source).toContain('{{ selectedDateWorkTypeTitle }}')
-        expect(source).toContain('@click="beginDateWorkTypeEditing"')
         expect(source).toContain('@click="selectDateWorkType(item.value)"')
-        expect(source).toContain('@click="cancelDateWorkTypeEditing">Abbrechen</v-btn>')
-        expect(source).toContain('@click="confirmDateWorkTypeEditing">OK</v-btn>')
         expect(source).toContain(':disabled="assessmentLocked || workSaving || workDialogTypeEditing || workDialogModeEditing"')
-        expect(source).toContain('data-testid="course-table-date-edit-work-mode"')
-        expect(source).toMatch(/<v-chip\s+data-testid="course-table-date-edit-work-mode"/)
-        expect(source).not.toMatch(/<v-btn\s+data-testid="course-table-date-edit-work-mode"/)
-        expect(source).toContain('class="course-table-work-meta-row mb-3"')
-        expect(source).toContain('workDialogTypeEditing || workDialogModeEditing')
         expect(source).toContain('data-testid="course-table-date-create-work-mode"')
         expect(source).toContain('v-model="workDialogForm.is_group_work"')
-        expect(source).toContain('<div v-else-if="!workDialogModeEditing"')
-        expect(source).toContain('<div v-if="!workDialogTypeEditing">')
-        expect(source).toContain('{{ selectedDateWorkModeTitle }}')
-        expect(source).toContain('@click="beginDateWorkModeEditing"')
-        expect(source).toContain('v-model="workDialogModeDraft"')
-        expect(source).toContain('@click="cancelDateWorkModeEditing">Abbrechen</v-btn>')
-        expect(source).toContain('@click="confirmDateWorkModeEditing">OK</v-btn>')
         expect(source).toContain('<v-btn :value="false">Einzelarbeit</v-btn>')
         expect(source).toContain('<v-btn :value="true">Gruppenarbeit</v-btn>')
-        expect(source).not.toContain('Gruppen und gruppenspezifische Termine bleiben unverändert.')
         expect(source).toContain('data-testid="course-table-date-edit-work-date"')
         expect(source).toContain('@click="beginWorkDialogDateEditing"')
         expect(source).toContain('@keydown.enter.prevent="beginWorkDialogDateEditing"')

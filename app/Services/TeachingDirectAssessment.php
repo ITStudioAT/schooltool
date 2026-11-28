@@ -9,6 +9,7 @@ use App\Models\TeachingWorkDropboxFolder;
 use App\Models\User;
 use App\Support\SchooltoolAssessmentJson;
 use App\Support\TeachingAssessmentProgress;
+use App\Support\TeachingWorkActionHistory;
 use Illuminate\Cache\ArrayLock;
 use Illuminate\Cache\DatabaseLock;
 use Illuminate\Cache\FileLock;
@@ -86,8 +87,12 @@ class TeachingDirectAssessment
                 && ($status['schooltool']['course_id'] ?? null) === $work->teaching_course_id
                 && is_string($status['scheduled_date'] ?? null) && is_string($status['folder_group'] ?? null)
                 && ($date === null || $date === $status['scheduled_date']), 409, 'Die Statusdatei gehört nicht zum angezeigten Termin.');
-            $initialStatus = $this->json($this->initialStatus($work, ['course' => ['folder_group' => $status['folder_group']],
-                'work' => ['scheduled_date' => $status['scheduled_date']]]));
+            $initial = $this->initialStatus($work, ['course' => ['folder_group' => $status['folder_group']],
+                'work' => ['scheduled_date' => $status['scheduled_date']]]);
+            if (array_key_exists(TeachingWorkActionHistory::KEY, $status)) {
+                $initial[TeachingWorkActionHistory::KEY] = $status[TeachingWorkActionHistory::KEY];
+            }
+            $initialStatus = $this->json($initial);
             abort_unless($alreadyReset ? $document['contents'] === $initialStatus : ($status['prepared'] ?? null) === true,
                 409, 'Die Leistungsfeststellung wurde inzwischen geändert.');
             try {
@@ -283,7 +288,9 @@ class TeachingDirectAssessment
             && ($file['path_lower'] ?? null) === $folder['path_lower'].'/status.json' && is_string($file['rev'] ?? null)
             && empty($file['sharing_info']) && ($file['has_explicit_shared_members'] ?? false) !== true,
             409, 'Der vorhandene Prüfungsordner enthält andere oder geteilte Daten. Bitte die Zuordnung prüfen.');
-        $this->verifyFile($connection, $folder['id'], 'status.json', $status, $file['rev']);
+        $document = $this->dropbox->readExerciseDocument($connection, $folder['id'], 'status.json');
+        abort_unless($document && $document['rev'] === $file['rev'] && $this->matchesStatus($document['contents'], $status),
+            409, 'Eine gespeicherte Datei konnte nicht bestätigt werden.');
 
         return true;
     }
@@ -390,11 +397,15 @@ class TeachingDirectAssessment
                     $alreadyPrepared = $this->matchesStatus($existingStatus['contents'], $complete);
                 }
                 if (! $alreadyPrepared) {
-                    $previous = $existingStatus ? json_decode($existingStatus['contents'], true, 32, JSON_THROW_ON_ERROR)['progress'] ?? null : null;
-                    $journal = TeachingAssessmentProgress::begin($previous, $plan['mc_id'] !== null);
-                    $saveJournal = function (bool $prepared = false) use ($connection, $folder, $journal, $incomplete, $complete, &$statusRevision, &$savingJournal): void {
+                    $previous = $existingStatus ? json_decode($existingStatus['contents'], true, 32, JSON_THROW_ON_ERROR) : [];
+                    $history = $previous[TeachingWorkActionHistory::KEY] ?? $reusable[TeachingWorkActionHistory::KEY] ?? null;
+                    $journal = TeachingAssessmentProgress::begin($previous['progress'] ?? null, $plan['mc_id'] !== null);
+                    $saveJournal = function (bool $prepared = false) use ($connection, $folder, $journal, $incomplete, $complete, $history, &$statusRevision, &$savingJournal): void {
                         $savingJournal = true;
                         $record = json_decode($prepared ? $complete : $incomplete, true, 32, JSON_THROW_ON_ERROR);
+                        if ($history !== null) {
+                            $record[TeachingWorkActionHistory::KEY] = $history;
+                        }
                         $statusRevision = $this->write($connection, $folder['id'], 'status.json', $this->json($record + ['progress' => $journal->record()]), $statusRevision);
                         $savingJournal = false;
                     };
@@ -612,7 +623,7 @@ class TeachingDirectAssessment
             }
             $partial = $status !== null && $resumeStatus !== null && $this->matchesStatus($status['contents'], $resumeStatus) && $resumeTemplate !== null;
             if (($ownFolderId === null || $entry['id'] === $ownFolderId) && $entry['name'] === $this->folderName($context)
-                && ($status === null || ($linkedStatus !== null && $status['contents'] === $linkedStatus) || $partial)) {
+                && ($status === null || ($linkedStatus !== null && $this->matchesStatus($status['contents'], $linkedStatus)) || $partial)) {
                 abort_if($reusable !== null, 409, 'Mehrere Prüfungsordner passen zum selben Ziel. Bitte den Bestand prüfen.');
                 $folder = $this->dropbox->metadata($connection, $entry['id']);
                 abort_unless(($folder['id'] ?? null) === $entry['id'] && ($folder['name'] ?? null) === $entry['name']
@@ -628,6 +639,12 @@ class TeachingDirectAssessment
                         409, 'Der vorhandene Prüfungsordner ist nicht leer. Bitte den Bestand prüfen.');
                 }
                 $reusable = ['kind' => $status === null ? 'empty' : ($partial ? 'partial' : 'linked'), 'folder' => $folder, 'revision' => $status['rev'] ?? null];
+                if ($status !== null) {
+                    $record = json_decode($status['contents'], true, 32, JSON_THROW_ON_ERROR);
+                    if (array_key_exists(TeachingWorkActionHistory::KEY, $record)) {
+                        $reusable[TeachingWorkActionHistory::KEY] = $record[TeachingWorkActionHistory::KEY];
+                    }
+                }
                 if ($partial) {
                     $reusable['tree_fingerprint'] = $treeFingerprint;
                 }
@@ -736,10 +753,11 @@ class TeachingDirectAssessment
         try {
             $record = json_decode($actual, true, 32, JSON_THROW_ON_ERROR);
             if (! is_array($record) || ! is_bool($record['prepared'] ?? null) || $this->json($record) !== $actual
-                || ! TeachingAssessmentProgress::valid($record['progress'] ?? null, $record['prepared'])) {
+                || (array_key_exists('progress', $record) && ! TeachingAssessmentProgress::valid($record['progress'], $record['prepared']))
+                || (array_key_exists(TeachingWorkActionHistory::KEY, $record) && ! TeachingWorkActionHistory::valid($record[TeachingWorkActionHistory::KEY]))) {
                 return false;
             }
-            unset($record['progress']);
+            unset($record['progress'], $record[TeachingWorkActionHistory::KEY]);
 
             return $this->json($record) === $expected;
         } catch (JsonException) {

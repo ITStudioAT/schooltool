@@ -94,6 +94,7 @@ export async function loadWorkExercise(key, work, date = '', fresh = false, dead
         params: { include_exercise: 1, stored_only: 1, ...(date ? { date } : {}) },
     })).then(response => {
         const data = stream ? stream.result(response) : response.data
+        stream?.options?.signal?.throwIfAborted()
         const currentBinding = workDropboxBinding(workDropboxStates.get(key))
         const responseBinding = workDropboxBinding(data)
         if (generation !== requestGeneration || (currentBinding !== binding && currentBinding !== responseBinding)) {
@@ -110,6 +111,7 @@ export async function loadWorkExercise(key, work, date = '', fresh = false, dead
         workDropboxStates.set(key, data)
         return data
     }).catch(error => {
+        if (overall) throw error
         if (!storedOnly && generation === requestGeneration && workDropboxBinding(workDropboxStates.get(key)) === binding) {
             const created = creationConfirmedDuringCheck()
             if (created && (!fresh || statusOnly)) return created
@@ -150,6 +152,15 @@ export async function loadWorkDropbox(key, workId, fresh = false, options = {}) 
     }).finally(() => { if (pending.get(key)?.request === request) pending.delete(key) })
     pending.set(key, { request, signal: options.signal })
     return request
+}
+
+export async function loadWorkFolderOverview(key, work, date) {
+    if (date === null) return loadWorkDropbox(key, work.id)
+
+    const checked = workExerciseCheck(key, work, date)
+    if (checked && !checked.restored) return checked.data
+
+    return loadWorkExercise(key, work, date, false, null, false, null, null, false, true)
 }
 
 export async function loadWorkDropboxSuggestions(key, work, options = {}) {

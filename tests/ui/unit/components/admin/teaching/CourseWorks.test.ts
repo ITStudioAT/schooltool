@@ -69,14 +69,12 @@ describe('New work overview and assessment mode', () => {
             await flushPromises()
             const workflow = wrapper.get('[aria-label="Ablauf der Arbeit"]')
             expect(workflow.get('.work-phase--current .work-phase__title').text()).toBe(shouldCopy ? 'Abgeben' : 'Bewerten')
-            const submission = workflow.findAll('.work-phase__toggle').find(button => button.text().includes('Abgeben'))!
-            expect(submission.text()).toContain('Abgabe geschlossen')
+            const submission = workflow.findAll('h4').find(heading => heading.text().includes('Abgeben'))!
+            expect(submission.text()).toContain('Portalabgabe geschlossen · 1 Abgabe')
             if (shouldCopy) {
                 const recommended = workflow.get('.work-phase--next-copy')
                 expect(recommended.get('[data-primary="true"] button').text()).toBe(targetLabel)
                 expect(recommended.get('[data-primary="true"] button').isVisible()).toBe(true)
-            } else {
-                await submission.trigger('click')
             }
             const collection = workflow.getComponent(WorkSubmissionCollection)
             expect(collection.isVisible()).toBe(true)
@@ -89,7 +87,7 @@ describe('New work overview and assessment mode', () => {
             await flushPromises()
             expect(workflow.get('.work-phase--next-assessment .work-phase__title').text()).toBe('Bewerten')
             expect(workflow.findComponent(WorkSubmissionCollection).exists()).toBe(false)
-            expect(workflow.text()).toContain('Abgabestatus ansehen')
+            expect(workflow.text()).not.toContain('Abgabestatus ansehen')
             wrapper.vm.abortEdit()
             await flushPromises()
             expect(wrapper.get('.work-row .text-orange-darken-2').text()).toBe('Bewerten')
@@ -138,7 +136,7 @@ describe('New work overview and assessment mode', () => {
         } })
     }
 
-    it('opens the connection before the saved LF from the separate works editor', async () => {
+    it('opens the connection and the saved LF separately in the works editor', async () => {
         const work = { id: 65, teaching_course_id: 2, type: 'A5', title: 'Fiktive Arbeit', groups: [], status: {} }
         const data = { connected: true, folder: null, link_version: 'a'.repeat(64),
             module_link: { folder: { id: 'id:module', name: 'Fiktives Modul', path: '/Fiktiv/Modul' } },
@@ -153,16 +151,14 @@ describe('New work overview and assessment mode', () => {
             await wrapper.get('.work-row').trigger('click')
             await flushPromises()
             const workflow = wrapper.get('[aria-label="Ablauf der Arbeit"]')
-            const actions = workflow.findAll('button').filter(button => [
-                'Verbindung verwalten', 'Leistungsfeststellung verwalten',
-            ].includes(button.text()))
-            expect(actions.map(button => button.text())).toEqual(['Verbindung verwalten', 'Leistungsfeststellung verwalten'])
-            await actions[0].trigger('click')
+            const openConnection = workflow.get('button[aria-label="Verbindung verwalten"]')
+            const manageExercise = workflow.get('button[aria-label="Leistungsfeststellung verwalten"]')
+            await openConnection.trigger('click')
             const connection = workflow.get('.folder-browser-card')
             expect(connection.text()).toContain('Lernmodulordner · Fiktive Arbeit')
             expect(connection.get('[aria-label="Dropbox-Ordnerpfad"]').text()).toBe('/Fiktiv/Modul')
             await connection.findAll('button').find(button => button.text() === 'Schließen')!.trigger('click')
-            await actions[1].trigger('click')
+            await manageExercise.trigger('click')
             expect(workflow.text()).toContain('Leistungsfeststellung vorbereitet · Fiktive Arbeit')
             expect(post).not.toHaveBeenCalled()
         } finally { wrapper.unmount() }
@@ -341,7 +337,7 @@ describe('New work overview and assessment mode', () => {
             }
             expect(wrapper.find('[data-testid="work-module-inline"]').exists()).toBe(false)
             expect(wrapper.find('[aria-label="Fortschritt beim Anlegen"]').exists()).toBe(false)
-            expect(workflow().text()).toContain('Prüfungsordner bestätigt')
+            expect(workflow().get('.work-phase__folder-name').text()).toBe('Prüfung')
             expect(workflow().text()).toContain('Leistungsfeststellung erstellen')
             expect(workflow().text()).not.toContain('Prüfungsordner erneut anlegen')
             expect(vm.handshakeNotice).toBe('')
@@ -550,7 +546,8 @@ describe('New work overview and assessment mode', () => {
             expect((wrapper.vm as any).action).toBe('edit_course_work')
             expect((wrapper.vm as any).work_form.id).toBe(65)
             expect(wrapper.get('[data-testid="work-detail-progress"]').text()).toBe('0 von 1 beurteilt')
-            expect(wrapper.find('work-import-actions-stub').exists()).toBe(!enabled)
+            const workflow = wrapper.getComponent({ name: 'WorkWorkflowOverview' })
+            expect(workflow.props('work').status.automation_enabled).toBe(!enabled)
         } finally { wrapper.unmount() }
     })
 

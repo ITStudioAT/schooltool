@@ -19,7 +19,7 @@
                 <v-spacer />
                 <v-btn min-height="44" :disabled="!result || loading || copying || disabled" :color="copied ? 'success' : 'primary'"
                     :prepend-icon="copied ? 'mdi-check' : 'mdi-content-copy'" @click="copyOrder">{{ copied ? 'Kopiert' : 'Auftrag kopieren' }}</v-btn>
-                <v-btn min-height="44" :disabled="loading" @click="opened = false">Schließen</v-btn>
+                <v-btn variant="text" min-height="44" :disabled="loading" @click="opened = false">Schließen</v-btn>
             </v-card-actions>
         </v-card>
     </v-dialog>

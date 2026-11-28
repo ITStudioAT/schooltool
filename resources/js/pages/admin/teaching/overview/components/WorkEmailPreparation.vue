@@ -42,7 +42,7 @@
                 <v-btn color="primary" variant="tonal" prepend-icon="mdi-eye-outline" :loading="emailPreviewLoading"
                     :disabled="emailPreviewLoading || !canInspect" @click="loadEmailPreview">{{ emailPreview ? 'Vorschau aktualisieren' : 'E-Mail ansehen' }}</v-btn>
                 <v-spacer />
-                <v-btn @click="infoOpened = false">Schließen</v-btn>
+                <v-btn variant="text" min-height="44" @click="infoOpened = false">Schließen</v-btn>
             </v-card-actions>
         </v-card>
     </v-dialog>
@@ -82,7 +82,7 @@
             </v-card-text>
             <v-card-actions>
                 <v-spacer />
-                <v-btn :disabled="loading" @click="opened = false">Schließen</v-btn>
+                <v-btn variant="text" min-height="44" :disabled="loading" @click="opened = false">Schließen</v-btn>
                 <v-btn v-if="error && !result" :disabled="loading" @click="loadPreparation">Erneut laden</v-btn>
                 <v-btn :color="copied ? 'success' : 'primary'" :prepend-icon="copied ? 'mdi-check' : 'mdi-content-copy'"
                     :loading="loading || copying" :disabled="disabled || loading || copying || !result" @click="copyPreparation">{{ copied ? 'Kopiert' : 'Auftrag kopieren' }}</v-btn>

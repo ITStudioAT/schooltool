@@ -22,7 +22,7 @@
                 <v-spacer />
                 <v-btn :color="copySucceeded ? 'success' : 'primary'" :disabled="!result || loading || !isCurrentWork"
                     :prepend-icon="copySucceeded ? 'mdi-check' : 'mdi-content-copy'" @click="copyExport">{{ copySucceeded ? 'Kopiert' : 'Auftrag kopieren' }}</v-btn>
-                <v-btn @click="open = false">Schließen</v-btn>
+                <v-btn variant="text" min-height="44" @click="open = false">Schließen</v-btn>
             </v-card-actions>
         </v-card>
     </v-dialog>

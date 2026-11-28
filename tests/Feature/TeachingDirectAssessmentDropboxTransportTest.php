@@ -47,6 +47,38 @@ beforeEach(function (): void {
     Http::preventStrayRequests();
 });
 
+test('Dropbox preparation reads continue after a transient connection failure', function (): void {
+    Sleep::fake();
+    $connection = DropboxConnection::factory()->create(['user_id' => $this->teacher->id,
+        'credentials' => ['refresh_token' => 'synthetic-refresh', 'scopes' => ['files.metadata.read', 'files.content.read']]]);
+    $attempts = ['token' => 0, 'metadata' => 0, 'inventory' => 0, 'download' => 0];
+    Http::fake(function (Request $request) use (&$attempts) {
+        $url = $request->url();
+
+        return match (true) {
+            str_ends_with($url, '/oauth2/token') => ++$attempts['token'] === 1
+                ? Http::failedConnection() : Http::response(['access_token' => 'synthetic-access']),
+            str_ends_with($url, '/files/get_metadata') => ++$attempts['metadata'] === 1
+                ? Http::failedConnection() : Http::response(['.tag' => 'folder', 'id' => 'id:module', 'name' => 'Modul', 'path_lower' => '/modul']),
+            str_ends_with($url, '/files/list_folder') => ++$attempts['inventory'] === 1
+                ? Http::response([], 503) : Http::response(['entries' => [], 'has_more' => false]),
+            str_ends_with($url, '/files/download') => ++$attempts['download'] === 1
+                ? Http::failedConnection() : Http::response('Prüfungsvorlage'),
+        };
+    });
+
+    $dropbox = app(DropboxWorkImport::class);
+    expect($dropbox->metadata($connection, 'id:module')['id'])->toBe('id:module');
+    $batch = $dropbox->readModuleBatch($connection, [
+        'module' => ['endpoint' => 'files/list_folder', 'parameters' => ['path' => 'id:module']],
+        'file' => ['endpoint' => 'files/download', 'parameters' => ['path' => 'rev:template']],
+    ]);
+
+    expect($batch['module']->json('entries'))->toBe([])
+        ->and($batch['file']->body())->toBe('Prüfungsvorlage')
+        ->and($attempts)->toBe(['token' => 2, 'metadata' => 2, 'inventory' => 2, 'download' => 2]);
+});
+
 test('direct assessment uses real Dropbox transport for initial status retry and package', function (bool $withMc, string $mode, int $participantCount = 1, bool $multipleClasses = false): void {
     config(['cache.default' => 'array', 'cache.stores.database.connection' => config('database.default'),
         'queue.connections.database.connection' => config('database.default')]);

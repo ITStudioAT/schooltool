@@ -2,7 +2,7 @@
     <slot :open="open" />
     <v-dialog v-if="opened" v-model="opened" persistent scrollable max-width="780">
         <v-card class="folder-browser-card" @click.stop>
-            <v-card-title class="text-wrap">{{ section || (module ? 'Lernmodulordner' : exercise ? 'Leistungsfeststellungsordner' : 'Arbeitsordner') }} · {{ work?.title }}</v-card-title>
+            <v-card-title class="text-wrap">{{ section || (module ? 'Lernmodulordner' : directExerciseId ? 'Prüfungsordner' : exercise ? 'Leistungsfeststellungsordner' : 'Arbeitsordner') }} · {{ work?.title }}</v-card-title>
             <v-card-text>
                 <template v-if="module">
                     <div v-if="current?.path" class="folder-browser-path text-body-2 mb-2" aria-label="Dropbox-Ordnerpfad">{{ modulePathPrefix }}<strong>{{ modulePathLastPart }}</strong>{{ modulePathTrailingSlashes }}</div>
@@ -34,15 +34,15 @@
                 <v-btn v-if="error && !loading" variant="text" :disabled="unlinking" @click="open">Erneut laden</v-btn>
                 </template>
                 <p v-if="unlinking" role="status" class="text-body-2 mt-3">Dropbox-Verbindung wird geprüft und getrennt …</p>
-                <v-alert v-if="!section && unlinkHint?.message" :type="unlinkHint.status === 'blocked' ? 'warning' : 'info'" variant="tonal" class="mt-3">{{ unlinkHint.message }}</v-alert>
+                <v-alert v-if="!section && !directExerciseId && unlinkHint?.message" :type="unlinkHint.status === 'blocked' ? 'warning' : 'info'" variant="tonal" class="mt-3">{{ unlinkHint.message }}</v-alert>
             </v-card-text>
             <v-card-actions class="flex-wrap">
-                <v-btn v-if="!section && !activity" color="error" variant="text" prepend-icon="mdi-link-variant-off" :loading="unlinking"
+                <v-btn v-if="!section && !directExerciseId && !activity" color="error" variant="text" prepend-icon="mdi-link-variant-off" :loading="unlinking"
                     :disabled="disabled || loading || unlinking || checkingUnlink || !linkVersion || unlinkBlocked" @click="unlink">Verbindung trennen</v-btn>
-                <v-btn v-if="!section && !activity && linkVersion && unlinkBlocked" variant="text" :loading="checkingUnlink"
+                <v-btn v-if="!section && !directExerciseId && !activity && linkVersion && unlinkBlocked" variant="text" :loading="checkingUnlink"
                     :disabled="disabled || loading || unlinking || checkingUnlink" @click="checkUnlink">LF-Stand prüfen</v-btn>
                 <v-spacer />
-                <v-btn :disabled="unlinking" @click="close">Schließen</v-btn>
+                <v-btn variant="text" min-height="44" :disabled="unlinking" @click="close">Schließen</v-btn>
             </v-card-actions>
         </v-card>
     </v-dialog>
@@ -57,7 +57,8 @@ import { workAssessmentActivity } from '@/helpers/workAssessmentRun'
 import { workAutomationEnabled } from '@/helpers/workAutomation'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 
-const props = defineProps({ work: Object, disabled: Boolean, module: Boolean, exercise: Boolean, date: { type: String, default: '' }, section: { type: String, default: '' } })
+const props = defineProps({ work: Object, disabled: Boolean, module: Boolean, exercise: Boolean, date: { type: String, default: '' },
+    section: { type: String, default: '' }, directExerciseId: { type: String, default: '' } })
 const unlinkTimeout = 120000
 const admin = useAdminStore()
 const activity = computed(() => workAssessmentActivity(admin.config?.user?.id, props.work))
@@ -146,6 +147,7 @@ async function open() {
     }
     const request = operation
     const currentKey = key.value
+    const expectedLinkVersion = workDropboxStates.get(currentKey)?.link_version
     controller = new AbortController()
     loading.value = true
     try {
@@ -153,6 +155,11 @@ async function open() {
             ...(props.exercise ? { params: { include_folder_path: 1 } } : {}) })
         if (request !== operation || key.value !== currentKey) return
         if (!data.connected || !(data.module_link?.folder?.id || data.folder?.id)) throw new Error('Kein Arbeitsordner verknüpft.')
+        if (props.directExerciseId && (data.folder?.id !== props.directExerciseId || data.module_link || data.module_conflict
+            || !expectedLinkVersion || data.link_version !== expectedLinkVersion)) {
+            error.value = 'Die Verbindung hat sich geändert. Bitte den Arbeitsdialog erneut öffnen.'
+            return
+        }
         const previous = workDropboxStates.get(currentKey)
         workDropboxStates.set(currentKey, !data.exercise && previous?.exercise && previous.link_version === data.link_version
             ? { ...data, exercise: previous.exercise } : data)
@@ -178,7 +185,8 @@ async function read(folderId = null, append = false) {
                 ...(props.section ? { section: props.section } : {}),
                 ...(folderId ? { folder_id: folderId } : {}), ...(append && cursor.value ? { cursor: cursor.value } : {}) } })
         if (request !== operation || key.value !== currentKey) return false
-        if (!data.root?.id || !data.current?.id || !Array.isArray(data.entries) || data.link_version !== linkVersion.value) {
+        if (!data.root?.id || !data.current?.id || !Array.isArray(data.entries) || data.link_version !== linkVersion.value
+            || (props.directExerciseId && data.root.id !== props.directExerciseId)) {
             throw new Error('Die Verbindung hat sich geändert. Bitte den Dialog erneut öffnen.')
         }
         current.value = data.current
@@ -263,7 +271,7 @@ function fileSize(size) {
     return Number.isFinite(size) ? `${new Intl.NumberFormat('de-AT').format(size)} Bytes` : 'Datei'
 }
 
-watch(() => [key.value, props.module, props.exercise, props.date, props.section, workAutomationEnabled(props.work)], close)
+watch(() => [key.value, props.module, props.exercise, props.date, props.section, props.directExerciseId, workAutomationEnabled(props.work)], close)
 watch(() => workDropboxStates.get(key.value)?.link_version, value => {
     if (opened.value && linkVersion.value && value !== linkVersion.value) close()
 })
